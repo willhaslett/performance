@@ -3,6 +3,7 @@
 
 MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     addChildComponent(sidebar);
+    addAndMakeVisible(panel3);
     addAndMakeVisible(mixerView);
     setWantsKeyboardFocus(true);
 }
@@ -39,13 +40,17 @@ void MainLayout::paint(juce::Graphics& g) {
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-    area.removeFromTop(toolbarHeight);  // toolbar is painted, not a component
+    area.removeFromTop(toolbarHeight);
 
     if (sidebarOpen) {
         sidebar.setBounds(area.removeFromLeft(sidebarWidth));
     }
 
-    mixerView.setBounds(area);
+    if (mixerVisible) {
+        int mixerHeight = (int)(area.getHeight() * mixerRatio);
+        mixerView.setBounds(area.removeFromBottom(mixerHeight));
+    }
+    panel3.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
@@ -66,6 +71,14 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         sidebar.setVisible(sidebarOpen);
         resized();
         repaint();
+        return true;
+    }
+
+    // x — toggle mixer
+    if (c == 'x') {
+        mixerVisible = !mixerVisible;
+        mixerView.setVisible(mixerVisible);
+        resized();
         return true;
     }
 
