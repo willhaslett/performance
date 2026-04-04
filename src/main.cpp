@@ -38,19 +38,21 @@ public:
         // List all discovered plugins
         audioEngine->listAvailablePlugins();
 
-        // Try to load a plugin from command line arg, or list what's available
+        // Load plugin after message loop starts (some plugins need the event loop running)
         if (commandLine.isNotEmpty()) {
-            if (audioEngine->loadInstrument(commandLine)) {
-                audioEngine->openPluginEditor();
-            }
+            pluginToLoad = commandLine;
+            juce::Timer::callAfterDelay(100, [this] {
+                audioEngine->loadInstrument(pluginToLoad);
+                DBG("");
+                DBG("Performance is running.");
+            });
         } else {
             DBG("");
             DBG("To load an instrument, pass its name as a command line argument:");
             DBG("  ./Performance \"plugin name\"");
+            DBG("");
+            DBG("Performance is running.");
         }
-
-        DBG("");
-        DBG("Performance is running.");
     }
 
     void shutdown() override {
@@ -67,6 +69,7 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<AudioEngine> audioEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
+    juce::String pluginToLoad;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)

@@ -2,6 +2,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <AudioToolbox/AudioToolbox.h>
 
 class AudioEngine {
 public:
@@ -14,6 +15,7 @@ public:
     // Plugin management
     void scanForPlugins();
     void scanComponentDirectory(const juce::File& directory);
+    bool registerComponent(const juce::String& pluginName);
     void listAvailablePlugins() const;
     bool loadInstrument(const juce::String& pluginName);
     void openPluginEditor();
@@ -43,6 +45,16 @@ private:
 
     // Plugin editor window
     std::unique_ptr<juce::DocumentWindow> editorWindow;
+
+    // Index of unregistered .component bundles (metadata only, not loaded)
+    struct ComponentInfo {
+        juce::String path;
+        juce::String name;
+        juce::String factoryFunctionName;
+        AudioComponentDescription desc;
+        uint32_t version;
+    };
+    std::vector<ComponentInfo> componentIndex;
 
     void setupGraph();
     void connectInstrumentToOutput();

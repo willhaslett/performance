@@ -1,5 +1,9 @@
 #include "engine/AudioEngine.h"
 #include <AudioToolbox/AudioToolbox.h>
+#include <CoreFoundation/CoreFoundation.h>
+
+// Keep loaded bundles alive for the lifetime of the process
+static std::vector<CFBundleRef> loadedBundles;
 
 AudioEngine::AudioEngine()
     : graph(std::make_unique<juce::AudioProcessorGraph>()),
@@ -20,8 +24,8 @@ void AudioEngine::initialise() {
 
     if (auto* device = deviceManager.getCurrentAudioDevice()) {
         DBG("Audio device: " + device->getName());
-        DBG("Sample rate: " + juce::String(device->getCurrentSampleRate()));
-        DBG("Buffer size: " + juce::String(device->getCurrentBufferSizeSamples()));
+        DBG("  Sample rate: " + juce::String(device->getCurrentSampleRate()));
+        DBG("  Buffer size: " + juce::String(device->getCurrentBufferSizeSamples()));
     }
 
     setupGraph();
@@ -47,237 +51,268 @@ void AudioEngine::setupGraph() {
         device->getCurrentSampleRate(),
         device->getCurrentBufferSizeSamples());
 
-    // Create MIDI input node (we inject MIDI into this)
     auto midiInputNode = graph->addNode(
         std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
             juce::AudioProcessorGraph::AudioGraphIOProcessor::midiInputNode));
     midiInputNodeId = midiInputNode->nodeID;
 
-    // Create audio output node
     auto audioOutputNode = graph->addNode(
         std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
             juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
     audioOutputNodeId = audioOutputNode->nodeID;
 
-    // Wire up the player
     player->setProcessor(graph.get());
     deviceManager.addAudioCallback(player.get());
-
-    DBG("Audio graph ready");
 }
 
 void AudioEngine::scanForPlugins() {
-    DBG("Scanning for AU plugins...");
+    // Index third-party .component bundles (reads Info.plist only, no loading)
+    scanComponentDirectory(juce::File("/Library/Audio/Plug-Ins/Components"));
+    scanComponentDirectory(juce::File(juce::File::getSpecialLocation(
+        juce::File::userHomeDirectory).getFullPathName() + "/Library/Audio/Plug-Ins/Components"));
 
-    // First scan via system registry (gets Apple built-ins)
+    // Scan system-registered AUs via JUCE
     for (auto* format : formatManager.getFormats()) {
         if (format->getName() != "AudioUnit")
             continue;
 
         juce::PluginDirectoryScanner scanner(
-            knownPlugins,
-            *format,
-            format->getDefaultLocationsToSearch(),
-            true,
-            juce::File());
+            knownPlugins, *format,
+            format->getDefaultLocationsToSearch(), true, juce::File());
 
         juce::String name;
-        while (scanner.scanNextFile(true, name)) {
-            // scanning...
-        }
+        while (scanner.scanNextFile(true, name)) {}
     }
 
-    // Also scan .component bundles directly (catches plugins not in system registry)
-    scanComponentDirectory(juce::File("/Library/Audio/Plug-Ins/Components"));
-    scanComponentDirectory(juce::File(juce::File::getSpecialLocation(
-        juce::File::userHomeDirectory).getFullPathName() + "/Library/Audio/Plug-Ins/Components"));
-
-    DBG("Found " + juce::String(knownPlugins.getNumTypes()) + " AU plugins");
+    DBG("Plugins: " + juce::String(knownPlugins.getNumTypes()) + " system, " +
+        juce::String(componentIndex.size()) + " third-party indexed");
 }
 
 void AudioEngine::scanComponentDirectory(const juce::File& directory) {
     if (!directory.isDirectory())
         return;
 
-    juce::AudioPluginFormat* auFormat = nullptr;
-    for (int i = 0; i < formatManager.getNumFormats(); ++i) {
-        if (formatManager.getFormat(i)->getName() == "AudioUnit") {
-            auFormat = formatManager.getFormat(i);
-            break;
-        }
-    }
-    if (!auFormat)
-        return;
-
-    DBG("Scanning directory: " + directory.getFullPathName());
-    int found = 0;
-    int registered = 0;
-
     for (const auto& entry : juce::RangedDirectoryIterator(directory, false, "*.component",
             juce::File::findDirectories)) {
-        found++;
-        auto componentFile = entry.getFile();
-        auto componentPath = componentFile.getFullPathName();
+        auto componentPath = entry.getFile().getFullPathName();
+        auto pathCStr = componentPath.toRawUTF8();
 
-        // Register the component bundle with AudioComponent system
-        @autoreleasepool {
-            NSString* nsPath = [NSString stringWithUTF8String:componentPath.toRawUTF8()];
-            NSURL* bundleURL = [NSURL fileURLWithPath:nsPath isDirectory:YES];
-            NSBundle* nsBundle = [NSBundle bundleWithURL:bundleURL];
-            if (nsBundle && ![nsBundle isLoaded]) {
-                [nsBundle load];
-            }
-        }
-
-        // Try to register the component bundle with the AudioComponent system
-        auto nsPath = componentPath.toRawUTF8();
         CFURLRef url = CFURLCreateFromFileSystemRepresentation(
-            kCFAllocatorDefault, (const UInt8*)nsPath, strlen(nsPath), true);
+            kCFAllocatorDefault, (const UInt8*)pathCStr, strlen(pathCStr), true);
+        if (!url) continue;
 
-        if (url) {
-            CFBundleRef bundle = CFBundleCreate(kCFAllocatorDefault, url);
-            if (bundle) {
-                // Read AudioComponents from Info.plist
-                CFArrayRef audioComponents = (CFArrayRef)CFBundleGetValueForInfoDictionaryKey(
-                    bundle, CFSTR("AudioComponents"));
+        CFBundleRef bundle = CFBundleCreate(kCFAllocatorDefault, url);
+        CFRelease(url);
+        if (!bundle) continue;
 
-                if (audioComponents && CFArrayGetCount(audioComponents) > 0) {
-                    CFDictionaryRef dict = (CFDictionaryRef)CFArrayGetValueAtIndex(audioComponents, 0);
+        CFArrayRef audioComponents = (CFArrayRef)CFBundleGetValueForInfoDictionaryKey(
+            bundle, CFSTR("AudioComponents"));
 
-                    auto getStr = [&](CFStringRef key) -> juce::String {
-                        CFStringRef val = (CFStringRef)CFDictionaryGetValue(dict, key);
-                        return val ? juce::String::fromCFString(val) : juce::String();
-                    };
-
-                    auto typeStr = getStr(CFSTR("type"));
-                    auto subtypeStr = getStr(CFSTR("subtype"));
-                    auto manuStr = getStr(CFSTR("manufacturer"));
-                    auto nameStr = getStr(CFSTR("name"));
-
-                    if (typeStr.isNotEmpty() && subtypeStr.isNotEmpty() && manuStr.isNotEmpty()) {
-                        auto fourCharToOSType = [](const juce::String& s) -> OSType {
-                            auto bytes = s.toRawUTF8();
-                            return (OSType)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
-                        };
-
-                        // Build the JUCE-style AU identifier string with category prefix
-                        juce::String category;
-                        if (typeStr == "aumu") category = "Synths/";
-                        else if (typeStr == "aufx" || typeStr == "aumf") category = "Effects/";
-                        else if (typeStr == "augn") category = "Generators/";
-                        else if (typeStr == "aupn") category = "Panners/";
-                        else if (typeStr == "aumx") category = "Mixers/";
-                        else if (typeStr == "aumi") category = "MidiEffects/";
-
-                        auto identifier = "AudioUnit:" + category + typeStr + "," + subtypeStr + "," + manuStr;
-
-                        // Check if already known
-                        bool alreadyKnown = false;
-                        for (auto& type : knownPlugins.getTypes()) {
-                            if (type.fileOrIdentifier == identifier) {
-                                alreadyKnown = true;
-                                break;
-                            }
-                        }
-
-                        if (!alreadyKnown) {
-                            // Create a PluginDescription manually
-                            juce::PluginDescription desc;
-                            desc.name = nameStr;
-                            desc.pluginFormatName = "AudioUnit";
-                            desc.fileOrIdentifier = identifier;
-                            desc.manufacturerName = manuStr;
-                            desc.isInstrument = (typeStr == "aumu");
-                            desc.category = desc.isInstrument ? "Synth" : "Effect";
-                            desc.numInputChannels = desc.isInstrument ? 0 : 2;
-                            desc.numOutputChannels = 2;
-
-                            // Read version
-                            CFTypeRef versionVal = CFDictionaryGetValue(dict, CFSTR("version"));
-                            if (versionVal && CFGetTypeID(versionVal) == CFNumberGetTypeID()) {
-                                int ver = 0;
-                                CFNumberGetValue((CFNumberRef)versionVal, kCFNumberIntType, &ver);
-                                desc.version = juce::String(ver);
-                            }
-
-                            knownPlugins.addType(desc);
-                            registered++;
-                            DBG("  Registered: " + nameStr + " [" + identifier + "]");
-                        }
-                    }
-                }
-
-                CFRelease(bundle);
-            }
-            CFRelease(url);
+        if (!audioComponents || CFArrayGetCount(audioComponents) == 0) {
+            CFRelease(bundle);
+            continue;
         }
+
+        for (CFIndex i = 0; i < CFArrayGetCount(audioComponents); ++i) {
+            CFDictionaryRef dict = (CFDictionaryRef)CFArrayGetValueAtIndex(audioComponents, i);
+
+            auto getCFStr = [&](CFStringRef key) -> CFStringRef {
+                return (CFStringRef)CFDictionaryGetValue(dict, key);
+            };
+
+            CFStringRef typeStr = getCFStr(CFSTR("type"));
+            CFStringRef subtypeStr = getCFStr(CFSTR("subtype"));
+            CFStringRef manuStr = getCFStr(CFSTR("manufacturer"));
+            CFStringRef nameStr = getCFStr(CFSTR("name"));
+            CFStringRef factoryStr = getCFStr(CFSTR("factoryFunction"));
+
+            if (!typeStr || !subtypeStr || !manuStr || !factoryStr)
+                continue;
+
+            auto cfStrToOSType = [](CFStringRef str) -> OSType {
+                char buf[5] = {0};
+                CFStringGetCString(str, buf, 5, kCFStringEncodingASCII);
+                return (OSType)((buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3]);
+            };
+
+            ComponentInfo info;
+            info.path = componentPath;
+            info.name = nameStr ? juce::String::fromCFString(nameStr)
+                                : entry.getFile().getFileNameWithoutExtension();
+            info.factoryFunctionName = juce::String::fromCFString(factoryStr);
+            info.desc.componentType = cfStrToOSType(typeStr);
+            info.desc.componentSubType = cfStrToOSType(subtypeStr);
+            info.desc.componentManufacturer = cfStrToOSType(manuStr);
+            info.desc.componentFlags = 0;
+            info.desc.componentFlagsMask = 0;
+            info.version = 0;
+
+            CFTypeRef versionVal = CFDictionaryGetValue(dict, CFSTR("version"));
+            if (versionVal && CFGetTypeID(versionVal) == CFNumberGetTypeID())
+                CFNumberGetValue((CFNumberRef)versionVal, kCFNumberIntType, (int*)&info.version);
+
+            // Skip if already registered with AudioComponent system
+            if (AudioComponentFindNext(nullptr, &info.desc) != nullptr)
+                continue;
+
+            componentIndex.push_back(info);
+        }
+
+        CFRelease(bundle);
     }
-    DBG("  Scanned " + juce::String(found) + " bundles, registered " + juce::String(registered) + " new plugins");
+}
+
+bool AudioEngine::registerComponent(const juce::String& pluginName) {
+    for (auto& info : componentIndex) {
+        if (!info.name.containsIgnoreCase(pluginName))
+            continue;
+
+        if (AudioComponentFindNext(nullptr, &info.desc) != nullptr)
+            return true;
+
+        auto pathCStr = info.path.toRawUTF8();
+        CFURLRef url = CFURLCreateFromFileSystemRepresentation(
+            kCFAllocatorDefault, (const UInt8*)pathCStr, strlen(pathCStr), true);
+        if (!url) continue;
+
+        CFBundleRef bundle = CFBundleCreate(kCFAllocatorDefault, url);
+        CFRelease(url);
+        if (!bundle) continue;
+
+        if (!CFBundleLoadExecutable(bundle)) {
+            CFRelease(bundle);
+            continue;
+        }
+
+        auto factoryCFStr = info.factoryFunctionName.toCFString();
+        auto factoryFunc = (AudioComponentFactoryFunction)
+            CFBundleGetFunctionPointerForName(bundle, factoryCFStr);
+        CFRelease(factoryCFStr);
+
+        if (!factoryFunc) {
+            CFRelease(bundle);
+            continue;
+        }
+
+        auto nameCFStr = info.name.toCFString();
+        AudioComponent comp = AudioComponentRegister(&info.desc, nameCFStr, info.version, factoryFunc);
+        CFRelease(nameCFStr);
+
+        if (comp) {
+            loadedBundles.push_back(bundle);
+            return true;
+        }
+
+        CFRelease(bundle);
+    }
+
+    return false;
+}
+
+static juce::String osTypeToString(OSType type) {
+    char buf[5];
+    buf[0] = (type >> 24) & 0xFF;
+    buf[1] = (type >> 16) & 0xFF;
+    buf[2] = (type >> 8) & 0xFF;
+    buf[3] = type & 0xFF;
+    buf[4] = 0;
+    return juce::String(buf);
 }
 
 void AudioEngine::listAvailablePlugins() const {
-    DBG("Available plugins:");
-    for (auto& type : knownPlugins.getTypes()) {
-        DBG("  [" + type.pluginFormatName + "] " + type.name +
-            " (" + type.manufacturerName + ")");
-    }
+    for (auto& type : knownPlugins.getTypes())
+        DBG("  [system] " + type.name + " (" + type.manufacturerName + ")");
+    for (auto& info : componentIndex)
+        DBG("  [3p]     " + info.name);
 }
 
 bool AudioEngine::loadInstrument(const juce::String& pluginName) {
-    // Find the plugin description
-    const juce::PluginDescription* desc = nullptr;
+    juce::PluginDescription pluginDesc;
+    bool found = false;
+
+    // Search in system-registered plugins first
     for (auto& type : knownPlugins.getTypes()) {
-        if (type.name.containsIgnoreCase(pluginName) && type.isInstrument) {
-            desc = &type;
+        if (type.name.containsIgnoreCase(pluginName)) {
+            pluginDesc = type;
+            found = true;
             break;
         }
     }
 
-    if (!desc) {
+    // If not found, try on-demand registration from component index
+    if (!found) {
+        if (registerComponent(pluginName)) {
+            for (auto& info : componentIndex) {
+                if (!info.name.containsIgnoreCase(pluginName))
+                    continue;
+
+                if (!AudioComponentFindNext(nullptr, &info.desc))
+                    continue;
+
+                juce::String category;
+                if (info.desc.componentType == kAudioUnitType_MusicDevice) category = "Synths/";
+                else if (info.desc.componentType == kAudioUnitType_Effect ||
+                         info.desc.componentType == kAudioUnitType_MusicEffect) category = "Effects/";
+                else if (info.desc.componentType == kAudioUnitType_Generator) category = "Generators/";
+
+                pluginDesc.name = info.name;
+                pluginDesc.pluginFormatName = "AudioUnit";
+                pluginDesc.fileOrIdentifier = "AudioUnit:" + category +
+                    osTypeToString(info.desc.componentType) + "," +
+                    osTypeToString(info.desc.componentSubType) + "," +
+                    osTypeToString(info.desc.componentManufacturer);
+                pluginDesc.isInstrument = (info.desc.componentType == kAudioUnitType_MusicDevice);
+                pluginDesc.category = pluginDesc.isInstrument ? "Synth" : "Effect";
+                pluginDesc.numInputChannels = pluginDesc.isInstrument ? 0 : 2;
+                pluginDesc.numOutputChannels = 2;
+
+                found = true;
+                break;
+            }
+        }
+    }
+
+    if (!found) {
         DBG("Plugin not found: " + pluginName);
         return false;
     }
 
-    DBG("Loading: " + desc->name + " (" + desc->pluginFormatName + ")");
+    DBG("Loading: " + pluginDesc.name);
 
-    juce::String errorMessage;
-    auto instance = formatManager.createPluginInstance(
-        *desc,
+    formatManager.createPluginInstanceAsync(
+        pluginDesc,
         graph->getSampleRate(),
         graph->getBlockSize(),
-        errorMessage);
+        [this, pluginDesc](std::unique_ptr<juce::AudioPluginInstance> instance,
+                           const juce::String& errorMessage) {
+            if (!instance) {
+                DBG("Failed to load plugin: " + errorMessage);
+                return;
+            }
 
-    if (!instance) {
-        DBG("Failed to load plugin: " + errorMessage);
-        return false;
-    }
+            if (instrumentNode) {
+                graph->removeNode(instrumentNodeId);
+                instrumentNode = nullptr;
+            }
 
-    // Remove old instrument if present
-    if (instrumentNode) {
-        graph->removeNode(instrumentNodeId);
-        instrumentNode = nullptr;
-    }
+            instrumentNode = graph->addNode(std::move(instance));
+            instrumentNodeId = instrumentNode->nodeID;
+            connectInstrumentToOutput();
+            DBG("Loaded: " + pluginDesc.name);
+            openPluginEditor();
+        });
 
-    // Add new instrument to graph
-    instrumentNode = graph->addNode(std::move(instance));
-    instrumentNodeId = instrumentNode->nodeID;
-
-    connectInstrumentToOutput();
-
-    DBG("Loaded: " + desc->name);
     return true;
 }
 
 void AudioEngine::connectInstrumentToOutput() {
     if (!instrumentNode) return;
 
-    // Connect MIDI input -> instrument
     graph->addConnection({
         { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
         { instrumentNodeId, juce::AudioProcessorGraph::midiChannelIndex }
     });
 
-    // Connect instrument audio -> output (stereo)
     auto numOutputChannels = std::min(
         instrumentNode->getProcessor()->getTotalNumOutputChannels(), 2);
 
@@ -287,31 +322,19 @@ void AudioEngine::connectInstrumentToOutput() {
             { audioOutputNodeId, ch }
         });
     }
-
-    DBG("Instrument connected to output");
 }
 
 void AudioEngine::injectMidi(const juce::MidiMessage& message) {
-    // Add MIDI message to the graph's MIDI input
-    // This is called from the MIDI callback thread
     auto* midiNode = graph->getNodeForId(midiInputNodeId);
-    if (midiNode) {
-        // We pass MIDI through the player which feeds the graph
+    if (midiNode)
         player->getMidiMessageCollector().addMessageToQueue(message);
-    }
 }
 
 void AudioEngine::openPluginEditor() {
-    if (!instrumentNode) {
-        DBG("No instrument loaded");
-        return;
-    }
+    if (!instrumentNode) return;
 
     auto* processor = instrumentNode->getProcessor();
-    if (!processor->hasEditor()) {
-        DBG("Plugin has no editor");
-        return;
-    }
+    if (!processor->hasEditor()) return;
 
     auto* editor = processor->createEditor();
     if (!editor) return;
@@ -325,6 +348,4 @@ void AudioEngine::openPluginEditor() {
     editorWindow->setUsingNativeTitleBar(true);
     editorWindow->centreWithSize(editor->getWidth(), editor->getHeight());
     editorWindow->setVisible(true);
-
-    DBG("Opened editor for: " + processor->getName());
 }
