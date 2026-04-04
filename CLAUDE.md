@@ -31,22 +31,23 @@ A code-first runtime for live music performance on macOS. Solo performer, center
 ### Major Components
 
 **Implemented:**
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE-based plugin hosting, named instrument chains (instrument → effects → output), plugin editor windows, third-party AU registration. Multiple chains mix to output in parallel. API: `createChain`, `addInstrument`, `addEffect`, `removeChain`, `clearAllChains`, `getInstrumentProcessor`, `getEffectProcessor`, `openPluginEditor` — all by name. Plugin loading is async via `createPluginInstanceAsync`; `rebuildConnections` handles partially-loaded chains gracefully.
-- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events (CC, pitch bend, pressure) to SongRuntime
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE-based plugin hosting, named instrument chains (instrument → effects → output), plugin editor windows, third-party AU registration. Multiple chains mix to output in parallel. API: `createChain`, `addInstrument`, `addEffect`, `removeChain`, `clearAllChains`, `getInstrumentProcessor`, `getEffectProcessor`, `openPluginEditor`, `setChainMidiEnabled` — all by name. Plugin loading is async via `createPluginInstanceAsync` with optional `onLoaded` callback; `rebuildConnections` handles partially-loaded chains gracefully.
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards all MIDI to audio graph, dispatches control events (CC, note on/off, pitch bend, pressure) to SongRuntime
 - **SongDef** (`src/song/Song.h`) — declarative song definition: instruments, effect chains, control bindings with handler functions. MIDIControl struct identifies controls (CC/Note/PitchBend/Pressure). ControlHandler is `std::function<void(float)>` with 0-1 normalized value.
-- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — loads a SongDef, creates named chains via AudioEngine, builds control dispatch map, routes MIDI control events to bound handlers. `findParam` looks up by instrument/effect name. Supports wildcard channel matching (channel 0 = any).
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — loads a SongDef, creates named chains via AudioEngine, builds control dispatch map, routes MIDI control events to bound handlers. Auto-opens plugin editor UIs when instruments finish loading. `findParam` looks up by instrument/effect name. Supports wildcard channel matching (channel 0 = any).
+- **Log** (`src/engine/Log.h/.cpp`) — `perfLog()` writes to both stderr and `/tmp/performance.log` for runtime observability without a connected terminal. `initLog()` at startup.
+- **Plugin cache** — scan results cached to `~/.config/performance/plugin-cache.xml`. Eliminates ~30s+ AU scan on startup. Delete file to force rescan.
 
 **Not yet implemented:**
 - **EventBus** — typed event dispatch (MIDI input + internal events like transition-complete, clock tick)
 - **Scheduler** — drives time-based routines frame-by-frame
 - **ControlMap** — typed abstraction of KeyLab's physical layout (pads, knobs, faders, buttons)
-- **Plugin UIs** — can open plugin GUIs for sound design; performance is all code-controlled
 
 ### Latency Budget
 
 - Note events: sub-1ms (direct MIDI to plugin, limited by audio buffer size)
 - Control/param changes: up to one buffer of latency (~2.9ms at 128 samples/44.1kHz)
-- Buffer size target: 128 samples
+- Buffer size target: 128 samples (currently running at 512/48kHz = ~10.7ms due to default device settings)
 
 ### Third-party AU Plugin Loading
 
@@ -68,14 +69,17 @@ Bundles are kept alive for the process lifetime. This is transparent to the rest
 - JUCE/C++ project set up with CMake
 - Audio device + MIDI input working
 - AU plugin hosting working (JUCE AudioProcessorGraph)
-- Third-party AU loading working (Keyscape, Kontakt, Raum verified)
-- Plugin editor UI windows working
+- Third-party AU loading working (Keyscape, Kontakt, Massive X, Raum verified)
+- Plugin editor UI windows auto-open on instrument load
 - MIDI → plugin → audio output pipeline verified end-to-end
 - Song model: SongDef, SongRuntime, MIDIEngine control dispatch all wired up
+- Multi-instrument with per-chain MIDI enable/disable — pad switching verified
+- Plugin cache for fast startup
+- File-based logging (`perfLog`) for runtime observability
 
 **Current state / next steps:**
-- `main.cpp` loads a test SongDef with one DLSMusicDevice instrument — verified working
-- Multi-instrument AudioEngine is implemented but not yet tested with multiple instruments
-- MIDI routing: currently all note MIDI goes to all instruments. Need per-chain MIDI enable/disable for instrument selection (e.g., pad switches active instrument).
-- No actual song definitions written yet — need a first real song to exercise the full path
+- `main.cpp` loads a test song with Keyscape + Massive X, pad switching on channel 10 (note 36/37)
+- Tested with MPK mini 3 (pads on ch10, keys on ch1)
+- Note: Keyscape requires clicking through a splash screen and loading a preset before it produces sound
 - EventBus, Scheduler, ControlMap not yet started
+- No actual performance song definitions written yet — need a first real song
