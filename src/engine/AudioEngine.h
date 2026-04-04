@@ -68,6 +68,7 @@ public:
 
     // Plugin editor windows
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
+    void closeTopPluginEditor();
 
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);

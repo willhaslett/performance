@@ -837,6 +837,17 @@ void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::St
     editorWindows.push_back(std::move(window));
 }
 
+void AudioEngine::closeTopPluginEditor() {
+    // Close the most recently opened visible editor
+    for (int i = (int)editorWindows.size() - 1; i >= 0; --i) {
+        if (editorWindows[i]->isVisible()) {
+            editorWindows[i]->setVisible(false);
+            editorWindows.erase(editorWindows.begin() + i);
+            return;
+        }
+    }
+}
+
 void AudioEngine::injectMidi(const juce::MidiMessage& message) {
     player->getMidiMessageCollector().addMessageToQueue(message);
 }

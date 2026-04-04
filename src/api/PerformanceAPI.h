@@ -79,6 +79,7 @@ public:
 
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
+    void closeTopPluginEditor();
 
     // --- Song management ---
     std::string createSong(const juce::String& name);  // creates in registry, sets as active

@@ -4,15 +4,17 @@
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
 #include "engine/Log.h"
+#import <AppKit/AppKit.h>
 
 class MainWindow : public juce::DocumentWindow {
 public:
     MainWindow(PerformanceAPI& api)
         : DocumentWindow("Performance",
                          juce::Colour(0xff121212),
-                         DocumentWindow::allButtons) {
+                         DocumentWindow::allButtons),
+          mixerView(new MixerView(api)) {
         setUsingNativeTitleBar(true);
-        setContentOwned(new MixerView(api), false);
+        setContentOwned(mixerView, false);
 
         // Size to fill the screen
         auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
@@ -26,11 +28,36 @@ public:
 
         setVisible(true);
         toFront(true);
+
+        // Global key monitor — intercepts key events even when plugin windows have focus
+        keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
+            handler:^NSEvent* (NSEvent* event) {
+                auto key = juce::KeyPress(
+                    juce::CharacterFunctions::toUpperCase(event.characters.length > 0
+                        ? [event.characters characterAtIndex:0] : 0),
+                    (int)juce::ModifierKeys::getCurrentModifiers().getRawFlags(), 0);
+
+                if (event.keyCode == 53)  // Escape
+                    key = juce::KeyPress(juce::KeyPress::escapeKey);
+
+                if (mixerView->handleGlobalKey(key))
+                    return nil;  // consumed
+                return event;
+            }];
+    }
+
+    ~MainWindow() override {
+        if (keyMonitor)
+            [NSEvent removeMonitor:keyMonitor];
     }
 
     void closeButtonPressed() override {
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
+
+private:
+    MixerView* mixerView;
+    id keyMonitor = nil;
 };
 
 class PerformanceApp : public juce::JUCEApplication {

@@ -3,6 +3,7 @@
 #include "engine/Log.h"
 
 MixerView::MixerView(PerformanceAPI& api) : api(api) {
+    setWantsKeyboardFocus(true);
     addChildComponent(sidebar);
     sidebar.onToggle = [this] {
         sidebarOpen = false;
@@ -11,6 +12,7 @@ MixerView::MixerView(PerformanceAPI& api) : api(api) {
         repaint();
     };
     startTimerHz(4);
+    grabKeyboardFocus();
 }
 
 void MixerView::paint(juce::Graphics& g) {
@@ -68,6 +70,31 @@ void MixerView::mouseUp(const juce::MouseEvent& event) {
             repaint();
         }
     }
+}
+
+bool MixerView::keyPressed(const juce::KeyPress& key) {
+    return handleGlobalKey(key);
+}
+
+bool MixerView::handleGlobalKey(const juce::KeyPress& key) {
+    auto c = key.getTextCharacter();
+
+    // s — toggle sidebar
+    if (c == 's') {
+        sidebarOpen = !sidebarOpen;
+        sidebar.setVisible(sidebarOpen);
+        resized();
+        repaint();
+        return true;
+    }
+
+    // Escape — close the frontmost plugin editor
+    if (key == juce::KeyPress::escapeKey) {
+        api.closeTopPluginEditor();
+        return true;
+    }
+
+    return false;
 }
 
 void MixerView::timerCallback() {

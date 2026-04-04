@@ -349,6 +349,10 @@ void PerformanceAPI::openPluginEditor(const juce::String& trackName, const juce:
     audioEngine->openPluginEditor(trackName, effectName);
 }
 
+void PerformanceAPI::closeTopPluginEditor() {
+    audioEngine->closeTopPluginEditor();
+}
+
 // --- Song management ---
 
 std::string PerformanceAPI::createSong(const juce::String& name) {

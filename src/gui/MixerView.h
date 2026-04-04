@@ -15,6 +15,10 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+
+    // Global key handler — called from app level
+    bool handleGlobalKey(const juce::KeyPress& key);
 
 private:
     void timerCallback() override;
