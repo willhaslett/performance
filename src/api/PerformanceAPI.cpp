@@ -79,7 +79,6 @@ void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::St
     audioEngine->addTrackInstrument(trackName, pluginName, [this, trackName, snapshotName] {
         if (snapshotName.isNotEmpty())
             loadSnapshot(trackName, snapshotName);
-        audioEngine->openPluginEditor(trackName);
     });
 }
 
@@ -539,6 +538,25 @@ std::vector<juce::String> PerformanceAPI::listPlugins() const {
     for (auto& type : audioEngine->getKnownPlugins().getTypes())
         names.push_back(type.name);
     return names;
+}
+
+std::vector<juce::String> PerformanceAPI::listTrackNames() const {
+    return audioEngine->getTrackNames();
+}
+
+juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackName) const {
+    return audioEngine->getTrackPluginName(trackName);
+}
+
+std::vector<juce::String> PerformanceAPI::getTrackEffectNames(const juce::String& trackName) const {
+    std::vector<juce::String> names;
+    for (auto& fx : audioEngine->getTrackEffects(trackName))
+        names.push_back(fx.name);
+    return names;
+}
+
+bool PerformanceAPI::isTrackMidiEnabled(const juce::String& trackName) const {
+    return audioEngine->isTrackMidiEnabled(trackName);
 }
 
 void PerformanceAPI::log(const juce::String& message) {

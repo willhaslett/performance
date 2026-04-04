@@ -1,19 +1,29 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "api/PerformanceAPI.h"
+#include "gui/MixerView.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
 #include "engine/Log.h"
 
 class MainWindow : public juce::DocumentWindow {
 public:
-    MainWindow()
+    MainWindow(PerformanceAPI& api)
         : DocumentWindow("Performance",
-                         juce::Colours::black,
+                         juce::Colour(0xff121212),
                          DocumentWindow::allButtons) {
         setUsingNativeTitleBar(true);
-        setContentOwned(new juce::Component(), false);
-        getContentComponent()->setSize(400, 200);
-        centreWithSize(400, 200);
+        setContentOwned(new MixerView(api), false);
+
+        // Size to fill the screen
+        auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+        if (display) {
+            auto area = display->userArea;
+            setSize(area.getWidth(), area.getHeight());
+            setTopLeftPosition(area.getX(), area.getY());
+        } else {
+            centreWithSize(1200, 800);
+        }
+
         setVisible(true);
         toFront(true);
     }
@@ -32,10 +42,11 @@ public:
         setvbuf(stderr, nullptr, _IONBF, 0);
         initLog();
         perfLog("[App] Starting Performance\n");
-        mainWindow = std::make_unique<MainWindow>();
 
         api = std::make_unique<PerformanceAPI>();
         api->initialise();
+
+        mainWindow = std::make_unique<MainWindow>(*api);
 
         luaEngine = std::make_unique<LuaEngine>(*api);
 
@@ -65,8 +76,8 @@ public:
     void shutdown() override {
         ipcServer.reset();
         luaEngine.reset();
-        api.reset();
         mainWindow.reset();
+        api.reset();
     }
 
     void systemRequestedQuit() override {

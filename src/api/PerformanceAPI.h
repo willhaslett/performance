@@ -94,6 +94,10 @@ public:
 
     // --- Query ---
     std::vector<juce::String> listPlugins() const;
+    std::vector<juce::String> listTrackNames() const;
+    juce::String getTrackPluginName(const juce::String& trackName) const;
+    std::vector<juce::String> getTrackEffectNames(const juce::String& trackName) const;
+    bool isTrackMidiEnabled(const juce::String& trackName) const;
     void log(const juce::String& message);
 
     // Access for main.cpp window setup (device manager needed for JUCE audio)

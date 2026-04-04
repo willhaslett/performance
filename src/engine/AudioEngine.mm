@@ -787,6 +787,26 @@ juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& t
     return nullptr;
 }
 
+class PluginEditorWindow : public juce::DocumentWindow {
+public:
+    PluginEditorWindow(const juce::String& name, std::vector<std::unique_ptr<juce::DocumentWindow>>& windows)
+        : DocumentWindow(name, juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
+          ownerWindows(windows) {}
+
+    void closeButtonPressed() override {
+        setVisible(false);
+        // Defer removal to avoid deleting ourselves mid-callback
+        juce::MessageManager::callAsync([this] {
+            auto& wins = ownerWindows;
+            wins.erase(std::remove_if(wins.begin(), wins.end(),
+                [this](auto& w) { return w.get() == this; }), wins.end());
+        });
+    }
+
+private:
+    std::vector<std::unique_ptr<juce::DocumentWindow>>& ownerWindows;
+};
+
 void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::String& effectName) {
     juce::AudioProcessor* processor = nullptr;
     if (effectName.isEmpty())
@@ -796,14 +816,19 @@ void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::St
 
     if (!processor || !processor->hasEditor()) return;
 
+    // Check if editor is already open — bring to front
+    for (auto& win : editorWindows) {
+        if (win->getName() == processor->getName()) {
+            win->setVisible(true);
+            win->toFront(true);
+            return;
+        }
+    }
+
     auto* editor = processor->createEditor();
     if (!editor) return;
 
-    auto window = std::make_unique<juce::DocumentWindow>(
-        processor->getName(),
-        juce::Colours::darkgrey,
-        juce::DocumentWindow::closeButton);
-
+    auto window = std::make_unique<PluginEditorWindow>(processor->getName(), editorWindows);
     window->setContentOwned(editor, true);
     window->setUsingNativeTitleBar(true);
     window->centreWithSize(editor->getWidth(), editor->getHeight());
