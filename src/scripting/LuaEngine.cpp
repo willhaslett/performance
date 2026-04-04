@@ -239,6 +239,25 @@ void LuaEngine::registerAPI() {
     });
 }
 
+std::string LuaEngine::executeString(const std::string& code) {
+    auto result = lua.safe_script(code, sol::script_pass_on_error);
+    if (!result.valid()) {
+        sol::error err = result;
+        return std::string("error: ") + err.what();
+    }
+    // If the script returned a value, convert to string
+    if (result.get_type() != sol::type::none && result.get_type() != sol::type::nil) {
+        sol::object obj = result;
+        if (obj.is<std::string>())
+            return obj.as<std::string>();
+        if (obj.is<double>())
+            return std::to_string(obj.as<double>());
+        if (obj.is<bool>())
+            return obj.as<bool>() ? "true" : "false";
+    }
+    return "ok";
+}
+
 bool LuaEngine::loadSong(const std::string& path) {
     unloadSong();
 

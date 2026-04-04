@@ -1,6 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "api/PerformanceAPI.h"
 #include "scripting/LuaEngine.h"
+#include "ipc/IPCServer.h"
 #include "engine/Log.h"
 
 class MainWindow : public juce::DocumentWindow {
@@ -38,6 +39,9 @@ public:
 
         luaEngine = std::make_unique<LuaEngine>(*api);
 
+        ipcServer = std::make_unique<IPCServer>(*luaEngine);
+        ipcServer->start();
+
         // Load default song if it exists
         auto songsDir = LuaEngine::getSongsDirectory();
         auto defaultSong = songsDir + "/two_instruments.lua";
@@ -59,6 +63,7 @@ public:
     }
 
     void shutdown() override {
+        ipcServer.reset();
         luaEngine.reset();
         api.reset();
         mainWindow.reset();
@@ -72,6 +77,7 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<PerformanceAPI> api;
     std::unique_ptr<LuaEngine> luaEngine;
+    std::unique_ptr<IPCServer> ipcServer;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)

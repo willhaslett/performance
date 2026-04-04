@@ -40,6 +40,7 @@ target_sources(Performance PRIVATE
     src/main.cpp
     src/api/PerformanceAPI.cpp
     src/scripting/LuaEngine.cpp
+    src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp

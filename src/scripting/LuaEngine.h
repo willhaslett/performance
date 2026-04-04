@@ -9,6 +9,9 @@ class LuaEngine {
 public:
     LuaEngine(PerformanceAPI& api);
 
+    // Execute a Lua string, return result or error
+    std::string executeString(const std::string& code);
+
     // Load and execute a .lua song file. Unloads current song first.
     bool loadSong(const std::string& path);
 
