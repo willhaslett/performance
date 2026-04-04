@@ -3,6 +3,7 @@
 #include "engine/AudioEngine.h"
 #include "engine/MIDIEngine.h"
 #include "engine/Log.h"
+#include "registry/Registry.h"
 #include "song/Song.h"
 #include "song/SongRuntime.h"
 
@@ -13,9 +14,22 @@ PerformanceAPI::~PerformanceAPI() {
 }
 
 void PerformanceAPI::initialise() {
+    // Open registry
+    registry = std::make_unique<Registry>();
+    auto configDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                         .getChildFile(".config/performance");
+    configDir.createDirectory();
+    registry->open(configDir.getChildFile("registry.db").getFullPathName().toStdString());
+
     audioEngine = std::make_unique<AudioEngine>();
     audioEngine->initialise();
     perfLog("[API] AudioEngine initialised\n");
+
+    // Populate plugins table from scan cache
+    populatePluginRegistry();
+
+    // Register built-in actions
+    registerBuiltinActions();
 
     automationEngine = std::make_unique<AutomationEngine>();
     songRuntime = std::make_unique<SongRuntime>(*audioEngine);
@@ -32,6 +46,8 @@ void PerformanceAPI::shutdown() {
     songRuntime.reset();
     midiEngine.reset();
     audioEngine.reset();
+    automationEngine.reset();
+    registry.reset();
 }
 
 // --- Track management ---
@@ -372,4 +388,33 @@ void PerformanceAPI::log(const juce::String& message) {
 
 juce::AudioDeviceManager& PerformanceAPI::getDeviceManager() {
     return audioEngine->getDeviceManager();
+}
+
+// --- Registry population ---
+
+void PerformanceAPI::populatePluginRegistry() {
+    int count = 0;
+    for (auto& type : audioEngine->getKnownPlugins().getTypes()) {
+        registry->registerPlugin(
+            type.name.toStdString(),
+            type.manufacturerName.toStdString(),
+            type.fileOrIdentifier.toStdString());
+        count++;
+    }
+    perfLog("[API] Registered %d plugins in registry\n", count);
+}
+
+void PerformanceAPI::registerBuiltinActions() {
+    registry->registerAction("setTrackMidiEnabled", R"([{"name":"trackId","type":"track"},{"name":"enabled","type":"bool"}])");
+    registry->registerAction("setTrackGain", R"([{"name":"trackId","type":"track"},{"name":"gain","type":"float"}])");
+    registry->registerAction("setBusGain", R"([{"name":"busId","type":"bus"},{"name":"gain","type":"float"}])");
+    registry->registerAction("setSendGain", R"([{"name":"trackId","type":"track"},{"name":"busId","type":"bus"},{"name":"gain","type":"float"}])");
+    registry->registerAction("fadeOut", R"([{"name":"trackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("fadeIn", R"([{"name":"trackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("crossfade", R"([{"name":"fromTrackId","type":"track"},{"name":"toTrackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("loadSong", R"([{"name":"songId","type":"song"}])");
+    registry->registerAction("loadSnapshot", R"([{"name":"trackId","type":"track"},{"name":"snapshotId","type":"snapshot"}])");
+    registry->registerAction("openEditor", R"([{"name":"trackId","type":"track"}])");
+
+    perfLog("[API] Registered %d built-in actions\n", (int)registry->allActions().size());
 }

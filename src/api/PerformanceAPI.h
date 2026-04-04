@@ -8,6 +8,7 @@
 class AudioEngine;
 class AutomationEngine;
 class MIDIEngine;
+class Registry;
 class SongRuntime;
 struct SongDef;
 
@@ -97,8 +98,12 @@ public:
     juce::AudioDeviceManager& getDeviceManager();
 
 private:
+    std::unique_ptr<Registry> registry;
     std::unique_ptr<AudioEngine> audioEngine;
     std::unique_ptr<AutomationEngine> automationEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
+
+    void populatePluginRegistry();
+    void registerBuiltinActions();
 };
