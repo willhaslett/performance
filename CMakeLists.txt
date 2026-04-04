@@ -34,6 +34,7 @@ juce_add_gui_app(Performance
     BUNDLE_ID "com.performance.app"
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
+    APP_SANDBOX_ENABLED FALSE
 )
 
 target_sources(Performance PRIVATE
