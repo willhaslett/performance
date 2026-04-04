@@ -6,6 +6,29 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(lib/JUCE)
 
+# --- Lua (C library) ---
+include(FetchContent)
+
+FetchContent_Declare(lua
+    URL https://www.lua.org/ftp/lua-5.4.7.tar.gz
+)
+FetchContent_MakeAvailable(lua)
+
+# Build Lua as a static library from fetched source
+file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/src/*.c")
+list(REMOVE_ITEM LUA_SOURCES "${lua_SOURCE_DIR}/src/lua.c" "${lua_SOURCE_DIR}/src/luac.c")
+add_library(lua_static STATIC ${LUA_SOURCES})
+target_include_directories(lua_static PUBLIC "${lua_SOURCE_DIR}/src")
+
+# --- sol2 (header-only C++ Lua bindings) ---
+FetchContent_Declare(sol2
+    GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+    GIT_TAG develop
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(sol2)
+
+# --- Application ---
 juce_add_gui_app(Performance
     PRODUCT_NAME "Performance"
     BUNDLE_ID "com.performance.app"
@@ -16,6 +39,7 @@ juce_add_gui_app(Performance
 target_sources(Performance PRIVATE
     src/main.cpp
     src/api/PerformanceAPI.cpp
+    src/scripting/LuaEngine.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
     src/engine/Log.cpp
@@ -42,4 +66,6 @@ target_link_libraries(Performance PRIVATE
     juce::juce_events
     juce::juce_gui_basics
     juce::juce_gui_extra
+    lua_static
+    sol2
 )

@@ -428,9 +428,12 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enable
     auto it = tracks.find(trackName);
     if (it == tracks.end()) return;
     if (it->second.midiEnabled == enabled) return;
-    if (!it->second.instrumentNode) return;
 
     it->second.midiEnabled = enabled;
+
+    // If instrument hasn't loaded yet, the flag is stored and
+    // rebuildConnections will use it when the instrument loads.
+    if (!it->second.instrumentNode) return;
 
     juce::AudioProcessorGraph::Connection midiConn = {
         { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },

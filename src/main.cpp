@@ -1,5 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "api/PerformanceAPI.h"
+#include "scripting/LuaEngine.h"
 #include "engine/Log.h"
 
 class MainWindow : public juce::DocumentWindow {
@@ -35,41 +36,30 @@ public:
         api = std::make_unique<PerformanceAPI>();
         api->initialise();
 
-        // Test song: two instruments + reverb bus, built entirely through the API
-        juce::Timer::callAfterDelay(100, [this] {
-            api->createBus("Reverb");
-            api->addBusEffect("Reverb", "Hall", "Raum");
+        luaEngine = std::make_unique<LuaEngine>(*api);
 
-            api->createTrack("Keys");
-            api->addInstrument("Keys", "Keyscape");
-            api->addSend("Keys", "Reverb", 0.3f);
-
-            api->createTrack("Synth");
-            api->addInstrument("Synth", "Massive X");
-            api->setTrackMidiEnabled("Synth", false);
-            api->addSend("Synth", "Reverb", 0.5f);
-
-            // Pad 1 (note 36, ch10) -> activate Keys
-            api->bind("note", 10, 36, [this](float value) {
-                if (value == 0.0f) return;
-                api->setTrackMidiEnabled("Keys", true);
-                api->setTrackMidiEnabled("Synth", false);
-                api->log("Switched to Keys");
-            }, "Pad 1 -> Keys");
-
-            // Pad 2 (note 37, ch10) -> activate Synth
-            api->bind("note", 10, 37, [this](float value) {
-                if (value == 0.0f) return;
-                api->setTrackMidiEnabled("Keys", false);
-                api->setTrackMidiEnabled("Synth", true);
-                api->log("Switched to Synth");
-            }, "Pad 2 -> Synth");
-
-            api->log("Song loaded: Two Instruments + Reverb Bus");
+        // Load default song if it exists
+        auto songsDir = LuaEngine::getSongsDirectory();
+        auto defaultSong = songsDir + "/two_instruments.lua";
+        juce::Timer::callAfterDelay(100, [this, defaultSong] {
+            if (juce::File(defaultSong).existsAsFile()) {
+                luaEngine->loadSong(defaultSong);
+            } else {
+                perfLog("[App] No default song found at %s\n", defaultSong.c_str());
+                auto songs = luaEngine->listSongs();
+                if (!songs.empty()) {
+                    auto path = LuaEngine::getSongsDirectory() + "/" + songs[0] + ".lua";
+                    luaEngine->loadSong(path);
+                } else {
+                    perfLog("[App] No songs found. Create .lua files in %s\n",
+                            LuaEngine::getSongsDirectory().c_str());
+                }
+            }
         });
     }
 
     void shutdown() override {
+        luaEngine.reset();
         api.reset();
         mainWindow.reset();
     }
@@ -81,6 +71,7 @@ public:
 private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<PerformanceAPI> api;
+    std::unique_ptr<LuaEngine> luaEngine;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)
