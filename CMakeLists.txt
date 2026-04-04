@@ -42,6 +42,7 @@ target_sources(Performance PRIVATE
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp
+    src/registry/Registry.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
     src/engine/Log.cpp
@@ -70,4 +71,5 @@ target_link_libraries(Performance PRIVATE
     juce::juce_gui_extra
     lua_static
     sol2
+    sqlite3
 )
