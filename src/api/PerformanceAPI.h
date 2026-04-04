@@ -64,6 +64,11 @@ public:
     void cancelAutomation(int handle);
     void cancelAllAutomation();
 
+    // --- Presets ---
+    std::vector<juce::String> listPresets(const juce::String& trackName);
+    void loadPreset(const juce::String& trackName, int index);
+    void loadPresetByName(const juce::String& trackName, const juce::String& presetName);
+
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
 

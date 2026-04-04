@@ -154,6 +154,40 @@ void PerformanceAPI::unbindAll() {
     songRuntime->clearBindings();
 }
 
+// --- Presets ---
+
+std::vector<juce::String> PerformanceAPI::listPresets(const juce::String& trackName) {
+    std::vector<juce::String> presets;
+    if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackName)) {
+        for (int i = 0; i < proc->getNumPrograms(); ++i)
+            presets.push_back(proc->getProgramName(i));
+    }
+    return presets;
+}
+
+void PerformanceAPI::loadPreset(const juce::String& trackName, int index) {
+    // Send MIDI program change — more widely supported than JUCE's setCurrentProgram
+    auto msg = juce::MidiMessage::programChange(1, index);
+    msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
+    audioEngine->injectMidi(msg);
+    perfLog("[API] Sent program change %d for track \"%s\"\n", index, trackName.toRawUTF8());
+}
+
+void PerformanceAPI::loadPresetByName(const juce::String& trackName, const juce::String& presetName) {
+    if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackName)) {
+        for (int i = 0; i < proc->getNumPrograms(); ++i) {
+            if (proc->getProgramName(i).containsIgnoreCase(presetName)) {
+                proc->setCurrentProgram(i);
+                perfLog("[API] Loaded preset \"%s\" (%d) on track \"%s\"\n",
+                        proc->getProgramName(i).toRawUTF8(), i, trackName.toRawUTF8());
+                return;
+            }
+        }
+        perfLog("[API] Preset not found: \"%s\" on track \"%s\"\n",
+                presetName.toRawUTF8(), trackName.toRawUTF8());
+    }
+}
+
 // --- Automation ---
 
 int PerformanceAPI::interpolate(float from, float to, float durationSec,

@@ -160,6 +160,22 @@ void LuaEngine::registerAPI() {
         return api.getTrackGain(juce::String(track));
     });
 
+    // Presets
+    lua.set_function("listPresets", [this](const std::string& track) -> sol::table {
+        auto presets = api.listPresets(juce::String(track));
+        sol::table result = lua.create_table();
+        for (size_t i = 0; i < presets.size(); ++i)
+            result[i + 1] = presets[i].toStdString();
+        return result;
+    });
+    lua.set_function("loadPreset", [this](const std::string& track, sol::object arg) {
+        if (arg.is<int>()) {
+            api.loadPreset(juce::String(track), arg.as<int>());
+        } else if (arg.is<std::string>()) {
+            api.loadPresetByName(juce::String(track), juce::String(arg.as<std::string>()));
+        }
+    });
+
     // Plugin UI
     lua.set_function("openEditor", [this](const std::string& track, sol::optional<std::string> effect) {
         api.openPluginEditor(juce::String(track), juce::String(effect.value_or("")));
