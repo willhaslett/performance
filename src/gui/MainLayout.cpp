@@ -3,9 +3,21 @@
 
 MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     addChildComponent(sidebar);
-    addAndMakeVisible(panel3);
+    addAndMakeVisible(terminalView);
     addAndMakeVisible(mixerView);
     setWantsKeyboardFocus(true);
+
+    // Launch Claude Code in the project directory
+    auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
+                       .getFullPathName());
+    // Walk up from .app/Contents/MacOS/Performance to the build dir's parent
+    for (int i = 0; i < 5; ++i)
+        workDir = workDir.getParentDirectory();
+
+    if (!workDir.getChildFile("CLAUDE.md").existsAsFile())
+        workDir = juce::File("/Users/will/ideas_and_projects/performance");
+
+    terminalView.start("claude", workDir.getFullPathName());
 }
 
 void MainLayout::paint(juce::Graphics& g) {
@@ -36,6 +48,13 @@ void MainLayout::paint(juce::Graphics& g) {
     }
     g.setColour(juce::Colour(0xff888888));
     g.fillPath(arrow);
+
+    // Mode indicator
+    if (insertMode) {
+        g.setColour(juce::Colour(0xff44aa44));
+        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.drawText("-- INSERT --", toolbar.withTrimmedLeft(36), juce::Justification::centredLeft);
+    }
 }
 
 void MainLayout::resized() {
@@ -50,7 +69,7 @@ void MainLayout::resized() {
         int mixerHeight = (int)(area.getHeight() * mixerRatio);
         mixerView.setBounds(area.removeFromBottom(mixerHeight));
     }
-    panel3.setBounds(area);
+    terminalView.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
@@ -63,8 +82,31 @@ void MainLayout::mouseUp(const juce::MouseEvent& event) {
     }
 }
 
+bool MainLayout::terminalHasFocus() const {
+    return insertMode;
+}
+
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
+    // INSERT mode: all keys go to terminal, Escape returns to normal
+    if (insertMode) {
+        if (key == juce::KeyPress::escapeKey) {
+            insertMode = false;
+            repaint();  // update mode indicator
+            return true;
+        }
+        terminalView.keyPressed(key);
+        return true;
+    }
+
+    // NORMAL mode: app shortcuts
     auto c = key.getTextCharacter();
+
+    // i — enter insert mode (terminal)
+    if (c == 'i') {
+        insertMode = true;
+        repaint();
+        return true;
+    }
 
     if (c == 's') {
         sidebarOpen = !sidebarOpen;

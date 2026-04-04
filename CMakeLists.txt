@@ -42,6 +42,7 @@ target_sources(Performance PRIVATE
     src/api/PerformanceAPI.cpp
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
+    src/gui/TerminalView.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp
@@ -52,7 +53,7 @@ target_sources(Performance PRIVATE
     src/song/SongRuntime.cpp
 )
 
-target_include_directories(Performance PRIVATE src)
+target_include_directories(Performance PRIVATE src /opt/homebrew/include)
 
 target_compile_definitions(Performance PRIVATE
     JUCE_WEB_BROWSER=0
@@ -75,4 +76,6 @@ target_link_libraries(Performance PRIVATE
     lua_static
     sol2
     sqlite3
+    /opt/homebrew/lib/libvterm.a
 )
+
