@@ -1,5 +1,6 @@
 #include "song/SongRuntime.h"
 #include "engine/AudioEngine.h"
+#include "engine/Log.h"
 
 SongRuntime::SongRuntime(AudioEngine& eng) : engine(eng) {}
 
@@ -7,7 +8,7 @@ void SongRuntime::load(const SongDef& song) {
     unload();
 
     songName = song.name;
-    DBG("Loading song: " + songName);
+    perfLog("[Song] Loading song: %s\n", songName.toRawUTF8());
 
     for (auto& inst : song.instruments) {
         engine.createChain(inst.name);
@@ -19,13 +20,14 @@ void SongRuntime::load(const SongDef& song) {
     // Build control map
     for (auto& binding : song.bindings) {
         controlMap[binding.control].push_back(binding.handler);
-        DBG("  Binding: " + binding.control.toString() +
-            (binding.description.isNotEmpty() ? " -> " + binding.description : ""));
+        perfLog("[Song]   Binding: %s%s\n", binding.control.toString().toRawUTF8(),
+                binding.description.isNotEmpty()
+                    ? (" -> " + binding.description).toRawUTF8() : "");
     }
 
     loaded = true;
-    DBG("Song loaded: " + songName + " (" + juce::String(song.instruments.size()) + " instruments, " +
-        juce::String(song.bindings.size()) + " bindings)");
+    perfLog("[Song] Song loaded: %s (%d instruments, %d bindings)\n",
+            songName.toRawUTF8(), (int)song.instruments.size(), (int)song.bindings.size());
 }
 
 void SongRuntime::unload() {

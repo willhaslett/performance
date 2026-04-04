@@ -1,5 +1,6 @@
 #include "engine/MIDIEngine.h"
 #include "engine/AudioEngine.h"
+#include "engine/Log.h"
 #include "song/SongRuntime.h"
 
 MIDIEngine::MIDIEngine(juce::AudioDeviceManager& dm, AudioEngine& ae)
@@ -12,16 +13,16 @@ MIDIEngine::~MIDIEngine() {
 void MIDIEngine::initialise() {
     auto devices = juce::MidiInput::getAvailableDevices();
 
-    DBG("MIDI inputs:");
+    perfLog("[MIDI] MIDI inputs:\n");
     for (auto& device : devices) {
-        DBG("  " + device.name);
+        perfLog("[MIDI]   %s\n", device.name.toRawUTF8());
         deviceManager.setMidiInputDeviceEnabled(device.identifier, true);
         deviceManager.addMidiInputDeviceCallback(device.identifier, this);
         enabledDevices.add(device.identifier);
     }
 
     if (devices.isEmpty())
-        DBG("  (none)");
+        perfLog("[MIDI]   (none)\n");
 }
 
 void MIDIEngine::shutdown() {
@@ -38,7 +39,11 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
     // Dispatch control events to song runtime
     if (songRuntime) {
         auto ch = message.getChannel();
-        if (message.isController())
+        if (message.isNoteOn())
+            songRuntime->handleNoteOn(ch, message.getNoteNumber(), message.getVelocity());
+        else if (message.isNoteOff())
+            songRuntime->handleNoteOff(ch, message.getNoteNumber());
+        else if (message.isController())
             songRuntime->handleControl(ch, message.getControllerNumber(), message.getControllerValue());
         else if (message.isPitchWheel())
             songRuntime->handlePitchBend(ch, message.getPitchWheelValue());
@@ -46,36 +51,30 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
             songRuntime->handlePressure(ch, message.getChannelPressureValue());
     }
 
-    // Monitor mode: log everything
+    // Monitor mode: log everything to stderr
     if (!monitorMode) return;
 
     auto ch = message.getChannel();
 
     if (message.isNoteOn()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  NOTE ON  " + juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3)
-            + " (" + juce::String(message.getNoteNumber()) + ")"
-            + "  vel=" + juce::String(message.getVelocity()));
+        perfLog("[MIDI] ch=%d  NOTE ON  %s (%d)  vel=%d\n",
+                ch, juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3).toRawUTF8(),
+                message.getNoteNumber(), message.getVelocity());
     } else if (message.isNoteOff()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  NOTE OFF " + juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3)
-            + " (" + juce::String(message.getNoteNumber()) + ")");
+        perfLog("[MIDI] ch=%d  NOTE OFF %s (%d)\n",
+                ch, juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3).toRawUTF8(),
+                message.getNoteNumber());
     } else if (message.isController()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  CC " + juce::String(message.getControllerNumber())
-            + " = " + juce::String(message.getControllerValue()));
+        perfLog("[MIDI] ch=%d  CC %d = %d\n",
+                ch, message.getControllerNumber(), message.getControllerValue());
     } else if (message.isPitchWheel()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  PITCH " + juce::String(message.getPitchWheelValue()));
+        perfLog("[MIDI] ch=%d  PITCH %d\n", ch, message.getPitchWheelValue());
     } else if (message.isAftertouch()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  AFTERTOUCH note=" + juce::String(message.getNoteNumber())
-            + " val=" + juce::String(message.getAfterTouchValue()));
+        perfLog("[MIDI] ch=%d  AFTERTOUCH note=%d val=%d\n",
+                ch, message.getNoteNumber(), message.getAfterTouchValue());
     } else if (message.isChannelPressure()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  PRESSURE " + juce::String(message.getChannelPressureValue()));
+        perfLog("[MIDI] ch=%d  PRESSURE %d\n", ch, message.getChannelPressureValue());
     } else if (message.isProgramChange()) {
-        DBG("[MIDI] ch=" + juce::String(ch)
-            + "  PROGRAM " + juce::String(message.getProgramChangeNumber()));
+        perfLog("[MIDI] ch=%d  PROGRAM %d\n", ch, message.getProgramChangeNumber());
     }
 }

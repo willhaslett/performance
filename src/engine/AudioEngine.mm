@@ -1,4 +1,5 @@
 #include "engine/AudioEngine.h"
+#include "engine/Log.h"
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreFoundation/CoreFoundation.h>
 
@@ -17,18 +18,20 @@ AudioEngine::~AudioEngine() {
 void AudioEngine::initialise() {
     auto result = deviceManager.initialiseWithDefaultDevices(0, 2);
     if (result.isNotEmpty()) {
-        DBG("Audio device error: " + result);
+        perfLog("[Engine] Audio device error: %s\n", result.toRawUTF8());
         return;
     }
 
     if (auto* device = deviceManager.getCurrentAudioDevice()) {
-        DBG("Audio device: " + device->getName());
-        DBG("  Sample rate: " + juce::String(device->getCurrentSampleRate()));
-        DBG("  Buffer size: " + juce::String(device->getCurrentBufferSizeSamples()));
+        perfLog("[Engine] Audio device: %s\n", device->getName().toRawUTF8());
+        perfLog("[Engine]   Sample rate: %.0f\n", device->getCurrentSampleRate());
+        perfLog("[Engine]   Buffer size: %d\n", device->getCurrentBufferSizeSamples());
     }
 
     setupGraph();
-    scanForPlugins();
+
+    if (!loadPluginCache())
+        scanForPlugins();
 }
 
 void AudioEngine::shutdown() {
@@ -67,7 +70,16 @@ void AudioEngine::setupGraph() {
 
 // --- Plugin scanning ---
 
+static juce::File getPluginCacheFile() {
+    auto configDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                         .getChildFile(".config/performance");
+    configDir.createDirectory();
+    return configDir.getChildFile("plugin-cache.xml");
+}
+
 void AudioEngine::scanForPlugins() {
+    perfLog("[Engine] Scanning for plugins...\n");
+
     scanComponentDirectory(juce::File("/Library/Audio/Plug-Ins/Components"));
     scanComponentDirectory(juce::File(juce::File::getSpecialLocation(
         juce::File::userHomeDirectory).getFullPathName() + "/Library/Audio/Plug-Ins/Components"));
@@ -81,8 +93,71 @@ void AudioEngine::scanForPlugins() {
         while (scanner.scanNextFile(true, name)) {}
     }
 
-    DBG("Plugins: " + juce::String(knownPlugins.getNumTypes()) + " system, " +
-        juce::String(componentIndex.size()) + " third-party indexed");
+    perfLog("[Engine] Scan complete: %d system, %d third-party indexed\n",
+            knownPlugins.getNumTypes(), (int)componentIndex.size());
+
+    savePluginCache();
+}
+
+bool AudioEngine::loadPluginCache() {
+    auto cacheFile = getPluginCacheFile();
+    if (!cacheFile.existsAsFile()) return false;
+
+    auto xml = juce::parseXML(cacheFile);
+    if (!xml) return false;
+
+    // Load KnownPluginList
+    auto* knownXml = xml->getChildByName("KnownPlugins");
+    if (knownXml)
+        knownPlugins.recreateFromXml(*knownXml);
+
+    // Load component index
+    componentIndex.clear();
+    auto* compXml = xml->getChildByName("ComponentIndex");
+    if (compXml) {
+        for (auto* entry : compXml->getChildIterator()) {
+            ComponentInfo info;
+            info.path = entry->getStringAttribute("path");
+            info.name = entry->getStringAttribute("name");
+            info.factoryFunctionName = entry->getStringAttribute("factory");
+            info.desc.componentType = (OSType)entry->getIntAttribute("type");
+            info.desc.componentSubType = (OSType)entry->getIntAttribute("subtype");
+            info.desc.componentManufacturer = (OSType)entry->getIntAttribute("manufacturer");
+            info.desc.componentFlags = 0;
+            info.desc.componentFlagsMask = 0;
+            info.version = (uint32_t)entry->getIntAttribute("version");
+            componentIndex.push_back(info);
+        }
+    }
+
+    perfLog("[Engine] Loaded plugin cache: %d system, %d third-party\n",
+            knownPlugins.getNumTypes(), (int)componentIndex.size());
+    return true;
+}
+
+void AudioEngine::savePluginCache() {
+    juce::XmlElement root("PluginCache");
+
+    // Save KnownPluginList
+    if (auto knownXml = knownPlugins.createXml())
+        root.addChildElement(knownXml.release());
+
+    // Save component index
+    auto* compXml = root.createNewChildElement("ComponentIndex");
+    for (auto& info : componentIndex) {
+        auto* entry = compXml->createNewChildElement("Component");
+        entry->setAttribute("path", info.path);
+        entry->setAttribute("name", info.name);
+        entry->setAttribute("factory", info.factoryFunctionName);
+        entry->setAttribute("type", (int)info.desc.componentType);
+        entry->setAttribute("subtype", (int)info.desc.componentSubType);
+        entry->setAttribute("manufacturer", (int)info.desc.componentManufacturer);
+        entry->setAttribute("version", (int)info.version);
+    }
+
+    auto cacheFile = getPluginCacheFile();
+    root.writeTo(cacheFile);
+    perfLog("[Engine] Saved plugin cache to %s\n", cacheFile.getFullPathName().toRawUTF8());
 }
 
 void AudioEngine::scanComponentDirectory(const juce::File& directory) {
@@ -236,44 +311,49 @@ juce::PluginDescription AudioEngine::findPluginDescription(const juce::String& p
 
 void AudioEngine::listAvailablePlugins() const {
     for (auto& type : knownPlugins.getTypes())
-        DBG("  [system] " + type.name + " (" + type.manufacturerName + ")");
+        perfLog("  [system] %s (%s)\n", type.name.toRawUTF8(), type.manufacturerName.toRawUTF8());
     for (auto& info : componentIndex)
-        DBG("  [3p]     " + info.name);
+        perfLog("  [3p]     %s\n", info.name.toRawUTF8());
 }
 
 // --- Chain management ---
 
 void AudioEngine::createChain(const juce::String& chainName) {
     chains[chainName] = {};
-    DBG("Created chain: " + chainName);
+    perfLog("[Engine] Created chain: %s\n", chainName.toRawUTF8());
 }
 
 bool AudioEngine::addInstrument(const juce::String& chainName, const juce::String& pluginName) {
     auto it = chains.find(chainName);
     if (it == chains.end()) {
-        DBG("Chain not found: " + chainName);
+        perfLog("[Engine] Chain not found: %s\n", chainName.toRawUTF8());
         return false;
     }
 
     auto desc = findPluginDescription(pluginName);
     if (desc.name.isEmpty()) {
-        DBG("Plugin not found: " + pluginName);
+        perfLog("[Engine] Plugin not found: %s\n", pluginName.toRawUTF8());
         return false;
     }
 
     it->second.instrumentPluginName = pluginName;
-    DBG("Loading instrument: " + desc.name + " -> chain \"" + chainName + "\"");
+    perfLog("[Engine] Loading instrument: %s -> chain \"%s\"\n",
+            desc.name.toRawUTF8(), chainName.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
         [this, chainName, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
                                  const juce::String& error) {
-            if (!instance) { DBG("Failed to load: " + error); return; }
+            if (!instance) {
+                perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
+                return;
+            }
             auto it = chains.find(chainName);
             if (it == chains.end()) return;
             it->second.instrumentNode = graph->addNode(std::move(instance));
             rebuildConnections();
-            DBG("Loaded instrument: " + desc.name + " in chain \"" + chainName + "\"");
+            perfLog("[Engine] Loaded instrument: %s in chain \"%s\"\n",
+                    desc.name.toRawUTF8(), chainName.toRawUTF8());
         });
 
     return true;
@@ -283,32 +363,37 @@ bool AudioEngine::addEffect(const juce::String& chainName, const juce::String& e
                               const juce::String& pluginName) {
     auto it = chains.find(chainName);
     if (it == chains.end()) {
-        DBG("Chain not found: " + chainName);
+        perfLog("[Engine] Chain not found: %s\n", chainName.toRawUTF8());
         return false;
     }
 
     auto desc = findPluginDescription(pluginName);
     if (desc.name.isEmpty()) {
-        DBG("Plugin not found: " + pluginName);
+        perfLog("[Engine] Plugin not found: %s\n", pluginName.toRawUTF8());
         return false;
     }
 
     it->second.effects.push_back({ effectName, nullptr });
     auto effectIndex = it->second.effects.size() - 1;
-    DBG("Loading effect: " + desc.name + " as \"" + effectName + "\" -> chain \"" + chainName + "\"");
+    perfLog("[Engine] Loading effect: %s as \"%s\" -> chain \"%s\"\n",
+            desc.name.toRawUTF8(), effectName.toRawUTF8(), chainName.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
         [this, chainName, effectIndex, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
                                               const juce::String& error) {
-            if (!instance) { DBG("Failed to load: " + error); return; }
+            if (!instance) {
+                perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
+                return;
+            }
             auto it = chains.find(chainName);
             if (it == chains.end()) return;
             if (effectIndex >= it->second.effects.size()) return;
             it->second.effects[effectIndex].node = graph->addNode(std::move(instance));
             rebuildConnections();
-            DBG("Loaded effect: " + desc.name + " as \"" +
-                it->second.effects[effectIndex].name + "\" in chain \"" + chainName + "\"");
+            perfLog("[Engine] Loaded effect: %s as \"%s\" in chain \"%s\"\n",
+                    desc.name.toRawUTF8(), it->second.effects[effectIndex].name.toRawUTF8(),
+                    chainName.toRawUTF8());
         });
 
     return true;
@@ -351,16 +436,24 @@ void AudioEngine::rebuildConnections() {
     for (auto& [chainName, chain] : chains) {
         if (!chain.instrumentNode) continue;
 
-        // MIDI input -> instrument
-        graph->addConnection({
-            { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
-            { chain.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
-        });
+        auto* proc = chain.instrumentNode->getProcessor();
+        int numOut = proc->getTotalNumOutputChannels();
+        int numIn = proc->getTotalNumInputChannels();
+        perfLog("[Engine] Wiring chain \"%s\": %s (%d in, %d out, midi=%s)\n",
+                chainName.toRawUTF8(), proc->getName().toRawUTF8(),
+                numIn, numOut, chain.midiEnabled ? "on" : "off");
+
+        // MIDI input -> instrument (only if MIDI enabled)
+        if (chain.midiEnabled) {
+            graph->addConnection({
+                { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
+                { chain.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
+            });
+        }
 
         // Build the audio path: instrument -> effects -> output
         auto prevNodeId = chain.instrumentNode->nodeID;
-        int prevNumOut = std::min(
-            chain.instrumentNode->getProcessor()->getTotalNumOutputChannels(), 2);
+        int prevNumOut = std::min(numOut, 2);
 
         for (auto& fx : chain.effects) {
             if (!fx.node) continue;
@@ -417,6 +510,21 @@ void AudioEngine::openPluginEditor(const juce::String& chainName, const juce::St
     window->setVisible(true);
 
     editorWindows.push_back(std::move(window));
+}
+
+void AudioEngine::setChainMidiEnabled(const juce::String& chainName, bool enabled) {
+    auto it = chains.find(chainName);
+    if (it == chains.end()) return;
+    if (it->second.midiEnabled == enabled) return;
+    it->second.midiEnabled = enabled;
+    rebuildConnections();
+    perfLog("[Engine] MIDI %s for chain \"%s\"\n",
+            enabled ? "enabled" : "disabled", chainName.toRawUTF8());
+}
+
+bool AudioEngine::isChainMidiEnabled(const juce::String& chainName) const {
+    auto it = chains.find(chainName);
+    return it != chains.end() && it->second.midiEnabled;
 }
 
 void AudioEngine::injectMidi(const juce::MidiMessage& message) {

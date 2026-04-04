@@ -33,6 +33,10 @@ public:
     // Plugin editor windows
     void openPluginEditor(const juce::String& chainName, const juce::String& effectName = "");
 
+    // Per-chain MIDI routing
+    void setChainMidiEnabled(const juce::String& chainName, bool enabled);
+    bool isChainMidiEnabled(const juce::String& chainName) const;
+
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);
 
@@ -56,6 +60,7 @@ private:
     struct InstrumentChain {
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
+        bool midiEnabled = true;
         struct EffectNode {
             juce::String name;
             juce::AudioProcessorGraph::Node::Ptr node;
@@ -80,4 +85,6 @@ private:
     void setupGraph();
     void rebuildConnections();
     juce::PluginDescription findPluginDescription(const juce::String& pluginName);
+    bool loadPluginCache();
+    void savePluginCache();
 };
