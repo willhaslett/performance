@@ -286,6 +286,69 @@ void PerformanceAPI::unloadSong() {
     songRuntime->unload();
 }
 
+SongDef PerformanceAPI::getCurrentSongDef() const {
+    SongDef song;
+    song.name = songRuntime->getSongName();
+
+    for (auto& trackName : audioEngine->getTrackNames()) {
+        TrackDef t;
+        t.name = trackName;
+        t.pluginName = audioEngine->getTrackPluginName(trackName);
+        t.outputGain = audioEngine->getTrackGain(trackName);
+        t.midiEnabled = audioEngine->isTrackMidiEnabled(trackName);
+
+        for (auto& fx : audioEngine->getTrackEffects(trackName))
+            t.effects.push_back({ fx.name, fx.pluginName, {} });
+
+        for (auto& send : audioEngine->getTrackSends(trackName))
+            t.sends.push_back({ send.busName, send.gain });
+
+        song.tracks.push_back(std::move(t));
+    }
+
+    for (auto& busName : audioEngine->getBusNames()) {
+        BusDef b;
+        b.name = busName;
+        b.outputGain = audioEngine->getBusGain(busName);
+
+        for (auto& fx : audioEngine->getBusEffects(busName))
+            b.effects.push_back({ fx.name, fx.pluginName, {} });
+
+        song.busses.push_back(std::move(b));
+    }
+
+    return song;
+}
+
+void PerformanceAPI::saveSongToFile(const juce::String& name) {
+    auto song = getCurrentSongDef();
+    song.name = name;
+
+    // Auto-save snapshots for each plugin, using the song name as prefix
+    for (auto& trackName : audioEngine->getTrackNames()) {
+        auto* proc = audioEngine->getTrackInstrumentProcessor(trackName);
+        if (!proc) continue;
+
+        auto snapshotName = name + "_" + trackName;
+        saveSnapshot(trackName, snapshotName);
+
+        // Find and update the track's snapshot name in the song def
+        for (auto& t : song.tracks) {
+            if (t.name == trackName)
+                t.snapshotName = snapshotName;
+        }
+    }
+
+    // Save JSON
+    auto songsDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                        .getChildFile(".config/performance/songs");
+    songsDir.createDirectory();
+    auto file = songsDir.getChildFile(name + ".json");
+    file.replaceWithText(song.toJson());
+
+    perfLog("[API] Saved song \"%s\" to %s\n", name.toRawUTF8(), file.getFullPathName().toRawUTF8());
+}
+
 bool PerformanceAPI::isSongLoaded() const {
     return songRuntime->isLoaded();
 }

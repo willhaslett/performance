@@ -82,8 +82,12 @@ public:
     // --- Song management ---
     void loadSong(const SongDef& song);
     void unloadSong();
+    void saveSongToFile(const juce::String& name);  // saves current state as JSON
     bool isSongLoaded() const;
     juce::String getSongName() const;
+
+    // Query current state as a SongDef (for serialization)
+    SongDef getCurrentSongDef() const;
 
     // --- Query ---
     std::vector<juce::String> listPlugins() const;

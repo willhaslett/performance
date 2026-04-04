@@ -704,6 +704,71 @@ void AudioEngine::rebuildConnections() {
 
 // --- Processor access ---
 
+// --- Query current state ---
+
+std::vector<juce::String> AudioEngine::getTrackNames() const {
+    std::vector<juce::String> names;
+    for (auto& [name, _] : tracks) names.push_back(name);
+    return names;
+}
+
+std::vector<juce::String> AudioEngine::getBusNames() const {
+    std::vector<juce::String> names;
+    for (auto& [name, _] : busses) names.push_back(name);
+    return names;
+}
+
+juce::String AudioEngine::getTrackPluginName(const juce::String& trackName) const {
+    auto it = tracks.find(trackName);
+    return (it != tracks.end()) ? it->second.instrumentPluginName : juce::String();
+}
+
+bool AudioEngine::isTrackMidiEnabled(const juce::String& trackName) const {
+    auto it = tracks.find(trackName);
+    return it != tracks.end() && it->second.midiEnabled;
+}
+
+std::vector<AudioEngine::EffectInfo> AudioEngine::getTrackEffects(const juce::String& trackName) const {
+    std::vector<EffectInfo> result;
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return result;
+    for (auto& fx : it->second.effects)
+        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+    return result;
+}
+
+std::vector<AudioEngine::EffectInfo> AudioEngine::getBusEffects(const juce::String& busName) const {
+    std::vector<EffectInfo> result;
+    auto it = busses.find(busName);
+    if (it == busses.end()) return result;
+    for (auto& fx : it->second.effects)
+        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+    return result;
+}
+
+std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String& trackName) const {
+    std::vector<SendInfo> result;
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return result;
+    for (auto& send : it->second.sends) {
+        float gain = 1.0f;
+        if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor()))
+            gain = proc->getGain();
+        result.push_back({ send.busName, gain });
+    }
+    return result;
+}
+
+float AudioEngine::getBusGain(const juce::String& busName) const {
+    auto it = busses.find(busName);
+    if (it == busses.end()) return 0.0f;
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return proc->getGain();
+    return 0.0f;
+}
+
+// --- Processor access ---
+
 juce::AudioProcessor* AudioEngine::getTrackInstrumentProcessor(const juce::String& trackName) const {
     auto it = tracks.find(trackName);
     if (it != tracks.end() && it->second.instrumentNode)
