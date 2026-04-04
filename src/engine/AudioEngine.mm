@@ -36,7 +36,7 @@ void AudioEngine::shutdown() {
     deviceManager.removeAudioCallback(player.get());
     player->setProcessor(nullptr);
     graph->clear();
-    chainNodes.clear();
+    chains.clear();
 }
 
 void AudioEngine::setupGraph() {
@@ -241,91 +241,167 @@ void AudioEngine::listAvailablePlugins() const {
         DBG("  [3p]     " + info.name);
 }
 
-// --- Plugin loading and chain management ---
+// --- Chain management ---
 
-bool AudioEngine::loadPlugin(const juce::String& pluginName, bool isInstrument) {
+void AudioEngine::createChain(const juce::String& chainName) {
+    chains[chainName] = {};
+    DBG("Created chain: " + chainName);
+}
+
+bool AudioEngine::addInstrument(const juce::String& chainName, const juce::String& pluginName) {
+    auto it = chains.find(chainName);
+    if (it == chains.end()) {
+        DBG("Chain not found: " + chainName);
+        return false;
+    }
+
     auto desc = findPluginDescription(pluginName);
     if (desc.name.isEmpty()) {
         DBG("Plugin not found: " + pluginName);
         return false;
     }
 
-    DBG("Loading: " + desc.name);
+    it->second.instrumentPluginName = pluginName;
+    DBG("Loading instrument: " + desc.name + " -> chain \"" + chainName + "\"");
 
     formatManager.createPluginInstanceAsync(
-        desc,
-        graph->getSampleRate(),
-        graph->getBlockSize(),
-        [this, desc, isInstrument](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                    const juce::String& errorMessage) {
-            if (!instance) {
-                DBG("Failed to load plugin: " + errorMessage);
-                return;
-            }
-
-            auto node = graph->addNode(std::move(instance));
-            chainNodes.push_back({ desc.name, node });
+        desc, graph->getSampleRate(), graph->getBlockSize(),
+        [this, chainName, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                 const juce::String& error) {
+            if (!instance) { DBG("Failed to load: " + error); return; }
+            auto it = chains.find(chainName);
+            if (it == chains.end()) return;
+            it->second.instrumentNode = graph->addNode(std::move(instance));
             rebuildConnections();
-            DBG("Loaded: " + desc.name + " (chain position " + juce::String(chainNodes.size() - 1) + ")");
+            DBG("Loaded instrument: " + desc.name + " in chain \"" + chainName + "\"");
         });
 
     return true;
 }
 
-bool AudioEngine::loadInstrument(const juce::String& pluginName) {
-    return loadPlugin(pluginName, true);
+bool AudioEngine::addEffect(const juce::String& chainName, const juce::String& effectName,
+                              const juce::String& pluginName) {
+    auto it = chains.find(chainName);
+    if (it == chains.end()) {
+        DBG("Chain not found: " + chainName);
+        return false;
+    }
+
+    auto desc = findPluginDescription(pluginName);
+    if (desc.name.isEmpty()) {
+        DBG("Plugin not found: " + pluginName);
+        return false;
+    }
+
+    it->second.effects.push_back({ effectName, nullptr });
+    auto effectIndex = it->second.effects.size() - 1;
+    DBG("Loading effect: " + desc.name + " as \"" + effectName + "\" -> chain \"" + chainName + "\"");
+
+    formatManager.createPluginInstanceAsync(
+        desc, graph->getSampleRate(), graph->getBlockSize(),
+        [this, chainName, effectIndex, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                              const juce::String& error) {
+            if (!instance) { DBG("Failed to load: " + error); return; }
+            auto it = chains.find(chainName);
+            if (it == chains.end()) return;
+            if (effectIndex >= it->second.effects.size()) return;
+            it->second.effects[effectIndex].node = graph->addNode(std::move(instance));
+            rebuildConnections();
+            DBG("Loaded effect: " + desc.name + " as \"" +
+                it->second.effects[effectIndex].name + "\" in chain \"" + chainName + "\"");
+        });
+
+    return true;
 }
 
-bool AudioEngine::loadEffect(const juce::String& pluginName) {
-    return loadPlugin(pluginName, false);
+void AudioEngine::removeChain(const juce::String& chainName) {
+    auto it = chains.find(chainName);
+    if (it == chains.end()) return;
+
+    if (it->second.instrumentNode)
+        graph->removeNode(it->second.instrumentNode->nodeID);
+    for (auto& fx : it->second.effects) {
+        if (fx.node)
+            graph->removeNode(fx.node->nodeID);
+    }
+
+    chains.erase(it);
+    rebuildConnections();
+    DBG("Removed chain: " + chainName);
 }
 
-void AudioEngine::clearChain() {
+void AudioEngine::clearAllChains() {
     editorWindows.clear();
-    for (auto& cn : chainNodes)
-        graph->removeNode(cn.node->nodeID);
-    chainNodes.clear();
+    for (auto& [name, chain] : chains) {
+        if (chain.instrumentNode)
+            graph->removeNode(chain.instrumentNode->nodeID);
+        for (auto& fx : chain.effects) {
+            if (fx.node)
+                graph->removeNode(fx.node->nodeID);
+        }
+    }
+    chains.clear();
+    rebuildConnections();
 }
 
 void AudioEngine::rebuildConnections() {
-    // Remove all existing connections
     for (auto& conn : graph->getConnections())
         graph->removeConnection(conn);
 
-    if (chainNodes.empty()) return;
+    for (auto& [chainName, chain] : chains) {
+        if (!chain.instrumentNode) continue;
 
-    // MIDI input -> first node (instrument)
-    graph->addConnection({
-        { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
-        { chainNodes[0].node->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
-    });
+        // MIDI input -> instrument
+        graph->addConnection({
+            { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
+            { chain.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
+        });
 
-    // Chain audio: node[0] -> node[1] -> ... -> output
-    for (size_t i = 0; i < chainNodes.size(); ++i) {
-        auto fromId = chainNodes[i].node->nodeID;
-        auto toId = (i + 1 < chainNodes.size())
-            ? chainNodes[i + 1].node->nodeID
-            : audioOutputNodeId;
+        // Build the audio path: instrument -> effects -> output
+        auto prevNodeId = chain.instrumentNode->nodeID;
+        int prevNumOut = std::min(
+            chain.instrumentNode->getProcessor()->getTotalNumOutputChannels(), 2);
 
-        auto numOut = std::min(
-            chainNodes[i].node->getProcessor()->getTotalNumOutputChannels(), 2);
+        for (auto& fx : chain.effects) {
+            if (!fx.node) continue;
+            for (int ch = 0; ch < prevNumOut; ++ch)
+                graph->addConnection({ { prevNodeId, ch }, { fx.node->nodeID, ch } });
+            prevNodeId = fx.node->nodeID;
+            prevNumOut = std::min(fx.node->getProcessor()->getTotalNumOutputChannels(), 2);
+        }
 
-        for (int ch = 0; ch < numOut; ++ch)
-            graph->addConnection({ { fromId, ch }, { toId, ch } });
+        // Last node -> audio output
+        for (int ch = 0; ch < prevNumOut; ++ch)
+            graph->addConnection({ { prevNodeId, ch }, { audioOutputNodeId, ch } });
     }
 }
 
-juce::AudioProcessor* AudioEngine::getLoadedProcessor(int index) const {
-    if (index >= 0 && index < (int)chainNodes.size())
-        return chainNodes[index].node->getProcessor();
+juce::AudioProcessor* AudioEngine::getInstrumentProcessor(const juce::String& chainName) const {
+    auto it = chains.find(chainName);
+    if (it != chains.end() && it->second.instrumentNode)
+        return it->second.instrumentNode->getProcessor();
     return nullptr;
 }
 
-void AudioEngine::openPluginEditor(int index) {
-    if (index < 0 || index >= (int)chainNodes.size()) return;
+juce::AudioProcessor* AudioEngine::getEffectProcessor(const juce::String& chainName,
+                                                        const juce::String& effectName) const {
+    auto it = chains.find(chainName);
+    if (it == chains.end()) return nullptr;
+    for (auto& fx : it->second.effects) {
+        if (fx.name == effectName && fx.node)
+            return fx.node->getProcessor();
+    }
+    return nullptr;
+}
 
-    auto* processor = chainNodes[index].node->getProcessor();
-    if (!processor->hasEditor()) return;
+void AudioEngine::openPluginEditor(const juce::String& chainName, const juce::String& effectName) {
+    juce::AudioProcessor* processor = nullptr;
+    if (effectName.isEmpty())
+        processor = getInstrumentProcessor(chainName);
+    else
+        processor = getEffectProcessor(chainName, effectName);
+
+    if (!processor || !processor->hasEditor()) return;
 
     auto* editor = processor->createEditor();
     if (!editor) return;

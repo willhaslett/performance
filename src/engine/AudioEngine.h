@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <AudioToolbox/AudioToolbox.h>
+#include <map>
 
 class AudioEngine {
 public:
@@ -12,19 +13,25 @@ public:
     void initialise();
     void shutdown();
 
-    // Plugin management
+    // Plugin scanning
     void scanForPlugins();
     void scanComponentDirectory(const juce::File& directory);
     bool registerComponent(const juce::String& pluginName);
     void listAvailablePlugins() const;
-    bool loadInstrument(const juce::String& pluginName);
-    bool loadEffect(const juce::String& pluginName);
-    void openPluginEditor(int index = 0);
-    void clearChain();
 
-    // Access loaded processors
-    juce::AudioProcessor* getLoadedProcessor(int index = 0) const;
-    int getLoadedProcessorCount() const { return (int)chainNodes.size(); }
+    // Chain management — each chain is a named instrument + optional effects
+    void createChain(const juce::String& chainName);
+    bool addInstrument(const juce::String& chainName, const juce::String& pluginName);
+    bool addEffect(const juce::String& chainName, const juce::String& effectName, const juce::String& pluginName);
+    void removeChain(const juce::String& chainName);
+    void clearAllChains();
+
+    // Access loaded processors by name
+    juce::AudioProcessor* getInstrumentProcessor(const juce::String& chainName) const;
+    juce::AudioProcessor* getEffectProcessor(const juce::String& chainName, const juce::String& effectName) const;
+
+    // Plugin editor windows
+    void openPluginEditor(const juce::String& chainName, const juce::String& effectName = "");
 
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);
@@ -45,12 +52,17 @@ private:
     juce::AudioProcessorGraph::NodeID midiInputNodeId;
     juce::AudioProcessorGraph::NodeID audioOutputNodeId;
 
-    // Signal chain: instrument -> [effect, effect, ...] -> output
-    struct ChainNode {
-        juce::String name;
-        juce::AudioProcessorGraph::Node::Ptr node;
+    // Named instrument chains
+    struct InstrumentChain {
+        juce::String instrumentPluginName;
+        juce::AudioProcessorGraph::Node::Ptr instrumentNode;
+        struct EffectNode {
+            juce::String name;
+            juce::AudioProcessorGraph::Node::Ptr node;
+        };
+        std::vector<EffectNode> effects;
     };
-    std::vector<ChainNode> chainNodes;
+    std::map<juce::String, InstrumentChain> chains;
 
     // Plugin editor windows
     std::vector<std::unique_ptr<juce::DocumentWindow>> editorWindows;
@@ -67,6 +79,5 @@ private:
 
     void setupGraph();
     void rebuildConnections();
-    bool loadPlugin(const juce::String& pluginName, bool isInstrument);
     juce::PluginDescription findPluginDescription(const juce::String& pluginName);
 };

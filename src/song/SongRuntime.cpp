@@ -9,18 +9,11 @@ void SongRuntime::load(const SongDef& song) {
     songName = song.name;
     DBG("Loading song: " + songName);
 
-    // Load instruments and their effect chains
-    int instrumentsLoaded = 0;
     for (auto& inst : song.instruments) {
-        DBG("  Instrument: " + inst.name + " (" + inst.pluginName + ")");
-        if (engine.loadInstrument(inst.pluginName)) {
-            instrumentsLoaded++;
-
-            for (auto& fx : inst.effects) {
-                DBG("    Effect: " + fx.name + " (" + fx.pluginName + ")");
-                engine.loadEffect(fx.pluginName);
-            }
-        }
+        engine.createChain(inst.name);
+        engine.addInstrument(inst.name, inst.pluginName);
+        for (auto& fx : inst.effects)
+            engine.addEffect(inst.name, fx.name, fx.pluginName);
     }
 
     // Build control map
@@ -31,11 +24,12 @@ void SongRuntime::load(const SongDef& song) {
     }
 
     loaded = true;
-    DBG("Song loaded: " + songName + " (" + juce::String(instrumentsLoaded) + " instruments, " +
+    DBG("Song loaded: " + songName + " (" + juce::String(song.instruments.size()) + " instruments, " +
         juce::String(song.bindings.size()) + " bindings)");
 }
 
 void SongRuntime::unload() {
+    engine.clearAllChains();
     controlMap.clear();
     loaded = false;
     songName = "";
@@ -84,8 +78,12 @@ void SongRuntime::handlePressure(int channel, int value) {
 juce::AudioProcessorParameter* SongRuntime::findParam(const juce::String& instrumentName,
                                                         const juce::String& effectName,
                                                         const juce::String& paramName) {
-    // For now, search the currently loaded instrument's parameters
-    auto* processor = engine.getLoadedProcessor();
+    juce::AudioProcessor* processor = nullptr;
+    if (effectName.isEmpty())
+        processor = engine.getInstrumentProcessor(instrumentName);
+    else
+        processor = engine.getEffectProcessor(instrumentName, effectName);
+
     if (!processor) return nullptr;
 
     for (auto* param : processor->getParameters()) {

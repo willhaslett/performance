@@ -31,10 +31,10 @@ A code-first runtime for live music performance on macOS. Solo performer, center
 ### Major Components
 
 **Implemented:**
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE-based plugin hosting, linear signal chain (instrument → effects → output), plugin editor windows, third-party AU registration
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE-based plugin hosting, named instrument chains (instrument → effects → output), plugin editor windows, third-party AU registration. Multiple chains mix to output in parallel. API: `createChain`, `addInstrument`, `addEffect`, `removeChain`, `clearAllChains`, `getInstrumentProcessor`, `getEffectProcessor`, `openPluginEditor` — all by name. Plugin loading is async via `createPluginInstanceAsync`; `rebuildConnections` handles partially-loaded chains gracefully.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events (CC, pitch bend, pressure) to SongRuntime
 - **SongDef** (`src/song/Song.h`) — declarative song definition: instruments, effect chains, control bindings with handler functions. MIDIControl struct identifies controls (CC/Note/PitchBend/Pressure). ControlHandler is `std::function<void(float)>` with 0-1 normalized value.
-- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — loads a SongDef, instantiates plugins via AudioEngine, builds control dispatch map, routes MIDI control events to bound handlers. Supports wildcard channel matching (channel 0 = any).
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — loads a SongDef, creates named chains via AudioEngine, builds control dispatch map, routes MIDI control events to bound handlers. `findParam` looks up by instrument/effect name. Supports wildcard channel matching (channel 0 = any).
 
 **Not yet implemented:**
 - **EventBus** — typed event dispatch (MIDI input + internal events like transition-complete, clock tick)
@@ -74,7 +74,8 @@ Bundles are kept alive for the process lifetime. This is transparent to the rest
 - Song model: SongDef, SongRuntime, MIDIEngine control dispatch all wired up
 
 **Current state / next steps:**
-- `main.cpp` still uses the old command-line plugin loading path — not yet loading a SongDef
-- `SongRuntime::findParam` is basic (searches single loaded processor by name) — needs to support multi-instrument lookup by instrument/effect name
-- AudioEngine has a single linear chain — needs multi-instrument support (multiple parallel chains) to match SongDef's multi-instrument model
+- `main.cpp` loads a test SongDef with one DLSMusicDevice instrument — verified working
+- Multi-instrument AudioEngine is implemented but not yet tested with multiple instruments
+- MIDI routing: currently all note MIDI goes to all instruments. Need per-chain MIDI enable/disable for instrument selection (e.g., pad switches active instrument).
 - No actual song definitions written yet — need a first real song to exercise the full path
+- EventBus, Scheduler, ControlMap not yet started

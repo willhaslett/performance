@@ -28,7 +28,7 @@ public:
     const juce::String getApplicationName() override { return "Performance"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
 
-    void initialise(const juce::String& commandLine) override {
+    void initialise(const juce::String&) override {
         mainWindow = std::make_unique<MainWindow>();
 
         audioEngine = std::make_unique<AudioEngine>();
@@ -42,16 +42,14 @@ public:
         midiEngine->setMonitorMode(true);
         midiEngine->initialise();
 
-        DBG("");
-        DBG("MIDI monitor active. Move controls to see CC numbers.");
-        DBG("Pass a plugin name to load: ./Performance \"DLSMusicDevice\"");
+        // Load a test song with the built-in DLS synth
+        SongDef song;
+        song.name = "Test Song";
+        song.addInstrument("Keys", "DLSMusicDevice");
 
-        if (commandLine.isNotEmpty()) {
-            pluginToLoad = commandLine;
-            juce::Timer::callAfterDelay(100, [this] {
-                audioEngine->loadInstrument(pluginToLoad);
-            });
-        }
+        juce::Timer::callAfterDelay(100, [this, song] {
+            songRuntime->load(song);
+        });
     }
 
     void shutdown() override {
@@ -70,7 +68,6 @@ private:
     std::unique_ptr<AudioEngine> audioEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
-    juce::String pluginToLoad;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)
