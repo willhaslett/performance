@@ -48,26 +48,33 @@ public:
         midiEngine->initialise();
         perfLog("[App] MIDIEngine initialised\n");
 
-        // Two-instrument test: Keyscape + Massive X
-        // Channel 10 note events switch which instrument receives MIDI
+        // Test song: Keyscape + Massive X with a shared reverb bus
         SongDef song;
-        song.name = "Two Instruments";
-        song.addInstrument("Keys", "Keyscape");
-        song.addInstrument("Synth", "Massive X");
+        song.name = "Two Instruments + Reverb Bus";
+
+        auto& keys = song.addTrack("Keys", "Keyscape");
+        keys.sends.push_back({ "Reverb", 0.3f });
+
+        auto& synth = song.addTrack("Synth", "Massive X");
+        synth.midiEnabled = false;
+        synth.sends.push_back({ "Reverb", 0.5f });
+
+        auto& reverbBus = song.addBus("Reverb");
+        reverbBus.addEffect("Hall", "Raum");
 
         // Pad 1 (note 36, ch10) -> activate Keys
         song.bind({ MIDIControl::Note, 10, 36 }, [this](float value) {
-            if (value == 0.0f) return;  // ignore note-off
-            audioEngine->setChainMidiEnabled("Keys", true);
-            audioEngine->setChainMidiEnabled("Synth", false);
+            if (value == 0.0f) return;
+            audioEngine->setTrackMidiEnabled("Keys", true);
+            audioEngine->setTrackMidiEnabled("Synth", false);
             perfLog("[Song] Switched to Keys\n");
         }, "Pad 1 -> Keys");
 
         // Pad 2 (note 37, ch10) -> activate Synth
         song.bind({ MIDIControl::Note, 10, 37 }, [this](float value) {
             if (value == 0.0f) return;
-            audioEngine->setChainMidiEnabled("Keys", false);
-            audioEngine->setChainMidiEnabled("Synth", true);
+            audioEngine->setTrackMidiEnabled("Keys", false);
+            audioEngine->setTrackMidiEnabled("Synth", true);
             perfLog("[Song] Switched to Synth\n");
         }, "Pad 2 -> Synth");
 

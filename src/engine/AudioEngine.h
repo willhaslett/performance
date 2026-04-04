@@ -3,7 +3,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <AudioToolbox/AudioToolbox.h>
+#include <functional>
 #include <map>
+
+class GainProcessor;
 
 class AudioEngine {
 public:
@@ -13,32 +16,45 @@ public:
     void initialise();
     void shutdown();
 
-    // Plugin scanning
+    // Plugin scanning + cache
     void scanForPlugins();
     void scanComponentDirectory(const juce::File& directory);
     bool registerComponent(const juce::String& pluginName);
     void listAvailablePlugins() const;
+    bool loadPluginCache();
+    void savePluginCache();
 
-    // Chain management — each chain is a named instrument + optional effects
+    // Track management
     using LoadCallback = std::function<void()>;
-    void createChain(const juce::String& chainName);
-    bool addInstrument(const juce::String& chainName, const juce::String& pluginName,
-                       LoadCallback onLoaded = nullptr);
-    bool addEffect(const juce::String& chainName, const juce::String& effectName,
-                   const juce::String& pluginName, LoadCallback onLoaded = nullptr);
-    void removeChain(const juce::String& chainName);
-    void clearAllChains();
+    void createTrack(const juce::String& trackName);
+    void removeTrack(const juce::String& trackName);
+    bool addTrackInstrument(const juce::String& trackName, const juce::String& pluginName,
+                            LoadCallback onLoaded = nullptr);
+    bool addTrackEffect(const juce::String& trackName, const juce::String& effectName,
+                        const juce::String& pluginName, LoadCallback onLoaded = nullptr);
+    void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
+    void setTrackGain(const juce::String& trackName, float gain);
+    void clearAllTracks();
+
+    // Bus management
+    void createBus(const juce::String& busName);
+    void removeBus(const juce::String& busName);
+    bool addBusEffect(const juce::String& busName, const juce::String& effectName,
+                      const juce::String& pluginName, LoadCallback onLoaded = nullptr);
+    void setBusGain(const juce::String& busName, float gain);
+    void clearAllBusses();
+
+    // Sends
+    void addSend(const juce::String& trackName, const juce::String& busName, float gain = 1.0f);
+    void setSendGain(const juce::String& trackName, const juce::String& busName, float gain);
 
     // Access loaded processors by name
-    juce::AudioProcessor* getInstrumentProcessor(const juce::String& chainName) const;
-    juce::AudioProcessor* getEffectProcessor(const juce::String& chainName, const juce::String& effectName) const;
+    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackName) const;
+    juce::AudioProcessor* getTrackEffectProcessor(const juce::String& trackName,
+                                                   const juce::String& effectName) const;
 
     // Plugin editor windows
-    void openPluginEditor(const juce::String& chainName, const juce::String& effectName = "");
-
-    // Per-chain MIDI routing
-    void setChainMidiEnabled(const juce::String& chainName, bool enabled);
-    bool isChainMidiEnabled(const juce::String& chainName) const;
+    void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
 
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);
@@ -59,18 +75,39 @@ private:
     juce::AudioProcessorGraph::NodeID midiInputNodeId;
     juce::AudioProcessorGraph::NodeID audioOutputNodeId;
 
-    // Named instrument chains
-    struct InstrumentChain {
+    // Track: one instrument + insert effects + sends + output gain
+    struct Track {
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
         bool midiEnabled = true;
+
         struct EffectNode {
             juce::String name;
             juce::AudioProcessorGraph::Node::Ptr node;
         };
         std::vector<EffectNode> effects;
+
+        struct SendNode {
+            juce::String busName;
+            juce::AudioProcessorGraph::Node::Ptr gainNode;  // GainProcessor
+        };
+        std::vector<SendNode> sends;
+
+        juce::AudioProcessorGraph::Node::Ptr outputGainNode;  // GainProcessor
     };
-    std::map<juce::String, InstrumentChain> chains;
+    std::map<juce::String, Track> tracks;
+
+    // Bus: effects chain + output gain
+    struct Bus {
+        struct EffectNode {
+            juce::String name;
+            juce::AudioProcessorGraph::Node::Ptr node;
+        };
+        std::vector<EffectNode> effects;
+
+        juce::AudioProcessorGraph::Node::Ptr outputGainNode;  // GainProcessor
+    };
+    std::map<juce::String, Bus> busses;
 
     // Plugin editor windows
     std::vector<std::unique_ptr<juce::DocumentWindow>> editorWindows;
@@ -88,6 +125,4 @@ private:
     void setupGraph();
     void rebuildConnections();
     juce::PluginDescription findPluginDescription(const juce::String& pluginName);
-    bool loadPluginCache();
-    void savePluginCache();
 };

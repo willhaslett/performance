@@ -10,14 +10,33 @@ void SongRuntime::load(const SongDef& song) {
     songName = song.name;
     perfLog("[Song] Loading song: %s\n", songName.toRawUTF8());
 
-    for (auto& inst : song.instruments) {
-        engine.createChain(inst.name);
-        auto chainName = inst.name;
-        engine.addInstrument(inst.name, inst.pluginName, [this, chainName] {
-            engine.openPluginEditor(chainName);
+    // Create busses first so sends can reference them
+    for (auto& busDef : song.busses) {
+        engine.createBus(busDef.name);
+        for (auto& fx : busDef.effects)
+            engine.addBusEffect(busDef.name, fx.name, fx.pluginName);
+        engine.setBusGain(busDef.name, busDef.outputGain);
+    }
+
+    // Create tracks
+    for (auto& trackDef : song.tracks) {
+        engine.createTrack(trackDef.name);
+
+        auto trackName = trackDef.name;
+        engine.addTrackInstrument(trackDef.name, trackDef.pluginName, [this, trackName] {
+            engine.openPluginEditor(trackName);
         });
-        for (auto& fx : inst.effects)
-            engine.addEffect(inst.name, fx.name, fx.pluginName);
+
+        for (auto& fx : trackDef.effects)
+            engine.addTrackEffect(trackDef.name, fx.name, fx.pluginName);
+
+        for (auto& send : trackDef.sends)
+            engine.addSend(trackDef.name, send.busName, send.gain);
+
+        engine.setTrackGain(trackDef.name, trackDef.outputGain);
+
+        if (!trackDef.midiEnabled)
+            engine.setTrackMidiEnabled(trackDef.name, false);
     }
 
     // Build control map
@@ -29,26 +48,26 @@ void SongRuntime::load(const SongDef& song) {
     }
 
     loaded = true;
-    perfLog("[Song] Song loaded: %s (%d instruments, %d bindings)\n",
-            songName.toRawUTF8(), (int)song.instruments.size(), (int)song.bindings.size());
+    perfLog("[Song] Song loaded: %s (%d tracks, %d busses, %d bindings)\n",
+            songName.toRawUTF8(), (int)song.tracks.size(),
+            (int)song.busses.size(), (int)song.bindings.size());
 }
 
 void SongRuntime::unload() {
-    engine.clearAllChains();
+    engine.clearAllTracks();
+    engine.clearAllBusses();
     controlMap.clear();
     loaded = false;
     songName = "";
 }
 
 void SongRuntime::dispatchControl(const MIDIControl& control, float value) {
-    // Try exact match (with channel)
     auto it = controlMap.find(control);
     if (it != controlMap.end()) {
         for (auto& handler : it->second)
             handler(value);
     }
 
-    // Try wildcard channel (channel 0 = any)
     if (control.channel != 0) {
         MIDIControl wildcard = control;
         wildcard.channel = 0;
@@ -80,14 +99,14 @@ void SongRuntime::handlePressure(int channel, int value) {
     dispatchControl({ MIDIControl::Pressure, channel, 0 }, value / 127.0f);
 }
 
-juce::AudioProcessorParameter* SongRuntime::findParam(const juce::String& instrumentName,
+juce::AudioProcessorParameter* SongRuntime::findParam(const juce::String& trackName,
                                                         const juce::String& effectName,
                                                         const juce::String& paramName) {
     juce::AudioProcessor* processor = nullptr;
     if (effectName.isEmpty())
-        processor = engine.getInstrumentProcessor(instrumentName);
+        processor = engine.getTrackInstrumentProcessor(trackName);
     else
-        processor = engine.getEffectProcessor(instrumentName, effectName);
+        processor = engine.getTrackEffectProcessor(trackName, effectName);
 
     if (!processor) return nullptr;
 

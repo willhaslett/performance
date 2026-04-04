@@ -10,7 +10,7 @@ class SongRuntime {
 public:
     SongRuntime(AudioEngine& engine);
 
-    // Load a song definition — instantiates plugins, builds chains, activates bindings
+    // Load a song definition — instantiates plugins, builds tracks/busses, activates bindings
     void load(const SongDef& song);
 
     // Unload current song
@@ -23,9 +23,8 @@ public:
     void handlePitchBend(int channel, int value);
     void handlePressure(int channel, int value);
 
-    // Access a loaded plugin's parameter by instrument/effect name and param name
-    // Returns nullptr if not found
-    juce::AudioProcessorParameter* findParam(const juce::String& instrumentName,
+    // Access a loaded plugin's parameter by track/effect name and param name
+    juce::AudioProcessorParameter* findParam(const juce::String& trackName,
                                               const juce::String& effectName,
                                               const juce::String& paramName);
 
