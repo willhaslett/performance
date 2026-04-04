@@ -15,6 +15,7 @@ juce_add_gui_app(Performance
 
 target_sources(Performance PRIVATE
     src/main.cpp
+    src/api/PerformanceAPI.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
     src/engine/Log.cpp

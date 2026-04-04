@@ -61,6 +61,21 @@ void SongRuntime::unload() {
     songName = "";
 }
 
+void SongRuntime::addBinding(const MIDIControl& control, ControlHandler handler,
+                              const juce::String& description) {
+    controlMap[control].push_back(std::move(handler));
+    perfLog("[Song] Binding added: %s%s\n", control.toString().toRawUTF8(),
+            description.isNotEmpty() ? (" -> " + description).toRawUTF8() : "");
+}
+
+void SongRuntime::removeBinding(const MIDIControl& control) {
+    controlMap.erase(control);
+}
+
+void SongRuntime::clearBindings() {
+    controlMap.clear();
+}
+
 void SongRuntime::dispatchControl(const MIDIControl& control, float value) {
     auto it = controlMap.find(control);
     if (it != controlMap.end()) {

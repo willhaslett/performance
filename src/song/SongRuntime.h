@@ -28,6 +28,12 @@ public:
                                               const juce::String& effectName,
                                               const juce::String& paramName);
 
+    // Direct binding management (used by API layer)
+    void addBinding(const MIDIControl& control, ControlHandler handler,
+                    const juce::String& description = "");
+    void removeBinding(const MIDIControl& control);
+    void clearBindings();
+
     bool isLoaded() const { return loaded; }
     const juce::String& getSongName() const { return songName; }
 

@@ -1,9 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "engine/AudioEngine.h"
-#include "engine/MIDIEngine.h"
+#include "api/PerformanceAPI.h"
 #include "engine/Log.h"
-#include "song/Song.h"
-#include "song/SongRuntime.h"
 
 class MainWindow : public juce::DocumentWindow {
 public:
@@ -35,59 +32,45 @@ public:
         perfLog("[App] Starting Performance\n");
         mainWindow = std::make_unique<MainWindow>();
 
-        audioEngine = std::make_unique<AudioEngine>();
-        audioEngine->initialise();
-        perfLog("[App] AudioEngine initialised\n");
+        api = std::make_unique<PerformanceAPI>();
+        api->initialise();
 
-        songRuntime = std::make_unique<SongRuntime>(*audioEngine);
+        // Test song: two instruments + reverb bus, built entirely through the API
+        juce::Timer::callAfterDelay(100, [this] {
+            api->createBus("Reverb");
+            api->addBusEffect("Reverb", "Hall", "Raum");
 
-        midiEngine = std::make_unique<MIDIEngine>(
-            audioEngine->getDeviceManager(), *audioEngine);
-        midiEngine->setSongRuntime(songRuntime.get());
-        midiEngine->setMonitorMode(true);
-        midiEngine->initialise();
-        perfLog("[App] MIDIEngine initialised\n");
+            api->createTrack("Keys");
+            api->addInstrument("Keys", "Keyscape");
+            api->addSend("Keys", "Reverb", 0.3f);
 
-        // Test song: Keyscape + Massive X with a shared reverb bus
-        SongDef song;
-        song.name = "Two Instruments + Reverb Bus";
+            api->createTrack("Synth");
+            api->addInstrument("Synth", "Massive X");
+            api->setTrackMidiEnabled("Synth", false);
+            api->addSend("Synth", "Reverb", 0.5f);
 
-        auto& keys = song.addTrack("Keys", "Keyscape");
-        keys.sends.push_back({ "Reverb", 0.3f });
+            // Pad 1 (note 36, ch10) -> activate Keys
+            api->bind("note", 10, 36, [this](float value) {
+                if (value == 0.0f) return;
+                api->setTrackMidiEnabled("Keys", true);
+                api->setTrackMidiEnabled("Synth", false);
+                api->log("Switched to Keys");
+            }, "Pad 1 -> Keys");
 
-        auto& synth = song.addTrack("Synth", "Massive X");
-        synth.midiEnabled = false;
-        synth.sends.push_back({ "Reverb", 0.5f });
+            // Pad 2 (note 37, ch10) -> activate Synth
+            api->bind("note", 10, 37, [this](float value) {
+                if (value == 0.0f) return;
+                api->setTrackMidiEnabled("Keys", false);
+                api->setTrackMidiEnabled("Synth", true);
+                api->log("Switched to Synth");
+            }, "Pad 2 -> Synth");
 
-        auto& reverbBus = song.addBus("Reverb");
-        reverbBus.addEffect("Hall", "Raum");
-
-        // Pad 1 (note 36, ch10) -> activate Keys
-        song.bind({ MIDIControl::Note, 10, 36 }, [this](float value) {
-            if (value == 0.0f) return;
-            audioEngine->setTrackMidiEnabled("Keys", true);
-            audioEngine->setTrackMidiEnabled("Synth", false);
-            perfLog("[Song] Switched to Keys\n");
-        }, "Pad 1 -> Keys");
-
-        // Pad 2 (note 37, ch10) -> activate Synth
-        song.bind({ MIDIControl::Note, 10, 37 }, [this](float value) {
-            if (value == 0.0f) return;
-            audioEngine->setTrackMidiEnabled("Keys", false);
-            audioEngine->setTrackMidiEnabled("Synth", true);
-            perfLog("[Song] Switched to Synth\n");
-        }, "Pad 2 -> Synth");
-
-        juce::Timer::callAfterDelay(100, [this, song] {
-            perfLog("[App] Loading song: %s\n", song.name.toRawUTF8());
-            songRuntime->load(song);
+            api->log("Song loaded: Two Instruments + Reverb Bus");
         });
     }
 
     void shutdown() override {
-        songRuntime.reset();
-        midiEngine.reset();
-        audioEngine.reset();
+        api.reset();
         mainWindow.reset();
     }
 
@@ -97,9 +80,7 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
-    std::unique_ptr<AudioEngine> audioEngine;
-    std::unique_ptr<MIDIEngine> midiEngine;
-    std::unique_ptr<SongRuntime> songRuntime;
+    std::unique_ptr<PerformanceAPI> api;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)
