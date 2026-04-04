@@ -428,8 +428,27 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enable
     auto it = tracks.find(trackName);
     if (it == tracks.end()) return;
     if (it->second.midiEnabled == enabled) return;
+    if (!it->second.instrumentNode) return;
+
     it->second.midiEnabled = enabled;
-    rebuildConnections();
+
+    juce::AudioProcessorGraph::Connection midiConn = {
+        { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
+        { it->second.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
+    };
+
+    if (enabled) {
+        graph->addConnection(midiConn);
+    } else {
+        // Send all-notes-off before disconnecting MIDI
+        for (int ch = 1; ch <= 16; ++ch) {
+            auto msg = juce::MidiMessage::allNotesOff(ch);
+            msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
+            player->getMidiMessageCollector().addMessageToQueue(msg);
+        }
+        graph->removeConnection(midiConn);
+    }
+
     perfLog("[Engine] MIDI %s for track \"%s\"\n",
             enabled ? "enabled" : "disabled", trackName.toRawUTF8());
 }
@@ -570,15 +589,6 @@ void AudioEngine::setSendGain(const juce::String& trackName, const juce::String&
 // --- Graph wiring ---
 
 void AudioEngine::rebuildConnections() {
-    // Inject all-notes-off through the MIDI collector (thread-safe).
-    // These will reach instruments on the next audio callback before
-    // the connections are torn down.
-    for (int ch = 1; ch <= 16; ++ch) {
-        auto msg = juce::MidiMessage::allNotesOff(ch);
-        msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
-        player->getMidiMessageCollector().addMessageToQueue(msg);
-    }
-
     for (auto& conn : graph->getConnections())
         graph->removeConnection(conn);
 
