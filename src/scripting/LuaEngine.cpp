@@ -49,8 +49,10 @@ void LuaEngine::registerAPI() {
     lua.set_function("removeTrack", [this](const std::string& name) {
         api.removeTrack(juce::String(name));
     });
-    lua.set_function("addInstrument", [this](const std::string& track, const std::string& plugin) {
-        api.addInstrument(juce::String(track), juce::String(plugin));
+    lua.set_function("addInstrument", [this](const std::string& track, const std::string& plugin,
+                                              sol::optional<std::string> snapshot) {
+        api.addInstrument(juce::String(track), juce::String(plugin),
+                          juce::String(snapshot.value_or("")));
     });
     lua.set_function("addTrackEffect", [this](const std::string& track, const std::string& effect,
                                                const std::string& plugin) {
@@ -174,6 +176,21 @@ void LuaEngine::registerAPI() {
         } else if (arg.is<std::string>()) {
             api.loadPresetByName(juce::String(track), juce::String(arg.as<std::string>()));
         }
+    });
+
+    // Plugin state snapshots
+    lua.set_function("saveSnapshot", [this](const std::string& track, const std::string& name) {
+        api.saveSnapshot(juce::String(track), juce::String(name));
+    });
+    lua.set_function("loadSnapshot", [this](const std::string& track, const std::string& name) {
+        api.loadSnapshot(juce::String(track), juce::String(name));
+    });
+    lua.set_function("listSnapshots", [this](const std::string& plugin) -> sol::table {
+        auto names = api.listSnapshots(juce::String(plugin));
+        sol::table result = lua.create_table();
+        for (size_t i = 0; i < names.size(); ++i)
+            result[i + 1] = names[i].toStdString();
+        return result;
     });
 
     // Plugin UI
