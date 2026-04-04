@@ -323,7 +323,8 @@ void AudioEngine::createChain(const juce::String& chainName) {
     perfLog("[Engine] Created chain: %s\n", chainName.toRawUTF8());
 }
 
-bool AudioEngine::addInstrument(const juce::String& chainName, const juce::String& pluginName) {
+bool AudioEngine::addInstrument(const juce::String& chainName, const juce::String& pluginName,
+                                LoadCallback onLoaded) {
     auto it = chains.find(chainName);
     if (it == chains.end()) {
         perfLog("[Engine] Chain not found: %s\n", chainName.toRawUTF8());
@@ -342,7 +343,7 @@ bool AudioEngine::addInstrument(const juce::String& chainName, const juce::Strin
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
-        [this, chainName, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
+        [this, chainName, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
                                  const juce::String& error) {
             if (!instance) {
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
@@ -354,13 +355,14 @@ bool AudioEngine::addInstrument(const juce::String& chainName, const juce::Strin
             rebuildConnections();
             perfLog("[Engine] Loaded instrument: %s in chain \"%s\"\n",
                     desc.name.toRawUTF8(), chainName.toRawUTF8());
+            if (onLoaded) onLoaded();
         });
 
     return true;
 }
 
 bool AudioEngine::addEffect(const juce::String& chainName, const juce::String& effectName,
-                              const juce::String& pluginName) {
+                              const juce::String& pluginName, LoadCallback onLoaded) {
     auto it = chains.find(chainName);
     if (it == chains.end()) {
         perfLog("[Engine] Chain not found: %s\n", chainName.toRawUTF8());
@@ -380,7 +382,7 @@ bool AudioEngine::addEffect(const juce::String& chainName, const juce::String& e
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
-        [this, chainName, effectIndex, desc](std::unique_ptr<juce::AudioPluginInstance> instance,
+        [this, chainName, effectIndex, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
                                               const juce::String& error) {
             if (!instance) {
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
@@ -394,6 +396,7 @@ bool AudioEngine::addEffect(const juce::String& chainName, const juce::String& e
             perfLog("[Engine] Loaded effect: %s as \"%s\" in chain \"%s\"\n",
                     desc.name.toRawUTF8(), it->second.effects[effectIndex].name.toRawUTF8(),
                     chainName.toRawUTF8());
+            if (onLoaded) onLoaded();
         });
 
     return true;

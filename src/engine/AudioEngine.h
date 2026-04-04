@@ -20,9 +20,12 @@ public:
     void listAvailablePlugins() const;
 
     // Chain management — each chain is a named instrument + optional effects
+    using LoadCallback = std::function<void()>;
     void createChain(const juce::String& chainName);
-    bool addInstrument(const juce::String& chainName, const juce::String& pluginName);
-    bool addEffect(const juce::String& chainName, const juce::String& effectName, const juce::String& pluginName);
+    bool addInstrument(const juce::String& chainName, const juce::String& pluginName,
+                       LoadCallback onLoaded = nullptr);
+    bool addEffect(const juce::String& chainName, const juce::String& effectName,
+                   const juce::String& pluginName, LoadCallback onLoaded = nullptr);
     void removeChain(const juce::String& chainName);
     void clearAllChains();
 

@@ -48,19 +48,32 @@ public:
         midiEngine->initialise();
         perfLog("[App] MIDIEngine initialised\n");
 
-        // Load a test song with Keyscape
+        // Two-instrument test: Keyscape + Massive X
+        // Channel 10 note events switch which instrument receives MIDI
         SongDef song;
-        song.name = "Test Song";
+        song.name = "Two Instruments";
         song.addInstrument("Keys", "Keyscape");
+        song.addInstrument("Synth", "Massive X");
+
+        // Pad 1 (note 36, ch10) -> activate Keys
+        song.bind({ MIDIControl::Note, 10, 36 }, [this](float value) {
+            if (value == 0.0f) return;  // ignore note-off
+            audioEngine->setChainMidiEnabled("Keys", true);
+            audioEngine->setChainMidiEnabled("Synth", false);
+            perfLog("[Song] Switched to Keys\n");
+        }, "Pad 1 -> Keys");
+
+        // Pad 2 (note 37, ch10) -> activate Synth
+        song.bind({ MIDIControl::Note, 10, 37 }, [this](float value) {
+            if (value == 0.0f) return;
+            audioEngine->setChainMidiEnabled("Keys", false);
+            audioEngine->setChainMidiEnabled("Synth", true);
+            perfLog("[Song] Switched to Synth\n");
+        }, "Pad 2 -> Synth");
 
         juce::Timer::callAfterDelay(100, [this, song] {
             perfLog("[App] Loading song: %s\n", song.name.toRawUTF8());
             songRuntime->load(song);
-
-            // Open Keyscape editor so we can click through splash and load a preset
-            juce::Timer::callAfterDelay(2000, [this] {
-                audioEngine->openPluginEditor("Keys");
-            });
         });
     }
 

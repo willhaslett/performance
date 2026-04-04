@@ -12,7 +12,10 @@ void SongRuntime::load(const SongDef& song) {
 
     for (auto& inst : song.instruments) {
         engine.createChain(inst.name);
-        engine.addInstrument(inst.name, inst.pluginName);
+        auto chainName = inst.name;
+        engine.addInstrument(inst.name, inst.pluginName, [this, chainName] {
+            engine.openPluginEditor(chainName);
+        });
         for (auto& fx : inst.effects)
             engine.addEffect(inst.name, fx.name, fx.pluginName);
     }
