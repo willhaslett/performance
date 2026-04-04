@@ -17,6 +17,7 @@ target_sources(Performance PRIVATE
     src/main.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
+    src/song/SongRuntime.cpp
 )
 
 target_include_directories(Performance PRIVATE src)

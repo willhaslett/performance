@@ -1,6 +1,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "engine/AudioEngine.h"
 #include "engine/MIDIEngine.h"
+#include "song/Song.h"
+#include "song/SongRuntime.h"
 
 class MainWindow : public juce::DocumentWindow {
 public:
@@ -13,6 +15,7 @@ public:
         getContentComponent()->setSize(400, 200);
         centreWithSize(400, 200);
         setVisible(true);
+        toFront(true);
     }
 
     void closeButtonPressed() override {
@@ -31,31 +34,28 @@ public:
         audioEngine = std::make_unique<AudioEngine>();
         audioEngine->initialise();
 
+        songRuntime = std::make_unique<SongRuntime>(*audioEngine);
+
         midiEngine = std::make_unique<MIDIEngine>(
             audioEngine->getDeviceManager(), *audioEngine);
+        midiEngine->setSongRuntime(songRuntime.get());
+        midiEngine->setMonitorMode(true);
         midiEngine->initialise();
 
-        // List all discovered plugins
-        audioEngine->listAvailablePlugins();
+        DBG("");
+        DBG("MIDI monitor active. Move controls to see CC numbers.");
+        DBG("Pass a plugin name to load: ./Performance \"DLSMusicDevice\"");
 
-        // Load plugin after message loop starts (some plugins need the event loop running)
         if (commandLine.isNotEmpty()) {
             pluginToLoad = commandLine;
             juce::Timer::callAfterDelay(100, [this] {
                 audioEngine->loadInstrument(pluginToLoad);
-                DBG("");
-                DBG("Performance is running.");
             });
-        } else {
-            DBG("");
-            DBG("To load an instrument, pass its name as a command line argument:");
-            DBG("  ./Performance \"plugin name\"");
-            DBG("");
-            DBG("Performance is running.");
         }
     }
 
     void shutdown() override {
+        songRuntime.reset();
         midiEngine.reset();
         audioEngine.reset();
         mainWindow.reset();
@@ -69,6 +69,7 @@ private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<AudioEngine> audioEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
+    std::unique_ptr<SongRuntime> songRuntime;
     juce::String pluginToLoad;
 };
 

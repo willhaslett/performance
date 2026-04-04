@@ -18,7 +18,13 @@ public:
     bool registerComponent(const juce::String& pluginName);
     void listAvailablePlugins() const;
     bool loadInstrument(const juce::String& pluginName);
-    void openPluginEditor();
+    bool loadEffect(const juce::String& pluginName);
+    void openPluginEditor(int index = 0);
+    void clearChain();
+
+    // Access loaded processors
+    juce::AudioProcessor* getLoadedProcessor(int index = 0) const;
+    int getLoadedProcessorCount() const { return (int)chainNodes.size(); }
 
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);
@@ -38,13 +44,16 @@ private:
     // Graph node IDs
     juce::AudioProcessorGraph::NodeID midiInputNodeId;
     juce::AudioProcessorGraph::NodeID audioOutputNodeId;
-    juce::AudioProcessorGraph::NodeID instrumentNodeId;
 
-    // Currently loaded instrument
-    juce::AudioProcessorGraph::Node::Ptr instrumentNode;
+    // Signal chain: instrument -> [effect, effect, ...] -> output
+    struct ChainNode {
+        juce::String name;
+        juce::AudioProcessorGraph::Node::Ptr node;
+    };
+    std::vector<ChainNode> chainNodes;
 
-    // Plugin editor window
-    std::unique_ptr<juce::DocumentWindow> editorWindow;
+    // Plugin editor windows
+    std::vector<std::unique_ptr<juce::DocumentWindow>> editorWindows;
 
     // Index of unregistered .component bundles (metadata only, not loaded)
     struct ComponentInfo {
@@ -57,5 +66,7 @@ private:
     std::vector<ComponentInfo> componentIndex;
 
     void setupGraph();
-    void connectInstrumentToOutput();
+    void rebuildConnections();
+    bool loadPlugin(const juce::String& pluginName, bool isInstrument);
+    juce::PluginDescription findPluginDescription(const juce::String& pluginName);
 };

@@ -30,13 +30,16 @@ A code-first runtime for live music performance on macOS. Solo performer, center
 
 ### Major Components
 
-- **AudioEngine** — JUCE-based plugin hosting, linear signal chains, output mixing
-- **MIDIEngine** — MIDI input handling, splits note vs control MIDI
+**Implemented:**
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE-based plugin hosting, linear signal chain (instrument → effects → output), plugin editor windows, third-party AU registration
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events (CC, pitch bend, pressure) to SongRuntime
+- **SongDef** (`src/song/Song.h`) — declarative song definition: instruments, effect chains, control bindings with handler functions. MIDIControl struct identifies controls (CC/Note/PitchBend/Pressure). ControlHandler is `std::function<void(float)>` with 0-1 normalized value.
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — loads a SongDef, instantiates plugins via AudioEngine, builds control dispatch map, routes MIDI control events to bound handlers. Supports wildcard channel matching (channel 0 = any).
+
+**Not yet implemented:**
 - **EventBus** — typed event dispatch (MIDI input + internal events like transition-complete, clock tick)
 - **Scheduler** — drives time-based routines frame-by-frame
-- **Song** — plugin declarations, signal chains, control bindings, handler code
 - **ControlMap** — typed abstraction of KeyLab's physical layout (pads, knobs, faders, buttons)
-- **PluginParameter** — typed reference to a specific param on a specific plugin instance
 - **Plugin UIs** — can open plugin GUIs for sound design; performance is all code-controlled
 
 ### Latency Budget
@@ -45,12 +48,33 @@ A code-first runtime for live music performance on macOS. Solo performer, center
 - Control/param changes: up to one buffer of latency (~2.9ms at 128 samples/44.1kHz)
 - Buffer size target: 128 samples
 
+### Third-party AU Plugin Loading
+
+Modern macOS does not register third-party AU components via AudioComponentFindNext.
+Our workaround: at startup, index .component bundles by reading Info.plist metadata
+(no executable loading). When a plugin is requested, load its bundle, get the factory
+function, and call AudioComponentRegister to make it visible to the AudioComponent system.
+Bundles are kept alive for the process lifetime. This is transparent to the rest of the code.
+
 ### Pre-mortem (key risks)
 
-1. **AU plugin compatibility** — plugins make assumptions about hosts. Mitigated by using JUCE which is battle-tested.
+1. **AU plugin compatibility** — plugins make assumptions about hosts. Mitigated by using JUCE which is battle-tested. Third-party AU registration solved via AudioComponentRegister workaround.
 2. **Audio graph complexity** — mitigated by starting with linear chains only. Busses/sidechains are future work.
 3. **Scope creep into DAW territory** — this is for live performance only. Production stays in Logic.
 
 ## Status
 
-Architecture decided. Setting up JUCE/C++ development environment.
+**Working:**
+- JUCE/C++ project set up with CMake
+- Audio device + MIDI input working
+- AU plugin hosting working (JUCE AudioProcessorGraph)
+- Third-party AU loading working (Keyscape, Kontakt, Raum verified)
+- Plugin editor UI windows working
+- MIDI → plugin → audio output pipeline verified end-to-end
+- Song model: SongDef, SongRuntime, MIDIEngine control dispatch all wired up
+
+**Current state / next steps:**
+- `main.cpp` still uses the old command-line plugin loading path — not yet loading a SongDef
+- `SongRuntime::findParam` is basic (searches single loaded processor by name) — needs to support multi-instrument lookup by instrument/effect name
+- AudioEngine has a single linear chain — needs multi-instrument support (multiple parallel chains) to match SongDef's multi-instrument model
+- No actual song definitions written yet — need a first real song to exercise the full path
