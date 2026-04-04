@@ -25,15 +25,31 @@ public:
     const juce::String getApplicationName() override { return "Performance"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
 
-    void initialise(const juce::String&) override {
+    void initialise(const juce::String& commandLine) override {
         mainWindow = std::make_unique<MainWindow>();
 
         audioEngine = std::make_unique<AudioEngine>();
         audioEngine->initialise();
 
-        midiEngine = std::make_unique<MIDIEngine>(audioEngine->getDeviceManager());
+        midiEngine = std::make_unique<MIDIEngine>(
+            audioEngine->getDeviceManager(), *audioEngine);
         midiEngine->initialise();
 
+        // List all discovered plugins
+        audioEngine->listAvailablePlugins();
+
+        // Try to load a plugin from command line arg, or list what's available
+        if (commandLine.isNotEmpty()) {
+            if (audioEngine->loadInstrument(commandLine)) {
+                audioEngine->openPluginEditor();
+            }
+        } else {
+            DBG("");
+            DBG("To load an instrument, pass its name as a command line argument:");
+            DBG("  ./Performance \"plugin name\"");
+        }
+
+        DBG("");
         DBG("Performance is running.");
     }
 

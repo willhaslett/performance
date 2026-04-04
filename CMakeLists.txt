@@ -15,7 +15,7 @@ juce_add_gui_app(Performance
 
 target_sources(Performance PRIVATE
     src/main.cpp
-    src/engine/AudioEngine.cpp
+    src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
 )
 
@@ -26,7 +26,7 @@ target_compile_definitions(Performance PRIVATE
     JUCE_USE_CURL=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_PLUGINHOST_AU=1
-    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_VST3=0
 )
 
 target_link_libraries(Performance PRIVATE

@@ -1,7 +1,8 @@
 #include "engine/MIDIEngine.h"
+#include "engine/AudioEngine.h"
 
-MIDIEngine::MIDIEngine(juce::AudioDeviceManager& dm)
-    : deviceManager(dm) {}
+MIDIEngine::MIDIEngine(juce::AudioDeviceManager& dm, AudioEngine& ae)
+    : deviceManager(dm), audioEngine(ae) {}
 
 MIDIEngine::~MIDIEngine() {
     shutdown();
@@ -30,20 +31,14 @@ void MIDIEngine::shutdown() {
 
 void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
                                             const juce::MidiMessage& message) {
-    auto sourceName = source ? source->getName() : "unknown";
+    // Forward all MIDI to the audio engine's graph
+    audioEngine.injectMidi(message);
 
-    if (message.isNoteOn()) {
-        DBG("[MIDI] " + sourceName + " | Note ON: " +
-            juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3) +
-            " vel=" + juce::String(message.getVelocity()));
-    } else if (message.isNoteOff()) {
-        DBG("[MIDI] " + sourceName + " | Note OFF: " +
-            juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3));
-    } else if (message.isController()) {
+    // Log control messages (notes are too noisy during playing)
+    if (message.isController()) {
+        auto sourceName = source ? source->getName() : "unknown";
         DBG("[MIDI] " + sourceName + " | CC " +
             juce::String(message.getControllerNumber()) +
             " = " + juce::String(message.getControllerValue()));
-    } else {
-        DBG("[MIDI] " + sourceName + " | " + message.getDescription());
     }
 }
