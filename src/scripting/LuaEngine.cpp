@@ -38,9 +38,9 @@ void LuaEngine::loadLibraries() {
 }
 
 void LuaEngine::registerAPI() {
-    // Song metadata
+    // Song metadata — creates the song in the registry
     lua.set_function("song", [this](const std::string& name) {
-        api.log("Song: " + juce::String(name));
+        api.createSong(juce::String(name));
     });
 
     // Track management
@@ -267,26 +267,11 @@ bool LuaEngine::loadSong(const std::string& path) {
 
     perfLog("[Lua] Loading song: %s\n", path.c_str());
 
-    // Check for a companion JSON file (structure)
-    auto luaFile = juce::File(path);
-    auto jsonFile = luaFile.withFileExtension("json");
-    if (jsonFile.existsAsFile()) {
-        auto jsonStr = jsonFile.loadFileAsString();
-        auto song = SongDef::fromJson(jsonStr);
-        if (!song.name.isEmpty()) {
-            perfLog("[Lua] Loading structure from %s\n", jsonFile.getFileName().toRawUTF8());
-            api.loadSong(song);
-        }
-    }
-
-    // Execute Lua file (bindings, or full song if no JSON)
-    if (luaFile.existsAsFile()) {
-        auto result = lua.safe_script_file(path, sol::script_pass_on_error);
-        if (!result.valid()) {
-            sol::error err = result;
-            perfLog("[Lua] ERROR: %s\n", err.what());
-            return false;
-        }
+    auto result = lua.safe_script_file(path, sol::script_pass_on_error);
+    if (!result.valid()) {
+        sol::error err = result;
+        perfLog("[Lua] ERROR: %s\n", err.what());
+        return false;
     }
 
     perfLog("[Lua] Song loaded successfully\n");

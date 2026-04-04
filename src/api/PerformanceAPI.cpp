@@ -54,6 +54,7 @@ void PerformanceAPI::shutdown() {
 
 void PerformanceAPI::createTrack(const juce::String& name) {
     audioEngine->createTrack(name);
+    // Note: registry track creation happens in addInstrument (needs pluginId)
 }
 
 void PerformanceAPI::removeTrack(const juce::String& name) {
@@ -62,6 +63,19 @@ void PerformanceAPI::removeTrack(const juce::String& name) {
 
 void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::String& pluginName,
                                     const juce::String& snapshotName) {
+    // Resolve plugin to registry ID
+    auto plugin = registry->findPluginByName(pluginName.toStdString());
+    std::string snapshotId;
+    if (snapshotName.isNotEmpty() && plugin) {
+        auto snap = registry->findSnapshot(plugin->id, snapshotName.toStdString());
+        if (snap) snapshotId = snap->id;
+    }
+
+    // Write to registry if we have an active song
+    if (!currentSongId.empty() && plugin) {
+        registry->createTrack(currentSongId, trackName.toStdString(), plugin->id, snapshotId);
+    }
+
     audioEngine->addTrackInstrument(trackName, pluginName, [this, trackName, snapshotName] {
         if (snapshotName.isNotEmpty())
             loadSnapshot(trackName, snapshotName);
@@ -72,6 +86,20 @@ void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::St
 void PerformanceAPI::addTrackEffect(const juce::String& trackName, const juce::String& effectName,
                                      const juce::String& pluginName) {
     audioEngine->addTrackEffect(trackName, effectName, pluginName);
+
+    // Write to registry
+    if (!currentSongId.empty()) {
+        auto plugin = registry->findPluginByName(pluginName.toStdString());
+        // Find the track in registry by iterating (track names are unique per song)
+        if (plugin) {
+            for (auto& t : registry->tracksForSong(currentSongId)) {
+                if (t.name == trackName.toStdString()) {
+                    registry->createEffect(t.id, "track", effectName.toStdString(), plugin->id);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
@@ -90,6 +118,10 @@ float PerformanceAPI::getTrackGain(const juce::String& trackName) {
 
 void PerformanceAPI::createBus(const juce::String& name) {
     audioEngine->createBus(name);
+
+    if (!currentSongId.empty()) {
+        registry->createBus(currentSongId, name.toStdString());
+    }
 }
 
 void PerformanceAPI::removeBus(const juce::String& name) {
@@ -99,6 +131,18 @@ void PerformanceAPI::removeBus(const juce::String& name) {
 void PerformanceAPI::addBusEffect(const juce::String& busName, const juce::String& effectName,
                                    const juce::String& pluginName) {
     audioEngine->addBusEffect(busName, effectName, pluginName);
+
+    if (!currentSongId.empty()) {
+        auto plugin = registry->findPluginByName(pluginName.toStdString());
+        if (plugin) {
+            for (auto& b : registry->bussesForSong(currentSongId)) {
+                if (b.name == busName.toStdString()) {
+                    registry->createEffect(b.id, "bus", effectName.toStdString(), plugin->id);
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
@@ -109,6 +153,20 @@ void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
 
 void PerformanceAPI::addSend(const juce::String& trackName, const juce::String& busName, float gain) {
     audioEngine->addSend(trackName, busName, gain);
+
+    if (!currentSongId.empty()) {
+        // Find track and bus IDs in registry
+        std::string trackId, busId;
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == trackName.toStdString()) { trackId = t.id; break; }
+        }
+        for (auto& b : registry->bussesForSong(currentSongId)) {
+            if (b.name == busName.toStdString()) { busId = b.id; break; }
+        }
+        if (!trackId.empty() && !busId.empty()) {
+            registry->createSend(trackId, busId, gain);
+        }
+    }
 }
 
 void PerformanceAPI::setSendGain(const juce::String& trackName, const juce::String& busName, float gain) {
@@ -294,11 +352,112 @@ void PerformanceAPI::openPluginEditor(const juce::String& trackName, const juce:
 
 // --- Song management ---
 
+std::string PerformanceAPI::createSong(const juce::String& name) {
+    // If song already exists, reuse it but clear its children
+    // (we're about to rebuild from the Lua script)
+    auto existing = registry->findSongByName(name.toStdString());
+    if (existing) {
+        currentSongId = existing->id;
+        registry->deleteSong(currentSongId);  // CASCADE deletes tracks, busses, etc.
+    }
+    currentSongId = registry->createSong(name.toStdString());
+    perfLog("[API] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), currentSongId.c_str());
+    return currentSongId;
+}
+
 void PerformanceAPI::loadSong(const SongDef& song) {
     songRuntime->load(song);
 }
 
+void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
+    auto song = registry->findSongById(songId);
+    if (!song) {
+        perfLog("[API] Song not found: %s\n", songId.c_str());
+        return;
+    }
+
+    unloadSong();
+    currentSongId = songId;
+    perfLog("[API] Loading song from registry: %s\n", song->name.c_str());
+
+    // Create busses first
+    for (auto& bus : registry->bussesForSong(songId)) {
+        audioEngine->createBus(juce::String(bus.name));
+        audioEngine->setBusGain(juce::String(bus.name), bus.outputGain);
+        for (auto& fx : registry->effectsForParent(bus.id)) {
+            auto plugin = registry->findPluginById(fx.pluginId);
+            if (plugin)
+                audioEngine->addBusEffect(juce::String(bus.name), juce::String(fx.name),
+                                           juce::String(plugin->name));
+        }
+    }
+
+    // Create tracks
+    for (auto& track : registry->tracksForSong(songId)) {
+        auto plugin = registry->findPluginById(track.pluginId);
+        if (!plugin) {
+            perfLog("[API] Plugin not found for track \"%s\", skipping\n", track.name.c_str());
+            continue;
+        }
+
+        audioEngine->createTrack(juce::String(track.name));
+
+        // Resolve snapshot
+        juce::String snapshotName;
+        if (!track.snapshotId.empty()) {
+            auto snap = registry->findSnapshotById(track.snapshotId);
+            if (snap) snapshotName = juce::String(snap->name);
+        }
+
+        audioEngine->addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
+            [this, trackName = track.name, snapshotName] {
+                if (snapshotName.isNotEmpty())
+                    loadSnapshot(juce::String(trackName), snapshotName);
+                audioEngine->openPluginEditor(juce::String(trackName));
+            });
+
+        for (auto& fx : registry->effectsForParent(track.id)) {
+            auto fxPlugin = registry->findPluginById(fx.pluginId);
+            if (fxPlugin)
+                audioEngine->addTrackEffect(juce::String(track.name), juce::String(fx.name),
+                                             juce::String(fxPlugin->name));
+        }
+
+        audioEngine->setTrackGain(juce::String(track.name), track.outputGain);
+        if (!track.midiEnabled)
+            audioEngine->setTrackMidiEnabled(juce::String(track.name), false);
+
+        for (auto& send : registry->sendsForTrack(track.id))  {
+            // Find bus name from registry
+            for (auto& bus : registry->bussesForSong(songId)) {
+                if (bus.id == send.busId) {
+                    audioEngine->addSend(juce::String(track.name), juce::String(bus.name), send.gain);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Load bindings
+    for (auto& binding : registry->bindingsForSong(songId)) {
+        auto action = registry->findActionById(binding.actionId);
+        if (!action) continue;
+
+        // Parse args JSON and dispatch to the appropriate action
+        auto argsJson = juce::JSON::parse(juce::String(binding.args));
+
+        // Build a Lua handler that calls the named action with the stored args
+        // For now, we'll construct this via the Lua engine when it's wired up
+        perfLog("[API] Binding: %s ch%d #%d -> %s\n",
+                binding.controlType.c_str(), binding.channel, binding.number,
+                action->name.c_str());
+    }
+
+    perfLog("[API] Song loaded from registry: %s\n", song->name.c_str());
+}
+
 void PerformanceAPI::unloadSong() {
+    currentSongId.clear();
     songRuntime->unload();
 }
 

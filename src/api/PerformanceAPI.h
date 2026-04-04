@@ -81,7 +81,9 @@ public:
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
 
     // --- Song management ---
+    std::string createSong(const juce::String& name);  // creates in registry, sets as active
     void loadSong(const SongDef& song);
+    void loadSongFromRegistry(const std::string& songId);
     void unloadSong();
     void saveSongToFile(const juce::String& name);  // saves current state as JSON
     bool isSongLoaded() const;
@@ -106,4 +108,6 @@ private:
 
     void populatePluginRegistry();
     void registerBuiltinActions();
+
+    std::string currentSongId;  // active song in registry
 };
