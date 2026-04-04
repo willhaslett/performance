@@ -26,4 +26,5 @@ private:
     sol::state lua;
 
     void registerAPI();
+    void loadLibraries();
 };

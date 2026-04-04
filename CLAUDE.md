@@ -1,15 +1,14 @@
 # Live Performance Environment
 
-A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — an always-running audio host with a runtime API that Claude, the GUI, and saved songs all program against.
+A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — an always-running audio host with a runtime API that Claude, the GUI, and Lua songs all program against.
 
 ## Core Concepts
 
 - **The app is an environment** — it launches, initializes audio/MIDI, and waits. Songs, tracks, plugins, and mappings are created and modified at runtime through the API. Recompilation is only needed to add new engine capabilities.
-- **Song** — setup + mappings. Setup defines the tracks, busses, effects, sends, and initial configuration. Mappings bind MIDI events to handler functions. There is no scene/state machine — the state is simply the current state of the engine as shaped by whatever handlers have fired.
-- **Event-driven** — MIDI input (pads, knobs, faders, keys) triggers handler functions. Handlers can do anything: set a parameter, launch a multi-parameter interpolation, swap instruments, reset the song to its initial state.
-- **Handlers as behaviors** — mappings aren't just value assignments. A pad press can kick off time-based interpolations, multi-param morphs, conditional logic — anything expressible in code.
-- **Library** — reusable handler functions, partial configurations, and presets that grow over time and get composed into songs.
-- **Authoring model** — Claude and Will collaborate at runtime. Will plays and directs ("map that fader to filter cutoff"), Claude writes and executes API calls and Lua scripts live. The GUI provides direct manipulation for common operations. All three use the same API.
+- **Song** — a Lua script that calls API functions to set up tracks, busses, effects, sends, and bind MIDI events to handlers. Lives in `~/.config/performance/songs/`.
+- **Event-driven** — MIDI input (pads, knobs, faders, keys) triggers Lua handler functions. Handlers can do anything: set a parameter, launch interpolations, swap instruments.
+- **Automation** — time-based behaviors built on `interpolate(from, to, duration, callback, easing)`. Library functions like `fadeOut`, `fadeIn`, `crossfade`, `paramSweep` compose on top.
+- **Authoring model** — Claude and Will collaborate at runtime. Will plays and directs, Claude writes Lua scripts and API calls. The GUI (future) provides direct manipulation. All consumers use the same API.
 
 ## Architecture
 
@@ -18,151 +17,122 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 ```
 ┌─────────────────────────────────────────────────┐
 │  Consumers                                      │
-│  ┌─────┐  ┌───────┐  ┌──────┐  ┌────────────┐  │
-│  │ GUI │  │ Claude │  │ Lua  │  │ Song files │  │
-│  └──┬──┘  └───┬───┘  └──┬───┘  └─────┬──────┘  │
-│     └─────────┴─────────┴─────────────┘         │
+│  ┌─────┐  ┌───────┐  ┌──────────────────────┐  │
+│  │ GUI │  │ Claude │  │ Lua (songs + lib)    │  │
+│  └──┬──┘  └───┬───┘  └──────────┬───────────┘  │
+│     └─────────┴─────────────────┘               │
 │                     │                            │
 │              ┌──────▼──────┐                     │
-│              │     API     │  ← single interface │
-│              └──────┬──────┘    for all mutation  │
-│              ┌──────▼──────┐                     │
-│              │   Engine    │  ← C++/JUCE         │
-│              └─────────────┘                     │
+│              │ Performance │  ← single interface │
+│              │     API     │    for all mutation  │
+│              └──────┬──────┘                     │
+│         ┌──────────┬┴──────────┐                 │
+│    ┌────▼────┐ ┌───▼────┐ ┌───▼──────────┐      │
+│    │  Audio  │ │  MIDI  │ │  Automation  │      │
+│    │ Engine  │ │ Engine │ │    Engine    │      │
+│    └─────────┘ └────────┘ └─────────────┘      │
 └─────────────────────────────────────────────────┘
 ```
 
-- **Engine** (C++) — audio graph, plugin hosting, MIDI routing. Low-level. Only changes when we need new capabilities.
-- **API** — the public interface to the engine. All state changes go through here. High-level operations: `createTrack`, `loadInstrument`, `addEffect`, `addSend`, `setGain`, `bindControl`, `saveSong`, `loadSong`, etc.
-- **Consumers** — all equal peers calling the same API:
-  - **GUI** — conventional app interface for browsing plugins, adjusting mix, managing songs
-  - **Claude** — issues API calls at runtime via IPC (likely local socket + JSON). Can compose complex behaviors, build new handler functions, author songs live during creative sessions.
-  - **Lua** — embedded scripting for handler functions that need logic (interpolations, conditionals, sequences). Hot-reloadable.
-  - **Song files** — persisted songs. Loading = executing a sequence of API calls that recreate the configuration.
+- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — owns AudioEngine, MIDIEngine, AutomationEngine, SongRuntime. Single interface for all consumers. Exposes: track/bus/send CRUD, parameter get/set, MIDI control bind/unbind, automation (interpolate/delay/cancel), plugin editor management, logging.
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Handles async plugin loading, third-party AU registration, plugin cache.
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
+- **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — JUCE Timer ticking at 60fps, manages running interpolations with easing functions. Built-in easings: linear, easein, easeout, cosine, scurve. Also accepts custom easing functions from Lua.
+- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Registers all PerformanceAPI methods as global Lua functions. Loads Lua library files from `~/.config/performance/lua_lib/` before songs. Manages song loading/unloading.
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — internal to the API. Manages MIDI control dispatch map. Routes control events to bound handlers. Supports wildcard channel matching (channel 0 = any).
 
 ### Data Model
 
 #### Track
-- **name** — user-assigned (e.g., "Keys", "Bass")
-- **instrument** — one AU plugin
-- **midiEffects[]** — ordered, our own code (transpose, arpeggiator, channel filter). Not AU plugins.
-- **audioEffects[]** — ordered AU insert effects (reverb, delay, EQ)
-- **sends[]** — list of (busName, gain). Post-insert sends.
-- **outputGain** — direct out level. 0.0 = muted dry (send-only). Default 1.0.
-- **midiEnabled** — receives note MIDI or not
+- One AU instrument, ordered audio insert effects, sends to busses, output gain, MIDI enable flag
+- MIDI effects (transpose, arpeggiator) planned but not yet implemented
 
 #### Bus
-- **name** — user-assigned (e.g., "ReverbBus")
-- **audioEffects[]** — ordered AU effects
-- **outputGain** — bus master level. Default 1.0.
-- Routes to main output (no bus-to-bus chaining for now)
+- Ordered AU audio effects, output gain. Receives summed audio from track sends. Routes to main output.
 
-#### GainProcessor
-- Trivial AudioProcessor: `buffer.applyGain(gain)` with `std::atomic<float>`
-- One per track direct out, one per send, one per bus out
-- Gain changes are real-time safe (atomic), no graph rebuild needed
+#### GainProcessor (`src/engine/GainProcessor.h`)
+- `std::atomic<float>` gain, real-time safe. One per track output, per send, per bus output.
 
-#### Song
-- **name**
-- **setup** — tracks, busses, effects, sends, initial gains
-- **mappings** — MIDI event → handler function
-
-No scenes, no state machine. "Go to the intro" is just a handler that sets parameters to specific values. The only state is the live state of the engine.
-
-### Audio Graph (JUCE AudioProcessorGraph)
-
-The graph is a DAG, not just linear chains:
+### Audio Graph
 
 ```
 Per track:
-  midiInput → [midiFx1 → midiFx2 →] instrument → [fx1 → fx2 →] ┬─ outputGain → audioOutput
-                                                                   ├─ sendGain1  → Bus1
-                                                                   └─ sendGain2  → Bus2
+  midiInput → instrument → [fx1 → fx2 →] ┬─ outputGain → audioOutput
+                                           ├─ sendGain1  → Bus1
+                                           └─ sendGain2  → Bus2
 Per bus:
   (summed sends) → [busFx1 → busFx2 →] busOutputGain → audioOutput
 ```
 
-Multiple sends to the same bus = automatic summing in the JUCE graph. A track can send to multiple busses AND direct out simultaneously, each with independent gain.
+Instrument switching is MIDI routing only — connect/disconnect MIDI to the instrument node. The audio signal path stays static during performance (no graph rebuild = no pops).
 
-### MIDI Effects
+### Song Format (Lua)
 
-MIDI effects are our own C++ code, not AU plugins. They process `MidiBuffer` in-place and are wrapped as `AudioProcessor` subclasses to live in the graph. Chain: midiInput → midiEffect1 → midiEffect2 → instrument.
+Songs are `.lua` files in `~/.config/performance/songs/`:
 
-Examples: transpose, channel filter, arpeggiator, chord generator, note filter.
+```lua
+song("My Song")
+createBus("Reverb")
+addBusEffect("Reverb", "Hall", "Raum")
+createTrack("Keys")
+addInstrument("Keys", "Keyscape")
+addSend("Keys", "Reverb", 0.3)
 
-### Two-domain design (like Max's message/signal split)
+bind("note", 10, 36, function(val)
+    if val == 0 then return end
+    fadeOut("Keys", 3.0, "cosine")
+end, "Pad 1 -> Fade Out")
+```
 
-**Audio thread:**
-- JUCE manages the audio callback and plugin rendering
-- Processes the DAG: tracks → insert effects → sends/direct out → busses → output
-- Note/performance MIDI goes through MIDI effect chain to plugin input
-- GainProcessor nodes apply gain changes from atomic values each callback
+### Lua Library (`~/.config/performance/lua_lib/`)
 
-**Control thread:**
-- Receives MIDI control events (pads, knobs, faders) via MIDI input
-- Dispatches to handler functions (normal C++ or Lua, no RT constraints)
-- Drives the scheduler for time-based routines (interpolations, envelopes)
-- Writes parameter/gain changes via atomic values or lock-free queue
-
-### Claude ↔ App Communication
-
-Claude connects to the running app via local socket (IPC). Sends JSON-encoded API calls, receives responses. This allows Claude to:
-- Issue API commands at runtime ("create a track", "bind this control")
-- Query state ("what tracks are loaded", "what's the current gain on the reverb bus")
-- Write and hot-reload Lua handler functions
-- Compose complex behaviors without recompilation
+Lua files loaded automatically before songs. Provides automation helpers:
+- `fadeOut(track, duration, easing)`, `fadeIn(track, duration, easing)`
+- `fadeTo(track, target, duration, easing)`, `crossfade(from, to, duration, easing)`
+- `paramSweep(track, param, from, to, duration, easing)`
 
 ### Third-party AU Plugin Loading
 
 Modern macOS does not register third-party AU components via AudioComponentFindNext.
-Our workaround: at startup, index .component bundles by reading Info.plist metadata
-(no executable loading). When a plugin is requested, load its bundle, get the factory
-function, and call AudioComponentRegister to make it visible to the AudioComponent system.
-Bundles are kept alive for the process lifetime. This is transparent to the rest of the code.
+Workaround: index .component bundle Info.plist metadata at startup, on-demand load and register via AudioComponentRegister when requested. Transparent to the rest of the code.
+
+### Plugin Cache
+
+Scan results cached to `~/.config/performance/plugin-cache.xml`. Eliminates ~30s+ AU scan on startup. Delete file to force rescan.
+
+### Logging
+
+`perfLog()` writes to both stderr and `/tmp/performance.log`. All components use tagged prefixes: `[App]`, `[Engine]`, `[MIDI]`, `[Song]`, `[Lua]`, `[Automation]`, `[API]`.
 
 ### Latency Budget
 
 - Note events: sub-1ms (direct MIDI to plugin, limited by audio buffer size)
-- Control/param changes: up to one buffer of latency (~2.9ms at 128 samples/44.1kHz)
+- Control/param changes: up to one buffer of latency
 - Buffer size target: 128 samples (currently running at 512/48kHz = ~10.7ms due to default device settings)
-
-### Pre-mortem (key risks)
-
-1. **AU plugin compatibility** — plugins make assumptions about hosts. Mitigated by using JUCE which is battle-tested. Third-party AU registration solved via AudioComponentRegister workaround.
-2. **Audio graph complexity** — DAG with tracks, busses, and sends. Mitigated by building incrementally, testing at each step.
-3. **Scope creep into DAW territory** — no timeline, no recording, no arrangement. This is a live performance and sound design environment. Production stays in Logic.
-4. **IPC/Lua complexity** — mitigated by building the API layer first with direct C++ calls, then adding IPC and Lua as transport layers on top.
 
 ## Implementation Status
 
 **Working:**
-- JUCE/C++ project set up with CMake
-- Audio device + MIDI input working
-- AU plugin hosting working (JUCE AudioProcessorGraph)
-- Third-party AU loading working (Keyscape, Kontakt, Massive X, Raum verified)
-- Plugin editor UI windows auto-open on instrument load
-- MIDI → plugin → audio output pipeline verified end-to-end
-- Multi-instrument with per-chain MIDI enable/disable — pad switching verified
-- Plugin cache (`~/.config/performance/plugin-cache.xml`) for fast startup
-- File-based logging (`perfLog` → `/tmp/performance.log`)
+- JUCE/C++ project with CMake, Lua 5.4 + sol2 via FetchContent
+- AU plugin hosting with third-party loading (Keyscape, Kontakt, Massive X, Raum verified)
+- Track/Bus mixer DAG with sends and per-node gain
+- Plugin editor UIs auto-open on instrument load
+- Instrument switching via MIDI routing (no graph rebuild, no pops)
+- Plugin cache for fast startup
+- PerformanceAPI layer — all consumers go through single interface
+- Lua song scripts — songs are .lua files, no recompile needed
+- Automation engine — interpolate with easing functions, cancellable
+- Lua automation library — fadeOut, fadeIn, crossfade, paramSweep
+- Tested with MPK mini 3 (pads on ch10, keys on ch1)
 
-**Current engine (pre-refactor):**
-- AudioEngine uses flat `InstrumentChain` structs (instrument + effects → output)
-- No busses, sends, or gain nodes
-- SongDef/SongRuntime with control dispatch (CC, note, pitch bend, pressure)
-- `main.cpp` loads a hardcoded test song — needs to be replaced by the API/song system
+**Known issues:**
+- Occasional stuck notes on instrument switch
+- Keyscape requires clicking through splash screen and loading a preset before it produces sound
+- Audio device settings are hardcoded defaults (512 samples, 48kHz)
 
-**Next: Phase 1 — Track/Bus data model + API layer**
-- GainProcessor
-- Track/Bus structs replacing InstrumentChain
-- DAG wiring in rebuildConnections (sends, busses, per-node gain)
-- API class wrapping AudioEngine
-- Test with a song that has a reverb bus + sends
-
-**Future phases:**
+**Next steps:**
+- IPC (local socket) for Claude ↔ app communication at runtime
 - MIDI effects (transpose, channel filter, arpeggiator)
-- Lua embedding for handler functions
-- IPC (local socket) for Claude ↔ app communication
-- Song persistence (save/load)
-- Scheduler for time-based routines (interpolations, envelopes)
+- Song management from Lua/API (list, switch songs at runtime)
+- Audio device configuration
 - GUI

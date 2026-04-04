@@ -1,4 +1,5 @@
 #include "api/PerformanceAPI.h"
+#include "automation/AutomationEngine.h"
 #include "engine/AudioEngine.h"
 #include "engine/MIDIEngine.h"
 #include "engine/Log.h"
@@ -16,6 +17,7 @@ void PerformanceAPI::initialise() {
     audioEngine->initialise();
     perfLog("[API] AudioEngine initialised\n");
 
+    automationEngine = std::make_unique<AutomationEngine>();
     songRuntime = std::make_unique<SongRuntime>(*audioEngine);
 
     midiEngine = std::make_unique<MIDIEngine>(
@@ -59,6 +61,10 @@ void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackName, bool ena
 
 void PerformanceAPI::setTrackGain(const juce::String& trackName, float gain) {
     audioEngine->setTrackGain(trackName, gain);
+}
+
+float PerformanceAPI::getTrackGain(const juce::String& trackName) {
+    return audioEngine->getTrackGain(trackName);
 }
 
 // --- Bus management ---
@@ -146,6 +152,25 @@ void PerformanceAPI::unbind(const juce::String& type, int channel, int number) {
 
 void PerformanceAPI::unbindAll() {
     songRuntime->clearBindings();
+}
+
+// --- Automation ---
+
+int PerformanceAPI::interpolate(float from, float to, float durationSec,
+                                 AutomationCallback callback, EasingFn easing) {
+    return automationEngine->interpolate(from, to, durationSec, std::move(callback), std::move(easing));
+}
+
+int PerformanceAPI::delay(float delaySec, std::function<void()> callback) {
+    return automationEngine->delay(delaySec, std::move(callback));
+}
+
+void PerformanceAPI::cancelAutomation(int handle) {
+    automationEngine->cancel(handle);
+}
+
+void PerformanceAPI::cancelAllAutomation() {
+    automationEngine->cancelAll();
 }
 
 // --- Plugin UI ---

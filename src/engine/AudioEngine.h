@@ -34,6 +34,7 @@ public:
                         const juce::String& pluginName, LoadCallback onLoaded = nullptr);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
+    float getTrackGain(const juce::String& trackName) const;
     void clearAllTracks();
 
     // Bus management

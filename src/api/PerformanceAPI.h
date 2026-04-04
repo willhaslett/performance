@@ -6,6 +6,7 @@
 #include <vector>
 
 class AudioEngine;
+class AutomationEngine;
 class MIDIEngine;
 class SongRuntime;
 struct SongDef;
@@ -26,6 +27,7 @@ public:
                         const juce::String& pluginName);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
+    float getTrackGain(const juce::String& trackName);
 
     // --- Bus management ---
     void createBus(const juce::String& name);
@@ -53,6 +55,15 @@ public:
     void unbind(const juce::String& type, int channel, int number);
     void unbindAll();
 
+    // --- Automation ---
+    using AutomationCallback = std::function<void(float)>;
+    using EasingFn = std::function<float(float)>;
+    int interpolate(float from, float to, float durationSec,
+                    AutomationCallback callback, EasingFn easing = nullptr);
+    int delay(float delaySec, std::function<void()> callback);
+    void cancelAutomation(int handle);
+    void cancelAllAutomation();
+
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
 
@@ -71,6 +82,7 @@ public:
 
 private:
     std::unique_ptr<AudioEngine> audioEngine;
+    std::unique_ptr<AutomationEngine> automationEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
 };

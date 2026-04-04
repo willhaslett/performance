@@ -1,13 +1,38 @@
 #include "scripting/LuaEngine.h"
 #include "api/PerformanceAPI.h"
+#include "automation/AutomationEngine.h"
 #include "engine/Log.h"
 #include <filesystem>
 
 namespace fs = std::filesystem;
 
+static std::string getLuaLibDirectory() {
+    auto home = std::string(getenv("HOME"));
+    return home + "/.config/performance/lua_lib";
+}
+
 LuaEngine::LuaEngine(PerformanceAPI& api) : api(api) {
     lua.open_libraries(sol::lib::base, sol::lib::math, sol::lib::string, sol::lib::table);
     registerAPI();
+    loadLibraries();
+}
+
+void LuaEngine::loadLibraries() {
+    auto libDir = getLuaLibDirectory();
+    if (!fs::exists(libDir)) return;
+
+    for (auto& entry : fs::directory_iterator(libDir)) {
+        if (entry.path().extension() == ".lua") {
+            auto result = lua.safe_script_file(entry.path().string(), sol::script_pass_on_error);
+            if (result.valid()) {
+                perfLog("[Lua] Loaded library: %s\n", entry.path().filename().c_str());
+            } else {
+                sol::error err = result;
+                perfLog("[Lua] ERROR loading library %s: %s\n",
+                        entry.path().filename().c_str(), err.what());
+            }
+        }
+    }
 }
 
 void LuaEngine::registerAPI() {
@@ -90,6 +115,48 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("unbind", [this](const std::string& type, int channel, int number) {
         api.unbind(juce::String(type), channel, number);
+    });
+
+    // Automation
+    lua.set_function("interpolate", [this](float from, float to, float duration,
+                                            sol::function callback,
+                                            sol::optional<sol::object> easing) -> int {
+        auto luaCallback = callback;
+        PerformanceAPI::EasingFn easingFn = nullptr;
+
+        if (easing.has_value()) {
+            auto& val = easing.value();
+            if (val.is<std::string>()) {
+                auto name = val.as<std::string>();
+                easingFn = AutomationEngine::easingByName(name);
+            } else if (val.is<sol::function>()) {
+                auto luaEasing = val.as<sol::function>();
+                easingFn = [luaEasing](float t) mutable -> float {
+                    return luaEasing(t);
+                };
+            }
+        }
+
+        return api.interpolate(from, to, duration,
+                               [luaCallback](float value) mutable { luaCallback(value); },
+                               std::move(easingFn));
+    });
+
+    lua.set_function("delay", [this](float seconds, sol::function callback) -> int {
+        auto luaCallback = callback;
+        return api.delay(seconds, [luaCallback]() mutable { luaCallback(); });
+    });
+
+    lua.set_function("cancel", [this](int handle) {
+        api.cancelAutomation(handle);
+    });
+    lua.set_function("cancelAll", [this]() {
+        api.cancelAllAutomation();
+    });
+
+    // Track gain query (needed by automation helpers)
+    lua.set_function("getTrackGain", [this](const std::string& track) -> float {
+        return api.getTrackGain(juce::String(track));
     });
 
     // Plugin UI

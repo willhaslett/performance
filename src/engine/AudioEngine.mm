@@ -463,6 +463,14 @@ void AudioEngine::setTrackGain(const juce::String& trackName, float gain) {
         proc->setGain(gain);
 }
 
+float AudioEngine::getTrackGain(const juce::String& trackName) const {
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return 0.0f;
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return proc->getGain();
+    return 0.0f;
+}
+
 void AudioEngine::clearAllTracks() {
     editorWindows.clear();
     for (auto& [name, track] : tracks) {
