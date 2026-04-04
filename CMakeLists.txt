@@ -40,6 +40,7 @@ juce_add_gui_app(Performance
 target_sources(Performance PRIVATE
     src/main.mm
     src/api/PerformanceAPI.cpp
+    src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp

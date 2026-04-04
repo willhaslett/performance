@@ -1,6 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "api/PerformanceAPI.h"
-#include "gui/MixerView.h"
+#include "gui/MainLayout.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
 #include "engine/Log.h"
@@ -12,9 +12,9 @@ public:
         : DocumentWindow("Performance",
                          juce::Colour(0xff121212),
                          DocumentWindow::allButtons),
-          mixerView(new MixerView(api)) {
+          mainLayout(new MainLayout(api)) {
         setUsingNativeTitleBar(true);
-        setContentOwned(mixerView, false);
+        setContentOwned(mainLayout, false);
 
         // Size to fill the screen
         auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
@@ -32,15 +32,14 @@ public:
         // Global key monitor — intercepts key events even when plugin windows have focus
         keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
             handler:^NSEvent* (NSEvent* event) {
-                auto key = juce::KeyPress(
-                    juce::CharacterFunctions::toUpperCase(event.characters.length > 0
-                        ? [event.characters characterAtIndex:0] : 0),
-                    (int)juce::ModifierKeys::getCurrentModifiers().getRawFlags(), 0);
+                juce::juce_wchar c = event.characters.length > 0
+                    ? [event.characters characterAtIndex:0] : 0;
+                auto key = juce::KeyPress(c, juce::ModifierKeys::getCurrentModifiers(), c);
 
                 if (event.keyCode == 53)  // Escape
                     key = juce::KeyPress(juce::KeyPress::escapeKey);
 
-                if (mixerView->handleGlobalKey(key))
+                if (mainLayout->handleGlobalKey(key))
                     return nil;  // consumed
                 return event;
             }];
@@ -56,7 +55,7 @@ public:
     }
 
 private:
-    MixerView* mixerView;
+    MainLayout* mainLayout;
     id keyMonitor = nil;
 };
 
