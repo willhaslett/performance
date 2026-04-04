@@ -2,6 +2,7 @@
 #include "api/PerformanceAPI.h"
 #include "automation/AutomationEngine.h"
 #include "engine/Log.h"
+#include <juce_events/juce_events.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -173,6 +174,29 @@ void LuaEngine::registerAPI() {
         return result;
     });
 
+    // Song management
+    lua.set_function("listSongs", [this]() -> sol::table {
+        auto songs = listSongs();
+        sol::table result = lua.create_table();
+        for (size_t i = 0; i < songs.size(); ++i)
+            result[i + 1] = songs[i];
+        return result;
+    });
+    lua.set_function("loadSong", [this](const std::string& name) {
+        // Defer to next message loop iteration — this may be called from
+        // inside a MIDI handler, and unloadSong clears the dispatch map
+        // we're currently iterating.
+        auto path = getSongsDirectory() + "/" + name + ".lua";
+        juce::MessageManager::callAsync([this, path] {
+            loadSong(path);
+        });
+    });
+    lua.set_function("unloadSong", [this]() {
+        juce::MessageManager::callAsync([this] {
+            unloadSong();
+        });
+    });
+
     // Utility
     lua.set_function("log", [this](const std::string& msg) {
         api.log(juce::String(msg));
@@ -199,6 +223,7 @@ bool LuaEngine::loadSong(const std::string& path) {
 }
 
 void LuaEngine::unloadSong() {
+    api.cancelAllAutomation();
     api.unbindAll();
     api.unloadSong();
 }
