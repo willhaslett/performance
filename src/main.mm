@@ -164,24 +164,9 @@ public:
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Restore previous session from registry, or bootstrap from Lua
+        // Restore session from registry (creates default if first run)
         juce::Timer::callAfterDelay(100, [this] {
-            if (api->restoreSession()) {
-                perfLog("[App] Restored session from registry\n");
-            } else {
-                perfLog("[App] No session to restore, bootstrapping from Lua\n");
-                auto songsDir = LuaEngine::getSongsDirectory();
-                auto defaultSong = songsDir + "/two_instruments.lua";
-                if (juce::File(defaultSong).existsAsFile()) {
-                    luaEngine->loadSong(defaultSong);
-                } else {
-                    auto songs = luaEngine->listSongs();
-                    if (!songs.empty()) {
-                        auto path = LuaEngine::getSongsDirectory() + "/" + songs[0] + ".lua";
-                        luaEngine->loadSong(path);
-                    }
-                }
-            }
+            api->restoreSession();
         });
     }
 

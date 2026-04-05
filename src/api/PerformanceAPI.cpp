@@ -577,9 +577,16 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
 
 bool PerformanceAPI::restoreSession() {
     auto songs = registry->allSongs();
-    if (songs.empty()) return false;
 
-    // Use the first (most recent) song
+    if (songs.empty()) {
+        // First run — create a default unnamed session
+        currentSongId = registry->createSong("Default Session");
+        engineSync->setActiveSong(currentSongId);
+        perfLog("[API] Created default session\n");
+        return true;
+    }
+
+    // Restore existing session
     auto& song = songs[0];
     currentSongId = song.id;
     engineSync->setActiveSong(currentSongId);
