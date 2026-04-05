@@ -1,57 +1,54 @@
 # Live Performance Environment
 
-A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — an always-running audio host with a runtime API that Claude, the GUI, and Lua songs all program against.
+A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. The registry (SQLite) is the single source of truth. The audio engine is a view of the registry.
 
 ## Core Concepts
 
-- **The app is an environment** — it launches, initializes audio/MIDI, and waits. Songs, tracks, plugins, and mappings are created and modified at runtime through the API. Recompilation is only needed to add new engine capabilities.
-- **Song** — a Lua script that calls API functions to set up tracks, busses, effects, sends, and bind MIDI events to handlers. Lives in `~/.config/performance/songs/`.
-- **Event-driven** — MIDI input (pads, knobs, faders, keys) triggers Lua handler functions. Handlers can do anything: set a parameter, launch interpolations, swap instruments.
-- **Automation** — time-based behaviors built on `interpolate(from, to, duration, callback, easing)`. Library functions like `fadeOut`, `fadeIn`, `crossfade`, `paramSweep` compose on top.
-- **Authoring model** — Claude and Will collaborate at runtime. Will plays and directs, Claude writes Lua scripts and API calls. The GUI (future) provides direct manipulation. All consumers use the same API.
+- **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and snapshots all persist automatically.
+- **Session** — there is always a current session (a song entity in the registry, named or unnamed). You can work without naming a song. `saveSong` gives the session a name. `loadSong` switches to a different one. On restart, the previous session is restored.
+- **Song** — a named session. Lua scripts in `~/.config/performance/songs/` bootstrap songs (create tracks, busses, bindings), but the registry is the authoritative state.
+- **Event-driven** — MIDI input triggers handler functions. Handlers can do anything: set parameters, launch interpolations, swap instruments.
+- **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
+- **Authoring model** — Claude runs embedded in the app (terminal emulator in the UI). Will plays and directs, Claude modifies the environment via the `perf` IPC command. The GUI provides direct manipulation. All consumers use the same API.
 
 ## Architecture
 
-### Layers
+### Data Flow
 
 ```
-┌─────────────────────────────────────────────────┐
-│  Consumers                                      │
-│  ┌─────┐  ┌───────┐  ┌──────────────────────┐  │
-│  │ GUI │  │ Claude │  │ Lua (songs + lib)    │  │
-│  └──┬──┘  └───┬───┘  └──────────┬───────────┘  │
-│     └─────────┴─────────────────┘               │
-│                     │                            │
-│              ┌──────▼──────┐                     │
-│              │ Performance │  ← single interface │
-│              │     API     │    for all mutation  │
-│              └──────┬──────┘                     │
-│         ┌──────────┬┴──────────┐                 │
-│    ┌────▼────┐ ┌───▼────┐ ┌───▼──────────┐      │
-│    │  Audio  │ │  MIDI  │ │  Automation  │      │
-│    │ Engine  │ │ Engine │ │    Engine    │      │
-│    └─────────┘ └────────┘ └─────────────┘      │
-└─────────────────────────────────────────────────┘
+Mutation (API call from Lua, Claude, GUI, IPC)
+    ↓
+Registry (SQLite — write)
+    ↓
+EngineSync.sync() (diff registry vs engine, apply changes)
+    ↓
+AudioEngine (audio graph matches registry)
 ```
 
-- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — owns AudioEngine, MIDIEngine, AutomationEngine, SongRuntime. Single interface for all consumers. Exposes: track/bus/send CRUD, parameter get/set, MIDI control bind/unbind, automation (interpolate/delay/cancel), plugin editor management, logging.
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Handles async plugin loading, third-party AU registration, plugin cache.
+One direction. One source of truth. The engine never has state that the registry doesn't know about. Sync is idempotent — call it as many times as you want.
+
+### Components
+
+- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Also handles real-time operations (gain, MIDI enable) that go direct to engine.
+- **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). Typed entities with UUIDs. Generic CRUD (`create`, `get`, `list`, `update`, `remove`) plus type-specific convenience methods. Emits events for UI updates.
+- **RegistryEventBus** (`src/registry/RegistryEvents.h`) — pub/sub for UI components. Entity type constants in `EntityType` namespace.
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends.
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Never written to directly except for real-time values.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
-- **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — JUCE Timer ticking at 60fps, manages running interpolations with easing functions. Built-in easings: linear, easein, easeout, cosine, scurve. Also accepts custom easing functions from Lua.
-- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Registers all PerformanceAPI methods as global Lua functions. Loads Lua library files from `~/.config/performance/lua_lib/` before songs. Manages song loading/unloading.
-- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — internal to the API. Manages MIDI control dispatch map. Routes control events to bound handlers. Supports wildcard channel matching (channel 0 = any).
+- **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing functions.
+- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Registers API as global functions. Loads library files from `~/.config/performance/lua_lib/`.
+- **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket at `/tmp/performance.sock`. Accepts Lua strings, executes them, returns results.
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map. Routes control events to bound handlers.
 
-### Data Model
+### GUI
 
-#### Track
-- One AU instrument, ordered audio insert effects, sends to busses, output gain, MIDI enable flag
-- MIDI effects (transpose, arpeggiator) planned but not yet implemented
-
-#### Bus
-- Ordered AU audio effects, output gain. Receives summed audio from track sends. Routes to main output.
-
-#### GainProcessor (`src/engine/GainProcessor.h`)
-- `std::atomic<float>` gain, real-time safe. One per track output, per send, per bus output.
+- **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
+- **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
+- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips with plugin links
+- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — registry tree view, subscribes to registry events
+- **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
+- Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal
+- Native macOS menu bar (File: New/Save/Load/Close Song, View: Toggle Sidebar/Mixer)
 
 ### Audio Graph
 
@@ -64,75 +61,53 @@ Per bus:
   (summed sends) → [busFx1 → busFx2 →] busOutputGain → audioOutput
 ```
 
-Instrument switching is MIDI routing only — connect/disconnect MIDI to the instrument node. The audio signal path stays static during performance (no graph rebuild = no pops).
+Instrument switching is MIDI routing only — no graph rebuild, no pops.
 
-### Song Format (Lua)
+### Registry Schema
 
-Songs are `.lua` files in `~/.config/performance/songs/`:
+Entities: `plugins`, `snapshots`, `songs`, `tracks`, `busses`, `effects`, `sends`, `actions`, `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
 
-```lua
-song("My Song")
-createBus("Reverb")
-addBusEffect("Reverb", "Hall", "Raum")
-createTrack("Keys")
-addInstrument("Keys", "Keyscape")
-addSend("Keys", "Reverb", 0.3)
+Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(type, filters)`, `registryUpdate(id, fields)`, `registryDelete(id)` — all exposed to Lua.
 
-bind("note", 10, 36, function(val)
-    if val == 0 then return end
-    fadeOut("Keys", 3.0, "cosine")
-end, "Pad 1 -> Fade Out")
-```
+### Plugin State Snapshots
 
-### Lua Library (`~/.config/performance/lua_lib/`)
+Stored per plugin in `~/.config/performance/snapshots/<pluginName>/<snapshotName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in the registry. Independent of songs — any song/session can use any snapshot.
 
-Lua files loaded automatically before songs. Provides automation helpers:
-- `fadeOut(track, duration, easing)`, `fadeIn(track, duration, easing)`
-- `fadeTo(track, target, duration, easing)`, `crossfade(from, to, duration, easing)`
-- `paramSweep(track, param, from, to, duration, easing)`
+### IPC
+
+`bin/perf` shell command sends Lua to the running app: `perf 'createTrack("Bass")'`. The embedded Claude uses this to control the app at runtime. `runtime/CLAUDE.md` is the prompt for the embedded Claude instance.
 
 ### Third-party AU Plugin Loading
 
-Modern macOS does not register third-party AU components via AudioComponentFindNext.
-Workaround: index .component bundle Info.plist metadata at startup, on-demand load and register via AudioComponentRegister when requested. Transparent to the rest of the code.
+Index .component bundle Info.plist metadata at startup, on-demand register via AudioComponentRegister. Plugin scan results cached to `~/.config/performance/plugin-cache.xml`.
 
-### Plugin Cache
+### Device Maps
 
-Scan results cached to `~/.config/performance/plugin-cache.xml`. Eliminates ~30s+ AU scan on startup. Delete file to force rescan.
-
-### Logging
-
-`perfLog()` writes to both stderr and `/tmp/performance.log`. All components use tagged prefixes: `[App]`, `[Engine]`, `[MIDI]`, `[Song]`, `[Lua]`, `[Automation]`, `[API]`.
-
-### Latency Budget
-
-- Note events: sub-1ms (direct MIDI to plugin, limited by audio buffer size)
-- Control/param changes: up to one buffer of latency
-- Buffer size target: 128 samples (currently running at 512/48kHz = ~10.7ms due to default device settings)
+`devices/mpk_mini_3.lua` — MPK mini 3 control map. Pads in CC mode: bottom row CC 16-19 (pads 1-4), top row CC 20-23 (pads 5-8), channel 10. Keys on channel 1.
 
 ## Implementation Status
 
 **Working:**
-- JUCE/C++ project with CMake, Lua 5.4 + sol2 via FetchContent
-- AU plugin hosting with third-party loading (Keyscape, Kontakt, Massive X, Raum verified)
-- Track/Bus mixer DAG with sends and per-node gain
-- Plugin editor UIs auto-open on instrument load
-- Instrument switching via MIDI routing (no graph rebuild, no pops)
-- Plugin cache for fast startup
-- PerformanceAPI layer — all consumers go through single interface
-- Lua song scripts — songs are .lua files, no recompile needed
-- Automation engine — interpolate with easing functions, cancellable
-- Lua automation library — fadeOut, fadeIn, crossfade, paramSweep
-- Tested with MPK mini 3 (pads on ch10, keys on ch1)
+- Registry-driven engine with sync model
+- SQLite registry with generic CRUD and pub/sub events
+- Track/Bus mixer DAG with sends, per-node gain, GainProcessor
+- AU plugin hosting with third-party loading and plugin cache
+- Embedded terminal (libvterm) running Claude Code in the app
+- IPC socket for live Lua execution
+- Lua song scripts with automation library
+- Plugin state snapshots (save/restore)
+- GUI: 3-pane layout, toolbar, collapsible sidebar with registry tree, mixer, modal keyboard, native menu bar
+- Instrument switching via MIDI routing (no pops)
+- Automation engine with easing functions
+- Global keyboard shortcuts via NSEvent monitor
 
-**Known issues:**
-- Occasional stuck notes on instrument switch
-- Keyscape requires clicking through splash screen and loading a preset before it produces sound
-- Audio device settings are hardcoded defaults (512 samples, 48kHz)
-
-**Next steps:**
-- IPC (local socket) for Claude ↔ app communication at runtime
+**TODOs:**
+- Persist bindings to registry (schema exists, write path not wired)
+- Restore bindings from registry on startup/song load
+- Default unnamed session (always-persistent working state)
+- Session restore on app launch (load previous state from registry)
+- Track presets (save/load a full track configuration)
+- Sidebar CRUD actions (right-click context menus)
+- MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
-- Song management from Lua/API (list, switch songs at runtime)
-- Audio device configuration
-- GUI
+- Audio device configuration (buffer size, sample rate)
