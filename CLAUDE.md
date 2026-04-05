@@ -69,6 +69,25 @@ Entities: `plugins`, `snapshots`, `songs`, `tracks`, `busses`, `effects`, `sends
 
 Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(type, filters)`, `registryUpdate(id, fields)`, `registryDelete(id)` — all exposed to Lua.
 
+### Song Model
+
+A song consists of:
+- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin snapshots, bindings. This is the saved checkpoint — what the song looks like when loaded fresh. Never overwritten by the persist timer.
+- **Score** — an ordered list of action references (action ID + args) representing the intended sequence of state changes during performance. "First I hit pad 1 (setSingleActiveTrack → Synth), then later pad 3 (fadeOut → Keys, 3s, cosine)."
+
+The score serves two purposes:
+1. **Documentation** — the performer knows what to trigger and in what order
+2. **Development** — "go to step N" replays actions 1..N from initial state, putting the engine into the right state for working on that section. No need to manually trigger each step.
+
+State at any point = initial state + accumulated score actions up to that point.
+
+The persist timer writes to a **live session state** (the current working state), separate from the song's saved initial state. This enables:
+- Session restore on relaunch (pick up where you left off)
+- Undo support (history of live state changes)
+- No corruption of the song's initial state during performance or authoring
+
+The persist timer may be modal — active during authoring, paused during performance. Detection can be implicit (MIDI activity = performance) or explicit.
+
 ### Plugin State Snapshots
 
 Stored per plugin in `~/.config/performance/snapshots/<pluginName>/<snapshotName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in the registry. Independent of songs — any song/session can use any snapshot.
@@ -107,9 +126,11 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Discrete state changes (MIDI enabled) persist immediately
 
 **TODOs:**
-- Default unnamed session (always-persistent working state without requiring a song name)
+- Score table (`song_id, position, action_id, args`) and "go to step N" replay
+- Separate live session state from song initial state in registry
 - Track presets (save/load a full track configuration)
-- Sidebar CRUD actions (right-click context menus)
+- Plugin picker UI (searchable, filterable by instrument/effect)
+- Sidebar CRUD actions (right-click context menus, create/delete songs/tracks)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
