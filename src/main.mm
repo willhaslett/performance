@@ -164,21 +164,22 @@ public:
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Load default song if it exists
-        auto songsDir = LuaEngine::getSongsDirectory();
-        auto defaultSong = songsDir + "/two_instruments.lua";
-        juce::Timer::callAfterDelay(100, [this, defaultSong] {
-            if (juce::File(defaultSong).existsAsFile()) {
-                luaEngine->loadSong(defaultSong);
+        // Restore previous session from registry, or bootstrap from Lua
+        juce::Timer::callAfterDelay(100, [this] {
+            if (api->restoreSession()) {
+                perfLog("[App] Restored session from registry\n");
             } else {
-                perfLog("[App] No default song found at %s\n", defaultSong.c_str());
-                auto songs = luaEngine->listSongs();
-                if (!songs.empty()) {
-                    auto path = LuaEngine::getSongsDirectory() + "/" + songs[0] + ".lua";
-                    luaEngine->loadSong(path);
+                perfLog("[App] No session to restore, bootstrapping from Lua\n");
+                auto songsDir = LuaEngine::getSongsDirectory();
+                auto defaultSong = songsDir + "/two_instruments.lua";
+                if (juce::File(defaultSong).existsAsFile()) {
+                    luaEngine->loadSong(defaultSong);
                 } else {
-                    perfLog("[App] No songs found. Create .lua files in %s\n",
-                            LuaEngine::getSongsDirectory().c_str());
+                    auto songs = luaEngine->listSongs();
+                    if (!songs.empty()) {
+                        auto path = LuaEngine::getSongsDirectory() + "/" + songs[0] + ".lua";
+                        luaEngine->loadSong(path);
+                    }
                 }
             }
         });

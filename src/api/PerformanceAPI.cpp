@@ -563,6 +563,47 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
     perfLog("[API] Song loaded from registry: %s\n", song->name.c_str());
 }
 
+bool PerformanceAPI::restoreSession() {
+    auto songs = registry->allSongs();
+    if (songs.empty()) return false;
+
+    // Use the first (most recent) song
+    auto& song = songs[0];
+    currentSongId = song.id;
+    perfLog("[API] Restoring session: %s\n", song.name.c_str());
+
+    // Sync engine from registry
+    engineSync->clear();
+    engineSync->sync(currentSongId);
+
+    // Restore bindings
+    songRuntime->clearBindings();
+    for (auto& binding : registry->bindingsForSong(currentSongId)) {
+        auto action = registry->findActionById(binding.actionId);
+        if (!action) continue;
+
+        auto actionNameStr = action->name;
+        auto argsStr = binding.args;
+        MIDIControl control = { parseControlType(juce::String(binding.controlType)),
+                                binding.channel, binding.number };
+
+        songRuntime->addBinding(control, [this, actionNameStr, argsStr](float value) {
+            auto args = juce::JSON::parse(juce::String(argsStr));
+            executeAction(actionNameStr, args, value);
+        }, juce::String(binding.description));
+
+        perfLog("[API] Restored binding: %s ch%d #%d -> %s\n",
+                binding.controlType.c_str(), binding.channel, binding.number,
+                action->name.c_str());
+    }
+
+    perfLog("[API] Session restored: %s (%d tracks, %d bindings)\n",
+            song.name.c_str(),
+            (int)registry->tracksForSong(currentSongId).size(),
+            (int)registry->bindingsForSong(currentSongId).size());
+    return true;
+}
+
 void PerformanceAPI::unloadSong() {
     currentSongId.clear();
     songRuntime->unload();

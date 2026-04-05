@@ -85,9 +85,10 @@ public:
     void closeTopPluginEditor();
 
     // --- Song management ---
-    std::string createSong(const juce::String& name);  // creates in registry, sets as active
+    std::string createSong(const juce::String& name);
     void loadSong(const SongDef& song);
     void loadSongFromRegistry(const std::string& songId);
+    bool restoreSession();  // restore last session from registry, returns true if restored
     void unloadSong();
     void saveSongToFile(const juce::String& name);  // saves current state as JSON
     bool isSongLoaded() const;

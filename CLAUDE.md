@@ -7,7 +7,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and snapshots all persist automatically.
 - **Session** — there is always a current session (a song entity in the registry, named or unnamed). You can work without naming a song. `saveSong` gives the session a name. `loadSong` switches to a different one. On restart, the previous session is restored.
 - **Song** — a named session. Lua scripts in `~/.config/performance/songs/` bootstrap songs (create tracks, busses, bindings), but the registry is the authoritative state.
-- **Event-driven** — MIDI input triggers handler functions. Handlers can do anything: set parameters, launch interpolations, swap instruments.
+- **Action-based bindings** — MIDI controls bind to named actions (e.g., `setSingleActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
 - **Authoring model** — Claude runs embedded in the app (terminal emulator in the UI). Will plays and directs, Claude modifies the environment via the `perf` IPC command. The GUI provides direct manipulation. All consumers use the same API.
 
@@ -100,12 +100,13 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Instrument switching via MIDI routing (no pops)
 - Automation engine with easing functions
 - Global keyboard shortcuts via NSEvent monitor
+- Session restore from registry on app launch (no Lua re-execution needed)
+- Action-based bindings with entity ID arguments, persisted in registry
+- Snapshots persisted in registry alongside disk state files
 
 **TODOs:**
-- Persist bindings to registry (schema exists, write path not wired)
-- Restore bindings from registry on startup/song load
-- Default unnamed session (always-persistent working state)
-- Session restore on app launch (load previous state from registry)
+- Default unnamed session (always-persistent working state without requiring a song name)
+- Persist real-time values (gain, MIDI enabled) to registry on settle
 - Track presets (save/load a full track configuration)
 - Sidebar CRUD actions (right-click context menus)
 - MIDI device hot-plug
