@@ -224,28 +224,34 @@ static MIDIControl::Type parseControlType(const juce::String& type) {
     return MIDIControl::CC;
 }
 
-void PerformanceAPI::bind(const juce::String& type, int channel, int number,
-                           Handler handler, const juce::String& description) {
-    MIDIControl control = { parseControlType(type), channel, number };
-    songRuntime->addBinding(control, std::move(handler), description);
+void PerformanceAPI::bind(const juce::String& controlType, int channel, int number,
+                           const juce::String& actionName, const juce::String& argsJson,
+                           const juce::String& description) {
+    // Resolve action
+    auto action = registry->findActionByName(actionName.toStdString());
+    if (!action) {
+        perfLog("[API] Unknown action: %s\n", actionName.toRawUTF8());
+        return;
+    }
+
+    // Register runtime handler that dispatches to executeAction
+    auto actionNameStr = actionName.toStdString();
+    auto argsJsonStr = argsJson.toStdString();
+    MIDIControl control = { parseControlType(controlType), channel, number };
+    songRuntime->addBinding(control, [this, actionNameStr, argsJsonStr](float value) {
+        auto args = juce::JSON::parse(juce::String(argsJsonStr));
+        executeAction(actionNameStr, args, value);
+    }, description);
 
     // Persist to registry
     if (!currentSongId.empty()) {
-        // Use a generic "lua_handler" action for inline functions
-        auto action = registry->findActionByName("lua_handler");
-        std::string actionId;
-        if (!action)
-            actionId = registry->registerAction("lua_handler");
-        else
-            actionId = action->id;
-
-        registry->createBinding(currentSongId, type.toStdString(), channel, number,
-                                 actionId, "[]", description.toStdString());
+        registry->createBinding(currentSongId, controlType.toStdString(), channel, number,
+                                 action->id, argsJson.toStdString(), description.toStdString());
     }
 }
 
-void PerformanceAPI::unbind(const juce::String& type, int channel, int number) {
-    MIDIControl control = { parseControlType(type), channel, number };
+void PerformanceAPI::unbind(const juce::String& controlType, int channel, int number) {
+    MIDIControl control = { parseControlType(controlType), channel, number };
     songRuntime->removeBinding(control);
 }
 
@@ -653,16 +659,95 @@ void PerformanceAPI::populatePluginRegistry() {
 }
 
 void PerformanceAPI::registerBuiltinActions() {
-    registry->registerAction("setTrackMidiEnabled", R"([{"name":"trackId","type":"track"},{"name":"enabled","type":"bool"}])");
-    registry->registerAction("setTrackGain", R"([{"name":"trackId","type":"track"},{"name":"gain","type":"float"}])");
-    registry->registerAction("setBusGain", R"([{"name":"busId","type":"bus"},{"name":"gain","type":"float"}])");
-    registry->registerAction("setSendGain", R"([{"name":"trackId","type":"track"},{"name":"busId","type":"bus"},{"name":"gain","type":"float"}])");
-    registry->registerAction("fadeOut", R"([{"name":"trackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
-    registry->registerAction("fadeIn", R"([{"name":"trackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
-    registry->registerAction("crossfade", R"([{"name":"fromTrackId","type":"track"},{"name":"toTrackId","type":"track"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
-    registry->registerAction("loadSong", R"([{"name":"songId","type":"song"}])");
-    registry->registerAction("loadSnapshot", R"([{"name":"trackId","type":"track"},{"name":"snapshotId","type":"snapshot"}])");
-    registry->registerAction("openEditor", R"([{"name":"trackId","type":"track"}])");
+    registry->registerAction("setSingleActiveTrack", R"([{"name":"trackName","type":"string"}])");
+    registry->registerAction("setTrackMidiEnabled", R"([{"name":"trackName","type":"string"},{"name":"enabled","type":"bool"}])");
+    registry->registerAction("setTrackGain", R"([{"name":"trackName","type":"string"},{"name":"gain","type":"float"}])");
+    registry->registerAction("setBusGain", R"([{"name":"busName","type":"string"},{"name":"gain","type":"float"}])");
+    registry->registerAction("setSendGain", R"([{"name":"trackName","type":"string"},{"name":"busName","type":"string"},{"name":"gain","type":"float"}])");
+    registry->registerAction("fadeOut", R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("fadeIn", R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("crossfade", R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+    registry->registerAction("loadSong", R"([{"name":"songName","type":"string"}])");
+    registry->registerAction("openEditor", R"([{"name":"trackName","type":"string"}])");
+    registry->registerAction("log", R"([{"name":"message","type":"string"}])");
 
     perfLog("[API] Registered %d built-in actions\n", (int)registry->allActions().size());
+}
+
+void PerformanceAPI::executeAction(const std::string& actionName, const juce::var& args, float value) {
+    // Guard: most actions should ignore note-off / CC release
+    if (value == 0.0f) return;
+
+    auto getArg = [&](int index) -> juce::String {
+        if (auto* arr = args.getArray())
+            if (index < arr->size())
+                return (*arr)[index].toString();
+        return {};
+    };
+    auto getArgFloat = [&](int index, float def = 0.0f) -> float {
+        if (auto* arr = args.getArray())
+            if (index < arr->size())
+                return (float)(*arr)[index];
+        return def;
+    };
+
+    if (actionName == "setSingleActiveTrack") {
+        auto trackName = getArg(0);
+        for (auto& name : audioEngine->getTrackNames())
+            audioEngine->setTrackMidiEnabled(name, name == trackName);
+        perfLog("[Action] setSingleActiveTrack: %s\n", trackName.toRawUTF8());
+    }
+    else if (actionName == "setTrackMidiEnabled") {
+        audioEngine->setTrackMidiEnabled(getArg(0), getArg(1) == "true");
+    }
+    else if (actionName == "setTrackGain") {
+        audioEngine->setTrackGain(getArg(0), getArgFloat(1));
+    }
+    else if (actionName == "setBusGain") {
+        audioEngine->setBusGain(getArg(0), getArgFloat(1));
+    }
+    else if (actionName == "fadeOut") {
+        auto track = getArg(0).toStdString();
+        auto dur = getArgFloat(1, 3.0f);
+        auto easing = getArg(2).toStdString();
+        auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
+        float current = audioEngine->getTrackGain(juce::String(track));
+        automationEngine->interpolate(current, 0.0f, dur,
+            [this, track](float v) { audioEngine->setTrackGain(juce::String(track), v); },
+            easingFn);
+    }
+    else if (actionName == "fadeIn") {
+        auto track = getArg(0).toStdString();
+        auto dur = getArgFloat(1, 3.0f);
+        auto easing = getArg(2).toStdString();
+        auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
+        float current = audioEngine->getTrackGain(juce::String(track));
+        automationEngine->interpolate(current, 1.0f, dur,
+            [this, track](float v) { audioEngine->setTrackGain(juce::String(track), v); },
+            easingFn);
+    }
+    else if (actionName == "crossfade") {
+        auto from = getArg(0).toStdString();
+        auto to = getArg(1).toStdString();
+        auto dur = getArgFloat(2, 3.0f);
+        auto easing = getArg(3).toStdString();
+        auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
+        automationEngine->interpolate(1.0f, 0.0f, dur,
+            [this, from](float v) { audioEngine->setTrackGain(juce::String(from), v); }, easingFn);
+        automationEngine->interpolate(0.0f, 1.0f, dur,
+            [this, to](float v) { audioEngine->setTrackGain(juce::String(to), v); }, easingFn);
+    }
+    else if (actionName == "loadSong") {
+        // Handled via Lua loadSong — defer
+        perfLog("[Action] loadSong not yet implemented via action dispatch\n");
+    }
+    else if (actionName == "openEditor") {
+        audioEngine->openPluginEditor(getArg(0));
+    }
+    else if (actionName == "log") {
+        perfLog("[Action] %s\n", getArg(0).toRawUTF8());
+    }
+    else {
+        perfLog("[Action] Unknown action: %s\n", actionName.c_str());
+    }
 }

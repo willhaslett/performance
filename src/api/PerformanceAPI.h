@@ -53,10 +53,11 @@ public:
                          const juce::String& paramName);
 
     // --- MIDI control binding ---
-    using Handler = std::function<void(float)>;
-    void bind(const juce::String& type, int channel, int number,
-              Handler handler, const juce::String& description = "");
-    void unbind(const juce::String& type, int channel, int number);
+    // Binds a MIDI control to a named action with arguments
+    void bind(const juce::String& controlType, int channel, int number,
+              const juce::String& actionName, const juce::String& argsJson = "[]",
+              const juce::String& description = "");
+    void unbind(const juce::String& controlType, int channel, int number);
     void unbindAll();
 
     // --- Automation ---
@@ -125,6 +126,7 @@ private:
 
     void populatePluginRegistry();
     void registerBuiltinActions();
+    void executeAction(const std::string& actionName, const juce::var& args, float value);
 
     std::string currentSongId;  // active song in registry
 };

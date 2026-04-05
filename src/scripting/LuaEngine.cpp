@@ -107,15 +107,44 @@ void LuaEngine::registerAPI() {
     });
 
     // MIDI control binding
+    // bind(controlType, channel, number, actionName, args, description)
+    // args is a Lua table that gets serialized to JSON
     lua.set_function("bind", [this](const std::string& type, int channel, int number,
-                                     sol::function handler, sol::optional<std::string> description) {
-        // Capture the Lua function by value (shared ownership via sol::function)
-        auto luaHandler = handler;
+                                     const std::string& actionName,
+                                     sol::optional<sol::object> argsOrDesc,
+                                     sol::optional<std::string> descOpt) {
+        // Handle optional args: bind("cc", 10, 20, "action", {args}, "desc")
+        //                    or bind("cc", 10, 20, "action", "desc")
+        std::string argsJson = "[]";
+        std::string description;
+
+        if (argsOrDesc.has_value()) {
+            auto& val = argsOrDesc.value();
+            if (val.is<sol::table>()) {
+                // It's an args table — serialize to JSON array
+                auto tbl = val.as<sol::table>();
+                juce::Array<juce::var> arr;
+                for (size_t i = 1; i <= tbl.size(); ++i) {
+                    sol::object item = tbl[i];
+                    if (item.is<std::string>())
+                        arr.add(juce::var(juce::String(item.as<std::string>())));
+                    else if (item.is<double>())
+                        arr.add(juce::var(item.as<double>()));
+                    else if (item.is<bool>())
+                        arr.add(juce::var(item.as<bool>()));
+                }
+                argsJson = juce::JSON::toString(juce::var(arr)).toStdString();
+            } else if (val.is<std::string>()) {
+                // It's the description (no args)
+                description = val.as<std::string>();
+            }
+        }
+        if (descOpt.has_value())
+            description = descOpt.value();
+
         api.bind(juce::String(type), channel, number,
-                 [luaHandler](float value) mutable {
-                     luaHandler(value);
-                 },
-                 juce::String(description.value_or("")));
+                 juce::String(actionName), juce::String(argsJson),
+                 juce::String(description));
     });
     lua.set_function("unbind", [this](const std::string& type, int channel, int number) {
         api.unbind(juce::String(type), channel, number);
