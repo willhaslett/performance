@@ -16,7 +16,6 @@ public:
         setUsingNativeTitleBar(true);
         setContentOwned(mainLayout, false);
 
-        // Size to fill the screen
         auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
         if (display) {
             auto area = display->userArea;
@@ -29,18 +28,17 @@ public:
         setVisible(true);
         toFront(true);
 
-        // Global key monitor — intercepts key events even when plugin windows have focus
         keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
             handler:^NSEvent* (NSEvent* event) {
                 juce::juce_wchar c = event.characters.length > 0
                     ? [event.characters characterAtIndex:0] : 0;
                 auto key = juce::KeyPress(c, juce::ModifierKeys::getCurrentModifiers(), c);
 
-                if (event.keyCode == 53)  // Escape
+                if (event.keyCode == 53)
                     key = juce::KeyPress(juce::KeyPress::escapeKey);
 
                 if (mainLayout->handleGlobalKey(key))
-                    return nil;  // consumed
+                    return nil;
                 return event;
             }];
     }
@@ -59,6 +57,88 @@ private:
     id keyMonitor = nil;
 };
 
+// --- Menu Bar ---
+
+enum CommandIDs {
+    newSong = 1,
+    openSong,
+    saveSong,
+    closeSong,
+    toggleSidebar,
+    toggleMixer,
+};
+
+class AppMenuBar : public juce::MenuBarModel {
+public:
+    AppMenuBar(PerformanceAPI& api, LuaEngine& lua, MainLayout& layout)
+        : api(api), lua(lua), layout(layout) {}
+
+    juce::StringArray getMenuBarNames() override {
+        return { "File", "View" };
+    }
+
+    juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
+        juce::PopupMenu menu;
+        if (index == 0) {  // File
+            menu.addItem(CommandIDs::newSong, "New Song");
+            menu.addItem(CommandIDs::saveSong, "Save Song", api.isSongLoaded());
+            menu.addSeparator();
+
+            // Song list
+            auto songs = lua.listSongs();
+            for (int i = 0; i < (int)songs.size(); ++i) {
+                menu.addItem(100 + i, juce::String("Load: ") + juce::String(songs[i]));
+            }
+
+            if (!songs.empty())
+                menu.addSeparator();
+            menu.addItem(CommandIDs::closeSong, "Close Song", api.isSongLoaded());
+        }
+        else if (index == 1) {  // View
+            menu.addItem(CommandIDs::toggleSidebar, "Toggle Sidebar");
+            menu.addItem(CommandIDs::toggleMixer, "Toggle Mixer");
+        }
+        return menu;
+    }
+
+    void menuItemSelected(int menuItemID, int) override {
+        if (menuItemID == CommandIDs::newSong) {
+            // Create a new empty song
+            auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
+            api.createSong(name);
+            perfLog("[Menu] Created new song: %s\n", name.toRawUTF8());
+        }
+        else if (menuItemID == CommandIDs::saveSong) {
+            api.saveSongToFile(api.getSongName());
+        }
+        else if (menuItemID == CommandIDs::closeSong) {
+            api.unloadSong();
+        }
+        else if (menuItemID == CommandIDs::toggleSidebar) {
+            layout.handleGlobalKey(juce::KeyPress('s', {}, 's'));
+        }
+        else if (menuItemID == CommandIDs::toggleMixer) {
+            layout.handleGlobalKey(juce::KeyPress('x', {}, 'x'));
+        }
+        else if (menuItemID >= 100) {
+            // Load song by index
+            auto songs = lua.listSongs();
+            int idx = menuItemID - 100;
+            if (idx < (int)songs.size()) {
+                auto path = LuaEngine::getSongsDirectory() + "/" + songs[idx] + ".lua";
+                lua.loadSong(path);
+            }
+        }
+    }
+
+private:
+    PerformanceAPI& api;
+    LuaEngine& lua;
+    MainLayout& layout;
+};
+
+// --- App ---
+
 class PerformanceApp : public juce::JUCEApplication {
 public:
     const juce::String getApplicationName() override { return "Performance"; }
@@ -75,6 +155,11 @@ public:
         mainWindow = std::make_unique<MainWindow>(*api);
 
         luaEngine = std::make_unique<LuaEngine>(*api);
+
+        // Menu bar (needs references to api, lua, and layout)
+        auto* layout = dynamic_cast<MainLayout*>(mainWindow->getContentComponent());
+        menuBar = std::make_unique<AppMenuBar>(*api, *luaEngine, *layout);
+        juce::MenuBarModel::setMacMainMenu(menuBar.get());
 
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
@@ -100,6 +185,8 @@ public:
     }
 
     void shutdown() override {
+        juce::MenuBarModel::setMacMainMenu(nullptr);
+        menuBar.reset();
         ipcServer.reset();
         luaEngine.reset();
         mainWindow.reset();
@@ -115,6 +202,7 @@ private:
     std::unique_ptr<PerformanceAPI> api;
     std::unique_ptr<LuaEngine> luaEngine;
     std::unique_ptr<IPCServer> ipcServer;
+    std::unique_ptr<AppMenuBar> menuBar;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)

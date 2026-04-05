@@ -5,21 +5,23 @@
 class PerformanceAPI;
 class Registry;
 
-class Sidebar : public juce::Component, private juce::Timer {
+class Sidebar : public juce::Component {
 public:
     Sidebar();
+    ~Sidebar() override;
 
     void setAPI(PerformanceAPI* a) { api = a; }
-    void setRegistry(Registry* reg) { registry = reg; }
+    void setRegistry(Registry* reg);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
 private:
-    void timerCallback() override;
     void refreshTree();
 
     PerformanceAPI* api = nullptr;
     Registry* registry = nullptr;
     RegistryTree tree;
+    int subscriptionId = -1;
+    bool needsRefresh = false;
 };

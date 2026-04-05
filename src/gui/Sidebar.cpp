@@ -1,6 +1,7 @@
 #include "gui/Sidebar.h"
 #include "api/PerformanceAPI.h"
 #include "registry/Registry.h"
+#include "registry/RegistryEvents.h"
 #include "engine/Log.h"
 
 Sidebar::Sidebar() {
@@ -10,15 +11,37 @@ Sidebar::Sidebar() {
         if (!api) return;
         perfLog("[Sidebar] Clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
 
-        if (type == "song")
+        if (type == EntityType::Song)
             api->loadSongFromRegistry(id);
-        else if (type == "plugin" || type == "effect")
-            ; // TODO: open editor or show details
-        else if (type == "snapshot")
-            ; // TODO: load snapshot onto active track
+    });
+}
+
+Sidebar::~Sidebar() {
+    if (registry && subscriptionId >= 0)
+        registry->events().unsubscribe(subscriptionId);
+}
+
+void Sidebar::setRegistry(Registry* reg) {
+    if (registry && subscriptionId >= 0)
+        registry->events().unsubscribe(subscriptionId);
+
+    registry = reg;
+    if (!registry) return;
+
+    // Subscribe to all registry changes
+    subscriptionId = registry->events().subscribe([this](const RegistryEvent&) {
+        // Flag for refresh — we may be on a non-message thread
+        needsRefresh = true;
+        juce::MessageManager::callAsync([this] {
+            if (needsRefresh) {
+                needsRefresh = false;
+                refreshTree();
+            }
+        });
     });
 
-    startTimerHz(2);
+    // Initial population
+    refreshTree();
 }
 
 void Sidebar::paint(juce::Graphics& g) {
@@ -31,11 +54,6 @@ void Sidebar::paint(juce::Graphics& g) {
 
 void Sidebar::resized() {
     tree.setBounds(getLocalBounds().reduced(0, 4));
-}
-
-void Sidebar::timerCallback() {
-    if (registry)
-        refreshTree();
 }
 
 void Sidebar::refreshTree() {

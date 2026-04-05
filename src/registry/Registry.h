@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_core/juce_core.h>
+#include "registry/RegistryEvents.h"
 #include <sqlite3.h>
 #include <string>
 #include <vector>
@@ -159,8 +160,12 @@ public:
     // --- UUID ---
     static std::string generateId();
 
+    // --- Events ---
+    RegistryEventBus& events() { return eventBus; }
+
 private:
     sqlite3* db = nullptr;
+    RegistryEventBus eventBus;
 
     void createSchema();
     void exec(const std::string& sql) const;

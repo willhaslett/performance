@@ -12,6 +12,7 @@ static void applyExpansion(std::vector<TreeNode>& nodes, const std::set<std::str
 }
 
 void RegistryTree::setRootNodes(std::vector<TreeNode> nodes) {
+    visibleRows.clear();  // clear stale pointers first
     roots = std::move(nodes);
     applyExpansion(roots, expandedKeys);
     buildVisibleRows();
@@ -58,6 +59,7 @@ void RegistryTree::paint(juce::Graphics& g) {
 
     for (int i = 0; i < (int)visibleRows.size(); ++i) {
         auto& row = visibleRows[i];
+        if (!row.node) continue;
         int y = row.y;
 
         if (y + rowHeight < 0 || y > getHeight()) continue;

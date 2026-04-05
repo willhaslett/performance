@@ -268,6 +268,7 @@ std::string Registry::createSong(const std::string& name) {
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, EntityType::Song, id });
     return id;
 }
 
@@ -317,6 +318,7 @@ void Registry::deleteSong(const std::string& id) {
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Deleted, EntityType::Song, id });
 }
 
 // --- Tracks ---
@@ -338,6 +340,7 @@ std::string Registry::createTrack(const std::string& songId, const std::string& 
     sqlite3_bind_text(stmt, 8, songId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, EntityType::Track, id });
     return id;
 }
 
@@ -400,6 +403,7 @@ std::string Registry::createBus(const std::string& songId, const std::string& na
     sqlite3_bind_text(stmt, 5, songId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, EntityType::Bus, id });
     return id;
 }
 
@@ -445,6 +449,7 @@ std::string Registry::createEffect(const std::string& parentId, const std::strin
     sqlite3_bind_text(stmt, 7, parentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, EntityType::Effect, id });
     return id;
 }
 
@@ -481,6 +486,7 @@ std::string Registry::createSend(const std::string& trackId, const std::string& 
     sqlite3_bind_double(stmt, 4, gain);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, EntityType::Send, id });
     return id;
 }
 
@@ -614,9 +620,11 @@ void Registry::deleteBinding(const std::string& id) {
 // --- Generic CRUD ---
 
 static const std::map<std::string, std::string> typeToTable = {
-    {"plugin", "plugins"}, {"snapshot", "snapshots"}, {"song", "songs"},
-    {"track", "tracks"}, {"bus", "busses"}, {"effect", "effects"},
-    {"send", "sends"}, {"action", "actions"}, {"binding", "bindings"}
+    {EntityType::Plugin, "plugins"}, {EntityType::Snapshot, "snapshots"},
+    {EntityType::Song, "songs"}, {EntityType::Track, "tracks"},
+    {EntityType::Bus, "busses"}, {EntityType::Effect, "effects"},
+    {EntityType::Send, "sends"}, {EntityType::Action, "actions"},
+    {EntityType::Binding, "bindings"}
 };
 
 static std::string tableForType(const std::string& type) {
@@ -668,6 +676,7 @@ std::string Registry::create(const std::string& type, const std::map<std::string
         return "";
     }
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Created, type, id });
     return id;
 }
 
@@ -766,6 +775,7 @@ void Registry::update(const std::string& id, const std::map<std::string, std::st
 
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, type, id });
 }
 
 void Registry::remove(const std::string& id) {
@@ -777,4 +787,5 @@ void Registry::remove(const std::string& id) {
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Deleted, type, id });
 }
