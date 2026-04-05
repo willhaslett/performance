@@ -632,7 +632,12 @@ void PerformanceAPI::unloadSong() {
 
 SongDef PerformanceAPI::getCurrentSongDef() const {
     SongDef song;
-    song.name = songRuntime->getSongName();
+    if (!currentSongId.empty()) {
+        auto regSong = registry->findSongById(currentSongId);
+        if (regSong) song.name = juce::String(regSong->name);
+    }
+    if (song.name.isEmpty())
+        song.name = songRuntime->getSongName();
 
     for (auto& trackName : audioEngine->getTrackNames()) {
         TrackDef t;
@@ -664,33 +669,179 @@ SongDef PerformanceAPI::getCurrentSongDef() const {
     return song;
 }
 
-void PerformanceAPI::saveSongToFile(const juce::String& name) {
-    auto song = getCurrentSongDef();
-    song.name = name;
+void PerformanceAPI::saveInitialState() {
+    if (currentSongId.empty()) return;
 
-    // Auto-save snapshots for each plugin, using the song name as prefix
+    // Capture current state as JSON
+    auto song = getCurrentSongDef();
+
+    // Auto-save plugin snapshots
+    auto songName = getSongName();
     for (auto& trackName : audioEngine->getTrackNames()) {
         auto* proc = audioEngine->getTrackInstrumentProcessor(trackName);
         if (!proc) continue;
 
-        auto snapshotName = name + "_" + trackName;
+        auto snapshotName = songName + "_" + trackName;
         saveSnapshot(trackName, snapshotName);
 
-        // Find and update the track's snapshot name in the song def
         for (auto& t : song.tracks) {
             if (t.name == trackName)
                 t.snapshotName = snapshotName;
         }
     }
 
-    // Save JSON
-    auto songsDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-                        .getChildFile(".config/performance/songs");
-    songsDir.createDirectory();
-    auto file = songsDir.getChildFile(name + ".json");
-    file.replaceWithText(song.toJson());
+    // Also capture bindings
+    juce::Array<juce::var> bindingsArr;
+    for (auto& binding : registry->bindingsForSong(currentSongId)) {
+        auto action = registry->findActionById(binding.actionId);
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("controlType", juce::String(binding.controlType));
+        obj->setProperty("channel", binding.channel);
+        obj->setProperty("number", binding.number);
+        obj->setProperty("action", action ? juce::String(action->name) : juce::String());
+        obj->setProperty("args", juce::String(binding.args));
+        obj->setProperty("description", juce::String(binding.description));
+        bindingsArr.add(juce::var(obj));
+    }
 
-    perfLog("[API] Saved song \"%s\" to %s\n", name.toRawUTF8(), file.getFullPathName().toRawUTF8());
+    // Build the full initial state
+    auto stateJson = juce::JSON::parse(song.toJson());
+    if (auto* obj = stateJson.getDynamicObject())
+        obj->setProperty("bindings", bindingsArr);
+
+    auto initialStateStr = juce::JSON::toString(stateJson);
+
+    // Write to songs table
+    registry->update(currentSongId, {{"initial_state", initialStateStr.toStdString()}});
+
+    perfLog("[API] Saved initial state for song \"%s\"\n", songName.toRawUTF8());
+}
+
+void PerformanceAPI::loadInitialState() {
+    if (currentSongId.empty()) return;
+
+    // Read initial_state from songs table
+    auto entity = registry->get(currentSongId);
+    if (!entity) return;
+
+    auto initialStateStr = entity->get("initial_state");
+    if (initialStateStr.empty()) {
+        perfLog("[API] No initial state saved for this song\n");
+        return;
+    }
+
+    auto songDef = SongDef::fromJson(juce::String(initialStateStr));
+
+    // Use the song's registry name if the saved state has no name
+    if (songDef.name.isEmpty()) {
+        auto song = registry->findSongById(currentSongId);
+        songDef.name = song ? juce::String(song->name) : "Default Session";
+    }
+
+    perfLog("[API] Loading initial state for song \"%s\"\n", songDef.name.toRawUTF8());
+
+    // Clear engine
+    engineSync->clear();
+
+    // Clear live registry state for this song (tracks, busses, etc.)
+    registry->deleteSong(currentSongId);
+    currentSongId = registry->createSong(songDef.name.toStdString());
+    engineSync->setActiveSong(currentSongId);
+
+    // Re-save the initial_state (it was lost in the delete/recreate)
+    registry->update(currentSongId, {{"initial_state", initialStateStr}});
+
+    // Rebuild from SongDef — create tracks, busses, effects, sends
+    for (auto& busDef : songDef.busses) {
+        registry->createBus(currentSongId, busDef.name.toStdString(), busDef.outputGain);
+        // Bus effects
+        for (auto& fx : busDef.effects) {
+            auto plugin = registry->findPluginByName(fx.pluginName.toStdString());
+            if (plugin) {
+                for (auto& b : registry->bussesForSong(currentSongId)) {
+                    if (b.name == busDef.name.toStdString()) {
+                        registry->createEffect(b.id, EntityType::Bus,
+                                               fx.name.toStdString(), plugin->id);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    for (auto& trackDef : songDef.tracks) {
+        auto plugin = registry->findPluginByName(trackDef.pluginName.toStdString());
+        if (!plugin) continue;
+
+        std::string snapshotId;
+        if (trackDef.snapshotName.isNotEmpty()) {
+            auto snap = registry->findSnapshot(plugin->id, trackDef.snapshotName.toStdString());
+            if (snap) snapshotId = snap->id;
+        }
+
+        registry->createTrack(currentSongId, trackDef.name.toStdString(),
+                               plugin->id, snapshotId, trackDef.outputGain, trackDef.midiEnabled);
+
+        // Track effects
+        for (auto& fx : trackDef.effects) {
+            auto fxPlugin = registry->findPluginByName(fx.pluginName.toStdString());
+            if (fxPlugin) {
+                for (auto& t : registry->tracksForSong(currentSongId)) {
+                    if (t.name == trackDef.name.toStdString()) {
+                        registry->createEffect(t.id, EntityType::Track,
+                                               fx.name.toStdString(), fxPlugin->id);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Sends
+        for (auto& sendDef : trackDef.sends) {
+            std::string trackId, busId;
+            for (auto& t : registry->tracksForSong(currentSongId))
+                if (t.name == trackDef.name.toStdString()) { trackId = t.id; break; }
+            for (auto& b : registry->bussesForSong(currentSongId))
+                if (b.name == sendDef.busName.toStdString()) { busId = b.id; break; }
+            if (!trackId.empty() && !busId.empty())
+                registry->createSend(trackId, busId, sendDef.gain);
+        }
+    }
+
+    // Sync engine
+    engineSync->sync(currentSongId);
+
+    // Restore bindings from initial state
+    songRuntime->clearBindings();
+    auto parsed = juce::JSON::parse(juce::String(initialStateStr));
+    if (auto* bindingsArr = parsed.getProperty("bindings", {}).getArray()) {
+        for (auto& b : *bindingsArr) {
+            auto controlType = b.getProperty("controlType", "").toString();
+            int channel = (int)b.getProperty("channel", 0);
+            int number = (int)b.getProperty("number", 0);
+            auto actionName = b.getProperty("action", "").toString();
+            auto args = b.getProperty("args", "[]").toString();
+            auto description = b.getProperty("description", "").toString();
+
+            bind(controlType, channel, number, actionName, args, description);
+        }
+    }
+
+    perfLog("[API] Initial state loaded\n");
+}
+
+void PerformanceAPI::saveScore(const juce::String& scoreJson) {
+    if (currentSongId.empty()) return;
+    registry->update(currentSongId, {{"score", scoreJson.toStdString()}});
+    perfLog("[API] Score saved\n");
+}
+
+juce::String PerformanceAPI::getScore() const {
+    if (currentSongId.empty()) return "[]";
+    auto entity = registry->get(currentSongId);
+    if (!entity) return "[]";
+    auto score = entity->get("score");
+    return score.empty() ? juce::String("[]") : juce::String(score);
 }
 
 bool PerformanceAPI::isSongLoaded() const {

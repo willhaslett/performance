@@ -84,7 +84,12 @@ There are no stored waypoints or intermediate state snapshots. Any intermediate 
 - Documentation of the performance — the performer knows what to trigger and when
 - Reset — reload initial state (step 0)
 
-**Persist timer** writes current engine state to the registry for session restore (pick up where you left off on relaunch). The song's initial state is a separate saved checkpoint — the persist timer doesn't overwrite it. "Save Song" explicitly captures the current state as the new initial state.
+**Persist timer** writes current engine state to the live registry tables for session restore (pick up where you left off on relaunch). The song's initial state is stored separately in the `initial_state` JSON column on the songs table — the persist timer never touches it.
+
+**Operations:**
+- `saveInitialState()` — captures current state (tracks, busses, effects, sends, gains, bindings, plugin snapshots) as the song's initial state
+- `loadInitialState()` — restores the saved initial state, clearing live state and rebuilding the engine
+- `saveScore(json)` / `getScore()` — persist and retrieve the action score
 
 ### Plugin State Snapshots
 
@@ -122,10 +127,12 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Snapshots persisted in registry alongside disk state files
 - Runtime state persistence: 1Hz timer writes engine values (gain, MIDI enabled) back to registry
 - Discrete state changes (MIDI enabled) persist immediately
+- Song initial state: save/load checkpoint separate from live state
+- Default unnamed session on first run (no Lua bootstrap required)
 
 **TODOs:**
 - Score table (`song_id, position, action_id, args`) and "go to step N" replay
-- Song initial state checkpoint (separate from live registry state)
+- Score "go to step N" replay from initial state
 - Track presets (save/load a full track configuration)
 - Plugin picker UI (searchable, filterable by instrument/effect)
 - Sidebar CRUD actions (right-click context menus, create/delete songs/tracks)

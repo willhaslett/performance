@@ -259,8 +259,17 @@ void LuaEngine::registerAPI() {
             unloadSong();
         });
     });
-    lua.set_function("saveSong", [this](const std::string& name) {
-        api.saveSongToFile(juce::String(name));
+    lua.set_function("saveInitialState", [this]() {
+        api.saveInitialState();
+    });
+    lua.set_function("loadInitialState", [this]() {
+        api.loadInitialState();
+    });
+    lua.set_function("saveScore", [this](const std::string& scoreJson) {
+        api.saveScore(juce::String(scoreJson));
+    });
+    lua.set_function("getScore", [this]() -> std::string {
+        return api.getScore().toStdString();
     });
 
     // Generic Registry CRUD

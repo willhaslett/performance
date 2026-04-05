@@ -109,7 +109,7 @@ public:
             perfLog("[Menu] Created new song: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::saveSong) {
-            api.saveSongToFile(api.getSongName());
+            api.saveInitialState();
         }
         else if (menuItemID == CommandIDs::closeSong) {
             api.unloadSong();

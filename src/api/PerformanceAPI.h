@@ -88,11 +88,16 @@ public:
     std::string createSong(const juce::String& name);
     void loadSong(const SongDef& song);
     void loadSongFromRegistry(const std::string& songId);
-    bool restoreSession();  // restore last session from registry, returns true if restored
+    bool restoreSession();
     void unloadSong();
-    void saveSongToFile(const juce::String& name);  // saves current state as JSON
     bool isSongLoaded() const;
     juce::String getSongName() const;
+
+    // Song persistence — initial state + score
+    void saveInitialState();                        // capture current registry state as song's initial state
+    void loadInitialState();                        // restore initial state into registry + engine
+    void saveScore(const juce::String& scoreJson);  // save the action score
+    juce::String getScore() const;                  // get the current score
 
     // Query current state as a SongDef (for serialization)
     SongDef getCurrentSongDef() const;
