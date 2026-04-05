@@ -1,0 +1,22 @@
+#!/bin/bash
+# Send Lua code to the Performance app via IPC socket
+# Usage: perf 'createTrack("Bass")'
+# Usage: perf <<'LUA'
+#   createTrack("Bass")
+#   addInstrument("Bass", "DLS")
+# LUA
+
+SOCK="/tmp/performance.sock"
+
+if [ ! -S "$SOCK" ]; then
+    echo "error: Performance app not running (no socket at $SOCK)"
+    exit 1
+fi
+
+if [ $# -gt 0 ]; then
+    # Single-line from arguments
+    printf '%s\n' "$*" | nc -U "$SOCK"
+else
+    # Multi-line from stdin
+    { cat; echo "---END---"; } | nc -U "$SOCK"
+fi

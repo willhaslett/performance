@@ -7,17 +7,22 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     addAndMakeVisible(mixerView);
     setWantsKeyboardFocus(true);
 
-    // Launch Claude Code in the project directory
+    // Launch Claude Code in the runtime directory (has its own CLAUDE.md)
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                        .getFullPathName());
-    // Walk up from .app/Contents/MacOS/Performance to the build dir's parent
     for (int i = 0; i < 5; ++i)
         workDir = workDir.getParentDirectory();
 
-    if (!workDir.getChildFile("CLAUDE.md").existsAsFile())
-        workDir = juce::File("/Users/will/ideas_and_projects/performance");
+    auto runtimeDir = workDir.getChildFile("runtime");
+    if (!runtimeDir.getChildFile("CLAUDE.md").existsAsFile())
+        runtimeDir = juce::File("/Users/will/ideas_and_projects/performance/runtime");
 
-    terminalView.start("claude", workDir.getFullPathName());
+    // Add project bin to PATH so claude can find the perf command
+    auto binDir = runtimeDir.getParentDirectory().getChildFile("bin").getFullPathName();
+    auto path = juce::String(getenv("PATH")) + ":" + binDir;
+    setenv("PATH", path.toRawUTF8(), 1);
+
+    terminalView.start("claude", runtimeDir.getFullPathName());
 }
 
 void MainLayout::paint(juce::Graphics& g) {
