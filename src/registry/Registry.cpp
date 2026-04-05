@@ -610,3 +610,171 @@ void Registry::deleteBinding(const std::string& id) {
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
+
+// --- Generic CRUD ---
+
+static const std::map<std::string, std::string> typeToTable = {
+    {"plugin", "plugins"}, {"snapshot", "snapshots"}, {"song", "songs"},
+    {"track", "tracks"}, {"bus", "busses"}, {"effect", "effects"},
+    {"send", "sends"}, {"action", "actions"}, {"binding", "bindings"}
+};
+
+static std::string tableForType(const std::string& type) {
+    auto it = typeToTable.find(type);
+    return it != typeToTable.end() ? it->second : "";
+}
+
+// Reverse: figure out type from which table has this ID
+static std::string typeForId(sqlite3* db, const std::string& id) {
+    for (auto& [type, table] : typeToTable) {
+        auto sql = "SELECT 1 FROM " + table + " WHERE id = ?";
+        sqlite3_stmt* stmt = nullptr;
+        sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr);
+        sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+        bool found = sqlite3_step(stmt) == SQLITE_ROW;
+        sqlite3_finalize(stmt);
+        if (found) return type;
+    }
+    return "";
+}
+
+std::string Registry::create(const std::string& type, const std::map<std::string, std::string>& fields) {
+    auto table = tableForType(type);
+    if (table.empty()) {
+        perfLog("[Registry] Unknown type: %s\n", type.c_str());
+        return "";
+    }
+
+    auto id = generateId();
+
+    std::string cols = "id";
+    std::string vals = "?";
+    std::vector<std::string> values = { id };
+
+    for (auto& [key, value] : fields) {
+        cols += ", " + key;
+        vals += ", ?";
+        values.push_back(value);
+    }
+
+    auto sql = "INSERT INTO " + table + " (" + cols + ") VALUES (" + vals + ")";
+    auto* stmt = prepare(sql);
+    for (int i = 0; i < (int)values.size(); ++i)
+        sqlite3_bind_text(stmt, i + 1, values[i].c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        perfLog("[Registry] Create failed: %s\n", sqlite3_errmsg(db));
+        sqlite3_finalize(stmt);
+        return "";
+    }
+    sqlite3_finalize(stmt);
+    return id;
+}
+
+std::optional<Entity> Registry::get(const std::string& id) {
+    auto type = typeForId(db, id);
+    if (type.empty()) return std::nullopt;
+
+    auto table = tableForType(type);
+    auto sql = "SELECT * FROM " + table + " WHERE id = ?";
+    auto* stmt = prepare(sql);
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        sqlite3_finalize(stmt);
+        return std::nullopt;
+    }
+
+    Entity entity;
+    entity.id = id;
+    entity.type = type;
+    int colCount = sqlite3_column_count(stmt);
+    for (int i = 0; i < colCount; ++i) {
+        auto colName = std::string(sqlite3_column_name(stmt, i));
+        auto text = sqlite3_column_text(stmt, i);
+        entity.fields[colName] = text ? std::string((const char*)text) : "";
+    }
+
+    sqlite3_finalize(stmt);
+    return entity;
+}
+
+std::vector<Entity> Registry::list(const std::string& type,
+                                    const std::map<std::string, std::string>& filters) {
+    std::vector<Entity> result;
+    auto table = tableForType(type);
+    if (table.empty()) return result;
+
+    auto sql = "SELECT * FROM " + table;
+    std::vector<std::string> filterValues;
+
+    if (!filters.empty()) {
+        sql += " WHERE ";
+        bool first = true;
+        for (auto& [key, value] : filters) {
+            if (!first) sql += " AND ";
+            sql += key + " = ?";
+            filterValues.push_back(value);
+            first = false;
+        }
+    }
+
+    sql += " ORDER BY id";
+
+    auto* stmt = prepare(sql);
+    for (int i = 0; i < (int)filterValues.size(); ++i)
+        sqlite3_bind_text(stmt, i + 1, filterValues[i].c_str(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        Entity entity;
+        entity.type = type;
+        int colCount = sqlite3_column_count(stmt);
+        for (int i = 0; i < colCount; ++i) {
+            auto colName = std::string(sqlite3_column_name(stmt, i));
+            auto text = sqlite3_column_text(stmt, i);
+            entity.fields[colName] = text ? std::string((const char*)text) : "";
+            if (colName == "id") entity.id = entity.fields[colName];
+        }
+        result.push_back(entity);
+    }
+
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+void Registry::update(const std::string& id, const std::map<std::string, std::string>& fields) {
+    auto type = typeForId(db, id);
+    if (type.empty()) return;
+
+    auto table = tableForType(type);
+    std::string sql = "UPDATE " + table + " SET ";
+    std::vector<std::string> values;
+
+    bool first = true;
+    for (auto& [key, value] : fields) {
+        if (!first) sql += ", ";
+        sql += key + " = ?";
+        values.push_back(value);
+        first = false;
+    }
+    sql += " WHERE id = ?";
+    values.push_back(id);
+
+    auto* stmt = prepare(sql);
+    for (int i = 0; i < (int)values.size(); ++i)
+        sqlite3_bind_text(stmt, i + 1, values[i].c_str(), -1, SQLITE_TRANSIENT);
+
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void Registry::remove(const std::string& id) {
+    auto type = typeForId(db, id);
+    if (type.empty()) return;
+
+    auto table = tableForType(type);
+    auto* stmt = prepare("DELETE FROM " + table + " WHERE id = ?");
+    sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}

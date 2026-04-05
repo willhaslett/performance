@@ -94,10 +94,8 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
         auto& row = visibleRows[i];
         auto bounds = juce::Rectangle<int>(0, row.y, getWidth(), rowHeight);
         if (bounds.contains(event.getPosition())) {
-            if (row.node->isLeaf) {
-                if (onLeafClick)
-                    onLeafClick(row.node->type, row.node->id, row.node->label);
-            } else {
+            // Toggle expansion for non-leaf nodes
+            if (!row.node->isLeaf) {
                 row.node->expanded = !row.node->expanded;
                 if (row.node->expanded)
                     expandedKeys.insert(row.key);
@@ -106,6 +104,10 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
                 buildVisibleRows();
                 repaint();
             }
+
+            // Dispatch click for any node with an entity ID
+            if (!row.node->id.empty() && onNodeClick)
+                onNodeClick(row.node->type, row.node->id, row.node->label);
             break;
         }
     }

@@ -3,7 +3,20 @@
 #include <sqlite3.h>
 #include <string>
 #include <vector>
+#include <map>
 #include <optional>
+
+// Generic entity: type + map of field names to string values
+struct Entity {
+    std::string id;
+    std::string type;
+    std::map<std::string, std::string> fields;
+
+    std::string get(const std::string& key, const std::string& defaultVal = "") const {
+        auto it = fields.find(key);
+        return it != fields.end() ? it->second : defaultVal;
+    }
+};
 
 class Registry {
 public:
@@ -12,6 +25,14 @@ public:
 
     void open(const std::string& dbPath);
     void close();
+
+    // --- Generic CRUD ---
+    std::string create(const std::string& type, const std::map<std::string, std::string>& fields);
+    std::optional<Entity> get(const std::string& id);
+    std::vector<Entity> list(const std::string& type,
+                              const std::map<std::string, std::string>& filters = {});
+    void update(const std::string& id, const std::map<std::string, std::string>& fields);
+    void remove(const std::string& id);
 
     // --- Plugins ---
     struct Plugin {

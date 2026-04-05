@@ -544,6 +544,41 @@ std::vector<juce::String> PerformanceAPI::listPlugins() const {
     return names;
 }
 
+// --- Generic Registry CRUD ---
+
+std::string PerformanceAPI::registryCreate(const std::string& type,
+                                            const std::map<std::string, std::string>& fields) {
+    return registry->create(type, fields);
+}
+
+std::map<std::string, std::string> PerformanceAPI::registryGet(const std::string& id) {
+    auto entity = registry->get(id);
+    if (!entity) return {};
+    auto result = entity->fields;
+    result["_type"] = entity->type;
+    return result;
+}
+
+std::vector<std::map<std::string, std::string>> PerformanceAPI::registryList(
+        const std::string& type, const std::map<std::string, std::string>& filters) {
+    std::vector<std::map<std::string, std::string>> result;
+    for (auto& entity : registry->list(type, filters)) {
+        auto row = entity.fields;
+        row["_type"] = entity.type;
+        result.push_back(row);
+    }
+    return result;
+}
+
+void PerformanceAPI::registryUpdate(const std::string& id,
+                                     const std::map<std::string, std::string>& fields) {
+    registry->update(id, fields);
+}
+
+void PerformanceAPI::registryDelete(const std::string& id) {
+    registry->remove(id);
+}
+
 std::vector<juce::String> PerformanceAPI::listTrackNames() const {
     return audioEngine->getTrackNames();
 }

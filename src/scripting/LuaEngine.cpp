@@ -234,6 +234,47 @@ void LuaEngine::registerAPI() {
         api.saveSongToFile(juce::String(name));
     });
 
+    // Generic Registry CRUD
+    lua.set_function("registryCreate", [this](const std::string& type, sol::table fields) -> std::string {
+        std::map<std::string, std::string> f;
+        for (auto& [key, val] : fields)
+            f[key.as<std::string>()] = val.as<std::string>();
+        return api.registryCreate(type, f);
+    });
+    lua.set_function("registryGet", [this](const std::string& id) -> sol::table {
+        auto fields = api.registryGet(id);
+        sol::table result = lua.create_table();
+        for (auto& [k, v] : fields)
+            result[k] = v;
+        return result;
+    });
+    lua.set_function("registryList", [this](const std::string& type,
+                                             sol::optional<sol::table> filters) -> sol::table {
+        std::map<std::string, std::string> f;
+        if (filters.has_value()) {
+            for (auto& [key, val] : filters.value())
+                f[key.as<std::string>()] = val.as<std::string>();
+        }
+        auto entities = api.registryList(type, f);
+        sol::table result = lua.create_table();
+        for (size_t i = 0; i < entities.size(); ++i) {
+            sol::table row = lua.create_table();
+            for (auto& [k, v] : entities[i])
+                row[k] = v;
+            result[i + 1] = row;
+        }
+        return result;
+    });
+    lua.set_function("registryUpdate", [this](const std::string& id, sol::table fields) {
+        std::map<std::string, std::string> f;
+        for (auto& [key, val] : fields)
+            f[key.as<std::string>()] = val.as<std::string>();
+        api.registryUpdate(id, f);
+    });
+    lua.set_function("registryDelete", [this](const std::string& id) {
+        api.registryDelete(id);
+    });
+
     // Utility
     lua.set_function("log", [this](const std::string& msg) {
         api.log(juce::String(msg));

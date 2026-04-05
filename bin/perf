@@ -15,8 +15,8 @@ fi
 
 if [ $# -gt 0 ]; then
     # Single-line from arguments
-    printf '%s\n' "$*" | nc -U "$SOCK"
+    printf '%s\n' "$*" | nc -w 2 -U "$SOCK"
 else
     # Multi-line from stdin
-    { cat; echo "---END---"; } | nc -U "$SOCK"
+    { cat; echo "---END---"; } | nc -w 2 -U "$SOCK"
 fi

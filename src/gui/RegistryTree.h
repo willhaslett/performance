@@ -17,13 +17,13 @@ struct TreeNode {
 
 class RegistryTree : public juce::Component {
 public:
-    using LeafClickCallback = std::function<void(const std::string& type, const std::string& id,
+    using NodeClickCallback = std::function<void(const std::string& type, const std::string& id,
                                                   const std::string& label)>;
 
     RegistryTree();
 
     void setRootNodes(std::vector<TreeNode> nodes);
-    void setOnLeafClick(LeafClickCallback cb) { onLeafClick = std::move(cb); }
+    void setOnNodeClick(NodeClickCallback cb) { onNodeClick = std::move(cb); }
 
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& event) override;
@@ -33,7 +33,7 @@ public:
 
 private:
     std::vector<TreeNode> roots;
-    LeafClickCallback onLeafClick;
+    NodeClickCallback onNodeClick;
     int hoveredRow = -1;
     int scrollOffset = 0;
     std::set<std::string> expandedKeys;  // persists across rebuilds

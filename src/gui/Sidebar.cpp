@@ -1,14 +1,24 @@
 #include "gui/Sidebar.h"
+#include "api/PerformanceAPI.h"
 #include "registry/Registry.h"
+#include "engine/Log.h"
 
 Sidebar::Sidebar() {
     addAndMakeVisible(tree);
 
-    tree.setOnLeafClick([](const std::string& type, const std::string& id, const std::string& label) {
-        // TODO: handle leaf clicks (open editor, load song, etc.)
+    tree.setOnNodeClick([this](const std::string& type, const std::string& id, const std::string& label) {
+        if (!api) return;
+        perfLog("[Sidebar] Clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
+
+        if (type == "song")
+            api->loadSongFromRegistry(id);
+        else if (type == "plugin" || type == "effect")
+            ; // TODO: open editor or show details
+        else if (type == "snapshot")
+            ; // TODO: load snapshot onto active track
     });
 
-    startTimerHz(2);  // refresh tree periodically
+    startTimerHz(2);
 }
 
 void Sidebar::paint(juce::Graphics& g) {

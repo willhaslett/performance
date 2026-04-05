@@ -2,6 +2,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -92,6 +93,14 @@ public:
 
     // Query current state as a SongDef (for serialization)
     SongDef getCurrentSongDef() const;
+
+    // --- Generic Registry CRUD ---
+    std::string registryCreate(const std::string& type, const std::map<std::string, std::string>& fields);
+    std::map<std::string, std::string> registryGet(const std::string& id);
+    std::vector<std::map<std::string, std::string>> registryList(const std::string& type,
+        const std::map<std::string, std::string>& filters = {});
+    void registryUpdate(const std::string& id, const std::map<std::string, std::string>& fields);
+    void registryDelete(const std::string& id);
 
     // --- Query ---
     std::vector<juce::String> listPlugins() const;
