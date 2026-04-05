@@ -72,21 +72,19 @@ Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(t
 ### Song Model
 
 A song consists of:
-- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin snapshots, bindings. This is the saved checkpoint — what the song looks like when loaded fresh. Never overwritten by the persist timer.
-- **Score** — an ordered list of action references (action ID + args) representing the intended sequence of state changes during performance. "First I hit pad 1 (setSingleActiveTrack → Synth), then later pad 3 (fadeOut → Keys, 3s, cosine)."
+- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin snapshots, bindings. Saved explicitly by the user. What the song looks like when loaded fresh.
+- **Score** — an ordered list of registered action references (action ID + args) representing the intended sequence of state changes during performance.
 
-The score serves two purposes:
-1. **Documentation** — the performer knows what to trigger and in what order
-2. **Development** — "go to step N" replays actions 1..N from initial state, putting the engine into the right state for working on that section. No need to manually trigger each step.
+State at any point = initial state + replay of score actions 1..N.
 
-State at any point = initial state + accumulated score actions up to that point.
+There are no stored waypoints or intermediate state snapshots. Any intermediate state is computed by replaying the score from initial state. This guarantees consistency — if the score produces wrong state, you discover it during development (replay), not during performance.
 
-The persist timer writes to a **live session state** (the current working state), separate from the song's saved initial state. This enables:
-- Session restore on relaunch (pick up where you left off)
-- Undo support (history of live state changes)
-- No corruption of the song's initial state during performance or authoring
+**Score uses:**
+- "Go to step N" for development — replays from initial state to work on any section
+- Documentation of the performance — the performer knows what to trigger and when
+- Reset — reload initial state (step 0)
 
-The persist timer may be modal — active during authoring, paused during performance. Detection can be implicit (MIDI activity = performance) or explicit.
+**Persist timer** writes current engine state to the registry for session restore (pick up where you left off on relaunch). The song's initial state is a separate saved checkpoint — the persist timer doesn't overwrite it. "Save Song" explicitly captures the current state as the new initial state.
 
 ### Plugin State Snapshots
 
@@ -127,7 +125,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 **TODOs:**
 - Score table (`song_id, position, action_id, args`) and "go to step N" replay
-- Separate live session state from song initial state in registry
+- Song initial state checkpoint (separate from live registry state)
 - Track presets (save/load a full track configuration)
 - Plugin picker UI (searchable, filterable by instrument/effect)
 - Sidebar CRUD actions (right-click context menus, create/delete songs/tracks)
