@@ -42,10 +42,14 @@ private:
     static constexpr int indentSize = 16;
 
     struct RowInfo {
-        TreeNode* node;
+        std::string label;
+        std::string id;
+        std::string type;
+        std::string key;
+        bool isLeaf;
+        bool expanded;
         int depth;
         int y;
-        std::string key;  // path key for expansion persistence
     };
     std::vector<RowInfo> visibleRows;
 

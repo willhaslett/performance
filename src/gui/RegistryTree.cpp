@@ -12,7 +12,7 @@ static void applyExpansion(std::vector<TreeNode>& nodes, const std::set<std::str
 }
 
 void RegistryTree::setRootNodes(std::vector<TreeNode> nodes) {
-    visibleRows.clear();  // clear stale pointers first
+    visibleRows.clear();
     roots = std::move(nodes);
     applyExpansion(roots, expandedKeys);
     buildVisibleRows();
@@ -28,7 +28,17 @@ void RegistryTree::buildVisibleRows() {
 void RegistryTree::buildRowsRecursive(TreeNode& node, int depth, const std::string& parentKey) {
     auto key = parentKey + "/" + node.label;
     int y = (int)visibleRows.size() * rowHeight - scrollOffset;
-    visibleRows.push_back({ &node, depth, y, key });
+
+    RowInfo row;
+    row.label = node.label;
+    row.id = node.id;
+    row.type = node.type;
+    row.key = key;
+    row.isLeaf = node.isLeaf;
+    row.expanded = node.expanded;
+    row.depth = depth;
+    row.y = y;
+    visibleRows.push_back(row);
 
     if (node.expanded) {
         for (auto& child : node.children)
@@ -59,7 +69,6 @@ void RegistryTree::paint(juce::Graphics& g) {
 
     for (int i = 0; i < (int)visibleRows.size(); ++i) {
         auto& row = visibleRows[i];
-        if (!row.node) continue;
         int y = row.y;
 
         if (y + rowHeight < 0 || y > getHeight()) continue;
@@ -72,19 +81,17 @@ void RegistryTree::paint(juce::Graphics& g) {
             g.fillRect(0, y, getWidth(), rowHeight);
         }
 
-        if (row.node->isLeaf) {
-            // Leaf: just the label, slightly indented past where arrow would be
+        if (row.isLeaf) {
             g.setColour(juce::Colour(0xffaaaaaa));
-            g.drawText(juce::String(row.node->label),
+            g.drawText(juce::String(row.label),
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);
         } else {
-            // Category: arrow + label
             g.setColour(juce::Colour(0xff888888));
-            drawArrow(g, x, y, row.node->expanded);
+            drawArrow(g, x, y, row.expanded);
 
             g.setColour(juce::Colour(0xffdddddd));
-            g.drawText(juce::String(row.node->label),
+            g.drawText(juce::String(row.label),
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);
         }
@@ -92,27 +99,37 @@ void RegistryTree::paint(juce::Graphics& g) {
 }
 
 void RegistryTree::mouseUp(const juce::MouseEvent& event) {
+    std::string clickType, clickId, clickLabel, clickKey;
+    bool clickIsLeaf = true;
+
     for (int i = 0; i < (int)visibleRows.size(); ++i) {
         auto& row = visibleRows[i];
         auto bounds = juce::Rectangle<int>(0, row.y, getWidth(), rowHeight);
         if (bounds.contains(event.getPosition())) {
-            // Toggle expansion for non-leaf nodes
-            if (!row.node->isLeaf) {
-                row.node->expanded = !row.node->expanded;
-                if (row.node->expanded)
-                    expandedKeys.insert(row.key);
+            clickType = row.type;
+            clickId = row.id;
+            clickLabel = row.label;
+            clickKey = row.key;
+            clickIsLeaf = row.isLeaf;
+
+            if (!clickIsLeaf) {
+                if (row.expanded)
+                    expandedKeys.erase(clickKey);
                 else
-                    expandedKeys.erase(row.key);
+                    expandedKeys.insert(clickKey);
+
+                // Rebuild from roots with updated expansion
+                applyExpansion(roots, expandedKeys);
                 buildVisibleRows();
                 repaint();
             }
-
-            // Dispatch click for any node with an entity ID
-            if (!row.node->id.empty() && onNodeClick)
-                onNodeClick(row.node->type, row.node->id, row.node->label);
             break;
         }
     }
+
+    // Only dispatch click action for leaf nodes — non-leaf just expands/collapses
+    if (clickIsLeaf && !clickId.empty() && onNodeClick)
+        onNodeClick(clickType, clickId, clickLabel);
 }
 
 void RegistryTree::mouseMove(const juce::MouseEvent& event) {
