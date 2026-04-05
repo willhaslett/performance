@@ -103,6 +103,7 @@ public:
 
     // Access for main.cpp window setup (device manager needed for JUCE audio)
     juce::AudioDeviceManager& getDeviceManager();
+    Registry& getRegistry() { return *registry; }
 
 private:
     std::unique_ptr<Registry> registry;

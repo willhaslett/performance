@@ -1,13 +1,22 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "gui/RegistryTree.h"
 
-class Sidebar : public juce::Component {
+class Registry;
+
+class Sidebar : public juce::Component, private juce::Timer {
 public:
-    void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xff1a1a1a));
+    Sidebar();
 
-        // Right border
-        g.setColour(juce::Colour(0xff3a3a3a));
-        g.drawLine((float)getWidth(), 0.0f, (float)getWidth(), (float)getHeight(), 1.0f);
-    }
+    void setRegistry(Registry* reg) { registry = reg; }
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void refreshTree();
+
+    Registry* registry = nullptr;
+    RegistryTree tree;
 };

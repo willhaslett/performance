@@ -42,6 +42,8 @@ target_sources(Performance PRIVATE
     src/api/PerformanceAPI.cpp
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
+    src/gui/RegistryTree.cpp
+    src/gui/Sidebar.cpp
     src/gui/TerminalView.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp

@@ -2,6 +2,7 @@
 #include "api/PerformanceAPI.h"
 
 MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
+    sidebar.setRegistry(&api.getRegistry());
     addChildComponent(sidebar);
     addAndMakeVisible(terminalView);
     addAndMakeVisible(mixerView);

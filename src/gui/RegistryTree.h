@@ -1,0 +1,55 @@
+#pragma once
+#include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
+#include <vector>
+#include <string>
+#include <set>
+
+// A collapsible tree node with children
+struct TreeNode {
+    std::string label;
+    std::string id;        // registry entity ID (empty for category nodes)
+    std::string type;      // entity type: "song", "track", "plugin", "snapshot", etc.
+    bool expanded = false;
+    bool isLeaf = false;
+    std::vector<TreeNode> children;
+};
+
+class RegistryTree : public juce::Component {
+public:
+    using LeafClickCallback = std::function<void(const std::string& type, const std::string& id,
+                                                  const std::string& label)>;
+
+    RegistryTree();
+
+    void setRootNodes(std::vector<TreeNode> nodes);
+    void setOnLeafClick(LeafClickCallback cb) { onLeafClick = std::move(cb); }
+
+    void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent&) override;
+    void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
+
+private:
+    std::vector<TreeNode> roots;
+    LeafClickCallback onLeafClick;
+    int hoveredRow = -1;
+    int scrollOffset = 0;
+    std::set<std::string> expandedKeys;  // persists across rebuilds
+
+    static constexpr int rowHeight = 22;
+    static constexpr int indentSize = 16;
+
+    struct RowInfo {
+        TreeNode* node;
+        int depth;
+        int y;
+        std::string key;  // path key for expansion persistence
+    };
+    std::vector<RowInfo> visibleRows;
+
+    void buildVisibleRows();
+    void buildRowsRecursive(TreeNode& node, int depth, const std::string& parentKey);
+    void drawArrow(juce::Graphics& g, int x, int y, bool expanded);
+};
