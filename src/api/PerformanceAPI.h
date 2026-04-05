@@ -127,6 +127,8 @@ private:
     void populatePluginRegistry();
     void registerBuiltinActions();
     void executeAction(const std::string& actionName, const juce::var& args, float value);
+    juce::String resolveArgsToIds(const juce::String& actionName, const juce::String& argsJson);
+    juce::String resolveIdToName(const juce::String& id);
 
     std::string currentSongId;  // active song in registry
 };

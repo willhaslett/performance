@@ -224,29 +224,95 @@ static MIDIControl::Type parseControlType(const juce::String& type) {
     return MIDIControl::CC;
 }
 
+// Resolve arg names to entity IDs using the action's param schema
+juce::String PerformanceAPI::resolveArgsToIds(const juce::String& actionName,
+                                                const juce::String& argsJson) {
+    auto action = registry->findActionByName(actionName.toStdString());
+    if (!action || action->paramSchema.empty()) return argsJson;
+
+    auto schema = juce::JSON::parse(juce::String(action->paramSchema));
+    auto args = juce::JSON::parse(argsJson);
+    auto* schemaArr = schema.getArray();
+    auto* argsArr = args.getArray();
+    if (!schemaArr || !argsArr) return argsJson;
+
+    juce::Array<juce::var> resolved;
+    for (int i = 0; i < argsArr->size() && i < schemaArr->size(); ++i) {
+        auto paramType = (*schemaArr)[i].getProperty("type", "").toString();
+        auto argVal = (*argsArr)[i].toString();
+
+        if (paramType == "string") {
+            // Resolve entity name to ID based on context
+            // Check tracks first, then busses, then songs
+            bool found = false;
+            if (!currentSongId.empty()) {
+                for (auto& t : registry->tracksForSong(currentSongId)) {
+                    if (t.name == argVal.toStdString()) {
+                        resolved.add(juce::var(juce::String(t.id)));
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (auto& b : registry->bussesForSong(currentSongId)) {
+                        if (b.name == argVal.toStdString()) {
+                            resolved.add(juce::var(juce::String(b.id)));
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!found) {
+                auto song = registry->findSongByName(argVal.toStdString());
+                if (song) {
+                    resolved.add(juce::var(juce::String(song->id)));
+                    found = true;
+                }
+            }
+            // If not an entity name, keep as-is (e.g., easing names)
+            if (!found)
+                resolved.add((*argsArr)[i]);
+        } else {
+            resolved.add((*argsArr)[i]);
+        }
+    }
+
+    return juce::JSON::toString(juce::var(resolved));
+}
+
+// Resolve entity ID back to name for engine calls
+juce::String PerformanceAPI::resolveIdToName(const juce::String& id) {
+    auto entity = registry->get(id.toStdString());
+    if (entity) return juce::String(entity->get("name"));
+    return id;  // not an ID, return as-is
+}
+
 void PerformanceAPI::bind(const juce::String& controlType, int channel, int number,
                            const juce::String& actionName, const juce::String& argsJson,
                            const juce::String& description) {
-    // Resolve action
     auto action = registry->findActionByName(actionName.toStdString());
     if (!action) {
         perfLog("[API] Unknown action: %s\n", actionName.toRawUTF8());
         return;
     }
 
-    // Register runtime handler that dispatches to executeAction
+    // Resolve names to IDs for storage
+    auto resolvedArgs = resolveArgsToIds(actionName, argsJson);
+
+    // Register runtime handler
     auto actionNameStr = actionName.toStdString();
-    auto argsJsonStr = argsJson.toStdString();
+    auto resolvedArgsStr = resolvedArgs.toStdString();
     MIDIControl control = { parseControlType(controlType), channel, number };
-    songRuntime->addBinding(control, [this, actionNameStr, argsJsonStr](float value) {
-        auto args = juce::JSON::parse(juce::String(argsJsonStr));
+    songRuntime->addBinding(control, [this, actionNameStr, resolvedArgsStr](float value) {
+        auto args = juce::JSON::parse(juce::String(resolvedArgsStr));
         executeAction(actionNameStr, args, value);
     }, description);
 
-    // Persist to registry
+    // Persist to registry with IDs
     if (!currentSongId.empty()) {
         registry->createBinding(currentSongId, controlType.toStdString(), channel, number,
-                                 action->id, argsJson.toStdString(), description.toStdString());
+                                 action->id, resolvedArgs.toStdString(), description.toStdString());
     }
 }
 
@@ -681,7 +747,7 @@ void PerformanceAPI::executeAction(const std::string& actionName, const juce::va
     auto getArg = [&](int index) -> juce::String {
         if (auto* arr = args.getArray())
             if (index < arr->size())
-                return (*arr)[index].toString();
+                return resolveIdToName((*arr)[index].toString());
         return {};
     };
     auto getArgFloat = [&](int index, float def = 0.0f) -> float {
