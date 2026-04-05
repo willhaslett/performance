@@ -110,6 +110,17 @@ void PerformanceAPI::addTrackEffect(const juce::String& trackName, const juce::S
 
 void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
     audioEngine->setTrackMidiEnabled(trackName, enabled);
+
+    // Persist discrete state change immediately
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == trackName.toStdString()) {
+                t.midiEnabled = enabled;
+                registry->updateTrack(t);
+                break;
+            }
+        }
+    }
 }
 
 void PerformanceAPI::setTrackGain(const juce::String& trackName, float gain) {
@@ -468,6 +479,7 @@ std::string PerformanceAPI::createSong(const juce::String& name) {
         registry->deleteSong(currentSongId);
     }
     currentSongId = registry->createSong(name.toStdString());
+    engineSync->setActiveSong(currentSongId);
     perfLog("[API] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), currentSongId.c_str());
     return currentSongId;
 }
@@ -570,6 +582,7 @@ bool PerformanceAPI::restoreSession() {
     // Use the first (most recent) song
     auto& song = songs[0];
     currentSongId = song.id;
+    engineSync->setActiveSong(currentSongId);
     perfLog("[API] Restoring session: %s\n", song.name.c_str());
 
     // Sync engine from registry
@@ -605,6 +618,7 @@ bool PerformanceAPI::restoreSession() {
 }
 
 void PerformanceAPI::unloadSong() {
+    engineSync->setActiveSong("");
     currentSongId.clear();
     songRuntime->unload();
 }

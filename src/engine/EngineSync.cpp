@@ -4,7 +4,21 @@
 #include "registry/Registry.h"
 
 EngineSync::EngineSync(AudioEngine& engine, Registry& registry)
-    : engine(engine), registry(registry) {}
+    : engine(engine), registry(registry) {
+    startTimerHz(1);  // persist state every second
+}
+
+EngineSync::~EngineSync() {
+    stopTimer();
+    // Final persist on shutdown
+    if (!activeSongId.empty())
+        persistState(activeSongId);
+}
+
+void EngineSync::timerCallback() {
+    if (!activeSongId.empty())
+        persistState(activeSongId);
+}
 
 void EngineSync::clear() {
     engine.clearAllTracks();
@@ -99,6 +113,38 @@ void EngineSync::sync(const std::string& songId) {
                     break;
                 }
             }
+        }
+    }
+}
+
+void EngineSync::persistState(const std::string& songId) {
+    if (songId.empty()) return;
+
+    // Persist track gain and MIDI enabled
+    for (auto& track : registry.tracksForSong(songId)) {
+        float engineGain = engine.getTrackGain(juce::String(track.name));
+        bool engineMidi = engine.isTrackMidiEnabled(juce::String(track.name));
+
+        bool changed = false;
+        if (std::abs(engineGain - track.outputGain) > 0.001f) {
+            track.outputGain = engineGain;
+            changed = true;
+        }
+        if (engineMidi != track.midiEnabled) {
+            track.midiEnabled = engineMidi;
+            changed = true;
+        }
+
+        if (changed)
+            registry.updateTrack(track);
+    }
+
+    // Persist bus gain
+    for (auto& bus : registry.bussesForSong(songId)) {
+        float engineGain = engine.getBusGain(juce::String(bus.name));
+        if (std::abs(engineGain - bus.outputGain) > 0.001f) {
+            // Update bus gain in registry
+            registry.update(bus.id, {{"output_gain", std::to_string(engineGain)}});
         }
     }
 }
