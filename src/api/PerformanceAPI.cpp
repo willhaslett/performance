@@ -228,6 +228,20 @@ void PerformanceAPI::bind(const juce::String& type, int channel, int number,
                            Handler handler, const juce::String& description) {
     MIDIControl control = { parseControlType(type), channel, number };
     songRuntime->addBinding(control, std::move(handler), description);
+
+    // Persist to registry
+    if (!currentSongId.empty()) {
+        // Use a generic "lua_handler" action for inline functions
+        auto action = registry->findActionByName("lua_handler");
+        std::string actionId;
+        if (!action)
+            actionId = registry->registerAction("lua_handler");
+        else
+            actionId = action->id;
+
+        registry->createBinding(currentSongId, type.toStdString(), channel, number,
+                                 actionId, "[]", description.toStdString());
+    }
 }
 
 void PerformanceAPI::unbind(const juce::String& type, int channel, int number) {
@@ -294,6 +308,13 @@ void PerformanceAPI::saveSnapshot(const juce::String& trackName, const juce::Str
     dir.createDirectory();
     auto file = dir.getChildFile(snapshotName + ".state");
     file.replaceWithData(state.getData(), state.getSize());
+
+    // Register in registry
+    auto plugin = registry->findPluginByName(proc->getName().toStdString());
+    if (plugin) {
+        registry->createSnapshot(plugin->id, snapshotName.toStdString(),
+                                  file.getFullPathName().toStdString());
+    }
 
     perfLog("[API] Saved snapshot \"%s\" for %s (%d bytes)\n",
             snapshotName.toRawUTF8(), proc->getName().toRawUTF8(), (int)state.getSize());
