@@ -103,12 +103,14 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Session restore from registry on app launch (no Lua re-execution needed)
 - Action-based bindings with entity ID arguments, persisted in registry
 - Snapshots persisted in registry alongside disk state files
+- Runtime state persistence: 1Hz timer writes engine values (gain, MIDI enabled) back to registry
+- Discrete state changes (MIDI enabled) persist immediately
 
 **TODOs:**
 - Default unnamed session (always-persistent working state without requiring a song name)
-- Persist real-time values (gain, MIDI enabled) to registry on settle
 - Track presets (save/load a full track configuration)
 - Sidebar CRUD actions (right-click context menus)
+- Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
