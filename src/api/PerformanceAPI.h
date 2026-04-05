@@ -8,6 +8,7 @@
 
 class AudioEngine;
 class AutomationEngine;
+class EngineSync;
 class MIDIEngine;
 class Registry;
 class SongRuntime;
@@ -117,6 +118,7 @@ public:
 private:
     std::unique_ptr<Registry> registry;
     std::unique_ptr<AudioEngine> audioEngine;
+    std::unique_ptr<EngineSync> engineSync;
     std::unique_ptr<AutomationEngine> automationEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;

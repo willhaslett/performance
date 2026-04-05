@@ -49,6 +49,7 @@ target_sources(Performance PRIVATE
     src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp
     src/registry/Registry.cpp
+    src/engine/EngineSync.cpp
     src/engine/AudioEngine.mm
     src/engine/MIDIEngine.cpp
     src/engine/Log.cpp
