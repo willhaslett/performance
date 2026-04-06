@@ -47,7 +47,8 @@ void Registry::createSchema() {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             initial_state TEXT,
-            score TEXT
+            score TEXT,
+            master_gain REAL DEFAULT 1.0
         );
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -104,6 +105,9 @@ void Registry::createSchema() {
             description TEXT
         );
     )");
+
+    // Migrations for existing databases
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN master_gain REAL DEFAULT 1.0", nullptr, nullptr, nullptr);
 }
 
 std::string Registry::generateId() {
@@ -322,6 +326,24 @@ void Registry::deleteSong(const std::string& id) {
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     eventBus.emit({ RegistryEvent::Deleted, EntityType::Song, id });
+}
+
+void Registry::setMasterGain(const std::string& songId, float gain) {
+    auto* stmt = prepare("UPDATE songs SET master_gain = ? WHERE id = ?");
+    sqlite3_bind_double(stmt, 1, gain);
+    sqlite3_bind_text(stmt, 2, songId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+float Registry::getMasterGain(const std::string& songId) const {
+    auto* stmt = prepare("SELECT master_gain FROM songs WHERE id = ?");
+    sqlite3_bind_text(stmt, 1, songId.c_str(), -1, SQLITE_TRANSIENT);
+    float gain = 1.0f;
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+        gain = (float)sqlite3_column_double(stmt, 0);
+    sqlite3_finalize(stmt);
+    return gain;
 }
 
 // --- Tracks ---

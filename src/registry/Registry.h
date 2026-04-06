@@ -71,6 +71,8 @@ public:
     std::optional<Song> findSongById(const std::string& id) const;
     std::vector<Song> allSongs() const;
     void deleteSong(const std::string& id);
+    void setMasterGain(const std::string& songId, float gain);
+    float getMasterGain(const std::string& songId) const;
 
     // --- Tracks ---
     struct Track {

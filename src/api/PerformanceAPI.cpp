@@ -134,6 +134,12 @@ void PerformanceAPI::removeInstrument(const juce::String& trackName) {
 
 void PerformanceAPI::addEffect(const juce::String& parentName, const juce::String& effectName,
                                 const juce::String& pluginName) {
+    // Master output — direct to engine, no registry entity
+    if (parentName == "Output") {
+        audioEngine->addEffect(parentName, effectName, pluginName);
+        return;
+    }
+
     if (!currentSongId.empty()) {
         auto plugin = registry->findPluginByName(pluginName.toStdString());
         if (plugin) {
@@ -162,6 +168,8 @@ void PerformanceAPI::addEffect(const juce::String& parentName, const juce::Strin
 
 void PerformanceAPI::removeEffect(const juce::String& parentName, const juce::String& effectName) {
     audioEngine->removeEffect(parentName, effectName);
+
+    if (parentName == "Output") return;  // no registry entity for master output
 
     if (!currentSongId.empty()) {
         // Check tracks first, then busses
@@ -715,6 +723,10 @@ bool PerformanceAPI::restoreSession() {
                 binding.controlType.c_str(), binding.channel, binding.number,
                 action->name.c_str());
     }
+
+    // Restore master gain
+    float masterGain = registry->getMasterGain(currentSongId);
+    audioEngine->setMasterGain(masterGain);
 
     perfLog("[API] Session restored: %s (%d tracks, %d bindings)\n",
             song.name.c_str(),

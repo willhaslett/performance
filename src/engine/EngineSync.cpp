@@ -150,8 +150,13 @@ void EngineSync::persistState(const std::string& songId) {
     for (auto& bus : registry.bussesForSong(songId)) {
         float engineGain = engine.getBusGain(juce::String(bus.name));
         if (std::abs(engineGain - bus.outputGain) > 0.001f) {
-            // Update bus gain in registry
             registry.update(bus.id, {{"output_gain", std::to_string(engineGain)}});
         }
     }
+
+    // Persist master gain
+    float masterGain = engine.getMasterGain();
+    float storedMasterGain = registry.getMasterGain(songId);
+    if (std::abs(masterGain - storedMasterGain) > 0.001f)
+        registry.setMasterGain(songId, masterGain);
 }

@@ -408,13 +408,17 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
                 return;
             }
-            // Find the effects list again (could be track or bus)
+            // Find the effects list again (could be track, bus, or master)
             std::vector<EffectNode>* efx = nullptr;
-            auto tit = tracks.find(parentName);
-            if (tit != tracks.end()) efx = &tit->second.effects;
-            else {
-                auto bit = busses.find(parentName);
-                if (bit != busses.end()) efx = &bit->second.effects;
+            if (parentName == "Output") {
+                efx = &masterEffects;
+            } else {
+                auto tit = tracks.find(parentName);
+                if (tit != tracks.end()) efx = &tit->second.effects;
+                else {
+                    auto bit = busses.find(parentName);
+                    if (bit != busses.end()) efx = &bit->second.effects;
+                }
             }
             if (!efx || effectIndex >= efx->size()) return;
             (*efx)[effectIndex].node = graph->addNode(std::move(instance));
@@ -856,11 +860,24 @@ juce::AudioProcessor* AudioEngine::getTrackInstrumentProcessor(const juce::Strin
 
 juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& trackName,
                                                              const juce::String& effectName) const {
-    auto it = tracks.find(trackName);
-    if (it == tracks.end()) return nullptr;
-    for (auto& fx : it->second.effects) {
-        if (fx.name == effectName && fx.node)
-            return fx.node->getProcessor();
+    // Check master effects
+    if (trackName == "Output") {
+        for (auto& fx : masterEffects)
+            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
+        return nullptr;
+    }
+    // Check tracks
+    auto tit = tracks.find(trackName);
+    if (tit != tracks.end()) {
+        for (auto& fx : tit->second.effects)
+            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
+        return nullptr;
+    }
+    // Check busses
+    auto bit = busses.find(trackName);
+    if (bit != busses.end()) {
+        for (auto& fx : bit->second.effects)
+            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
     }
     return nullptr;
 }
