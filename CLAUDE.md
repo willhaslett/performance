@@ -49,7 +49,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots only, fader+meter. Same composition as TrackStrip minus instrument/MIDI.
 - **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
-- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Send columns with bus picker, mini fader+meter per send. IN PROGRESS: send pills not appearing, needs debugging.
+- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Send columns with bus picker, mini fader+meter per send. Hidden when no busses exist.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
@@ -146,11 +146,11 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - 1Hz persist timer: engine values (gain, MIDI enabled) written back to registry
 - Python MIDI test tool (`tools/send_notes.py`) for testing without hardware
 
-**In progress:**
-- SendsPanel: bus send UI in track strip — component built, wired into TrackStrip and MixerView, but send pills not rendering. Needs debugging (likely visibility/layout issue in SendsPanel).
+**Working (continued):**
+- SendsPanel: bus send UI in track strip with bus picker, send gain faders
+- IPC table return serialization (Lua tables → JSON over socket for queries like `registryList`)
 
 **TODOs:**
-- Debug SendsPanel pill rendering
 - Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug

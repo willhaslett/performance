@@ -340,6 +340,38 @@ std::string LuaEngine::executeString(const std::string& code) {
             return std::to_string(obj.as<double>());
         if (obj.is<bool>())
             return obj.as<bool>() ? "true" : "false";
+        if (obj.is<sol::table>()) {
+            // Serialize table to JSON-ish string
+            auto tbl = obj.as<sol::table>();
+            std::string s = "[";
+            bool first = true;
+            for (auto& pair : tbl) {
+                if (!first) s += ", ";
+                auto& val = pair.second;
+                if (val.is<std::string>()) s += "\"" + val.as<std::string>() + "\"";
+                else if (val.is<double>()) s += std::to_string(val.as<double>());
+                else if (val.is<bool>()) s += val.as<bool>() ? "true" : "false";
+                else if (val.is<sol::table>()) {
+                    auto inner = val.as<sol::table>();
+                    s += "{";
+                    bool ifirst = true;
+                    for (auto& ip : inner) {
+                        if (!ifirst) s += ", ";
+                        auto key = ip.first.as<std::string>();
+                        auto& iv = ip.second;
+                        s += "\"" + key + "\": ";
+                        if (iv.is<std::string>()) s += "\"" + iv.as<std::string>() + "\"";
+                        else if (iv.is<double>()) s += std::to_string(iv.as<double>());
+                        else s += "\"?\"";
+                        ifirst = false;
+                    }
+                    s += "}";
+                }
+                first = false;
+            }
+            s += "]";
+            return s;
+        }
     }
     return "ok";
 }

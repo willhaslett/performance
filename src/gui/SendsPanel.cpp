@@ -5,7 +5,8 @@ SendsPanel::SendsPanel(const juce::String& trackName, PerformanceAPI& api)
     : api(api), trackName(trackName) {}
 
 void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
-    bool changed = (sends.size() != columns.size());
+    // We always have sends.size() + 1 columns (extra empty column for "add send")
+    bool changed = (sends.size() + 1 != columns.size());
     if (!changed) {
         for (size_t i = 0; i < sends.size(); ++i) {
             if (i < columns.size() && columns[i].busName != sends[i].busName) {
