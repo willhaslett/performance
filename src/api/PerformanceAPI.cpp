@@ -629,66 +629,17 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
     }
 
     unloadSong();
+    engineSync->clear();
     currentSongId = songId;
+    engineSync->setActiveSong(currentSongId);
     perfLog("[API] Loading song from registry: %s\n", song->name.c_str());
 
-    // Create busses first
-    for (auto& bus : registry->bussesForSong(songId)) {
-        audioEngine->createBus(juce::String(bus.name));
-        audioEngine->setBusGain(juce::String(bus.name), bus.outputGain);
-        for (auto& fx : registry->effectsForParent(bus.id)) {
-            auto plugin = registry->findPluginById(fx.pluginId);
-            if (plugin)
-                audioEngine->addEffect(juce::String(bus.name), juce::String(fx.name),
-                                        juce::String(plugin->name));
-        }
-    }
+    // Let EngineSync build the engine from registry
+    engineSync->sync(currentSongId);
 
-    // Create tracks
-    for (auto& track : registry->tracksForSong(songId)) {
-        auto plugin = registry->findPluginById(track.pluginId);
-        if (!plugin) {
-            perfLog("[API] Plugin not found for track \"%s\", skipping\n", track.name.c_str());
-            continue;
-        }
-
-        audioEngine->createTrack(juce::String(track.name));
-
-        // Resolve snapshot
-        juce::String snapshotName;
-        if (!track.snapshotId.empty()) {
-            auto snap = registry->findSnapshotById(track.snapshotId);
-            if (snap) snapshotName = juce::String(snap->name);
-        }
-
-        audioEngine->addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
-            [this, trackName = track.name, snapshotName] {
-                if (snapshotName.isNotEmpty())
-                    loadSnapshot(juce::String(trackName), snapshotName);
-                audioEngine->openPluginEditor(juce::String(trackName));
-            });
-
-        for (auto& fx : registry->effectsForParent(track.id)) {
-            auto fxPlugin = registry->findPluginById(fx.pluginId);
-            if (fxPlugin)
-                audioEngine->addEffect(juce::String(track.name), juce::String(fx.name),
-                                        juce::String(fxPlugin->name));
-        }
-
-        audioEngine->setTrackGain(juce::String(track.name), track.outputGain);
-        if (!track.midiEnabled)
-            audioEngine->setTrackMidiEnabled(juce::String(track.name), false);
-
-        for (auto& send : registry->sendsForTrack(track.id))  {
-            // Find bus name from registry
-            for (auto& bus : registry->bussesForSong(songId)) {
-                if (bus.id == send.busId) {
-                    audioEngine->addSend(juce::String(track.name), juce::String(bus.name), send.gain);
-                    break;
-                }
-            }
-        }
-    }
+    // Restore master gain
+    float masterGain = registry->getMasterGain(currentSongId);
+    audioEngine->setMasterGain(masterGain);
 
     // Load bindings
     for (auto& binding : registry->bindingsForSong(songId)) {
@@ -1069,6 +1020,28 @@ void PerformanceAPI::registryUpdate(const std::string& id,
 }
 
 void PerformanceAPI::registryDelete(const std::string& id) {
+    // If deleting the current song, clear engine and fall back to default session
+    if (id == currentSongId) {
+        engineSync->clear();
+        registry->remove(id);
+        // Create or restore a default session
+        auto songs = registry->allSongs();
+        if (!songs.empty()) {
+            loadSongFromRegistry(songs[0].id);
+        } else {
+            currentSongId = registry->createSong("Default Session");
+            engineSync->setActiveSong(currentSongId);
+        }
+        return;
+    }
+
+    // If deleting a song (check if it's in the songs table), just remove from registry
+    auto song = registry->findSongById(id);
+    if (song) {
+        registry->remove(id);
+        return;
+    }
+
     registry->remove(id);
 }
 
