@@ -44,8 +44,11 @@ One direction. One source of truth. The engine never has state that the registry
 
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
 - **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
-- **MixerView** (`src/gui/MixerView.h/.cpp`) — horizontal row of track strips, polls engine state
-- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — instrument slot (pill) + effect slots with separator. Click pill to pick plugin via submenu with snapshot selection. Empty slots show placeholder labels.
+- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips then bus strips, polls engine state at 30Hz
+- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — header with power icon + MIDI toggle, instrument slot, effect slots, fader+meter. Composes from PluginSlot and FaderMeter.
+- **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots only, fader+meter. Same composition as TrackStrip minus instrument/MIDI.
+- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
+- **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows

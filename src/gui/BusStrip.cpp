@@ -72,7 +72,7 @@ void BusStrip::paint(juce::Graphics& g) {
 
 void BusStrip::resized() {
     auto bounds = getLocalBounds();
-    constexpr int faderMeterWidth = 22;
+    constexpr int faderMeterWidth = 28;
 
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                         .withTrimmedBottom(Theme::trackPadding)
@@ -82,7 +82,7 @@ void BusStrip::resized() {
 
     auto slotArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                           .withTrimmedLeft(Theme::trackPadding)
-                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding + 4);
+                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
     int y = slotArea.getY();
 
     for (auto& slot : effectSlots) {

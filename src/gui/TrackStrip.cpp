@@ -105,7 +105,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
 void TrackStrip::resized() {
     auto bounds = getLocalBounds();
-    constexpr int faderMeterWidth = 22;
+    constexpr int faderMeterWidth = 28;
 
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                         .withTrimmedBottom(Theme::trackPadding)
@@ -115,7 +115,7 @@ void TrackStrip::resized() {
 
     auto slotArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                           .withTrimmedLeft(Theme::trackPadding)
-                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding + 4);
+                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
     int y = slotArea.getY();
 
     instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);

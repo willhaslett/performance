@@ -30,7 +30,7 @@ private:
     static constexpr float dbRange = dbMax - dbMin;
     static constexpr int faderWidth = 8;
     static constexpr int meterWidth = 6;
-    static constexpr int gap = 4;
+    static constexpr int gap = 10;
 
     juce::Rectangle<int> getFaderArea() const;
     juce::Rectangle<int> getMeterArea() const;
