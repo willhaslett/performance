@@ -138,7 +138,7 @@ void Sidebar::refreshTree() {
 
         for (auto& action : registry->allActions()) {
             TreeNode actionLeaf;
-            actionLeaf.label = action.name;
+            actionLeaf.label = action.label.empty() ? action.name : action.label;
             actionLeaf.id = action.id;
             actionLeaf.type = "action";
             actionLeaf.isLeaf = true;

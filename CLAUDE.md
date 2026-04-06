@@ -45,7 +45,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
 - **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
 - **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips with plugin links
-- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — registry tree view, subscribes to registry events
+- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal
 - Native macOS menu bar (File: New/Save/Load/Close Song, View: Toggle Sidebar/Mixer)
@@ -65,7 +65,9 @@ Instrument switching is MIDI routing only — no graph rebuild, no pops.
 
 ### Registry Schema
 
-Entities: `plugins`, `snapshots`, `songs`, `tracks`, `busses`, `effects`, `sends`, `actions`, `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
+Entities: `plugins`, `snapshots`, `songs` (with `initial_state` and `score` JSON columns), `tracks`, `busses`, `effects`, `sends`, `actions` (with `label` display name), `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
+
+Actions are performance verbs only — things you'd bind to MIDI controls: `setActiveTrack`, `enableTrack`, `disableTrack`, `fadeOut`, `fadeIn`, `crossfade`. Utility functions (log, openEditor, loadSong) are API calls, not registered actions.
 
 Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(type, filters)`, `registryUpdate(id, fields)`, `registryDelete(id)` — all exposed to Lua.
 

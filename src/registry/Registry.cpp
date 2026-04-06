@@ -89,6 +89,7 @@ void Registry::createSchema() {
         CREATE TABLE IF NOT EXISTS actions (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
+            label TEXT,
             param_schema TEXT
         );
 
@@ -510,29 +511,32 @@ std::vector<Registry::Send> Registry::sendsForTrack(const std::string& trackId) 
 
 // --- Actions ---
 
-std::string Registry::registerAction(const std::string& name, const std::string& paramSchema) {
+std::string Registry::registerAction(const std::string& name, const std::string& label,
+                                      const std::string& paramSchema) {
     auto existing = findActionByName(name);
     if (existing) return existing->id;
 
     auto id = generateId();
-    auto* stmt = prepare("INSERT INTO actions (id, name, param_schema) VALUES (?, ?, ?)");
+    auto* stmt = prepare("INSERT INTO actions (id, name, label, param_schema) VALUES (?, ?, ?, ?)");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, paramSchema.empty() ? nullptr : paramSchema.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, label.empty() ? name.c_str() : label.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, paramSchema.empty() ? nullptr : paramSchema.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return id;
 }
 
 std::optional<Registry::Action> Registry::findActionByName(const std::string& name) const {
-    auto* stmt = prepare("SELECT id, name, param_schema FROM actions WHERE name = ?");
+    auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions WHERE name = ?");
     sqlite3_bind_text(stmt, 1, name.c_str(), -1, SQLITE_TRANSIENT);
     std::optional<Action> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         result = Action{
             (const char*)sqlite3_column_text(stmt, 0),
             (const char*)sqlite3_column_text(stmt, 1),
-            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : ""
+            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : "",
+            sqlite3_column_text(stmt, 3) ? (const char*)sqlite3_column_text(stmt, 3) : ""
         };
     }
     sqlite3_finalize(stmt);
@@ -540,14 +544,15 @@ std::optional<Registry::Action> Registry::findActionByName(const std::string& na
 }
 
 std::optional<Registry::Action> Registry::findActionById(const std::string& id) const {
-    auto* stmt = prepare("SELECT id, name, param_schema FROM actions WHERE id = ?");
+    auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions WHERE id = ?");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     std::optional<Action> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         result = Action{
             (const char*)sqlite3_column_text(stmt, 0),
             (const char*)sqlite3_column_text(stmt, 1),
-            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : ""
+            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : "",
+            sqlite3_column_text(stmt, 3) ? (const char*)sqlite3_column_text(stmt, 3) : ""
         };
     }
     sqlite3_finalize(stmt);
@@ -556,12 +561,13 @@ std::optional<Registry::Action> Registry::findActionById(const std::string& id) 
 
 std::vector<Registry::Action> Registry::allActions() const {
     std::vector<Action> result;
-    auto* stmt = prepare("SELECT id, name, param_schema FROM actions ORDER BY name");
+    auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions ORDER BY name");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         result.push_back({
             (const char*)sqlite3_column_text(stmt, 0),
             (const char*)sqlite3_column_text(stmt, 1),
-            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : ""
+            sqlite3_column_text(stmt, 2) ? (const char*)sqlite3_column_text(stmt, 2) : "",
+            sqlite3_column_text(stmt, 3) ? (const char*)sqlite3_column_text(stmt, 3) : ""
         });
     }
     sqlite3_finalize(stmt);

@@ -133,9 +133,11 @@ public:
     struct Action {
         std::string id;
         std::string name;
+        std::string label;        // user-friendly display name
         std::string paramSchema;  // JSON
     };
-    std::string registerAction(const std::string& name, const std::string& paramSchema = "");
+    std::string registerAction(const std::string& name, const std::string& label = "",
+                                const std::string& paramSchema = "");
     std::optional<Action> findActionByName(const std::string& name) const;
     std::optional<Action> findActionById(const std::string& id) const;
     std::vector<Action> allActions() const;
