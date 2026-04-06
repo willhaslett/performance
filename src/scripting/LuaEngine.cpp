@@ -271,6 +271,9 @@ void LuaEngine::registerAPI() {
     lua.set_function("getScore", [this]() -> std::string {
         return api.getScore().toStdString();
     });
+    lua.set_function("replayScore", [this](sol::optional<int> upToStep) {
+        api.replayScore(upToStep.value_or(-1));
+    });
 
     // Generic Registry CRUD
     lua.set_function("registryCreate", [this](const std::string& type, sol::table fields) -> std::string {

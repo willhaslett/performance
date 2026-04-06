@@ -740,6 +740,9 @@ void PerformanceAPI::loadInitialState() {
 
     perfLog("[API] Loading initial state for song \"%s\"\n", songDef.name.toRawUTF8());
 
+    // Preserve score before delete
+    auto scoreStr = entity->get("score");
+
     // Clear engine
     engineSync->clear();
 
@@ -748,8 +751,11 @@ void PerformanceAPI::loadInitialState() {
     currentSongId = registry->createSong(songDef.name.toStdString());
     engineSync->setActiveSong(currentSongId);
 
-    // Re-save the initial_state (it was lost in the delete/recreate)
-    registry->update(currentSongId, {{"initial_state", initialStateStr}});
+    // Restore initial_state and score (lost in the delete/recreate)
+    std::map<std::string, std::string> songFields = {{"initial_state", initialStateStr}};
+    if (!scoreStr.empty())
+        songFields["score"] = scoreStr;
+    registry->update(currentSongId, songFields);
 
     // Rebuild from SongDef — create tracks, busses, effects, sends
     for (auto& busDef : songDef.busses) {
@@ -842,6 +848,38 @@ juce::String PerformanceAPI::getScore() const {
     if (!entity) return "[]";
     auto score = entity->get("score");
     return score.empty() ? juce::String("[]") : juce::String(score);
+}
+
+void PerformanceAPI::replayScore(int upToStep) {
+    if (currentSongId.empty()) return;
+
+    // Load initial state first
+    loadInitialState();
+
+    // Parse score
+    auto scoreJson = getScore();
+    auto score = juce::JSON::parse(scoreJson);
+    auto* scoreArr = score.getArray();
+    if (!scoreArr || scoreArr->isEmpty()) {
+        perfLog("[API] No score to replay\n");
+        return;
+    }
+
+    int steps = (upToStep < 0) ? scoreArr->size() : std::min(upToStep, (int)scoreArr->size());
+    perfLog("[API] Replaying score: %d of %d steps\n", steps, (int)scoreArr->size());
+
+    for (int i = 0; i < steps; ++i) {
+        auto step = (*scoreArr)[i];
+        auto actionName = step.getProperty("action", "").toString().toStdString();
+        auto args = step.getProperty("args", juce::var());
+
+        if (actionName.empty()) continue;
+
+        perfLog("[API] Score step %d: %s\n", i + 1, actionName.c_str());
+        executeAction(actionName, args, 1.0f);  // 1.0 = trigger value
+    }
+
+    perfLog("[API] Score replay complete\n");
 }
 
 bool PerformanceAPI::isSongLoaded() const {

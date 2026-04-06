@@ -96,8 +96,9 @@ public:
     // Song persistence — initial state + score
     void saveInitialState();                        // capture current registry state as song's initial state
     void loadInitialState();                        // restore initial state into registry + engine
-    void saveScore(const juce::String& scoreJson);  // save the action score
-    juce::String getScore() const;                  // get the current score
+    void saveScore(const juce::String& scoreJson);
+    juce::String getScore() const;
+    void replayScore(int upToStep = -1);  // -1 = all steps
 
     // Query current state as a SongDef (for serialization)
     SongDef getCurrentSongDef() const;
