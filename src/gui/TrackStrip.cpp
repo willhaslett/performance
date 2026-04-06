@@ -37,22 +37,19 @@ void TrackStrip::setGain(float gain) {
 
 void TrackStrip::rebuildSlots() {
     slots.clear();
+    constexpr int faderMeterReserve = 28;
     int y = Theme::headerHeight + Theme::trackPadding;
-    constexpr int faderMeterReserve = 28;  // fader + meter + margins
     int slotW = getWidth() - Theme::trackPadding * 2 - faderMeterReserve;
     int x = Theme::trackPadding;
 
     // Instrument slot (always present)
     slots.push_back({ juce::Rectangle<int>(x, y, slotW, Theme::slotHeight), 0 });
-    y += Theme::slotHeight + Theme::slotPadding;
+    y += Theme::slotHeight + Theme::trackPadding;
 
-    // Gap between instrument and effects
-    y += 4;
-
-    // Effect slots
+    // Effect slots (same spacing as instrument)
     for (int i = 0; i < (int)effectNames.size(); ++i) {
         slots.push_back({ juce::Rectangle<int>(x, y, slotW, Theme::slotHeight), i + 1 });
-        y += Theme::slotHeight + Theme::slotPadding;
+        y += Theme::slotHeight + Theme::trackPadding;
     }
 
     // Empty "add effect" slot (only if instrument is loaded)
@@ -143,8 +140,8 @@ void TrackStrip::paint(juce::Graphics& g) {
         auto faderArea = getLocalBounds()
             .withTrimmedRight(faderAreaRight)
             .removeFromRight(faderWidth)
-            .withTrimmedTop(Theme::headerHeight + 4)
-            .withTrimmedBottom(4);
+            .withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
+            .withTrimmedBottom(Theme::trackPadding);
 
         // Groove
         auto groove = faderArea.withSizeKeepingCentre(2, faderArea.getHeight());
@@ -152,15 +149,17 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(groove.toFloat(), 1.0f);
 
         // Handle position from gain value (dB scale)
+        constexpr int handleHeight = 8;
         float db = (gainValue > 0.0001f) ? 20.0f * std::log10(gainValue) : dbMin;
         db = std::max(db, dbMin);
         db = std::min(db, dbMax);
         float normalized = (db - dbMin) / dbRange;
-        int handleY = faderArea.getBottom() - (int)(faderArea.getHeight() * normalized);
+        int travel = faderArea.getHeight() - handleHeight;
+        int handleY = faderArea.getBottom() - handleHeight - (int)(travel * normalized);
 
         // Handle
-        auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY - 4,
-                                            faderWidth + 4, 8);
+        auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY,
+                                            faderWidth + 4, handleHeight);
         g.setColour(Theme::color(Theme::Color::textPrimary));
         g.fillRoundedRectangle(handle.toFloat(), 3.0f);
 
@@ -183,8 +182,8 @@ void TrackStrip::paint(juce::Graphics& g) {
         auto meterArea = getLocalBounds()
             .removeFromRight(meterWidth + meterMargin)
             .removeFromRight(meterWidth)
-            .withTrimmedTop(Theme::headerHeight + 4)
-            .withTrimmedBottom(4);
+            .withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
+            .withTrimmedBottom(Theme::trackPadding);
 
         // Background
         g.setColour(Theme::color(Theme::Color::bgSlot));
@@ -217,9 +216,9 @@ static juce::Rectangle<int> getFaderArea(const juce::Rectangle<int>& bounds) {
     constexpr int faderAreaRight = 6 + 4 + 4;
     return bounds
         .withTrimmedRight(faderAreaRight)
-        .removeFromRight(faderWidth + 6)  // wider hit area
-        .withTrimmedTop(Theme::headerHeight + 4)
-        .withTrimmedBottom(4);
+        .removeFromRight(faderWidth + 6)
+        .withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
+        .withTrimmedBottom(Theme::trackPadding);
 }
 
 void TrackStrip::mouseDown(const juce::MouseEvent& event) {
