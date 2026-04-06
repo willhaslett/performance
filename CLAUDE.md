@@ -47,8 +47,10 @@ One direction. One source of truth. The engine never has state that the registry
 - **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips with plugin links
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
+- **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
 - Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal
-- Native macOS menu bar (File: New/Save/Load/Close Song, View: Toggle Sidebar/Mixer)
+- Native macOS menu bar: File (New/Save/Load/Close Song), Track (New Instrument Track, New Effects Bus), View (Toggle Sidebar/Mixer)
+- Resizable panes between sidebar/content and terminal/mixer
 
 ### Audio Graph
 
@@ -134,8 +136,8 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Default unnamed session on first run (no Lua bootstrap required)
 
 **TODOs:**
-- GUI CRUD: create/delete songs, tracks, busses from the UI
-- Plugin picker UI (searchable, filterable by instrument/effect)
+- Plugin picker UI (searchable, filterable by instrument/effect) — triggered from track strip slots
+- Track strip: instrument slot + effect slots with plugin picker on click
 - Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug

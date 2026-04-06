@@ -58,9 +58,12 @@ void PerformanceAPI::shutdown() {
 // --- Track management ---
 
 void PerformanceAPI::createTrack(const juce::String& name) {
-    // No-op when song is active — track creation happens in addInstrument via registry + sync
-    if (currentSongId.empty())
+    if (!currentSongId.empty()) {
+        registry->createTrack(currentSongId, name.toStdString(), "");
+        engineSync->sync(currentSongId);
+    } else {
         audioEngine->createTrack(name);
+    }
 }
 
 void PerformanceAPI::removeTrack(const juce::String& name) {
@@ -921,6 +924,10 @@ void PerformanceAPI::registryDelete(const std::string& id) {
 
 std::vector<juce::String> PerformanceAPI::listTrackNames() const {
     return audioEngine->getTrackNames();
+}
+
+std::vector<juce::String> PerformanceAPI::listBusNames() const {
+    return audioEngine->getBusNames();
 }
 
 juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackName) const {

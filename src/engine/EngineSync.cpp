@@ -58,27 +58,25 @@ void EngineSync::sync(const std::string& songId) {
     auto regTracks = registry.tracksForSong(songId);
     for (auto& track : regTracks) {
         if (engineTrackNames.find(track.name) == engineTrackNames.end()) {
-            auto plugin = registry.findPluginById(track.pluginId);
-            if (!plugin) {
-                perfLog("[EngineSync] Plugin not found for track \"%s\", skipping\n",
-                        track.name.c_str());
-                continue;
-            }
-
             engine.createTrack(juce::String(track.name));
             engineTrackNames.insert(track.name);
 
-            // Resolve snapshot
-            juce::String snapshotName;
-            if (!track.snapshotId.empty()) {
-                auto snap = registry.findSnapshotById(track.snapshotId);
-                if (snap) snapshotName = juce::String(snap->name);
-            }
+            // Load instrument if plugin is set
+            if (!track.pluginId.empty()) {
+                auto plugin = registry.findPluginById(track.pluginId);
+                if (plugin) {
+                    juce::String snapshotName;
+                    if (!track.snapshotId.empty()) {
+                        auto snap = registry.findSnapshotById(track.snapshotId);
+                        if (snap) snapshotName = juce::String(snap->name);
+                    }
 
-            engine.addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
-                [snapshotName, trackName = track.name] {
-                    perfLog("[EngineSync] Instrument loaded: %s\n", trackName.c_str());
-                });
+                    engine.addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
+                        [snapshotName, trackName = track.name] {
+                            perfLog("[EngineSync] Instrument loaded: %s\n", trackName.c_str());
+                        });
+                }
+            }
 
             // Track effects
             for (auto& fx : registry.effectsForParent(track.id)) {

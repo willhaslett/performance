@@ -54,7 +54,7 @@ void Registry::createSchema() {
             id TEXT PRIMARY KEY,
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             name TEXT NOT NULL,
-            plugin_id TEXT NOT NULL REFERENCES plugins(id),
+            plugin_id TEXT REFERENCES plugins(id),
             snapshot_id TEXT REFERENCES snapshots(id),
             output_gain REAL DEFAULT 1.0,
             midi_enabled INTEGER DEFAULT 1,
@@ -336,7 +336,7 @@ std::string Registry::createTrack(const std::string& songId, const std::string& 
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, songId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 4, pluginId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, pluginId.empty() ? nullptr : pluginId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, snapshotId.empty() ? nullptr : snapshotId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 6, outputGain);
     sqlite3_bind_int(stmt, 7, midiEnabled ? 1 : 0);
@@ -358,7 +358,7 @@ std::vector<Registry::Track> Registry::tracksForSong(const std::string& songId) 
         t.id = (const char*)sqlite3_column_text(stmt, 0);
         t.songId = (const char*)sqlite3_column_text(stmt, 1);
         t.name = (const char*)sqlite3_column_text(stmt, 2);
-        t.pluginId = (const char*)sqlite3_column_text(stmt, 3);
+        t.pluginId = sqlite3_column_text(stmt, 3) ? (const char*)sqlite3_column_text(stmt, 3) : "";
         t.snapshotId = sqlite3_column_text(stmt, 4) ? (const char*)sqlite3_column_text(stmt, 4) : "";
         t.outputGain = (float)sqlite3_column_double(stmt, 5);
         t.midiEnabled = sqlite3_column_int(stmt, 6) != 0;

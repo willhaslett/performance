@@ -65,6 +65,8 @@ enum CommandIDs {
     openSong,
     saveSong,
     closeSong,
+    newInstrumentTrack,
+    newEffectsBus,
     toggleSidebar,
     toggleMixer,
 };
@@ -75,7 +77,7 @@ public:
         : api(api), lua(lua), layout(layout) {}
 
     juce::StringArray getMenuBarNames() override {
-        return { "File", "View" };
+        return { "File", "Track", "View" };
     }
 
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
@@ -95,7 +97,11 @@ public:
                 menu.addSeparator();
             menu.addItem(CommandIDs::closeSong, "Close Song", api.isSongLoaded());
         }
-        else if (index == 1) {  // View
+        else if (index == 1) {  // Track
+            menu.addItem(CommandIDs::newInstrumentTrack, "New Instrument Track");
+            menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
+        }
+        else if (index == 2) {  // View
             menu.addItem(CommandIDs::toggleSidebar, "Toggle Sidebar");
             menu.addItem(CommandIDs::toggleMixer, "Toggle Mixer");
         }
@@ -114,6 +120,18 @@ public:
         }
         else if (menuItemID == CommandIDs::closeSong) {
             api.unloadSong();
+        }
+        else if (menuItemID == CommandIDs::newInstrumentTrack) {
+            auto trackNames = api.listTrackNames();
+            auto name = "Track " + juce::String((int)trackNames.size() + 1);
+            api.createTrack(name);
+            perfLog("[Menu] Created track: %s\n", name.toRawUTF8());
+        }
+        else if (menuItemID == CommandIDs::newEffectsBus) {
+            auto busNames = api.listBusNames();
+            auto name = "Bus " + juce::String((int)busNames.size() + 1);
+            api.createBus(name);
+            perfLog("[Menu] Created bus: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::toggleSidebar) {
             layout.handleGlobalKey(juce::KeyPress('s', {}, 's'));

@@ -114,6 +114,7 @@ public:
     // --- Query ---
     std::vector<juce::String> listPlugins() const;
     std::vector<juce::String> listTrackNames() const;
+    std::vector<juce::String> listBusNames() const;
     juce::String getTrackPluginName(const juce::String& trackName) const;
     std::vector<juce::String> getTrackEffectNames(const juce::String& trackName) const;
     bool isTrackMidiEnabled(const juce::String& trackName) const;
