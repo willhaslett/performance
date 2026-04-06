@@ -12,6 +12,8 @@ class MixerView : public juce::Component, private juce::Timer {
 public:
     MixerView(PerformanceAPI& api);
 
+    int getDesiredHeight() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -20,6 +22,7 @@ private:
     void rebuildStrips();
 
     PerformanceAPI& api;
+    int lastDesiredHeight = 0;
     std::vector<std::unique_ptr<TrackStrip>> trackStrips;
     std::vector<std::unique_ptr<BusStrip>> busStrips;
     std::vector<juce::String> lastTrackNames;

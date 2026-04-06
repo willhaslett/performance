@@ -126,10 +126,10 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             if (result == 1) {
                 if (slotType == Instrument)
                     api.removeInstrument(trackOrBusName);
+                else if (parentKind == OnTrack)
+                    api.removeTrackEffect(trackOrBusName, pluginName);
                 else
-                    if (parentKind == OnTrack)
-                        api.removeTrackEffect(trackOrBusName, pluginName);
-                    // TODO: removeBusEffect
+                    api.removeBusEffect(trackOrBusName, pluginName);
                 if (onChanged) onChanged();
                 return;
             }

@@ -147,8 +147,10 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Python MIDI test tool (`tools/send_notes.py`) for testing without hardware
 
 **Working (continued):**
-- SendsPanel: bus send UI in track strip with bus picker, send gain faders
+- SendsPanel: Logic-style pill+knob rows with signal glow, dynamic height
 - IPC table return serialization (Lua tables → JSON over socket for queries like `registryList`)
+- Content-driven mixer height: mixer pane grows/shrinks based on tallest strip
+- Remove bus effect via "No Plugin" context menu
 
 **TODOs:**
 - Track presets (save/load a full track configuration)
@@ -161,4 +163,3 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Delete track / delete bus from GUI
 - Insert mode swallows all key events including Cmd+Q — need to pass through system shortcuts
 - Fader/knob drag: value stops changing at screen edge — need unbounded drag without cursor glitches
-- Mixer overflow: plugin slots and send rows can overflow their container when there are too many

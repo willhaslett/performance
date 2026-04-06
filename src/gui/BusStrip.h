@@ -16,6 +16,8 @@ public:
     void setPeakLevel(float level);
     void setGain(float gain);
 
+    int getMinimumHeight() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 

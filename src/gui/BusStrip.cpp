@@ -70,6 +70,13 @@ void BusStrip::paint(juce::Graphics& g) {
     g.drawText(busName, headerBounds.reduced(8, 0), juce::Justification::centredLeft);
 }
 
+int BusStrip::getMinimumHeight() const {
+    int h = Theme::headerHeight + Theme::trackPadding;
+    h += (int)effectSlots.size() * (Theme::slotHeight + Theme::slotGap);
+    h += Theme::trackPadding;
+    return h;
+}
+
 void BusStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 28;
@@ -87,6 +94,6 @@ void BusStrip::resized() {
 
     for (auto& slot : effectSlots) {
         slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
-        y += Theme::slotHeight + Theme::trackPadding;
+        y += Theme::slotHeight + Theme::slotGap;
     }
 }

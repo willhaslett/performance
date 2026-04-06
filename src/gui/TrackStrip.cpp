@@ -118,6 +118,19 @@ void TrackStrip::paint(juce::Graphics& g) {
                juce::Justification::centredLeft);
 }
 
+int TrackStrip::getMinimumHeight() const {
+    int h = Theme::headerHeight + Theme::trackPadding;
+    // Instrument slot
+    h += Theme::slotHeight + Theme::slotGap;
+    // Effect slots
+    h += (int)effectSlots.size() * (Theme::slotHeight + Theme::slotGap);
+    // Sends
+    if (sendsPanel.isVisible())
+        h += sendsPanel.getDesiredHeight() + Theme::slotGap;
+    h += Theme::trackPadding;  // bottom padding
+    return h;
+}
+
 void TrackStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 28;
@@ -138,18 +151,18 @@ void TrackStrip::resized() {
     if (sendsPanel.isVisible()) {
         int sendsHeight = sendsPanel.getDesiredHeight();
         sendsPanel.setBounds(contentArea.removeFromBottom(sendsHeight));
-        contentArea.removeFromBottom(Theme::trackPadding);
+        contentArea.removeFromBottom(Theme::slotGap);
     }
 
     auto slotArea = contentArea.withTrimmedTop(Theme::trackPadding);
     int y = slotArea.getY();
 
     instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
-    y += Theme::slotHeight + Theme::trackPadding;
+    y += Theme::slotHeight + Theme::slotGap;
 
     for (auto& slot : effectSlots) {
         slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
-        y += Theme::slotHeight + Theme::trackPadding;
+        y += Theme::slotHeight + Theme::slotGap;
     }
 }
 

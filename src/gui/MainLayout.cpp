@@ -16,13 +16,8 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
         resized();
     };
 
-    // Mixer divider (horizontal)
+    // Mixer divider (visual separator only, no drag — height is content-driven)
     addAndMakeVisible(mixerDivider);
-    mixerDivider.onDragStart = [this]() { dragStartMixerHeight = mixerHeight; };
-    mixerDivider.onDrag = [this](int delta) {
-        mixerHeight = std::max(minPaneSize, dragStartMixerHeight - delta);
-        resized();
-    };
 
     setWantsKeyboardFocus(true);
 
@@ -96,9 +91,10 @@ void MainLayout::resized() {
         sidebarDivider.setVisible(false);
     }
 
-    // Mixer + divider
+    // Mixer + divider — height driven by content
     if (mixerVisible) {
-        auto mh = std::min(mixerHeight, area.getHeight() - minPaneSize);
+        int contentHeight = mixerView.getDesiredHeight();
+        auto mh = std::max(minPaneSize, std::min(contentHeight, area.getHeight() - minPaneSize));
         // Divider overlaps the boundary — doesn't take layout space from mixer
         mixerDivider.setBounds(area.getX(), area.getBottom() - mh,
                                 area.getWidth(), Divider::thickness);

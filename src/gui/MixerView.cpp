@@ -8,6 +8,15 @@ MixerView::MixerView(PerformanceAPI& api) : api(api) {
     startTimerHz(30);
 }
 
+int MixerView::getDesiredHeight() const {
+    int maxH = 0;
+    for (auto& s : trackStrips)
+        maxH = std::max(maxH, s->getMinimumHeight());
+    for (auto& s : busStrips)
+        maxH = std::max(maxH, s->getMinimumHeight());
+    return maxH;
+}
+
 void MixerView::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgTrack));
 
@@ -64,6 +73,14 @@ void MixerView::timerCallback() {
             busStrips[i]->setGain(api.getBusGain(name));
             busStrips[i]->setPeakLevel(api.getBusPeakLevel(name));
         }
+    }
+
+    // If desired height changed, trigger parent re-layout
+    int h = getDesiredHeight();
+    if (h != lastDesiredHeight) {
+        lastDesiredHeight = h;
+        if (auto* parent = getParentComponent())
+            parent->resized();
     }
 }
 

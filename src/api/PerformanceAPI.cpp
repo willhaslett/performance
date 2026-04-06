@@ -159,6 +159,24 @@ void PerformanceAPI::removeTrackEffect(const juce::String& trackName, const juce
     }
 }
 
+void PerformanceAPI::removeBusEffect(const juce::String& busName, const juce::String& effectName) {
+    audioEngine->removeBusEffect(busName, effectName);
+
+    if (!currentSongId.empty()) {
+        for (auto& b : registry->bussesForSong(currentSongId)) {
+            if (b.name == busName.toStdString()) {
+                for (auto& fx : registry->effectsForParent(b.id)) {
+                    if (fx.name == effectName.toStdString()) {
+                        registry->remove(fx.id);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
 void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
     audioEngine->setTrackMidiEnabled(trackName, enabled);
 

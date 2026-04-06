@@ -28,7 +28,8 @@ namespace Theme {
     constexpr float cornerRadiusSm  = 4.0f;
     constexpr int   toolbarHeight   = 32;
     constexpr int   trackStripWidth = 160;
-    constexpr int   slotHeight      = 28;
+    constexpr int   slotHeight      = 24;
+    constexpr int   slotGap         = 4;
     constexpr int   slotPadding     = 4;
     constexpr int   trackPadding    = 12;
     constexpr int   headerHeight    = 32;

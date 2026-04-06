@@ -45,6 +45,7 @@ public:
     void removeBus(const juce::String& busName);
     bool addBusEffect(const juce::String& busName, const juce::String& effectName,
                       const juce::String& pluginName, LoadCallback onLoaded = nullptr);
+    void removeBusEffect(const juce::String& busName, const juce::String& effectName);
     void setBusGain(const juce::String& busName, float gain);
     void clearAllBusses();
 

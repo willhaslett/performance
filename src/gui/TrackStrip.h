@@ -21,6 +21,8 @@ public:
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
     void setAvailableBusses(const std::vector<juce::String>& busNames);
 
+    int getMinimumHeight() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;

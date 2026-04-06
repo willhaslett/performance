@@ -461,6 +461,23 @@ void AudioEngine::removeTrackEffect(const juce::String& trackName, const juce::S
     }
 }
 
+void AudioEngine::removeBusEffect(const juce::String& busName, const juce::String& effectName) {
+    auto it = busses.find(busName);
+    if (it == busses.end()) return;
+    auto& effects = it->second.effects;
+    for (auto eit = effects.begin(); eit != effects.end(); ++eit) {
+        if (eit->name == effectName) {
+            if (eit->node)
+                graph->removeNode(eit->node->nodeID);
+            effects.erase(eit);
+            rebuildConnections();
+            perfLog("[Engine] Removed effect \"%s\" from bus \"%s\"\n",
+                    effectName.toRawUTF8(), busName.toRawUTF8());
+            return;
+        }
+    }
+}
+
 void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
     auto it = tracks.find(trackName);
     if (it == tracks.end()) return;
