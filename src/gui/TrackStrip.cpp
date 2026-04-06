@@ -167,6 +167,18 @@ void TrackStrip::resized() {
 }
 
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Delete Track");
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+            [this](int result) {
+                if (result == 1)
+                    api.removeTrack(trackName);
+            });
+        return;
+    }
+
     auto midiHitArea = midiDotBounds.expanded(6);
     if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         midiEnabled = !midiEnabled;

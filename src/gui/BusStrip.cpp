@@ -77,6 +77,19 @@ int BusStrip::getMinimumHeight() const {
     return h;
 }
 
+void BusStrip::mouseUp(const juce::MouseEvent& event) {
+    if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Delete Bus");
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+            [this](int result) {
+                if (result == 1)
+                    api.removeBus(busName);
+            });
+    }
+}
+
 void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
