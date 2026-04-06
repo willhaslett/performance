@@ -7,7 +7,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and snapshots all persist automatically.
 - **Session** — there is always a current session (a song entity in the registry, named or unnamed). You can work without naming a song. `saveSong` gives the session a name. `loadSong` switches to a different one. On restart, the previous session is restored.
 - **Song** — a named session. Lua scripts in `~/.config/performance/songs/` bootstrap songs (create tracks, busses, bindings), but the registry is the authoritative state.
-- **Action-based bindings** — MIDI controls bind to named actions (e.g., `setSingleActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
+- **Action-based bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
 - **Authoring model** — Claude runs embedded in the app (terminal emulator in the UI). Will plays and directs, Claude modifies the environment via the `perf` IPC command. The GUI provides direct manipulation. All consumers use the same API.
 
@@ -29,10 +29,10 @@ One direction. One source of truth. The engine never has state that the registry
 
 ### Components
 
-- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Also handles real-time operations (gain, MIDI enable) that go direct to engine.
+- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args.
 - **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). Typed entities with UUIDs. Generic CRUD (`create`, `get`, `list`, `update`, `remove`) plus type-specific convenience methods. Emits events for UI updates.
 - **RegistryEventBus** (`src/registry/RegistryEvents.h`) — pub/sub for UI components. Entity type constants in `EntityType` namespace.
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends.
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends. Also runs 1Hz persist timer writing engine values back to registry. Only creates new entities; never overwrites values on existing ones (engine owns live values after creation).
 - **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Never written to directly except for real-time values.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing functions.
@@ -120,31 +120,42 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 ## Implementation Status
 
 **Working:**
-- Registry-driven engine with sync model
-- SQLite registry with generic CRUD and pub/sub events
-- Track/Bus mixer DAG with sends, per-node gain, GainProcessor
+- Registry-driven engine: SQLite SSOT → EngineSync → AudioEngine
+- Generic CRUD + pub/sub events on all entity types
+- Track/Bus mixer DAG with sends, per-node gain, GainProcessor with peak metering
 - AU plugin hosting with third-party loading and plugin cache
 - Embedded terminal (libvterm) running Claude Code in the app
-- IPC socket for live Lua execution
-- Lua song scripts with automation library
-- Plugin state snapshots (save/restore)
-- GUI: 3-pane layout, toolbar, collapsible sidebar with registry tree, mixer, modal keyboard, native menu bar
-- Instrument switching via MIDI routing (no pops)
-- Automation engine with easing functions
-- Global keyboard shortcuts via NSEvent monitor
+- IPC socket (`/tmp/performance.sock`) for live Lua execution via `bin/perf`
+- Lua song scripts with automation library (`lua_lib/automation.lua`)
+- Plugin state snapshots (save/restore, persisted in registry + disk)
+- GUI: 3-pane layout (sidebar, terminal, mixer), toolbar, resizable panes with overlay dividers
+- Mixer: TrackStrip (instrument slot + effect slots + fader + VU meter + power icon MIDI toggle) and BusStrip (effect slots + fader + VU meter, purple header)
+- Reusable components: PluginSlot (pill with picker/context menu), FaderMeter (dB-scaled fader + VU pair)
+- Plugin picker: instrument/effect filtered, submenu with snapshot selection, right-click for No Plugin / Replace
+- Theme system (Theme.h) — all colors, dimensions, fonts centralized
+- Sidebar: Songs (flat), Library (instruments/effects with user snapshots), Actions (performance verbs with labels)
+- Instrument switching via MIDI routing (no graph rebuild, no pops)
+- Automation engine with easing functions (linear, easein, easeout, cosine, scurve)
+- Global keyboard shortcuts via NSEvent monitor (modal: normal/insert)
+- Native macOS menu bar: File, Track (New Instrument Track, New Effects Bus), View
 - Session restore from registry on app launch (no Lua re-execution needed)
 - Action-based bindings with entity ID arguments, persisted in registry
-- Snapshots persisted in registry alongside disk state files
-- Runtime state persistence: 1Hz timer writes engine values (gain, MIDI enabled) back to registry
-- Discrete state changes (MIDI enabled) persist immediately
 - Song initial state: save/load checkpoint separate from live state
 - Score: ordered action list with replay ("go to step N")
 - Default unnamed session on first run (no Lua bootstrap required)
+- 1Hz persist timer: engine values (gain, MIDI enabled) written back to registry
+- Python MIDI test tool (`tools/send_notes.py`) for testing without hardware
+
+**In progress:**
+- SendsPanel: bus send UI in track strip — component built, wired into TrackStrip and MixerView, but send pills not rendering. Needs debugging (likely visibility/layout issue in SendsPanel).
 
 **TODOs:**
+- Debug SendsPanel pill rendering
 - Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
 - Plugin load performance (AU plugins block message thread during instantiation — progress indicator or background process)
+- Track header: click to select (future track selection concept)
+- Delete track / delete bus from GUI
