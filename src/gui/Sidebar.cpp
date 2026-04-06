@@ -59,7 +59,7 @@ void Sidebar::resized() {
 void Sidebar::refreshTree() {
     std::vector<TreeNode> roots;
 
-    // Songs
+    // Songs — just names, no children (mixer shows contents)
     {
         TreeNode songsNode;
         songsNode.label = "Songs";
@@ -69,71 +69,27 @@ void Sidebar::refreshTree() {
             songNode.label = song.name;
             songNode.id = song.id;
             songNode.type = "song";
-
-            // Tracks under this song
-            for (auto& track : registry->tracksForSong(song.id)) {
-                TreeNode trackNode;
-                trackNode.label = track.name;
-                trackNode.id = track.id;
-                trackNode.type = "track";
-
-                // Plugin
-                auto plugin = registry->findPluginById(track.pluginId);
-                if (plugin) {
-                    TreeNode pluginLeaf;
-                    pluginLeaf.label = plugin->name;
-                    pluginLeaf.id = plugin->id;
-                    pluginLeaf.type = "plugin";
-                    pluginLeaf.isLeaf = true;
-                    trackNode.children.push_back(pluginLeaf);
-                }
-
-                // Effects
-                for (auto& fx : registry->effectsForParent(track.id)) {
-                    auto fxPlugin = registry->findPluginById(fx.pluginId);
-                    TreeNode fxLeaf;
-                    fxLeaf.label = fx.name + (fxPlugin ? " (" + fxPlugin->name + ")" : "");
-                    fxLeaf.id = fx.id;
-                    fxLeaf.type = "effect";
-                    fxLeaf.isLeaf = true;
-                    trackNode.children.push_back(fxLeaf);
-                }
-
-                songNode.children.push_back(trackNode);
-            }
-
-            // Busses under this song
-            for (auto& bus : registry->bussesForSong(song.id)) {
-                TreeNode busNode;
-                busNode.label = bus.name + " (bus)";
-                busNode.id = bus.id;
-                busNode.type = "bus";
-
-                for (auto& fx : registry->effectsForParent(bus.id)) {
-                    auto fxPlugin = registry->findPluginById(fx.pluginId);
-                    TreeNode fxLeaf;
-                    fxLeaf.label = fx.name + (fxPlugin ? " (" + fxPlugin->name + ")" : "");
-                    fxLeaf.id = fx.id;
-                    fxLeaf.type = "effect";
-                    fxLeaf.isLeaf = true;
-                    busNode.children.push_back(fxLeaf);
-                }
-
-                songNode.children.push_back(busNode);
-            }
-
+            songNode.isLeaf = true;
             songsNode.children.push_back(songNode);
         }
         roots.push_back(songsNode);
     }
 
-    // Snapshots
+    // Library — saved sounds grouped by instrument/effect
     {
-        TreeNode snapshotsNode;
-        snapshotsNode.label = "Snapshots";
-        snapshotsNode.type = "category";
+        TreeNode libraryNode;
+        libraryNode.label = "Library";
+        libraryNode.type = "category";
 
-        // Group by plugin
+        // Instruments (plugins that are instruments with saved snapshots)
+        TreeNode instrumentsNode;
+        instrumentsNode.label = "Instruments";
+        instrumentsNode.type = "category";
+
+        TreeNode effectsNode;
+        effectsNode.label = "Effects";
+        effectsNode.type = "category";
+
         for (auto& plugin : registry->allPlugins()) {
             auto snaps = registry->snapshotsForPlugin(plugin.id);
             if (snaps.empty()) continue;
@@ -152,10 +108,26 @@ void Sidebar::refreshTree() {
                 pluginNode.children.push_back(snapLeaf);
             }
 
-            snapshotsNode.children.push_back(pluginNode);
+            // Determine if instrument or effect from plugin description
+            auto desc = registry->findPluginById(plugin.id);
+            bool isInstrument = false;
+            if (desc) {
+                // Check format_id for "Synths/" prefix
+                isInstrument = desc->formatId.find("Synths/") != std::string::npos;
+            }
+
+            if (isInstrument)
+                instrumentsNode.children.push_back(pluginNode);
+            else
+                effectsNode.children.push_back(pluginNode);
         }
-        if (!snapshotsNode.children.empty())
-            roots.push_back(snapshotsNode);
+
+        if (!instrumentsNode.children.empty())
+            libraryNode.children.push_back(instrumentsNode);
+        if (!effectsNode.children.empty())
+            libraryNode.children.push_back(effectsNode);
+
+        roots.push_back(libraryNode);
     }
 
     // Actions

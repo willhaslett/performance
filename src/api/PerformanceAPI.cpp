@@ -675,22 +675,7 @@ void PerformanceAPI::saveInitialState() {
     // Capture current state as JSON
     auto song = getCurrentSongDef();
 
-    // Auto-save plugin snapshots
-    auto songName = getSongName();
-    for (auto& trackName : audioEngine->getTrackNames()) {
-        auto* proc = audioEngine->getTrackInstrumentProcessor(trackName);
-        if (!proc) continue;
-
-        auto snapshotName = songName + "_" + trackName;
-        saveSnapshot(trackName, snapshotName);
-
-        for (auto& t : song.tracks) {
-            if (t.name == trackName)
-                t.snapshotName = snapshotName;
-        }
-    }
-
-    // Also capture bindings
+    // Capture bindings
     juce::Array<juce::var> bindingsArr;
     for (auto& binding : registry->bindingsForSong(currentSongId)) {
         auto action = registry->findActionById(binding.actionId);
@@ -714,7 +699,7 @@ void PerformanceAPI::saveInitialState() {
     // Write to songs table
     registry->update(currentSongId, {{"initial_state", initialStateStr.toStdString()}});
 
-    perfLog("[API] Saved initial state for song \"%s\"\n", songName.toRawUTF8());
+    perfLog("[API] Saved initial state for song \"%s\"\n", song.name.toRawUTF8());
 }
 
 void PerformanceAPI::loadInitialState() {
