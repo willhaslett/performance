@@ -796,6 +796,14 @@ std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String
     return result;
 }
 
+float AudioEngine::getBusPeakLevel(const juce::String& busName) const {
+    auto it = busses.find(busName);
+    if (it == busses.end()) return 0.0f;
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return proc->getPeakLevel();
+    return 0.0f;
+}
+
 float AudioEngine::getBusGain(const juce::String& busName) const {
     auto it = busses.find(busName);
     if (it == busses.end()) return 0.0f;

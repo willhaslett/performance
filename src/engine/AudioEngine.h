@@ -68,6 +68,7 @@ public:
     struct SendInfo { juce::String busName; float gain; };
     std::vector<SendInfo> getTrackSends(const juce::String& trackName) const;
     float getBusGain(const juce::String& busName) const;
+    float getBusPeakLevel(const juce::String& busName) const;
 
     // Plugin editor windows
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");

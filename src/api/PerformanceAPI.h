@@ -123,6 +123,9 @@ public:
     juce::String getTrackPluginName(const juce::String& trackName) const;
     std::vector<juce::String> getTrackEffectNames(const juce::String& trackName) const;
     bool isTrackMidiEnabled(const juce::String& trackName) const;
+    std::vector<juce::String> getBusEffectNames(const juce::String& busName) const;
+    float getBusGain(const juce::String& busName);
+    float getBusPeakLevel(const juce::String& busName);
     void log(const juce::String& message);
 
     // Access for main.cpp window setup (device manager needed for JUCE audio)
