@@ -1,4 +1,5 @@
 #include "gui/RegistryTree.h"
+#include "gui/Theme.h"
 
 RegistryTree::RegistryTree() {}
 
@@ -62,10 +63,8 @@ void RegistryTree::drawArrow(juce::Graphics& g, int x, int y, bool expanded) {
 }
 
 void RegistryTree::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff1a1a1a));
-
-    auto font = juce::Font(juce::FontOptions(12.0f));
-    g.setFont(font);
+    g.fillAll(Theme::color(Theme::Color::bgPanel));
+    g.setFont(Theme::font(Theme::fontSizeSm));
 
     for (int i = 0; i < (int)visibleRows.size(); ++i) {
         auto& row = visibleRows[i];
@@ -75,22 +74,21 @@ void RegistryTree::paint(juce::Graphics& g) {
 
         int x = 8 + row.depth * indentSize;
 
-        // Hover highlight
         if (i == hoveredRow) {
-            g.setColour(juce::Colour(0xff2a2a2a));
+            g.setColour(Theme::color(Theme::Color::bgSlot));
             g.fillRect(0, y, getWidth(), rowHeight);
         }
 
         if (row.isLeaf) {
-            g.setColour(juce::Colour(0xffaaaaaa));
+            g.setColour(Theme::color(Theme::Color::textPrimary));
             g.drawText(juce::String(row.label),
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);
         } else {
-            g.setColour(juce::Colour(0xff888888));
+            g.setColour(Theme::color(Theme::Color::textSecondary));
             drawArrow(g, x, y, row.expanded);
 
-            g.setColour(juce::Colour(0xffdddddd));
+            g.setColour(Theme::color(Theme::Color::textWhite));
             g.drawText(juce::String(row.label),
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);

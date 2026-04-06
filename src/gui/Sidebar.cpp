@@ -45,10 +45,9 @@ void Sidebar::setRegistry(Registry* reg) {
 }
 
 void Sidebar::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff1a1a1a));
+    g.fillAll(Theme::color(Theme::Color::bgPanel));
 
-    // Right border
-    g.setColour(juce::Colour(0xff3a3a3a));
+    g.setColour(Theme::color(Theme::Color::border));
     g.drawLine((float)getWidth(), 0.0f, (float)getWidth(), (float)getHeight(), 1.0f);
 }
 

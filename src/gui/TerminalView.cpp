@@ -1,4 +1,5 @@
 #include "gui/TerminalView.h"
+#include "gui/Theme.h"
 #include "engine/Log.h"
 #include <util.h>
 #include <unistd.h>
@@ -100,19 +101,19 @@ void TerminalView::timerCallback() {
 
 juce::Colour TerminalView::vtColorToJuce(VTermColor color, bool isFg) const {
     if (VTERM_COLOR_IS_DEFAULT_FG(&color))
-        return juce::Colour(0xffcccccc);
+        return Theme::color(Theme::Color::textPrimary);
     if (VTERM_COLOR_IS_DEFAULT_BG(&color))
-        return juce::Colour(0xff121212);
+        return Theme::color(Theme::Color::bgApp);
     if (VTERM_COLOR_IS_INDEXED(&color)) {
         vterm_screen_convert_color_to_rgb(vtScreen, &color);
     }
     if (VTERM_COLOR_IS_RGB(&color))
         return juce::Colour(color.rgb.red, color.rgb.green, color.rgb.blue);
-    return isFg ? juce::Colour(0xffcccccc) : juce::Colour(0xff121212);
+    return isFg ? Theme::color(Theme::Color::textPrimary) : Theme::color(Theme::Color::bgApp);
 }
 
 void TerminalView::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff121212));
+    g.fillAll(Theme::color(Theme::Color::bgApp));
 
     if (!vt || !vtScreen) return;
 
@@ -135,7 +136,7 @@ void TerminalView::paint(juce::Graphics& g) {
 
             // Background
             auto bgColor = vtColorToJuce(cell.bg, false);
-            if (bgColor != juce::Colour(0xff121212)) {
+            if (bgColor != Theme::color(Theme::Color::bgApp)) {
                 g.setColour(bgColor);
                 g.fillRect(x, y, cellW * cell.width, cellH);
             }

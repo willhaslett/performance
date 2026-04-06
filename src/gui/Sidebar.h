@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/RegistryTree.h"
+#include "gui/Theme.h"
 
 class PerformanceAPI;
 class Registry;

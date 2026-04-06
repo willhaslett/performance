@@ -44,19 +44,19 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
 }
 
 void MainLayout::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff121212));
+    g.fillAll(Theme::color(Theme::Color::bgApp));
 
-    // Toolbar background
+    // Toolbar
     auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
-    g.setColour(juce::Colour(0xff1a1a1a));
+    g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(toolbar);
-    g.setColour(juce::Colour(0xff3a3a3a));
+    g.setColour(Theme::color(Theme::Color::border));
     g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
 
-    // Sidebar toggle arrow in toolbar
+    // Sidebar toggle
     auto toggleBounds = juce::Rectangle<int>(4, 4, 24, 24);
-    g.setColour(juce::Colour(0xff2a2a2a));
-    g.fillRoundedRectangle(toggleBounds.toFloat(), 4.0f);
+    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.fillRoundedRectangle(toggleBounds.toFloat(), Theme::cornerRadiusSm);
 
     juce::Path arrow;
     auto a = toggleBounds.reduced(7).toFloat();
@@ -69,13 +69,13 @@ void MainLayout::paint(juce::Graphics& g) {
                           a.getX(), a.getBottom(),
                           a.getRight(), a.getCentreY());
     }
-    g.setColour(juce::Colour(0xff888888));
+    g.setColour(Theme::color(Theme::Color::textSecondary));
     g.fillPath(arrow);
 
     // Mode indicator
     if (insertMode) {
-        g.setColour(juce::Colour(0xff44aa44));
-        g.setFont(juce::Font(juce::FontOptions(12.0f)));
+        g.setColour(Theme::color(Theme::Color::midiActive));
+        g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText("-- INSERT --", toolbar.withTrimmedLeft(36), juce::Justification::centredLeft);
     }
 }

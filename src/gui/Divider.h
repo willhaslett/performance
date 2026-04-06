@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include "gui/Theme.h"
 #include <functional>
 
 // Draggable divider between panes
@@ -19,7 +20,7 @@ public:
 
     void paint(juce::Graphics& g) override {
         // Transparent background, just draw the divider line at the edge
-        g.setColour(juce::Colour(0xff3a3a3a));
+        g.setColour(Theme::color(Theme::Color::border));
         if (orientation == Horizontal)
             g.drawLine(0.0f, 0.0f, (float)getWidth(), 0.0f, 1.0f);
         else
