@@ -87,8 +87,11 @@ void MainLayout::resized() {
     // Sidebar + divider
     if (sidebarOpen) {
         sidebar.setBounds(area.removeFromLeft(sidebarWidth));
-        sidebarDivider.setBounds(area.removeFromLeft(Divider::thickness));
+        // Divider overlaps the boundary — doesn't take layout space
+        sidebarDivider.setBounds(sidebarWidth, area.getY(),
+                                  Divider::thickness, area.getHeight());
         sidebarDivider.setVisible(true);
+        sidebarDivider.toFront(false);
     } else {
         sidebarDivider.setVisible(false);
     }
@@ -96,11 +99,12 @@ void MainLayout::resized() {
     // Mixer + divider
     if (mixerVisible) {
         auto mh = std::min(mixerHeight, area.getHeight() - minPaneSize);
-        mixerDivider.setBounds(area.getX(), area.getBottom() - mh - Divider::thickness,
+        // Divider overlaps the boundary — doesn't take layout space from mixer
+        mixerDivider.setBounds(area.getX(), area.getBottom() - mh,
                                 area.getWidth(), Divider::thickness);
         mixerDivider.setVisible(true);
+        mixerDivider.toFront(false);
         mixerView.setBounds(area.removeFromBottom(mh));
-        area.removeFromBottom(Divider::thickness);  // space for divider
     } else {
         mixerDivider.setVisible(false);
     }

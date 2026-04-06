@@ -2,11 +2,13 @@
 #include "api/PerformanceAPI.h"
 
 MixerView::MixerView(PerformanceAPI& api) : api(api) {
+    setInterceptsMouseClicks(true, true);
+    setPaintingIsUnclipped(false);
     startTimerHz(30);
 }
 
 void MixerView::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgApp));
+    g.fillAll(Theme::color(Theme::Color::bgTrack));
 
     if (strips.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
@@ -18,12 +20,12 @@ void MixerView::paint(juce::Graphics& g) {
 void MixerView::resized() {
     if (strips.empty()) return;
 
-    auto area = getLocalBounds().reduced(4);
+    auto area = getLocalBounds();
     int stripWidth = std::min(Theme::trackStripWidth,
                                area.getWidth() / std::max(1, (int)strips.size()));
 
     for (auto& strip : strips) {
-        strip->setBounds(area.removeFromLeft(stripWidth).reduced(2));
+        strip->setBounds(area.removeFromLeft(stripWidth));
     }
 }
 

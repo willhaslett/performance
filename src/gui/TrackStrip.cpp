@@ -65,19 +65,17 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     // Track background
     g.setColour(Theme::color(Theme::Color::bgTrack));
-    g.fillRoundedRectangle(bounds.toFloat(), Theme::cornerRadius);
+    g.fillRect(bounds);
 
-    // Border
+    // Right border
     g.setColour(Theme::color(Theme::Color::border));
-    g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), Theme::cornerRadius, 1.0f);
+    g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
+               (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
 
     // Header
     headerBounds = bounds.removeFromTop(Theme::headerHeight);
     g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
-    g.fillRoundedRectangle(headerBounds.toFloat().reduced(1.0f, 1.0f),
-                            Theme::cornerRadius);
-    // Only round top corners — fill bottom of header rectangle
-    g.fillRect(headerBounds.withTrimmedTop(Theme::headerHeight / 2).reduced(1, 0));
+    g.fillRect(headerBounds);
 
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
