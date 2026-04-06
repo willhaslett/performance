@@ -85,8 +85,23 @@ void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::St
     }
 
     if (!currentSongId.empty()) {
-        registry->createTrack(currentSongId, trackName.toStdString(), plugin->id, snapshotId);
-        engineSync->sync(currentSongId);
+        // Check if track already exists in registry (e.g., created empty)
+        bool updated = false;
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == trackName.toStdString()) {
+                // Update existing track with plugin
+                t.pluginId = plugin->id;
+                t.snapshotId = snapshotId;
+                registry->updateTrack(t);
+                updated = true;
+                break;
+            }
+        }
+        if (!updated)
+            registry->createTrack(currentSongId, trackName.toStdString(), plugin->id, snapshotId);
+
+        // Engine already has the track — just load the instrument
+        audioEngine->addTrackInstrument(trackName, pluginName, nullptr);
     } else {
         audioEngine->addTrackInstrument(trackName, pluginName, nullptr);
     }

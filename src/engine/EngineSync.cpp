@@ -39,17 +39,17 @@ void EngineSync::sync(const std::string& songId) {
             engine.createBus(juce::String(bus.name));
             engine.setBusGain(juce::String(bus.name), bus.outputGain);
             engineBusNames.insert(bus.name);
+        }
 
-            // Bus effects
-            for (auto& fx : registry.effectsForParent(bus.id)) {
-                if (engineEffectIds.count(fx.id)) continue;
-                auto plugin = registry.findPluginById(fx.pluginId);
-                if (plugin) {
-                    engine.addBusEffect(juce::String(bus.name),
-                                         juce::String(fx.name),
-                                         juce::String(plugin->name));
-                    engineEffectIds.insert(fx.id);
-                }
+        // Effects — always sync
+        for (auto& fx : registry.effectsForParent(bus.id)) {
+            if (engineEffectIds.count(fx.id)) continue;
+            auto plugin = registry.findPluginById(fx.pluginId);
+            if (plugin) {
+                engine.addBusEffect(juce::String(bus.name),
+                                     juce::String(fx.name),
+                                     juce::String(plugin->name));
+                engineEffectIds.insert(fx.id);
             }
         }
     }
@@ -78,22 +78,22 @@ void EngineSync::sync(const std::string& songId) {
                 }
             }
 
-            // Track effects
-            for (auto& fx : registry.effectsForParent(track.id)) {
-                if (engineEffectIds.count(fx.id)) continue;
-                auto fxPlugin = registry.findPluginById(fx.pluginId);
-                if (fxPlugin) {
-                    engine.addTrackEffect(juce::String(track.name),
-                                           juce::String(fx.name),
-                                           juce::String(fxPlugin->name));
-                    engineEffectIds.insert(fx.id);
-                }
-            }
-
             // Gain and MIDI
             engine.setTrackGain(juce::String(track.name), track.outputGain);
             if (!track.midiEnabled)
                 engine.setTrackMidiEnabled(juce::String(track.name), false);
+        }
+
+        // Effects — always sync, even for existing tracks
+        for (auto& fx : registry.effectsForParent(track.id)) {
+            if (engineEffectIds.count(fx.id)) continue;
+            auto fxPlugin = registry.findPluginById(fx.pluginId);
+            if (fxPlugin) {
+                engine.addTrackEffect(juce::String(track.name),
+                                       juce::String(fx.name),
+                                       juce::String(fxPlugin->name));
+                engineEffectIds.insert(fx.id);
+            }
         }
     }
 
