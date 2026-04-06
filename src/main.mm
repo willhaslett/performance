@@ -14,6 +14,7 @@ public:
                          DocumentWindow::allButtons),
           mainLayout(new MainLayout(api)) {
         setUsingNativeTitleBar(true);
+        setResizable(true, true);
         setContentOwned(mainLayout, false);
 
         auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
