@@ -84,7 +84,7 @@ Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 - `listSnapshots(pluginName)` — list saved snapshots for a plugin
 
 ### Song Management
-Songs live in the registry (SQLite), not as files on disk. There is always a "Default Session" which is hidden from the user and cannot be deleted — it's the unnamed workspace.
+Songs live in the registry (SQLite), not as files on disk. There is always a "Sandbox" which is hidden from the user and cannot be deleted — it's the unnamed workspace.
 
 - `song(name)` — create/set the active song
 - `saveInitialState()` — capture current state as the song's checkpoint
@@ -95,7 +95,7 @@ Songs live in the registry (SQLite), not as files on disk. There is always a "De
 
 To list/delete songs, use the registry CRUD:
 - `registryList("song")` — list all songs (returns table with id, name fields)
-- `registryDelete(id)` — delete a song by ID (Default Session is protected)
+- `registryDelete(id)` — delete a song by ID (Sandbox is protected)
 
 ### Registry (generic CRUD)
 - `registryCreate(type, {fields})` — create any entity

@@ -112,6 +112,7 @@ public:
 
     // Query current state as a SongDef (for serialization)
     SongDef getCurrentSongDef() const;
+    std::string getCurrentSongId() const { return currentSongId; }
 
     // --- Generic Registry CRUD ---
     std::string registryCreate(const std::string& type, const std::map<std::string, std::string>& fields);

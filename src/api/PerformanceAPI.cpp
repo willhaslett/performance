@@ -664,7 +664,7 @@ bool PerformanceAPI::restoreSession() {
 
     if (songs.empty()) {
         // First run — create a default unnamed session
-        currentSongId = registry->createSong("Default Session");
+        currentSongId = registry->createSong("Sandbox");
         engineSync->setActiveSong(currentSongId);
         perfLog("[API] Created default session\n");
         return true;
@@ -808,7 +808,7 @@ void PerformanceAPI::loadInitialState() {
     // Use the song's registry name if the saved state has no name
     if (songDef.name.isEmpty()) {
         auto song = registry->findSongById(currentSongId);
-        songDef.name = song ? juce::String(song->name) : "Default Session";
+        songDef.name = song ? juce::String(song->name) : "Sandbox";
     }
 
     perfLog("[API] Loading initial state for song \"%s\"\n", songDef.name.toRawUTF8());
@@ -1022,7 +1022,7 @@ void PerformanceAPI::registryUpdate(const std::string& id,
 void PerformanceAPI::registryDelete(const std::string& id) {
     // Protect the default session from deletion
     auto song = registry->findSongById(id);
-    if (song && song->name == "Default Session") return;
+    if (song && song->name == "Sandbox") return;
 
     // If deleting the current song, clear engine and fall back
     if (id == currentSongId) {
@@ -1032,7 +1032,7 @@ void PerformanceAPI::registryDelete(const std::string& id) {
         if (!songs.empty()) {
             loadSongFromRegistry(songs[0].id);
         } else {
-            currentSongId = registry->createSong("Default Session");
+            currentSongId = registry->createSong("Sandbox");
             engineSync->setActiveSong(currentSongId);
         }
         return;

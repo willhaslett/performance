@@ -6,7 +6,7 @@
 class PerformanceAPI;
 class Registry;
 
-class Sidebar : public juce::Component {
+class Sidebar : public juce::Component, private juce::Timer {
 public:
     Sidebar();
     ~Sidebar() override;
@@ -18,6 +18,7 @@ public:
     void resized() override;
 
 private:
+    void timerCallback() override;
     void refreshTree();
 
     PerformanceAPI* api = nullptr;
@@ -25,4 +26,5 @@ private:
     RegistryTree tree;
     int subscriptionId = -1;
     bool needsRefresh = false;
+    std::string lastHighlightedId;
 };

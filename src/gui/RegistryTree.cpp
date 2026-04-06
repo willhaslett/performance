@@ -74,13 +74,19 @@ void RegistryTree::paint(juce::Graphics& g) {
 
         int x = 8 + row.depth * indentSize;
 
-        if (i == hoveredRow) {
+        bool isActive = !highlightedId.empty() && row.id == highlightedId;
+
+        if (isActive) {
+            g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.3f));
+            g.fillRect(0, y, getWidth(), rowHeight);
+        } else if (i == hoveredRow) {
             g.setColour(Theme::color(Theme::Color::bgSlot));
             g.fillRect(0, y, getWidth(), rowHeight);
         }
 
         if (row.isLeaf) {
-            g.setColour(Theme::color(Theme::Color::textPrimary));
+            g.setColour(isActive ? Theme::color(Theme::Color::textWhite)
+                                 : Theme::color(Theme::Color::textPrimary));
             g.drawText(juce::String(row.label),
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);

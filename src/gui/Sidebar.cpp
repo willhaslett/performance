@@ -6,6 +6,7 @@
 
 Sidebar::Sidebar() {
     addAndMakeVisible(tree);
+    startTimerHz(4);  // check active song highlight
 
     tree.setOnNodeClick([this](const std::string& type, const std::string& id, const std::string& label) {
         if (!api) return;
@@ -55,16 +56,40 @@ void Sidebar::resized() {
     tree.setBounds(getLocalBounds().reduced(0, 4));
 }
 
+void Sidebar::timerCallback() {
+    if (!api) return;
+    auto currentId = api->getCurrentSongId();
+    if (currentId != lastHighlightedId) {
+        lastHighlightedId = currentId;
+        tree.setHighlightedId(currentId);
+    }
+}
+
 void Sidebar::refreshTree() {
     std::vector<TreeNode> roots;
 
-    // Songs — just names, no children (mixer shows contents)
+    // Songs — Sandbox always first, then user songs
     {
         TreeNode songsNode;
         songsNode.label = "Songs";
         songsNode.type = "category";
+
+        // Sandbox always at the top
         for (auto& song : registry->allSongs()) {
-            if (song.name == "Default Session") continue;
+            if (song.name == "Sandbox") {
+                TreeNode sandboxNode;
+                sandboxNode.label = "Sandbox";
+                sandboxNode.id = song.id;
+                sandboxNode.type = "song";
+                sandboxNode.isLeaf = true;
+                songsNode.children.push_back(sandboxNode);
+                break;
+            }
+        }
+
+        // User songs
+        for (auto& song : registry->allSongs()) {
+            if (song.name == "Sandbox") continue;
             TreeNode songNode;
             songNode.label = song.name;
             songNode.id = song.id;
