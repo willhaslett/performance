@@ -9,12 +9,13 @@ MixerView::MixerView(PerformanceAPI& api) : api(api) {
 }
 
 int MixerView::getDesiredHeight() const {
+    constexpr int minMixerHeight = 200;
     int maxH = 0;
     for (auto& s : trackStrips)
         maxH = std::max(maxH, s->getMinimumHeight());
     for (auto& s : busStrips)
         maxH = std::max(maxH, s->getMinimumHeight());
-    return maxH;
+    return std::max(minMixerHeight, maxH);
 }
 
 void MixerView::paint(juce::Graphics& g) {

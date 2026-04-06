@@ -68,6 +68,16 @@ void PerformanceAPI::createTrack(const juce::String& name) {
 
 void PerformanceAPI::removeTrack(const juce::String& name) {
     audioEngine->removeTrack(name);
+
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == name.toStdString()) {
+                registry->remove(t.id);  // CASCADE deletes effects, sends, etc.
+                break;
+            }
+        }
+        engineSync->notifyRemoved(name.toStdString());
+    }
 }
 
 void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::String& pluginName,
@@ -220,6 +230,16 @@ void PerformanceAPI::createBus(const juce::String& name) {
 
 void PerformanceAPI::removeBus(const juce::String& name) {
     audioEngine->removeBus(name);
+
+    if (!currentSongId.empty()) {
+        for (auto& b : registry->bussesForSong(currentSongId)) {
+            if (b.name == name.toStdString()) {
+                registry->remove(b.id);  // CASCADE deletes effects
+                break;
+            }
+        }
+        engineSync->notifyRemoved(name.toStdString());
+    }
 }
 
 

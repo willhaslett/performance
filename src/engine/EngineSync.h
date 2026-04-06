@@ -24,6 +24,9 @@ public:
     // Set the active song ID for periodic persistence
     void setActiveSong(const std::string& songId) { activeSongId = songId; }
 
+    // Notify that a track or bus was removed (clears from tracking sets)
+    void notifyRemoved(const std::string& name);
+
     // Clear all engine state
     void clear();
 

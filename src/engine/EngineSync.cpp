@@ -20,6 +20,15 @@ void EngineSync::timerCallback() {
         persistState(activeSongId);
 }
 
+void EngineSync::notifyRemoved(const std::string& name) {
+    engineTrackNames.erase(name);
+    engineBusNames.erase(name);
+    // Effect and send IDs are orphaned by CASCADE delete —
+    // clear them so they don't block re-creation
+    engineEffectIds.clear();
+    engineSendIds.clear();
+}
+
 void EngineSync::clear() {
     engine.clearAllTracks();
     engine.clearAllBusses();
