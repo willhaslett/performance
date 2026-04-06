@@ -66,6 +66,19 @@ void PerformanceAPI::createTrack(const juce::String& name) {
     }
 }
 
+void PerformanceAPI::renameTrack(const juce::String& oldName, const juce::String& newName) {
+    audioEngine->renameTrack(oldName, newName);
+    engineSync->notifyRenamed(oldName.toStdString(), newName.toStdString());
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == oldName.toStdString()) {
+                registry->update(t.id, {{"name", newName.toStdString()}});
+                break;
+            }
+        }
+    }
+}
+
 void PerformanceAPI::removeTrack(const juce::String& name) {
     audioEngine->removeTrack(name);
 
@@ -233,6 +246,19 @@ void PerformanceAPI::createBus(const juce::String& name) {
         engineSync->sync(currentSongId);
     } else {
         audioEngine->createBus(name);
+    }
+}
+
+void PerformanceAPI::renameBus(const juce::String& oldName, const juce::String& newName) {
+    audioEngine->renameBus(oldName, newName);
+    engineSync->notifyRenamed(oldName.toStdString(), newName.toStdString());
+    if (!currentSongId.empty()) {
+        for (auto& b : registry->bussesForSong(currentSongId)) {
+            if (b.name == oldName.toStdString()) {
+                registry->update(b.id, {{"name", newName.toStdString()}});
+                break;
+            }
+        }
     }
 }
 

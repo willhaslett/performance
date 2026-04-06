@@ -35,11 +35,13 @@ public:
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
     float getTrackGain(const juce::String& trackName) const;
+    void renameTrack(const juce::String& oldName, const juce::String& newName);
     void clearAllTracks();
 
     // Bus management
     void createBus(const juce::String& busName);
     void removeBus(const juce::String& busName);
+    void renameBus(const juce::String& oldName, const juce::String& newName);
     void setBusGain(const juce::String& busName, float gain);
 
     struct EffectInfo { juce::String name; juce::String pluginName; };

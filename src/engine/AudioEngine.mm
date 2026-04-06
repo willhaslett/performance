@@ -544,6 +544,30 @@ float AudioEngine::getTrackGain(const juce::String& trackName) const {
     return 0.0f;
 }
 
+void AudioEngine::renameTrack(const juce::String& oldName, const juce::String& newName) {
+    auto it = tracks.find(oldName);
+    if (it == tracks.end() || tracks.count(newName)) return;
+    auto track = std::move(it->second);
+    tracks.erase(it);
+    tracks[newName] = std::move(track);
+    // Update send references from other tracks pointing to this (tracks don't receive sends, skip)
+    perfLog("[Engine] Renamed track \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
+}
+
+void AudioEngine::renameBus(const juce::String& oldName, const juce::String& newName) {
+    auto it = busses.find(oldName);
+    if (it == busses.end() || busses.count(newName)) return;
+    auto bus = std::move(it->second);
+    busses.erase(it);
+    busses[newName] = std::move(bus);
+    // Update send references
+    for (auto& [_, track] : tracks)
+        for (auto& send : track.sends)
+            if (send.busName == oldName)
+                send.busName = newName;
+    perfLog("[Engine] Renamed bus \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
+}
+
 void AudioEngine::clearAllTracks() {
     editorWindows.clear();
     for (auto& [name, track] : tracks) {

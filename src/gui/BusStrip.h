@@ -3,6 +3,7 @@
 #include "gui/Theme.h"
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
+#include "gui/InlineEditor.h"
 #include <vector>
 #include <memory>
 
@@ -20,6 +21,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
 private:
     PerformanceAPI& api;
@@ -29,6 +31,7 @@ private:
     FaderMeter faderMeter;
 
     juce::Rectangle<int> headerBounds;
+    InlineEditor nameEditor;
 
     void rebuildEffectSlots();
     std::vector<juce::String> currentEffectNames;

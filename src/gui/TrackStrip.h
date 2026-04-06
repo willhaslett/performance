@@ -4,6 +4,7 @@
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
 #include "gui/SendsPanel.h"
+#include "gui/InlineEditor.h"
 #include <vector>
 #include <memory>
 
@@ -26,6 +27,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
 
 private:
     PerformanceAPI& api;
@@ -36,6 +38,7 @@ private:
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;
     SendsPanel sendsPanel;
+    InlineEditor nameEditor;
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> midiDotBounds;

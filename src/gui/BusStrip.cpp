@@ -77,6 +77,19 @@ int BusStrip::getMinimumHeight() const {
     return h;
 }
 
+void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (headerBounds.contains(event.getPosition())) {
+        nameEditor.onCommit = [this](const juce::String& newName) {
+            if (newName != busName) {
+                api.renameBus(busName, newName);
+                busName = newName;
+                repaint();
+            }
+        };
+        nameEditor.show(*this, headerBounds.reduced(8, 4), busName);
+    }
+}
+
 void BusStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 28;

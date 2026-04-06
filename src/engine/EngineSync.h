@@ -26,6 +26,7 @@ public:
 
     // Notify that a track or bus was removed (clears from tracking sets)
     void notifyRemoved(const std::string& name);
+    void notifyRenamed(const std::string& oldName, const std::string& newName);
 
     // Clear all engine state
     void clear();

@@ -174,3 +174,16 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         repaint();
     }
 }
+
+void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (headerBounds.contains(event.getPosition())) {
+        nameEditor.onCommit = [this](const juce::String& newName) {
+            if (newName != trackName) {
+                api.renameTrack(trackName, newName);
+                trackName = newName;
+                repaint();
+            }
+        };
+        nameEditor.show(*this, headerBounds.withTrimmedLeft(26).reduced(4, 4), trackName);
+    }
+}

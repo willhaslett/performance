@@ -29,6 +29,13 @@ void EngineSync::notifyRemoved(const std::string& name) {
     engineSendIds.clear();
 }
 
+void EngineSync::notifyRenamed(const std::string& oldName, const std::string& newName) {
+    if (engineTrackNames.erase(oldName))
+        engineTrackNames.insert(newName);
+    if (engineBusNames.erase(oldName))
+        engineBusNames.insert(newName);
+}
+
 void EngineSync::clear() {
     engine.clearAllTracks();
     engine.clearAllBusses();

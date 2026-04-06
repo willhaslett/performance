@@ -25,6 +25,7 @@ public:
     // --- Track management ---
     void createTrack(const juce::String& name);
     void removeTrack(const juce::String& name);
+    void renameTrack(const juce::String& oldName, const juce::String& newName);
     void addInstrument(const juce::String& trackName, const juce::String& pluginName,
                        const juce::String& snapshotName = "");
     void removeInstrument(const juce::String& trackName);
@@ -40,6 +41,7 @@ public:
     // --- Bus management ---
     void createBus(const juce::String& name);
     void removeBus(const juce::String& name);
+    void renameBus(const juce::String& oldName, const juce::String& newName);
     void setBusGain(const juce::String& busName, float gain);
 
     // --- Master output ---
