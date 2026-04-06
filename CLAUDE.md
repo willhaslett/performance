@@ -128,14 +128,13 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Runtime state persistence: 1Hz timer writes engine values (gain, MIDI enabled) back to registry
 - Discrete state changes (MIDI enabled) persist immediately
 - Song initial state: save/load checkpoint separate from live state
+- Score: ordered action list with replay ("go to step N")
 - Default unnamed session on first run (no Lua bootstrap required)
 
 **TODOs:**
-- Score table (`song_id, position, action_id, args`) and "go to step N" replay
-- Score "go to step N" replay from initial state
-- Track presets (save/load a full track configuration)
+- GUI CRUD: create/delete songs, tracks, busses from the UI
 - Plugin picker UI (searchable, filterable by instrument/effect)
-- Sidebar CRUD actions (right-click context menus, create/delete songs/tracks)
+- Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)

@@ -25,7 +25,7 @@ private:
     MixerView mixerView;
 
     bool terminalHasFocus() const;
-    bool sidebarOpen = false;
+    bool sidebarOpen = true;
     bool mixerVisible = true;
     bool insertMode = false;
     static constexpr int sidebarWidth = 240;

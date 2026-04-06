@@ -4,7 +4,7 @@
 MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     sidebar.setAPI(&api);
     sidebar.setRegistry(&api.getRegistry());
-    addChildComponent(sidebar);
+    addAndMakeVisible(sidebar);
     addAndMakeVisible(terminalView);
     addAndMakeVisible(mixerView);
     setWantsKeyboardFocus(true);
