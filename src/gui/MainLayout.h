@@ -27,10 +27,8 @@ private:
 
     Divider sidebarDivider { Divider::Vertical };
 
-    bool terminalHasFocus() const;
     bool sidebarOpen = true;
     bool mixerVisible = true;
-    bool insertMode = false;
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;

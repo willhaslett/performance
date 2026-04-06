@@ -68,12 +68,6 @@ void MainLayout::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.fillPath(arrow);
 
-    // Mode indicator
-    if (insertMode) {
-        g.setColour(Theme::color(Theme::Color::midiActive));
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText("-- INSERT --", toolbar.withTrimmedLeft(36), juce::Justification::centredLeft);
-    }
 }
 
 void MainLayout::resized() {
@@ -112,27 +106,20 @@ void MainLayout::mouseUp(const juce::MouseEvent& event) {
     }
 }
 
-bool MainLayout::terminalHasFocus() const {
-    return insertMode;
-}
-
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
-    if (insertMode) {
+    // If chat input has focus, only handle Escape (to unfocus)
+    if (chatView.isInputFocused()) {
         if (key == juce::KeyPress::escapeKey) {
-            insertMode = false;
             chatView.unfocusInput();
-            repaint();
             return true;
         }
-        return false;  // let JUCE focus system handle keyboard input
+        return false;  // let the TextEditor handle all other keys
     }
 
     auto c = key.getTextCharacter();
 
     if (c == 'i') {
-        insertMode = true;
         chatView.focusInput();
-        repaint();
         return true;
     }
 

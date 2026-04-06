@@ -17,6 +17,7 @@ public:
 
     void focusInput();
     void unfocusInput();
+    bool isInputFocused() const;
     void setSystemPrompt(const juce::String& prompt) { client.setSystemPrompt(prompt); }
 
     // A chat bubble: rounded background + read-only TextEditor for selectable text
