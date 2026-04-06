@@ -77,16 +77,29 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
     g.fillRect(headerBounds);
 
+    // Power icon — left-aligned in header
+    midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
+                                          headerBounds.getCentreY() - 7, 14, 14);
+    auto iconColor = midiEnabled ? Theme::color(Theme::Color::midiActive)
+                                  : Theme::color(Theme::Color::textDim);
+    g.setColour(iconColor);
+    // Circle (open at top)
+    juce::Path powerIcon;
+    auto iconArea = midiDotBounds.reduced(1).toFloat();
+    powerIcon.addCentredArc(iconArea.getCentreX(), iconArea.getCentreY(),
+                             iconArea.getWidth() * 0.4f, iconArea.getHeight() * 0.4f,
+                             0.0f, juce::MathConstants<float>::pi * 0.3f,
+                             juce::MathConstants<float>::pi * 1.7f, true);
+    g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
+    // Vertical line at top
+    g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
+               iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
+
+    // Track name — after the dot
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.reduced(8, 0), juce::Justification::centredLeft);
-
-    // MIDI indicator
-    if (midiEnabled) {
-        auto dot = headerBounds.removeFromRight(24).withSizeKeepingCentre(8, 8);
-        g.setColour(Theme::color(Theme::Color::midiActive));
-        g.fillEllipse(dot.toFloat());
-    }
+    g.drawText(trackName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
+               juce::Justification::centredLeft);
 
     // Instrument slot
     if (!slots.empty()) {
@@ -253,6 +266,15 @@ void TrackStrip::mouseDrag(const juce::MouseEvent& event) {
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     if (draggingFader) {
         draggingFader = false;
+        return;
+    }
+
+    // MIDI toggle — generous click area around the dot
+    auto midiHitArea = midiDotBounds.expanded(6);
+    if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        midiEnabled = !midiEnabled;
+        api.setTrackMidiEnabled(trackName, midiEnabled);
+        repaint();
         return;
     }
 

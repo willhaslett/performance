@@ -47,4 +47,5 @@ private:
     void showSlotContextMenu(int slotIndex, bool isInstrument, juce::Point<int> position);
     void showPluginPicker(int slotIndex, juce::Point<int> position);
     juce::Rectangle<int> headerBounds;
+    juce::Rectangle<int> midiDotBounds;
 };
