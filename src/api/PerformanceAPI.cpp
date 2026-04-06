@@ -1020,11 +1020,14 @@ void PerformanceAPI::registryUpdate(const std::string& id,
 }
 
 void PerformanceAPI::registryDelete(const std::string& id) {
-    // If deleting the current song, clear engine and fall back to default session
+    // Protect the default session from deletion
+    auto song = registry->findSongById(id);
+    if (song && song->name == "Default Session") return;
+
+    // If deleting the current song, clear engine and fall back
     if (id == currentSongId) {
         engineSync->clear();
         registry->remove(id);
-        // Create or restore a default session
         auto songs = registry->allSongs();
         if (!songs.empty()) {
             loadSongFromRegistry(songs[0].id);
@@ -1032,13 +1035,6 @@ void PerformanceAPI::registryDelete(const std::string& id) {
             currentSongId = registry->createSong("Default Session");
             engineSync->setActiveSong(currentSongId);
         }
-        return;
-    }
-
-    // If deleting a song (check if it's in the songs table), just remove from registry
-    auto song = registry->findSongById(id);
-    if (song) {
-        registry->remove(id);
         return;
     }
 

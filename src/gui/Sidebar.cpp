@@ -64,6 +64,7 @@ void Sidebar::refreshTree() {
         songsNode.label = "Songs";
         songsNode.type = "category";
         for (auto& song : registry->allSongs()) {
+            if (song.name == "Default Session") continue;
             TreeNode songNode;
             songNode.label = song.name;
             songNode.id = song.id;
