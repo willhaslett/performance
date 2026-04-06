@@ -7,9 +7,26 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     addAndMakeVisible(sidebar);
     addAndMakeVisible(terminalView);
     addAndMakeVisible(mixerView);
+
+    // Sidebar divider (vertical)
+    addAndMakeVisible(sidebarDivider);
+    sidebarDivider.onDragStart = [this]() { dragStartSidebarWidth = sidebarWidth; };
+    sidebarDivider.onDrag = [this](int delta) {
+        sidebarWidth = std::max(minPaneSize, dragStartSidebarWidth + delta);
+        resized();
+    };
+
+    // Mixer divider (horizontal)
+    addAndMakeVisible(mixerDivider);
+    mixerDivider.onDragStart = [this]() { dragStartMixerHeight = mixerHeight; };
+    mixerDivider.onDrag = [this](int delta) {
+        mixerHeight = std::max(minPaneSize, dragStartMixerHeight - delta);
+        resized();
+    };
+
     setWantsKeyboardFocus(true);
 
-    // Launch Claude Code in the runtime directory (has its own CLAUDE.md)
+    // Launch Claude Code in the runtime directory
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                        .getFullPathName());
     for (int i = 0; i < 5; ++i)
@@ -19,7 +36,6 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     if (!runtimeDir.getChildFile("CLAUDE.md").existsAsFile())
         runtimeDir = juce::File("/Users/will/ideas_and_projects/performance/runtime");
 
-    // Add project bin to PATH so claude can find the perf command
     auto binDir = runtimeDir.getParentDirectory().getChildFile("bin").getFullPathName();
     auto path = juce::String(getenv("PATH")) + ":" + binDir;
     setenv("PATH", path.toRawUTF8(), 1);
@@ -68,14 +84,28 @@ void MainLayout::resized() {
     auto area = getLocalBounds();
     area.removeFromTop(toolbarHeight);
 
+    // Sidebar + divider
     if (sidebarOpen) {
         sidebar.setBounds(area.removeFromLeft(sidebarWidth));
+        sidebarDivider.setBounds(area.removeFromLeft(Divider::thickness));
+        sidebarDivider.setVisible(true);
+    } else {
+        sidebarDivider.setVisible(false);
     }
 
+    // Mixer + divider
     if (mixerVisible) {
-        int mixerHeight = (int)(area.getHeight() * mixerRatio);
-        mixerView.setBounds(area.removeFromBottom(mixerHeight));
+        auto mh = std::min(mixerHeight, area.getHeight() - minPaneSize);
+        mixerDivider.setBounds(area.getX(), area.getBottom() - mh - Divider::thickness,
+                                area.getWidth(), Divider::thickness);
+        mixerDivider.setVisible(true);
+        mixerView.setBounds(area.removeFromBottom(mh));
+        area.removeFromBottom(Divider::thickness);  // space for divider
+    } else {
+        mixerDivider.setVisible(false);
     }
+
+    // Terminal fills remaining
     terminalView.setBounds(area);
 }
 
@@ -94,21 +124,18 @@ bool MainLayout::terminalHasFocus() const {
 }
 
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
-    // INSERT mode: all keys go to terminal, Escape returns to normal
     if (insertMode) {
         if (key == juce::KeyPress::escapeKey) {
             insertMode = false;
-            repaint();  // update mode indicator
+            repaint();
             return true;
         }
         terminalView.keyPressed(key);
         return true;
     }
 
-    // NORMAL mode: app shortcuts
     auto c = key.getTextCharacter();
 
-    // i — enter insert mode (terminal)
     if (c == 'i') {
         insertMode = true;
         repaint();
@@ -123,7 +150,6 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
-    // x — toggle mixer
     if (c == 'x') {
         mixerVisible = !mixerVisible;
         mixerView.setVisible(mixerVisible);

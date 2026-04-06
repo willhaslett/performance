@@ -3,10 +3,10 @@
 #include "gui/Sidebar.h"
 #include "gui/MixerView.h"
 #include "gui/TerminalView.h"
+#include "gui/Divider.h"
 
 class PerformanceAPI;
 
-// Top-level layout: toolbar + sidebar + panel3 + mixer
 class MainLayout : public juce::Component {
 public:
     MainLayout(PerformanceAPI& api);
@@ -24,11 +24,18 @@ private:
     TerminalView terminalView;
     MixerView mixerView;
 
+    Divider sidebarDivider { Divider::Vertical };
+    Divider mixerDivider { Divider::Horizontal };
+
     bool terminalHasFocus() const;
     bool sidebarOpen = true;
     bool mixerVisible = true;
     bool insertMode = false;
-    static constexpr int sidebarWidth = 240;
+
+    int sidebarWidth = 240;
+    int mixerHeight = 250;
+    int dragStartSidebarWidth = 0;
+    int dragStartMixerHeight = 0;
     static constexpr int toolbarHeight = 32;
-    static constexpr float mixerRatio = 0.3f;
+    static constexpr int minPaneSize = 100;
 };
