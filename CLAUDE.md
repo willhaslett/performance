@@ -132,9 +132,9 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - IPC socket (`/tmp/performance.sock`) for live Lua execution via `bin/perf`
 - Lua song scripts with automation library (`lua_lib/automation.lua`)
 - Plugin state snapshots (save/restore, persisted in registry + disk)
-- GUI: 3-pane layout (sidebar, terminal, mixer), toolbar, resizable panes with overlay dividers
-- Mixer: TrackStrip (instrument slot + effect slots + fader + VU meter + power icon MIDI toggle) and BusStrip (effect slots + fader + VU meter, purple header)
-- Reusable components: PluginSlot (pill with picker/context menu), FaderMeter (dB-scaled fader + VU pair)
+- GUI: 3-pane layout (sidebar, terminal, mixer), toolbar, resizable sidebar
+- Mixer: TrackStrip, BusStrip, OutputStrip — content-driven height, horizontal scroll. Right-click header to delete, double-click to rename.
+- Reusable components: PluginSlot (pill with picker/context menu), FaderMeter (dB-scaled fader + VU pair), InlineEditor (text overlay for rename)
 - Plugin picker: instrument/effect filtered, submenu with snapshot selection, right-click for No Plugin / Replace
 - Theme system (Theme.h) — all colors, dimensions, fonts centralized
 - Sidebar: Songs (flat), Library (instruments/effects with user snapshots), Actions (performance verbs with labels)
@@ -154,7 +154,11 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - SendsPanel: Logic-style pill+knob rows with signal glow, dynamic height
 - IPC table return serialization (Lua tables → JSON over socket for queries like `registryList`)
 - Content-driven mixer height: mixer pane grows/shrinks based on tallest strip
-- Remove bus effect via "No Plugin" context menu
+- Master output strip: GainProcessor, master effects, gain persistence across sessions
+- Unified addEffect/removeEffect API (tracks, busses, and master output)
+- Inline rename (double-click header) for tracks and busses
+- Right-click delete for tracks and busses
+- VU meter noise floor gate + unconditional peak level updates (no stuck meters)
 
 **TODOs:**
 - Track presets (save/load a full track configuration)
@@ -163,7 +167,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
 - Plugin load performance (AU plugins block message thread during instantiation — progress indicator or background process)
-- Track header: click to select (future track selection concept)
-- Delete track / delete bus from GUI
+- Track/bus selection (click to select, shift/cmd-click for multi-select)
+- Master output effects persistence in registry
 - Insert mode swallows all key events including Cmd+Q — need to pass through system shortcuts
 - Fader/knob drag: value stops changing at screen edge — need unbounded drag without cursor glitches
