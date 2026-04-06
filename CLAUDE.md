@@ -42,7 +42,8 @@ One direction. One source of truth. The engine never has state that the registry
 
 ### GUI
 
-- **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
+- **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + split panes + mixer
+- **PaneContainer** (`src/gui/PaneContainer.h`) — header-only N-way vertical split with proportional widths and draggable dividers. Currently: Mapping placeholder (60%) + ChatView (40%).
 - **ChatView** (`src/gui/ChatView.h/.cpp`) — native chat UI with scrollable message list + text input. TextEditor-based bubbles (selectable, copyable). Rounded bubble backgrounds with distinct colors per message type (user/assistant/tool/error). Chat theme constants in Theme.h.
 - **ClaudeClient** (`src/api/ClaudeClient.h/.cpp`) — background-thread HTTP client for Claude Messages API. Agentic tool-use loop: sends messages, handles tool calls by executing Lua via LuaEngine on the message thread, returns results, repeats until done.
 - **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips, bus strips, output strip. Content-driven height, horizontal scroll via Viewport. Polls engine state at 30Hz.
@@ -56,7 +57,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
-- Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode focuses chat input
+- Modal keyboard: s=sidebar, x=mixer, i=focus chat input, Esc=unfocus/close editor. Focus-driven (no explicit insert mode).
 - Native macOS menu bar: File (New/Save/Load/Close Song), Track (New Instrument Track, New Effects Bus), View (Toggle Sidebar/Mixer)
 - Resizable sidebar pane, content-driven mixer height (no manual resize)
 

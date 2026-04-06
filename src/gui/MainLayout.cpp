@@ -6,7 +6,10 @@ MainLayout::MainLayout(PerformanceAPI& api, LuaEngine& lua)
     sidebar.setAPI(&api);
     sidebar.setRegistry(&api.getRegistry());
     addAndMakeVisible(sidebar);
-    addAndMakeVisible(chatView);
+    // Pane container: placeholder left (60%), chat right (40%)
+    paneContainer.addPane(&placeholderPane, 0.6f);
+    paneContainer.addPane(&chatView, 0.4f);
+    addAndMakeVisible(paneContainer);
     addAndMakeVisible(mixerView);
 
     // Sidebar divider (vertical)
@@ -92,8 +95,8 @@ void MainLayout::resized() {
         mixerView.setBounds(area.removeFromBottom(mh));
     }
 
-    // Chat fills remaining
-    chatView.setBounds(area);
+    // Pane container fills remaining
+    paneContainer.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {

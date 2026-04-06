@@ -3,6 +3,7 @@
 #include "gui/Sidebar.h"
 #include "gui/MixerView.h"
 #include "gui/ChatView.h"
+#include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
 class PerformanceAPI;
@@ -23,6 +24,18 @@ private:
 
     Sidebar sidebar;
     ChatView chatView;
+    // Left pane placeholder for future views (Mapping, etc.)
+    class PlaceholderPane : public juce::Component {
+    public:
+        void paint(juce::Graphics& g) override {
+            g.fillAll(Theme::color(Theme::Color::bgApp));
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(Theme::fontSize));
+            g.drawText("Mapping", getLocalBounds(), juce::Justification::centred);
+        }
+    };
+    PlaceholderPane placeholderPane;
+    PaneContainer paneContainer;
     MixerView mixerView;
 
     Divider sidebarDivider { Divider::Vertical };
