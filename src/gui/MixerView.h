@@ -1,12 +1,12 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/TrackStrip.h"
+#include "gui/Theme.h"
 #include <memory>
 #include <vector>
 
 class PerformanceAPI;
 
-// Mixer pane — horizontal row of track strips
 class MixerView : public juce::Component, private juce::Timer {
 public:
     MixerView(PerformanceAPI& api);

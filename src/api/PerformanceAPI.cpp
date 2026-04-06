@@ -887,6 +887,22 @@ std::vector<juce::String> PerformanceAPI::listPlugins() const {
     return names;
 }
 
+std::vector<juce::String> PerformanceAPI::listInstrumentPlugins() const {
+    std::vector<juce::String> names;
+    for (auto& type : audioEngine->getKnownPlugins().getTypes())
+        if (type.isInstrument)
+            names.push_back(type.name);
+    return names;
+}
+
+std::vector<juce::String> PerformanceAPI::listEffectPlugins() const {
+    std::vector<juce::String> names;
+    for (auto& type : audioEngine->getKnownPlugins().getTypes())
+        if (!type.isInstrument)
+            names.push_back(type.name);
+    return names;
+}
+
 // --- Generic Registry CRUD ---
 
 std::string PerformanceAPI::registryCreate(const std::string& type,

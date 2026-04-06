@@ -6,20 +6,21 @@ MixerView::MixerView(PerformanceAPI& api) : api(api) {
 }
 
 void MixerView::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff121212));
+    g.fillAll(Theme::color(Theme::Color::bgApp));
 
     if (strips.empty()) {
-        g.setColour(juce::Colour(0xff666666));
-        g.setFont(16.0f);
-        g.drawText("No tracks loaded", getLocalBounds(), juce::Justification::centred);
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.setFont(Theme::font(14.0f));
+        g.drawText("No tracks", getLocalBounds(), juce::Justification::centred);
     }
 }
 
 void MixerView::resized() {
     if (strips.empty()) return;
 
-    auto area = getLocalBounds().reduced(8);
-    int stripWidth = std::min(180, area.getWidth() / (int)strips.size());
+    auto area = getLocalBounds().reduced(4);
+    int stripWidth = std::min(Theme::trackStripWidth,
+                               area.getWidth() / std::max(1, (int)strips.size()));
 
     for (auto& strip : strips) {
         strip->setBounds(area.removeFromLeft(stripWidth).reduced(2));
@@ -31,6 +32,14 @@ void MixerView::timerCallback() {
     if (trackNames != lastTrackNames) {
         lastTrackNames = trackNames;
         rebuildStrips();
+    } else {
+        // Update existing strips with current state
+        for (size_t i = 0; i < strips.size() && i < lastTrackNames.size(); ++i) {
+            auto& name = lastTrackNames[i];
+            strips[i]->setInstrumentName(api.getTrackPluginName(name));
+            strips[i]->setEffectNames(api.getTrackEffectNames(name));
+            strips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
+        }
     }
 }
 
@@ -38,24 +47,10 @@ void MixerView::rebuildStrips() {
     strips.clear();
 
     for (auto& trackName : lastTrackNames) {
-        auto strip = std::make_unique<TrackStrip>(trackName,
-            [this](const juce::String& track, const juce::String& plugin, bool isInstrument) {
-                if (isInstrument)
-                    api.openPluginEditor(track);
-                else
-                    api.openPluginEditor(track, plugin);
-            });
+        auto strip = std::make_unique<TrackStrip>(trackName, api);
 
-        std::vector<TrackStrip::PluginEntry> plugins;
-
-        auto instrumentName = api.getTrackPluginName(trackName);
-        if (instrumentName.isNotEmpty())
-            plugins.push_back({ instrumentName, true });
-
-        for (auto& fx : api.getTrackEffectNames(trackName))
-            plugins.push_back({ fx, false });
-
-        strip->setPlugins(plugins);
+        strip->setInstrumentName(api.getTrackPluginName(trackName));
+        strip->setEffectNames(api.getTrackEffectNames(trackName));
         strip->setMidiEnabled(api.isTrackMidiEnabled(trackName));
 
         addAndMakeVisible(*strip);

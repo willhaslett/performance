@@ -44,7 +44,9 @@ One direction. One source of truth. The engine never has state that the registry
 
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
 - **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
-- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips with plugin links
+- **MixerView** (`src/gui/MixerView.h/.cpp`) — horizontal row of track strips, polls engine state
+- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — instrument slot (pill) + effect slots with separator. Click pill to pick plugin via submenu with snapshot selection. Empty slots show placeholder labels.
+- **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
@@ -136,8 +138,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Default unnamed session on first run (no Lua bootstrap required)
 
 **TODOs:**
-- Plugin picker UI (searchable, filterable by instrument/effect) — triggered from track strip slots
-- Track strip: instrument slot + effect slots with plugin picker on click
+- Migrate remaining hardcoded colors/sizes to Theme.h
 - Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
