@@ -31,8 +31,9 @@ The `perf` command returns "ok" on success or an error message.
 - `addInstrument(track, plugin)` — load an AU plugin on a track
 - `addInstrument(track, plugin, snapshot)` — load with a saved snapshot
 - `removeInstrument(track)` — remove instrument, keep track
-- `addTrackEffect(track, effectName, plugin)` — add an effect to a track
-- `removeTrackEffect(track, effectName)` — remove an effect
+- `addEffect(trackOrBus, effectName, plugin)` — add an effect to a track or bus
+- `removeEffect(trackOrBus, effectName)` — remove an effect from a track or bus
+- `addTrackEffect(track, effectName, plugin)` — alias for addEffect
 - `setTrackMidiEnabled(track, enabled)` — enable/disable MIDI input
 - `setTrackGain(track, gain)` — set output gain (linear, 1.0 = unity)
 - `getTrackGain(track)` — get current gain
@@ -40,7 +41,7 @@ The `perf` command returns "ok" on success or an error message.
 ### Busses
 - `createBus(name)` — create a bus
 - `removeBus(name)` — remove a bus
-- `addBusEffect(bus, effectName, plugin)` — add an effect to a bus
+- `addBusEffect(bus, effectName, plugin)` — alias for addEffect
 - `setBusGain(bus, gain)` — set bus output gain
 
 ### Sends

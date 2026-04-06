@@ -29,7 +29,7 @@ One direction. One source of truth. The engine never has state that the registry
 
 ### Components
 
-- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args.
+- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args. Effects use unified `addEffect`/`removeEffect` — parent name resolves to track or bus automatically.
 - **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). Typed entities with UUIDs. Generic CRUD (`create`, `get`, `list`, `update`, `remove`) plus type-specific convenience methods. Emits events for UI updates.
 - **RegistryEventBus** (`src/registry/RegistryEvents.h`) — pub/sub for UI components. Entity type constants in `EntityType` namespace.
 - **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends. Also runs 1Hz persist timer writing engine values back to registry. Only creates new entities; never overwrites values on existing ones (engine owns live values after creation).

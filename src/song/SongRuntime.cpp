@@ -14,7 +14,7 @@ void SongRuntime::load(const SongDef& song) {
     for (auto& busDef : song.busses) {
         engine.createBus(busDef.name);
         for (auto& fx : busDef.effects)
-            engine.addBusEffect(busDef.name, fx.name, fx.pluginName);
+            engine.addEffect(busDef.name, fx.name, fx.pluginName);
         engine.setBusGain(busDef.name, busDef.outputGain);
     }
 
@@ -28,7 +28,7 @@ void SongRuntime::load(const SongDef& song) {
         });
 
         for (auto& fx : trackDef.effects)
-            engine.addTrackEffect(trackDef.name, fx.name, fx.pluginName);
+            engine.addEffect(trackDef.name, fx.name, fx.pluginName);
 
         for (auto& send : trackDef.sends)
             engine.addSend(trackDef.name, send.busName, send.gain);

@@ -122,56 +122,59 @@ void PerformanceAPI::removeInstrument(const juce::String& trackName) {
     }
 }
 
-void PerformanceAPI::addTrackEffect(const juce::String& trackName, const juce::String& effectName,
-                                     const juce::String& pluginName) {
+void PerformanceAPI::addEffect(const juce::String& parentName, const juce::String& effectName,
+                                const juce::String& pluginName) {
     if (!currentSongId.empty()) {
         auto plugin = registry->findPluginByName(pluginName.toStdString());
         if (plugin) {
+            // Check tracks first, then busses
             for (auto& t : registry->tracksForSong(currentSongId)) {
-                if (t.name == trackName.toStdString()) {
+                if (t.name == parentName.toStdString()) {
                     registry->createEffect(t.id, EntityType::Track,
                                            effectName.toStdString(), plugin->id);
-                    break;
+                    engineSync->sync(currentSongId);
+                    return;
+                }
+            }
+            for (auto& b : registry->bussesForSong(currentSongId)) {
+                if (b.name == parentName.toStdString()) {
+                    registry->createEffect(b.id, EntityType::Bus,
+                                           effectName.toStdString(), plugin->id);
+                    engineSync->sync(currentSongId);
+                    return;
                 }
             }
         }
-        engineSync->sync(currentSongId);
     } else {
-        audioEngine->addTrackEffect(trackName, effectName, pluginName);
+        audioEngine->addEffect(parentName, effectName, pluginName);
     }
 }
 
-void PerformanceAPI::removeTrackEffect(const juce::String& trackName, const juce::String& effectName) {
-    audioEngine->removeTrackEffect(trackName, effectName);
+void PerformanceAPI::removeEffect(const juce::String& parentName, const juce::String& effectName) {
+    audioEngine->removeEffect(parentName, effectName);
 
     if (!currentSongId.empty()) {
+        // Check tracks first, then busses
         for (auto& t : registry->tracksForSong(currentSongId)) {
-            if (t.name == trackName.toStdString()) {
+            if (t.name == parentName.toStdString()) {
                 for (auto& fx : registry->effectsForParent(t.id)) {
                     if (fx.name == effectName.toStdString()) {
                         registry->remove(fx.id);
-                        break;
+                        return;
                     }
                 }
-                break;
+                return;
             }
         }
-    }
-}
-
-void PerformanceAPI::removeBusEffect(const juce::String& busName, const juce::String& effectName) {
-    audioEngine->removeBusEffect(busName, effectName);
-
-    if (!currentSongId.empty()) {
         for (auto& b : registry->bussesForSong(currentSongId)) {
-            if (b.name == busName.toStdString()) {
+            if (b.name == parentName.toStdString()) {
                 for (auto& fx : registry->effectsForParent(b.id)) {
                     if (fx.name == effectName.toStdString()) {
                         registry->remove(fx.id);
-                        break;
+                        return;
                     }
                 }
-                break;
+                return;
             }
         }
     }
@@ -219,24 +222,6 @@ void PerformanceAPI::removeBus(const juce::String& name) {
     audioEngine->removeBus(name);
 }
 
-void PerformanceAPI::addBusEffect(const juce::String& busName, const juce::String& effectName,
-                                   const juce::String& pluginName) {
-    if (!currentSongId.empty()) {
-        auto plugin = registry->findPluginByName(pluginName.toStdString());
-        if (plugin) {
-            for (auto& b : registry->bussesForSong(currentSongId)) {
-                if (b.name == busName.toStdString()) {
-                    registry->createEffect(b.id, EntityType::Bus,
-                                           effectName.toStdString(), plugin->id);
-                    break;
-                }
-            }
-        }
-        engineSync->sync(currentSongId);
-    } else {
-        audioEngine->addBusEffect(busName, effectName, pluginName);
-    }
-}
 
 void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
     audioEngine->setBusGain(busName, gain);
@@ -579,8 +564,8 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
         for (auto& fx : registry->effectsForParent(bus.id)) {
             auto plugin = registry->findPluginById(fx.pluginId);
             if (plugin)
-                audioEngine->addBusEffect(juce::String(bus.name), juce::String(fx.name),
-                                           juce::String(plugin->name));
+                audioEngine->addEffect(juce::String(bus.name), juce::String(fx.name),
+                                        juce::String(plugin->name));
         }
     }
 
@@ -611,8 +596,8 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
         for (auto& fx : registry->effectsForParent(track.id)) {
             auto fxPlugin = registry->findPluginById(fx.pluginId);
             if (fxPlugin)
-                audioEngine->addTrackEffect(juce::String(track.name), juce::String(fx.name),
-                                             juce::String(fxPlugin->name));
+                audioEngine->addEffect(juce::String(track.name), juce::String(fx.name),
+                                        juce::String(fxPlugin->name));
         }
 
         audioEngine->setTrackGain(juce::String(track.name), track.outputGain);

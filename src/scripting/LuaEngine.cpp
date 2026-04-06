@@ -55,9 +55,13 @@ void LuaEngine::registerAPI() {
         api.addInstrument(juce::String(track), juce::String(plugin),
                           juce::String(snapshot.value_or("")));
     });
-    lua.set_function("addTrackEffect", [this](const std::string& track, const std::string& effect,
+    lua.set_function("addTrackEffect", [this](const std::string& parent, const std::string& effect,
                                                const std::string& plugin) {
-        api.addTrackEffect(juce::String(track), juce::String(effect), juce::String(plugin));
+        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
+    });
+    lua.set_function("addEffect", [this](const std::string& parent, const std::string& effect,
+                                          const std::string& plugin) {
+        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
     });
     lua.set_function("setTrackMidiEnabled", [this](const std::string& track, bool enabled) {
         api.setTrackMidiEnabled(juce::String(track), enabled);
@@ -73,9 +77,12 @@ void LuaEngine::registerAPI() {
     lua.set_function("removeBus", [this](const std::string& name) {
         api.removeBus(juce::String(name));
     });
-    lua.set_function("addBusEffect", [this](const std::string& bus, const std::string& effect,
+    lua.set_function("addBusEffect", [this](const std::string& parent, const std::string& effect,
                                              const std::string& plugin) {
-        api.addBusEffect(juce::String(bus), juce::String(effect), juce::String(plugin));
+        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
+    });
+    lua.set_function("removeEffect", [this](const std::string& parent, const std::string& effect) {
+        api.removeEffect(juce::String(parent), juce::String(effect));
     });
     lua.set_function("setBusGain", [this](const std::string& bus, float gain) {
         api.setBusGain(juce::String(bus), gain);

@@ -383,45 +383,84 @@ bool AudioEngine::addTrackInstrument(const juce::String& trackName, const juce::
     return true;
 }
 
-bool AudioEngine::addTrackEffect(const juce::String& trackName, const juce::String& effectName,
-                                  const juce::String& pluginName, LoadCallback onLoaded) {
-    auto it = tracks.find(trackName);
-    if (it == tracks.end()) {
-        perfLog("[Engine] Track not found: %s\n", trackName.toRawUTF8());
-        return false;
-    }
-
+bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentName,
+                                   const juce::String& effectName, const juce::String& pluginName,
+                                   LoadCallback onLoaded) {
     auto desc = findPluginDescription(pluginName);
     if (desc.name.isEmpty()) {
         perfLog("[Engine] Plugin not found: %s\n", pluginName.toRawUTF8());
         return false;
     }
 
-    it->second.effects.push_back({ effectName, nullptr });
-    auto effectIndex = it->second.effects.size() - 1;
-    perfLog("[Engine] Loading effect: %s as \"%s\" -> track \"%s\"\n",
-            desc.name.toRawUTF8(), effectName.toRawUTF8(), trackName.toRawUTF8());
+    effects.push_back({ effectName, nullptr });
+    auto effectIndex = effects.size() - 1;
+    perfLog("[Engine] Loading effect: %s as \"%s\" -> \"%s\"\n",
+            desc.name.toRawUTF8(), effectName.toRawUTF8(), parentName.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
-        [this, trackName, effectIndex, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                                        const juce::String& error) {
+        [this, parentName, effectIndex, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                         const juce::String& error) {
             if (!instance) {
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
                 return;
             }
-            auto it = tracks.find(trackName);
-            if (it == tracks.end()) return;
-            if (effectIndex >= it->second.effects.size()) return;
-            it->second.effects[effectIndex].node = graph->addNode(std::move(instance));
+            // Find the effects list again (could be track or bus)
+            std::vector<EffectNode>* efx = nullptr;
+            auto tit = tracks.find(parentName);
+            if (tit != tracks.end()) efx = &tit->second.effects;
+            else {
+                auto bit = busses.find(parentName);
+                if (bit != busses.end()) efx = &bit->second.effects;
+            }
+            if (!efx || effectIndex >= efx->size()) return;
+            (*efx)[effectIndex].node = graph->addNode(std::move(instance));
             rebuildConnections();
-            perfLog("[Engine] Loaded effect: %s as \"%s\" in track \"%s\"\n",
-                    desc.name.toRawUTF8(), it->second.effects[effectIndex].name.toRawUTF8(),
-                    trackName.toRawUTF8());
+            perfLog("[Engine] Loaded effect: %s as \"%s\" in \"%s\"\n",
+                    desc.name.toRawUTF8(), (*efx)[effectIndex].name.toRawUTF8(),
+                    parentName.toRawUTF8());
             if (onLoaded) onLoaded();
         });
 
     return true;
+}
+
+void AudioEngine::removeEffectFromList(std::vector<EffectNode>& effects, const juce::String& parentName,
+                                        const juce::String& effectName) {
+    for (auto it = effects.begin(); it != effects.end(); ++it) {
+        if (it->name == effectName) {
+            if (it->node)
+                graph->removeNode(it->node->nodeID);
+            effects.erase(it);
+            rebuildConnections();
+            perfLog("[Engine] Removed effect \"%s\" from \"%s\"\n",
+                    effectName.toRawUTF8(), parentName.toRawUTF8());
+            return;
+        }
+    }
+}
+
+bool AudioEngine::addEffect(const juce::String& parentName, const juce::String& effectName,
+                              const juce::String& pluginName, LoadCallback onLoaded) {
+    auto tit = tracks.find(parentName);
+    if (tit != tracks.end())
+        return addEffectToList(tit->second.effects, parentName, effectName, pluginName, onLoaded);
+    auto bit = busses.find(parentName);
+    if (bit != busses.end())
+        return addEffectToList(bit->second.effects, parentName, effectName, pluginName, onLoaded);
+    perfLog("[Engine] Parent not found: %s\n", parentName.toRawUTF8());
+    return false;
+}
+
+void AudioEngine::removeEffect(const juce::String& parentName, const juce::String& effectName) {
+    auto tit = tracks.find(parentName);
+    if (tit != tracks.end()) {
+        removeEffectFromList(tit->second.effects, parentName, effectName);
+        return;
+    }
+    auto bit = busses.find(parentName);
+    if (bit != busses.end())
+        removeEffectFromList(bit->second.effects, parentName, effectName);
 }
 
 float AudioEngine::getTrackPeakLevel(const juce::String& trackName) const {
@@ -444,39 +483,6 @@ void AudioEngine::removeTrackInstrument(const juce::String& trackName) {
     }
 }
 
-void AudioEngine::removeTrackEffect(const juce::String& trackName, const juce::String& effectName) {
-    auto it = tracks.find(trackName);
-    if (it == tracks.end()) return;
-    auto& effects = it->second.effects;
-    for (auto eit = effects.begin(); eit != effects.end(); ++eit) {
-        if (eit->name == effectName) {
-            if (eit->node)
-                graph->removeNode(eit->node->nodeID);
-            effects.erase(eit);
-            rebuildConnections();
-            perfLog("[Engine] Removed effect \"%s\" from track \"%s\"\n",
-                    effectName.toRawUTF8(), trackName.toRawUTF8());
-            return;
-        }
-    }
-}
-
-void AudioEngine::removeBusEffect(const juce::String& busName, const juce::String& effectName) {
-    auto it = busses.find(busName);
-    if (it == busses.end()) return;
-    auto& effects = it->second.effects;
-    for (auto eit = effects.begin(); eit != effects.end(); ++eit) {
-        if (eit->name == effectName) {
-            if (eit->node)
-                graph->removeNode(eit->node->nodeID);
-            effects.erase(eit);
-            rebuildConnections();
-            perfLog("[Engine] Removed effect \"%s\" from bus \"%s\"\n",
-                    effectName.toRawUTF8(), busName.toRawUTF8());
-            return;
-        }
-    }
-}
 
 void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
     auto it = tracks.find(trackName);
@@ -564,46 +570,6 @@ void AudioEngine::removeBus(const juce::String& busName) {
     perfLog("[Engine] Removed bus: %s\n", busName.toRawUTF8());
 }
 
-bool AudioEngine::addBusEffect(const juce::String& busName, const juce::String& effectName,
-                                const juce::String& pluginName, LoadCallback onLoaded) {
-    auto it = busses.find(busName);
-    if (it == busses.end()) {
-        perfLog("[Engine] Bus not found: %s\n", busName.toRawUTF8());
-        return false;
-    }
-
-    auto desc = findPluginDescription(pluginName);
-    if (desc.name.isEmpty()) {
-        perfLog("[Engine] Plugin not found: %s\n", pluginName.toRawUTF8());
-        return false;
-    }
-
-    it->second.effects.push_back({ effectName, nullptr });
-    auto effectIndex = it->second.effects.size() - 1;
-    perfLog("[Engine] Loading effect: %s as \"%s\" -> bus \"%s\"\n",
-            desc.name.toRawUTF8(), effectName.toRawUTF8(), busName.toRawUTF8());
-
-    formatManager.createPluginInstanceAsync(
-        desc, graph->getSampleRate(), graph->getBlockSize(),
-        [this, busName, effectIndex, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                                      const juce::String& error) {
-            if (!instance) {
-                perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
-                return;
-            }
-            auto it = busses.find(busName);
-            if (it == busses.end()) return;
-            if (effectIndex >= it->second.effects.size()) return;
-            it->second.effects[effectIndex].node = graph->addNode(std::move(instance));
-            rebuildConnections();
-            perfLog("[Engine] Loaded effect: %s as \"%s\" in bus \"%s\"\n",
-                    desc.name.toRawUTF8(), it->second.effects[effectIndex].name.toRawUTF8(),
-                    busName.toRawUTF8());
-            if (onLoaded) onLoaded();
-        });
-
-    return true;
-}
 
 void AudioEngine::setBusGain(const juce::String& busName, float gain) {
     auto it = busses.find(busName);

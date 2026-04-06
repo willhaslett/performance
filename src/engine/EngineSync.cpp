@@ -46,9 +46,9 @@ void EngineSync::sync(const std::string& songId) {
             if (engineEffectIds.count(fx.id)) continue;
             auto plugin = registry.findPluginById(fx.pluginId);
             if (plugin) {
-                engine.addBusEffect(juce::String(bus.name),
-                                     juce::String(fx.name),
-                                     juce::String(plugin->name));
+                engine.addEffect(juce::String(bus.name),
+                                  juce::String(fx.name),
+                                  juce::String(plugin->name));
                 engineEffectIds.insert(fx.id);
             }
         }
@@ -89,9 +89,9 @@ void EngineSync::sync(const std::string& songId) {
             if (engineEffectIds.count(fx.id)) continue;
             auto fxPlugin = registry.findPluginById(fx.pluginId);
             if (fxPlugin) {
-                engine.addTrackEffect(juce::String(track.name),
-                                       juce::String(fx.name),
-                                       juce::String(fxPlugin->name));
+                engine.addEffect(juce::String(track.name),
+                                  juce::String(fx.name),
+                                  juce::String(fxPlugin->name));
                 engineEffectIds.insert(fx.id);
             }
         }

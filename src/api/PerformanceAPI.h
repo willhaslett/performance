@@ -28,10 +28,10 @@ public:
     void addInstrument(const juce::String& trackName, const juce::String& pluginName,
                        const juce::String& snapshotName = "");
     void removeInstrument(const juce::String& trackName);
-    void addTrackEffect(const juce::String& trackName, const juce::String& effectName,
-                        const juce::String& pluginName);
-    void removeTrackEffect(const juce::String& trackName, const juce::String& effectName);
-    void removeBusEffect(const juce::String& busName, const juce::String& effectName);
+    // Effects — unified for tracks and busses
+    void addEffect(const juce::String& parentName, const juce::String& effectName,
+                   const juce::String& pluginName);
+    void removeEffect(const juce::String& parentName, const juce::String& effectName);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
     float getTrackGain(const juce::String& trackName);
@@ -40,8 +40,6 @@ public:
     // --- Bus management ---
     void createBus(const juce::String& name);
     void removeBus(const juce::String& name);
-    void addBusEffect(const juce::String& busName, const juce::String& effectName,
-                      const juce::String& pluginName);
     void setBusGain(const juce::String& busName, float gain);
 
     // --- Sends ---

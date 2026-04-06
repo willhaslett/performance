@@ -88,10 +88,7 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             if (slotType == Instrument)
                 api.addInstrument(trackOrBusName, selectedPlugin, snapshotName);
             else
-                if (parentKind == OnTrack)
-                    api.addTrackEffect(trackOrBusName, selectedPlugin, selectedPlugin);
-                else
-                    api.addBusEffect(trackOrBusName, selectedPlugin, selectedPlugin);
+                api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
 
             if (onChanged) onChanged();
         });
@@ -126,10 +123,8 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             if (result == 1) {
                 if (slotType == Instrument)
                     api.removeInstrument(trackOrBusName);
-                else if (parentKind == OnTrack)
-                    api.removeTrackEffect(trackOrBusName, pluginName);
                 else
-                    api.removeBusEffect(trackOrBusName, pluginName);
+                    api.removeEffect(trackOrBusName, pluginName);
                 if (onChanged) onChanged();
                 return;
             }
@@ -150,10 +145,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             if (slotType == Instrument)
                 api.addInstrument(trackOrBusName, selectedPlugin, snapshotName);
             else
-                if (parentKind == OnTrack)
-                    api.addTrackEffect(trackOrBusName, selectedPlugin, selectedPlugin);
-                else
-                    api.addBusEffect(trackOrBusName, selectedPlugin, selectedPlugin);
+                api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
 
             if (onChanged) onChanged();
         });
