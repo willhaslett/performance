@@ -127,10 +127,31 @@ void TrackStrip::paint(juce::Graphics& g) {
 
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     for (auto& slot : slots) {
-        if (slot.bounds.contains(event.getPosition())) {
-            showPluginPicker(slot.index, event.getScreenPosition());
-            break;
+        if (!slot.bounds.contains(event.getPosition())) continue;
+
+        bool isInstrument = (slot.index == 0);
+        bool hasPlugin = isInstrument
+            ? instrumentName.isNotEmpty()
+            : (slot.index - 1 < (int)effectNames.size());
+
+        if (event.mods.isPopupMenu()) {
+            // Right click — context menu for populated slots
+            if (hasPlugin)
+                showSlotContextMenu(slot.index, isInstrument, event.getScreenPosition());
+        } else {
+            // Left click
+            if (hasPlugin) {
+                // Open plugin editor
+                if (isInstrument)
+                    api.openPluginEditor(trackName);
+                else
+                    api.openPluginEditor(trackName, effectNames[slot.index - 1]);
+            } else {
+                // Empty slot — pick a plugin
+                showPluginPicker(slot.index, event.getScreenPosition());
+            }
         }
+        break;
     }
 }
 
@@ -153,6 +174,65 @@ void TrackStrip::mouseExit(const juce::MouseEvent&) {
         hoveredSlot = -1;
         repaint();
     }
+}
+
+void TrackStrip::showSlotContextMenu(int slotIndex, bool isInstrument,
+                                       juce::Point<int> position) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "No Plugin");
+    menu.addSeparator();
+
+    // Replace — submenu with plugin picker
+    juce::PopupMenu replaceMenu;
+    auto plugins = isInstrument ? api.listInstrumentPlugins() : api.listEffectPlugins();
+    for (int p = 0; p < (int)plugins.size(); ++p) {
+        auto& pluginName = plugins[p];
+        juce::PopupMenu snapshotMenu;
+        snapshotMenu.addItem(p * 1000 + 1, "Default");
+        auto snapshots = api.listSnapshots(pluginName);
+        if (!snapshots.empty()) {
+            snapshotMenu.addSeparator();
+            for (int s = 0; s < (int)snapshots.size(); ++s)
+                snapshotMenu.addItem(p * 1000 + 100 + s, snapshots[s]);
+        }
+        replaceMenu.addSubMenu(pluginName, snapshotMenu);
+    }
+    menu.addSubMenu("Replace", replaceMenu);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(position.x, position.y, 1, 1)),
+        [this, slotIndex, isInstrument, plugins](int result) {
+            if (result == 0) return;
+
+            if (result == 1) {
+                // "No Plugin" — remove the plugin
+                // TODO: implement removeInstrument / removeEffect on API
+                perfLog("[TrackStrip] Remove plugin from slot %d (not yet implemented)\n", slotIndex);
+                return;
+            }
+
+            // Replace — decode plugin + snapshot from result
+            // Results from replace submenu start at 1000+
+            int pluginIdx = result / 1000;
+            int snapshotChoice = result % 1000;
+
+            if (pluginIdx >= (int)plugins.size()) return;
+            auto selectedPlugin = plugins[pluginIdx];
+
+            juce::String snapshotName;
+            if (snapshotChoice >= 100) {
+                auto snapshots = api.listSnapshots(selectedPlugin);
+                int snapIdx = snapshotChoice - 100;
+                if (snapIdx < (int)snapshots.size())
+                    snapshotName = snapshots[snapIdx];
+            }
+
+            if (isInstrument) {
+                api.addInstrument(trackName, selectedPlugin, snapshotName);
+            } else {
+                api.addTrackEffect(trackName, selectedPlugin, selectedPlugin);
+            }
+        });
 }
 
 void TrackStrip::showPluginPicker(int slotIndex, juce::Point<int> position) {
