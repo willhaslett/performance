@@ -1,0 +1,38 @@
+#pragma once
+#include <juce_gui_basics/juce_gui_basics.h>
+#include "gui/Theme.h"
+#include <functional>
+
+class PerformanceAPI;
+
+class PluginSlot : public juce::Component {
+public:
+    enum Type { Instrument, Effect };
+
+    enum ParentKind { OnTrack, OnBus };
+    PluginSlot(Type type, PerformanceAPI& api, const juce::String& parentName,
+               ParentKind parent = OnTrack);
+
+    void setPluginName(const juce::String& name);
+    juce::String getPluginName() const { return pluginName; }
+    bool hasPlugin() const { return pluginName.isNotEmpty(); }
+
+    // Called after a plugin is selected or removed
+    std::function<void()> onChanged;
+
+    void paint(juce::Graphics& g) override;
+    void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent&) override;
+
+private:
+    Type slotType;
+    ParentKind parentKind;
+    PerformanceAPI& api;
+    juce::String trackOrBusName;
+    juce::String pluginName;
+    bool hovered = false;
+
+    void showPicker(juce::Point<int> position);
+    void showContextMenu(juce::Point<int> position);
+};

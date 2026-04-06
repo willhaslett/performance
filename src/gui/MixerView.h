@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/TrackStrip.h"
+#include "gui/BusStrip.h"
 #include "gui/Theme.h"
 #include <memory>
 #include <vector>
@@ -19,6 +20,8 @@ private:
     void rebuildStrips();
 
     PerformanceAPI& api;
-    std::vector<std::unique_ptr<TrackStrip>> strips;
+    std::vector<std::unique_ptr<TrackStrip>> trackStrips;
+    std::vector<std::unique_ptr<BusStrip>> busStrips;
     std::vector<juce::String> lastTrackNames;
+    std::vector<juce::String> lastBusNames;
 };

@@ -11,6 +11,7 @@ namespace Theme {
         constexpr uint32_t bgSlotHover  = 0xff353535;
         constexpr uint32_t bgHeader     = 0xff2a6aaa;
         constexpr uint32_t bgHeaderOff  = 0xff2a2a2a;
+        constexpr uint32_t bgHeaderBus  = 0xff4a3a6a;
         constexpr uint32_t border       = 0xff3a3a3a;
         constexpr uint32_t textPrimary  = 0xffcccccc;
         constexpr uint32_t textSecondary= 0xff888888;

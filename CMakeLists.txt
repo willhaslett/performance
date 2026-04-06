@@ -43,6 +43,9 @@ target_sources(Performance PRIVATE
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
     src/gui/TrackStrip.cpp
+    src/gui/BusStrip.cpp
+    src/gui/PluginSlot.cpp
+    src/gui/FaderMeter.cpp
     src/gui/RegistryTree.cpp
     src/gui/Sidebar.cpp
     src/gui/TerminalView.cpp

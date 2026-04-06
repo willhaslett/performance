@@ -8,31 +8,25 @@
 
 class PerformanceAPI;
 
-class TrackStrip : public juce::Component {
+class BusStrip : public juce::Component {
 public:
-    TrackStrip(const juce::String& name, PerformanceAPI& api);
+    BusStrip(const juce::String& name, PerformanceAPI& api);
 
-    void setInstrumentName(const juce::String& name);
     void setEffectNames(const std::vector<juce::String>& names);
-    void setMidiEnabled(bool enabled);
     void setPeakLevel(float level);
     void setGain(float gain);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
-    void mouseUp(const juce::MouseEvent& event) override;
 
 private:
     PerformanceAPI& api;
-    juce::String trackName;
-    bool midiEnabled = true;
+    juce::String busName;
 
-    PluginSlot instrumentSlot;
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;
 
     juce::Rectangle<int> headerBounds;
-    juce::Rectangle<int> midiDotBounds;
 
     void rebuildEffectSlots();
     std::vector<juce::String> currentEffectNames;
