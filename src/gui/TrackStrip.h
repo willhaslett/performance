@@ -3,6 +3,7 @@
 #include "gui/Theme.h"
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
+#include "gui/SendsPanel.h"
 #include <vector>
 #include <memory>
 
@@ -17,6 +18,8 @@ public:
     void setMidiEnabled(bool enabled);
     void setPeakLevel(float level);
     void setGain(float gain);
+    void setSends(const std::vector<SendsPanel::SendInfo>& sends);
+    void setAvailableBusses(const std::vector<juce::String>& busNames);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -30,6 +33,7 @@ private:
     PluginSlot instrumentSlot;
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;
+    SendsPanel sendsPanel;
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> midiDotBounds;

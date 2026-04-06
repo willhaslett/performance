@@ -123,6 +123,13 @@ public:
     juce::String getTrackPluginName(const juce::String& trackName) const;
     std::vector<juce::String> getTrackEffectNames(const juce::String& trackName) const;
     bool isTrackMidiEnabled(const juce::String& trackName) const;
+
+    // Send info for a track
+    struct TrackSendInfo {
+        juce::String busName;
+        float gain;
+    };
+    std::vector<TrackSendInfo> getTrackSends(const juce::String& trackName) const;
     std::vector<juce::String> getBusEffectNames(const juce::String& busName) const;
     float getBusGain(const juce::String& busName);
     float getBusPeakLevel(const juce::String& busName);

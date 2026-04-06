@@ -1,4 +1,5 @@
 #include "gui/MixerView.h"
+#include "gui/SendsPanel.h"
 #include "api/PerformanceAPI.h"
 
 MixerView::MixerView(PerformanceAPI& api) : api(api) {
@@ -48,6 +49,13 @@ void MixerView::timerCallback() {
             trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
             trackStrips[i]->setGain(api.getTrackGain(name));
             trackStrips[i]->setPeakLevel(api.getTrackPeakLevel(name));
+
+            // Sends
+            std::vector<SendsPanel::SendInfo> sends;
+            for (auto& s : api.getTrackSends(name))
+                sends.push_back({ s.busName, s.gain, 0.0f });  // TODO: send peak level
+            trackStrips[i]->setSends(sends);
+            trackStrips[i]->setAvailableBusses(lastBusNames);
         }
         // Update busses
         for (size_t i = 0; i < busStrips.size() && i < lastBusNames.size(); ++i) {
@@ -68,6 +76,13 @@ void MixerView::rebuildStrips() {
         strip->setInstrumentName(api.getTrackPluginName(trackName));
         strip->setEffectNames(api.getTrackEffectNames(trackName));
         strip->setMidiEnabled(api.isTrackMidiEnabled(trackName));
+        strip->setAvailableBusses(lastBusNames);
+
+        std::vector<SendsPanel::SendInfo> sends;
+        for (auto& s : api.getTrackSends(trackName))
+            sends.push_back({ s.busName, s.gain, 0.0f });
+        strip->setSends(sends);
+
         addAndMakeVisible(*strip);
         trackStrips.push_back(std::move(strip));
     }

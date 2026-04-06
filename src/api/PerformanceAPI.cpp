@@ -1024,6 +1024,13 @@ float PerformanceAPI::getBusPeakLevel(const juce::String& busName) {
     return audioEngine->getBusPeakLevel(busName);
 }
 
+std::vector<PerformanceAPI::TrackSendInfo> PerformanceAPI::getTrackSends(const juce::String& trackName) const {
+    std::vector<TrackSendInfo> result;
+    for (auto& send : audioEngine->getTrackSends(trackName))
+        result.push_back({ send.busName, send.gain });
+    return result;
+}
+
 bool PerformanceAPI::isTrackMidiEnabled(const juce::String& trackName) const {
     return audioEngine->isTrackMidiEnabled(trackName);
 }

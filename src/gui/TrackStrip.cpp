@@ -3,10 +3,12 @@
 
 TrackStrip::TrackStrip(const juce::String& name, PerformanceAPI& api)
     : api(api), trackName(name),
-      instrumentSlot(PluginSlot::Instrument, api, name) {
+      instrumentSlot(PluginSlot::Instrument, api, name),
+      sendsPanel(name, api) {
 
     addAndMakeVisible(instrumentSlot);
     addAndMakeVisible(faderMeter);
+    addChildComponent(sendsPanel);  // hidden until busses exist
 
     faderMeter.onGainChanged = [&](float newGain) {
         api.setTrackGain(trackName, newGain);
@@ -42,6 +44,19 @@ void TrackStrip::setPeakLevel(float level) {
 
 void TrackStrip::setGain(float gain) {
     faderMeter.setGain(gain);
+}
+
+void TrackStrip::setSends(const std::vector<SendsPanel::SendInfo>& sends) {
+    sendsPanel.setSends(sends);
+}
+
+void TrackStrip::setAvailableBusses(const std::vector<juce::String>& busNames) {
+    sendsPanel.setAvailableBusses(busNames);
+    bool shouldShow = !busNames.empty();
+    if (shouldShow != sendsPanel.isVisible()) {
+        sendsPanel.setVisible(shouldShow);
+        resized();
+    }
 }
 
 void TrackStrip::rebuildEffectSlots() {
@@ -106,16 +121,25 @@ void TrackStrip::paint(juce::Graphics& g) {
 void TrackStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 28;
+    constexpr int sendsPanelHeight = 60;
 
+    // FaderMeter runs full height on the right
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                         .withTrimmedBottom(Theme::trackPadding)
                         .removeFromRight(faderMeterWidth + Theme::trackPadding)
                         .withTrimmedRight(Theme::trackPadding);
     faderMeter.setBounds(fmArea);
 
-    auto slotArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
-                          .withTrimmedLeft(Theme::trackPadding)
-                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
+    // Content area (left of fader)
+    auto contentArea = bounds.withTrimmedTop(Theme::headerHeight)
+                             .withTrimmedLeft(Theme::trackPadding)
+                             .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
+
+    // Sends panel at bottom of content area (only when busses exist)
+    if (sendsPanel.isVisible())
+        sendsPanel.setBounds(contentArea.removeFromBottom(sendsPanelHeight));
+
+    auto slotArea = contentArea.withTrimmedTop(Theme::trackPadding);
     int y = slotArea.getY();
 
     instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);

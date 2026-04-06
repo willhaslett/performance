@@ -49,6 +49,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots only, fader+meter. Same composition as TrackStrip minus instrument/MIDI.
 - **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
+- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Send columns with bus picker, mini fader+meter per send. IN PROGRESS: send pills not appearing, needs debugging.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
