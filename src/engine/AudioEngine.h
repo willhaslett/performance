@@ -32,6 +32,8 @@ public:
                             LoadCallback onLoaded = nullptr);
     bool addTrackEffect(const juce::String& trackName, const juce::String& effectName,
                         const juce::String& pluginName, LoadCallback onLoaded = nullptr);
+    void removeTrackInstrument(const juce::String& trackName);
+    void removeTrackEffect(const juce::String& trackName, const juce::String& effectName);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
     float getTrackGain(const juce::String& trackName) const;

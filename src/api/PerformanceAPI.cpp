@@ -107,6 +107,21 @@ void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::St
     }
 }
 
+void PerformanceAPI::removeInstrument(const juce::String& trackName) {
+    audioEngine->removeTrackInstrument(trackName);
+
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == trackName.toStdString()) {
+                t.pluginId = "";
+                t.snapshotId = "";
+                registry->updateTrack(t);
+                break;
+            }
+        }
+    }
+}
+
 void PerformanceAPI::addTrackEffect(const juce::String& trackName, const juce::String& effectName,
                                      const juce::String& pluginName) {
     if (!currentSongId.empty()) {
@@ -123,6 +138,24 @@ void PerformanceAPI::addTrackEffect(const juce::String& trackName, const juce::S
         engineSync->sync(currentSongId);
     } else {
         audioEngine->addTrackEffect(trackName, effectName, pluginName);
+    }
+}
+
+void PerformanceAPI::removeTrackEffect(const juce::String& trackName, const juce::String& effectName) {
+    audioEngine->removeTrackEffect(trackName, effectName);
+
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.name == trackName.toStdString()) {
+                for (auto& fx : registry->effectsForParent(t.id)) {
+                    if (fx.name == effectName.toStdString()) {
+                        registry->remove(fx.id);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
     }
 }
 

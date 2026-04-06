@@ -27,8 +27,10 @@ public:
     void removeTrack(const juce::String& name);
     void addInstrument(const juce::String& trackName, const juce::String& pluginName,
                        const juce::String& snapshotName = "");
+    void removeInstrument(const juce::String& trackName);
     void addTrackEffect(const juce::String& trackName, const juce::String& effectName,
                         const juce::String& pluginName);
+    void removeTrackEffect(const juce::String& trackName, const juce::String& effectName);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
     float getTrackGain(const juce::String& trackName);

@@ -205,9 +205,13 @@ void TrackStrip::showSlotContextMenu(int slotIndex, bool isInstrument,
             if (result == 0) return;
 
             if (result == 1) {
-                // "No Plugin" — remove the plugin
-                // TODO: implement removeInstrument / removeEffect on API
-                perfLog("[TrackStrip] Remove plugin from slot %d (not yet implemented)\n", slotIndex);
+                if (isInstrument) {
+                    api.removeInstrument(trackName);
+                } else {
+                    int effectIdx = slotIndex - 1;
+                    if (effectIdx < (int)effectNames.size())
+                        api.removeTrackEffect(trackName, effectNames[effectIdx]);
+                }
                 return;
             }
 

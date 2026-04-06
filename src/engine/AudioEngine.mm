@@ -424,6 +424,35 @@ bool AudioEngine::addTrackEffect(const juce::String& trackName, const juce::Stri
     return true;
 }
 
+void AudioEngine::removeTrackInstrument(const juce::String& trackName) {
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return;
+    if (it->second.instrumentNode) {
+        graph->removeNode(it->second.instrumentNode->nodeID);
+        it->second.instrumentNode = nullptr;
+        it->second.instrumentPluginName = "";
+        rebuildConnections();
+        perfLog("[Engine] Removed instrument from track \"%s\"\n", trackName.toRawUTF8());
+    }
+}
+
+void AudioEngine::removeTrackEffect(const juce::String& trackName, const juce::String& effectName) {
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return;
+    auto& effects = it->second.effects;
+    for (auto eit = effects.begin(); eit != effects.end(); ++eit) {
+        if (eit->name == effectName) {
+            if (eit->node)
+                graph->removeNode(eit->node->nodeID);
+            effects.erase(eit);
+            rebuildConnections();
+            perfLog("[Engine] Removed effect \"%s\" from track \"%s\"\n",
+                    effectName.toRawUTF8(), trackName.toRawUTF8());
+            return;
+        }
+    }
+}
+
 void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
     auto it = tracks.find(trackName);
     if (it == tracks.end()) return;

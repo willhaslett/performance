@@ -138,9 +138,9 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Default unnamed session on first run (no Lua bootstrap required)
 
 **TODOs:**
-- Migrate remaining hardcoded colors/sizes to Theme.h
 - Track presets (save/load a full track configuration)
 - Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
+- Plugin load performance (AU plugins block message thread during instantiation — progress indicator or background process)
