@@ -16,9 +16,6 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
         resized();
     };
 
-    // Mixer divider (visual separator only, no drag — height is content-driven)
-    addAndMakeVisible(mixerDivider);
-
     setWantsKeyboardFocus(true);
 
     // Launch Claude Code in the runtime directory
@@ -91,18 +88,11 @@ void MainLayout::resized() {
         sidebarDivider.setVisible(false);
     }
 
-    // Mixer + divider — height driven by content
+    // Mixer — height driven by content, no resize
     if (mixerVisible) {
         int contentHeight = mixerView.getDesiredHeight();
         auto mh = std::max(minPaneSize, std::min(contentHeight, area.getHeight() - minPaneSize));
-        // Divider overlaps the boundary — doesn't take layout space from mixer
-        mixerDivider.setBounds(area.getX(), area.getBottom() - mh,
-                                area.getWidth(), Divider::thickness);
-        mixerDivider.setVisible(true);
-        mixerDivider.toFront(false);
         mixerView.setBounds(area.removeFromBottom(mh));
-    } else {
-        mixerDivider.setVisible(false);
     }
 
     // Terminal fills remaining

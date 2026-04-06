@@ -44,9 +44,10 @@ One direction. One source of truth. The engine never has state that the registry
 
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
 - **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
-- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips then bus strips, polls engine state at 30Hz
-- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — header with power icon + MIDI toggle, instrument slot, effect slots, fader+meter. Composes from PluginSlot and FaderMeter.
-- **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots only, fader+meter. Same composition as TrackStrip minus instrument/MIDI.
+- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips, bus strips, output strip. Content-driven height, horizontal scroll via Viewport. Polls engine state at 30Hz.
+- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.
+- **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots, fader+meter.
+- **OutputStrip** (`src/gui/OutputStrip.h/.cpp`) — dark green header, master effect slots, master fader+meter. Singleton, always present after busses. Master GainProcessor in audio graph.
 - **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
 - **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
@@ -56,17 +57,20 @@ One direction. One source of truth. The engine never has state that the registry
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
 - Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal
 - Native macOS menu bar: File (New/Save/Load/Close Song), Track (New Instrument Track, New Effects Bus), View (Toggle Sidebar/Mixer)
-- Resizable panes between sidebar/content and terminal/mixer
+- Resizable sidebar pane, content-driven mixer height (no manual resize)
 
 ### Audio Graph
 
 ```
 Per track:
-  midiInput → instrument → [fx1 → fx2 →] ┬─ outputGain → audioOutput
+  midiInput → instrument → [fx1 → fx2 →] ┬─ outputGain → masterGain
                                            ├─ sendGain1  → Bus1
                                            └─ sendGain2  → Bus2
 Per bus:
-  (summed sends) → [busFx1 → busFx2 →] busOutputGain → audioOutput
+  (summed sends) → [busFx1 → busFx2 →] busOutputGain → masterGain
+
+Master output:
+  masterGain → [masterFx1 → masterFx2 →] → audioOutput
 ```
 
 Instrument switching is MIDI routing only — no graph rebuild, no pops.

@@ -25,7 +25,6 @@ private:
     MixerView mixerView;
 
     Divider sidebarDivider { Divider::Vertical };
-    Divider mixerDivider { Divider::Horizontal };
 
     bool terminalHasFocus() const;
     bool sidebarOpen = true;
@@ -33,9 +32,7 @@ private:
     bool insertMode = false;
 
     int sidebarWidth = 240;
-    int mixerHeight = 250;
     int dragStartSidebarWidth = 0;
-    int dragStartMixerHeight = 0;
     static constexpr int toolbarHeight = 32;
     static constexpr int minPaneSize = 100;
 };

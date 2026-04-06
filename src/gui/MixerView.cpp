@@ -6,7 +6,7 @@ MixerView::MixerView(PerformanceAPI& api) : api(api), outputStrip(api) {
     viewport.setViewedComponent(&stripContainer, false);
     viewport.setScrollBarsShown(false, true);  // horizontal only
     addAndMakeVisible(viewport);
-    addAndMakeVisible(outputStrip);
+    stripContainer.addAndMakeVisible(outputStrip);
     startTimerHz(30);
 }
 
@@ -23,6 +23,10 @@ int MixerView::getDesiredHeight() const {
 void MixerView::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgTrack));
 
+    // Top border
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine(0.0f, 0.0f, (float)getWidth(), 0.0f, 1.0f);
+
     if (trackStrips.empty() && busStrips.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
         g.setFont(Theme::font(14.0f));
@@ -33,16 +37,10 @@ void MixerView::paint(juce::Graphics& g) {
 
 void MixerView::resized() {
     auto area = getLocalBounds();
+    viewport.setBounds(area.withTrimmedTop(1));  // 1px for border
 
-    // Output strip fixed on the right
-    outputStrip.setBounds(area.removeFromRight(Theme::trackStripWidth));
-
-    // Viewport for tracks + busses takes the rest
-    viewport.setBounds(area);
-
-    int totalStrips = (int)trackStrips.size() + (int)busStrips.size();
-    if (totalStrips == 0) return;
-
+    // All strips (tracks + busses + output) in the scrollable container
+    int totalStrips = (int)trackStrips.size() + (int)busStrips.size() + 1;  // +1 for output
     int stripWidth = Theme::trackStripWidth;
     int totalWidth = totalStrips * stripWidth;
     int stripHeight = area.getHeight();
@@ -58,6 +56,7 @@ void MixerView::resized() {
         strip->setBounds(x, 0, stripWidth, stripHeight);
         x += stripWidth;
     }
+    outputStrip.setBounds(x, 0, stripWidth, stripHeight);
 }
 
 void MixerView::timerCallback() {
