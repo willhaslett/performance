@@ -17,6 +17,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     addAndMakeVisible(inputField);
 
     // Message list in viewport
+    messageList.owner = this;
     messageViewport.setViewedComponent(&messageList, false);
     messageViewport.setScrollBarsShown(true, false);
     addAndMakeVisible(messageViewport);
@@ -128,8 +129,8 @@ void ChatView::scrollToBottom() {
 // --- Message rendering ---
 
 void ChatView::MessageList::paint(juce::Graphics& g) {
-    auto* chatView = dynamic_cast<ChatView*>(getParentComponent()->getParentComponent());
-    if (!chatView) return;
+    if (!owner) return;
+    auto* chatView = owner;
 
     int width = getWidth();
     int y = ChatView::messagePadding;

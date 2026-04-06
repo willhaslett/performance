@@ -33,6 +33,7 @@ private:
     // Message container inside viewport
     class MessageList : public juce::Component {
     public:
+        ChatView* owner = nullptr;
         void paint(juce::Graphics& g) override;
     };
     MessageList messageList;
