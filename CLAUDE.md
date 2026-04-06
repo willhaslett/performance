@@ -49,7 +49,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots only, fader+meter. Same composition as TrackStrip minus instrument/MIDI.
 - **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
-- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Send columns with bus picker, mini fader+meter per send. Hidden when no busses exist.
+- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
@@ -160,3 +160,5 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Track header: click to select (future track selection concept)
 - Delete track / delete bus from GUI
 - Insert mode swallows all key events including Cmd+Q — need to pass through system shortcuts
+- Fader/knob drag: value stops changing at screen edge — need unbounded drag without cursor glitches
+- Mixer overflow: plugin slots and send rows can overflow their container when there are too many

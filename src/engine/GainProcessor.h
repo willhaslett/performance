@@ -17,7 +17,9 @@ public:
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
         buffer.applyGain(gain.load(std::memory_order_relaxed));
-        peakLevel.store(buffer.getMagnitude(0, buffer.getNumSamples()), std::memory_order_relaxed);
+        float mag = buffer.getMagnitude(0, buffer.getNumSamples());
+        if (mag < 1e-5f) mag = 0.0f;  // noise floor gate
+        peakLevel.store(mag, std::memory_order_relaxed);
     }
 
     const juce::String getName() const override { return "Gain"; }

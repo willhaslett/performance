@@ -53,7 +53,7 @@ void MixerView::timerCallback() {
             // Sends
             std::vector<SendsPanel::SendInfo> sends;
             for (auto& s : api.getTrackSends(name))
-                sends.push_back({ s.busName, s.gain, 0.0f });  // TODO: send peak level
+                sends.push_back({ s.busName, s.gain, s.peakLevel });
             trackStrips[i]->setSends(sends);
             trackStrips[i]->setAvailableBusses(lastBusNames);
         }
@@ -80,7 +80,7 @@ void MixerView::rebuildStrips() {
 
         std::vector<SendsPanel::SendInfo> sends;
         for (auto& s : api.getTrackSends(trackName))
-            sends.push_back({ s.busName, s.gain, 0.0f });
+            sends.push_back({ s.busName, s.gain, s.peakLevel });
         strip->setSends(sends);
 
         addAndMakeVisible(*strip);

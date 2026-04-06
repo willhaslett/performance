@@ -121,7 +121,6 @@ void TrackStrip::paint(juce::Graphics& g) {
 void TrackStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 28;
-    constexpr int sendsPanelHeight = 60;
 
     // FaderMeter runs full height on the right
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
@@ -135,9 +134,12 @@ void TrackStrip::resized() {
                              .withTrimmedLeft(Theme::trackPadding)
                              .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
 
-    // Sends panel at bottom of content area (only when busses exist)
-    if (sendsPanel.isVisible())
-        sendsPanel.setBounds(contentArea.removeFromBottom(sendsPanelHeight));
+    // Sends panel at bottom of content area (dynamic height)
+    if (sendsPanel.isVisible()) {
+        int sendsHeight = sendsPanel.getDesiredHeight();
+        sendsPanel.setBounds(contentArea.removeFromBottom(sendsHeight));
+        contentArea.removeFromBottom(Theme::trackPadding);
+    }
 
     auto slotArea = contentArea.withTrimmedTop(Theme::trackPadding);
     int y = slotArea.getY();

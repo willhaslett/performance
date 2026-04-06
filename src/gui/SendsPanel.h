@@ -1,9 +1,8 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/Theme.h"
-#include "gui/FaderMeter.h"
 #include <vector>
-#include <memory>
+#include <functional>
 
 class PerformanceAPI;
 
@@ -19,29 +18,42 @@ public:
     void setSends(const std::vector<SendInfo>& sends);
     void setAvailableBusses(const std::vector<juce::String>& busNames);
 
+    int getDesiredHeight() const;
+
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
 
 private:
     PerformanceAPI& api;
     juce::String trackName;
 
-    struct SendColumn {
-        juce::String busName;  // empty = unassigned
-        std::unique_ptr<FaderMeter> faderMeter;
+    struct SendRow {
+        juce::String busName;  // empty = unassigned "Send" pill
+        float gain = 1.0f;
+        float peakLevel = 0.0f;
     };
-    std::vector<SendColumn> columns;
+    std::vector<SendRow> rows;
     std::vector<juce::String> availableBusses;
 
-    static constexpr int sendColumnWidth = 40;
-    static constexpr int sendHeaderHeight = 22;
-    static constexpr int sendPadding = 4;
+    static constexpr int rowHeight = 24;
+    static constexpr int rowGap = 4;
+    static constexpr int knobSize = 18;
+    static constexpr int pillKnobGap = 6;
+    static constexpr int bottomPadding = 8;
 
-    void rebuild();
-    void showBusPicker(int columnIndex, juce::Point<int> position);
+    // Knob drag state
+    int draggingRow = -1;
+    float dragStartGain = 0.0f;
+    int dragStartY = 0;
 
-    // Hit areas for send headers
-    std::vector<juce::Rectangle<int>> headerBounds;
+    juce::Rectangle<int> getPillBounds(int row) const;
+    juce::Rectangle<int> getKnobBounds(int row) const;
 
-    void mouseUp(const juce::MouseEvent& event) override;
+    void paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
+                   float gain, float peakLevel) const;
+    void showBusPicker(int rowIndex, juce::Point<int> position);
+
+    static juce::Colour vuColor(float peakLevel);
 };

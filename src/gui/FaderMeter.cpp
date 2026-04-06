@@ -11,10 +11,8 @@ void FaderMeter::setGain(float gain) {
 }
 
 void FaderMeter::setPeakLevel(float level) {
-    if (std::abs(level - peakLevel) > 0.01f) {
-        peakLevel = level;
-        repaint();
-    }
+    peakLevel = level;
+    repaint();
 }
 
 juce::Rectangle<int> FaderMeter::getFaderArea() const {

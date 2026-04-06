@@ -789,9 +789,12 @@ std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String
     if (it == tracks.end()) return result;
     for (auto& send : it->second.sends) {
         float gain = 1.0f;
-        if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor()))
+        float peak = 0.0f;
+        if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor())) {
             gain = proc->getGain();
-        result.push_back({ send.busName, gain });
+            peak = proc->getPeakLevel();
+        }
+        result.push_back({ send.busName, gain, peak });
     }
     return result;
 }

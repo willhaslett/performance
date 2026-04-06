@@ -128,6 +128,7 @@ public:
     struct TrackSendInfo {
         juce::String busName;
         float gain;
+        float peakLevel;
     };
     std::vector<TrackSendInfo> getTrackSends(const juce::String& trackName) const;
     std::vector<juce::String> getBusEffectNames(const juce::String& busName) const;

@@ -65,7 +65,7 @@ public:
     struct EffectInfo { juce::String name; juce::String pluginName; };
     std::vector<EffectInfo> getTrackEffects(const juce::String& trackName) const;
     std::vector<EffectInfo> getBusEffects(const juce::String& busName) const;
-    struct SendInfo { juce::String busName; float gain; };
+    struct SendInfo { juce::String busName; float gain; float peakLevel; };
     std::vector<SendInfo> getTrackSends(const juce::String& trackName) const;
     float getBusGain(const juce::String& busName) const;
     float getBusPeakLevel(const juce::String& busName) const;
