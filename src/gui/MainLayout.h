@@ -2,14 +2,15 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/Sidebar.h"
 #include "gui/MixerView.h"
-#include "gui/TerminalView.h"
+#include "gui/ChatView.h"
 #include "gui/Divider.h"
 
 class PerformanceAPI;
+class LuaEngine;
 
 class MainLayout : public juce::Component {
 public:
-    MainLayout(PerformanceAPI& api);
+    MainLayout(PerformanceAPI& api, LuaEngine& lua);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -21,7 +22,7 @@ private:
     PerformanceAPI& api;
 
     Sidebar sidebar;
-    TerminalView terminalView;
+    ChatView chatView;
     MixerView mixerView;
 
     Divider sidebarDivider { Divider::Vertical };

@@ -50,7 +50,8 @@ target_sources(Performance PRIVATE
     src/gui/SendsPanel.cpp
     src/gui/RegistryTree.cpp
     src/gui/Sidebar.cpp
-    src/gui/TerminalView.cpp
+    src/gui/ChatView.cpp
+    src/api/ClaudeClient.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp
@@ -85,6 +86,5 @@ target_link_libraries(Performance PRIVATE
     lua_static
     sol2
     sqlite3
-    /opt/homebrew/lib/libvterm.a
 )
 

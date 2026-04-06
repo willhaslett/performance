@@ -9,7 +9,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from the registry. Songs are managed via the sidebar or `registryList("song")` / `registryDelete(id)`.
 - **Action-based bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
-- **Authoring model** — Claude runs embedded in the app (terminal emulator in the UI). Will plays and directs, Claude modifies the environment via the `perf` IPC command. The GUI provides direct manipulation. All consumers use the same API.
+- **Authoring model** — Claude runs embedded in the app (native chat UI calling Claude API with tool use). Will plays and directs, Claude modifies the environment via the `perf` tool (Lua execution). The GUI provides direct manipulation. All consumers use the same API.
 
 ## Architecture
 
@@ -43,7 +43,8 @@ One direction. One source of truth. The engine never has state that the registry
 ### GUI
 
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
-- **TerminalView** (`src/gui/TerminalView.h/.cpp`) — embedded terminal (libvterm) running Claude Code
+- **ChatView** (`src/gui/ChatView.h/.cpp`) — native chat UI with scrollable message list + text input. Displays user messages, assistant responses, tool calls, and errors.
+- **ClaudeClient** (`src/api/ClaudeClient.h/.cpp`) — background-thread HTTP client for Claude Messages API. Agentic tool-use loop: sends messages, handles tool calls by executing Lua via LuaEngine on the message thread, returns results, repeats until done.
 - **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips, bus strips, output strip. Content-driven height, horizontal scroll via Viewport. Polls engine state at 30Hz.
 - **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots, fader+meter.
@@ -55,7 +56,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
-- Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal
+- Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode focuses chat input
 - Native macOS menu bar: File (New/Save/Load/Close Song), Track (New Instrument Track, New Effects Bus), View (Toggle Sidebar/Mixer)
 - Resizable sidebar pane, content-driven mixer height (no manual resize)
 
@@ -128,7 +129,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Generic CRUD + pub/sub events on all entity types
 - Track/Bus mixer DAG with sends, per-node gain, GainProcessor with peak metering
 - AU plugin hosting with third-party loading and plugin cache
-- Embedded terminal (libvterm) running Claude Code in the app
+- Native chat UI with Claude API integration (tool use for Lua execution)
 - IPC socket (`/tmp/performance.sock`) for live Lua execution via `bin/perf`
 - Lua song scripts with automation library (`lua_lib/automation.lua`)
 - Plugin state snapshots (save/restore, persisted in registry + disk)

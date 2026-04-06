@@ -1,11 +1,12 @@
 #include "gui/MainLayout.h"
 #include "api/PerformanceAPI.h"
 
-MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
+MainLayout::MainLayout(PerformanceAPI& api, LuaEngine& lua)
+    : api(api), chatView(lua), mixerView(api) {
     sidebar.setAPI(&api);
     sidebar.setRegistry(&api.getRegistry());
     addAndMakeVisible(sidebar);
-    addAndMakeVisible(terminalView);
+    addAndMakeVisible(chatView);
     addAndMakeVisible(mixerView);
 
     // Sidebar divider (vertical)
@@ -18,7 +19,7 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
 
     setWantsKeyboardFocus(true);
 
-    // Launch Claude Code in the runtime directory
+    // Load system prompt for Claude
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
                        .getFullPathName());
     for (int i = 0; i < 5; ++i)
@@ -28,11 +29,14 @@ MainLayout::MainLayout(PerformanceAPI& api) : api(api), mixerView(api) {
     if (!runtimeDir.getChildFile("CLAUDE.md").existsAsFile())
         runtimeDir = juce::File("/Users/will/ideas_and_projects/performance/runtime");
 
-    auto binDir = runtimeDir.getParentDirectory().getChildFile("bin").getFullPathName();
-    auto path = juce::String(getenv("PATH")) + ":" + binDir;
-    setenv("PATH", path.toRawUTF8(), 1);
-
-    terminalView.start("claude", runtimeDir.getFullPathName());
+    auto claudeMd = runtimeDir.getChildFile("CLAUDE.md");
+    if (claudeMd.existsAsFile()) {
+        auto preamble = juce::String(
+            "You have a `perf` tool that executes Lua code directly in the running performance engine. "
+            "Use tool calls instead of shell commands. The `code` parameter takes the same Lua that the "
+            "API docs below describe. Always use the perf tool to make changes — never suggest shell commands.\n\n");
+        chatView.setSystemPrompt(preamble + claudeMd.loadFileAsString());
+    }
 }
 
 void MainLayout::paint(juce::Graphics& g) {
@@ -79,7 +83,6 @@ void MainLayout::resized() {
     // Sidebar + divider
     if (sidebarOpen) {
         sidebar.setBounds(area.removeFromLeft(sidebarWidth));
-        // Divider overlaps the boundary — doesn't take layout space
         sidebarDivider.setBounds(sidebarWidth, area.getY(),
                                   Divider::thickness, area.getHeight());
         sidebarDivider.setVisible(true);
@@ -88,15 +91,15 @@ void MainLayout::resized() {
         sidebarDivider.setVisible(false);
     }
 
-    // Mixer — height driven by content, no resize
+    // Mixer — height driven by content
     if (mixerVisible) {
         int contentHeight = mixerView.getDesiredHeight();
         auto mh = std::max(minPaneSize, std::min(contentHeight, area.getHeight() - minPaneSize));
         mixerView.setBounds(area.removeFromBottom(mh));
     }
 
-    // Terminal fills remaining
-    terminalView.setBounds(area);
+    // Chat fills remaining
+    chatView.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
@@ -117,17 +120,18 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     if (insertMode) {
         if (key == juce::KeyPress::escapeKey) {
             insertMode = false;
+            chatView.unfocusInput();
             repaint();
             return true;
         }
-        terminalView.keyPressed(key);
-        return true;
+        return false;  // let JUCE focus system handle keyboard input
     }
 
     auto c = key.getTextCharacter();
 
     if (c == 'i') {
         insertMode = true;
+        chatView.focusInput();
         repaint();
         return true;
     }

@@ -8,11 +8,11 @@
 
 class MainWindow : public juce::DocumentWindow {
 public:
-    MainWindow(PerformanceAPI& api)
+    MainWindow(PerformanceAPI& api, LuaEngine& lua)
         : DocumentWindow("Performance",
                          juce::Colour(0xff121212),
                          DocumentWindow::allButtons),
-          mainLayout(new MainLayout(api)) {
+          mainLayout(new MainLayout(api, lua)) {
         setUsingNativeTitleBar(true);
         setResizable(true, true);
         setContentOwned(mainLayout, false);
@@ -171,9 +171,9 @@ public:
         api = std::make_unique<PerformanceAPI>();
         api->initialise();
 
-        mainWindow = std::make_unique<MainWindow>(*api);
-
         luaEngine = std::make_unique<LuaEngine>(*api);
+
+        mainWindow = std::make_unique<MainWindow>(*api, *luaEngine);
 
         // Menu bar (needs references to api, lua, and layout)
         auto* layout = dynamic_cast<MainLayout*>(mainWindow->getContentComponent());
