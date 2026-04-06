@@ -5,8 +5,8 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 ## Core Concepts
 
 - **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and snapshots all persist automatically.
-- **Session** — there is always a current session (a song entity in the registry, named or unnamed). You can work without naming a song. `saveSong` gives the session a name. `loadSong` switches to a different one. On restart, the previous session is restored.
-- **Song** — a named session. Lua scripts in `~/.config/performance/songs/` bootstrap songs (create tracks, busses, bindings), but the registry is the authoritative state.
+- **Sandbox** — the permanent scratchpad session. Always exists, always at the top of the sidebar, undeletable. The user can experiment freely without affecting any song. On launch, the app restores the last active session (sandbox or a song).
+- **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from the registry. Songs are managed via the sidebar or `registryList("song")` / `registryDelete(id)`.
 - **Action-based bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
 - **Authoring model** — Claude runs embedded in the app (terminal emulator in the UI). Will plays and directs, Claude modifies the environment via the `perf` IPC command. The GUI provides direct manipulation. All consumers use the same API.
@@ -52,7 +52,7 @@ One direction. One source of truth. The engine never has state that the registry
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
 - **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
-- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (flat list), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Open by default. Subscribes to registry events.
+- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
 - Modal keyboard: normal mode (s=sidebar, x=mixer, i=insert, Esc=close editor), insert mode sends keys to terminal

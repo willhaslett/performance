@@ -108,6 +108,7 @@ void Registry::createSchema() {
 
     // Migrations for existing databases
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN master_gain REAL DEFAULT 1.0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "UPDATE songs SET name = 'Sandbox' WHERE name = 'Default Session'", nullptr, nullptr, nullptr);
 }
 
 std::string Registry::generateId() {

@@ -77,7 +77,7 @@ void RegistryTree::paint(juce::Graphics& g) {
         bool isActive = !highlightedId.empty() && row.id == highlightedId;
 
         if (isActive) {
-            g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.3f));
+            g.setColour(Theme::color(Theme::Color::bgHeaderOut));
             g.fillRect(0, y, getWidth(), rowHeight);
         } else if (i == hoveredRow) {
             g.setColour(Theme::color(Theme::Color::bgSlot));
