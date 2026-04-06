@@ -42,6 +42,12 @@ public:
     void removeBus(const juce::String& name);
     void setBusGain(const juce::String& busName, float gain);
 
+    // --- Master output ---
+    void setMasterGain(float gain);
+    float getMasterGain();
+    float getMasterPeakLevel();
+    std::vector<juce::String> getMasterEffectNames();
+
     // --- Sends ---
     void addSend(const juce::String& trackName, const juce::String& busName, float gain = 1.0f);
     void setSendGain(const juce::String& trackName, const juce::String& busName, float gain);

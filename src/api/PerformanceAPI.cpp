@@ -243,6 +243,27 @@ void PerformanceAPI::removeBus(const juce::String& name) {
 }
 
 
+// --- Master output ---
+
+void PerformanceAPI::setMasterGain(float gain) {
+    audioEngine->setMasterGain(gain);
+}
+
+float PerformanceAPI::getMasterGain() {
+    return audioEngine->getMasterGain();
+}
+
+float PerformanceAPI::getMasterPeakLevel() {
+    return audioEngine->getMasterPeakLevel();
+}
+
+std::vector<juce::String> PerformanceAPI::getMasterEffectNames() {
+    std::vector<juce::String> names;
+    for (auto& fx : audioEngine->getMasterEffects())
+        names.push_back(fx.pluginName);
+    return names;
+}
+
 void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
     audioEngine->setBusGain(busName, gain);
 }

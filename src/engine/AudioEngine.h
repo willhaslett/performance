@@ -42,11 +42,19 @@ public:
     void removeBus(const juce::String& busName);
     void setBusGain(const juce::String& busName, float gain);
 
+    struct EffectInfo { juce::String name; juce::String pluginName; };
+
     // Effects — unified for tracks and busses
     bool addEffect(const juce::String& parentName, const juce::String& effectName,
                    const juce::String& pluginName, LoadCallback onLoaded = nullptr);
     void removeEffect(const juce::String& parentName, const juce::String& effectName);
     void clearAllBusses();
+
+    // Master output
+    void setMasterGain(float gain);
+    float getMasterGain() const;
+    float getMasterPeakLevel() const;
+    std::vector<EffectInfo> getMasterEffects() const;
 
     // Sends
     void addSend(const juce::String& trackName, const juce::String& busName, float gain = 1.0f);
@@ -62,7 +70,6 @@ public:
     std::vector<juce::String> getBusNames() const;
     juce::String getTrackPluginName(const juce::String& trackName) const;
     bool isTrackMidiEnabled(const juce::String& trackName) const;
-    struct EffectInfo { juce::String name; juce::String pluginName; };
     std::vector<EffectInfo> getTrackEffects(const juce::String& trackName) const;
     std::vector<EffectInfo> getBusEffects(const juce::String& busName) const;
     struct SendInfo { juce::String busName; float gain; float peakLevel; };
@@ -92,12 +99,14 @@ private:
     // Graph node IDs
     juce::AudioProcessorGraph::NodeID midiInputNodeId;
     juce::AudioProcessorGraph::NodeID audioOutputNodeId;
+    juce::AudioProcessorGraph::Node::Ptr masterGainNode;  // GainProcessor
 
     // Shared effect node type
     struct EffectNode {
         juce::String name;
         juce::AudioProcessorGraph::Node::Ptr node;
     };
+    std::vector<EffectNode> masterEffects;
 
     // Track: one instrument + insert effects + sends + output gain
     struct Track {

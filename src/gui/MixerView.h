@@ -2,6 +2,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/TrackStrip.h"
 #include "gui/BusStrip.h"
+#include "gui/OutputStrip.h"
 #include "gui/Theme.h"
 #include <memory>
 #include <vector>
@@ -23,8 +24,22 @@ private:
 
     PerformanceAPI& api;
     int lastDesiredHeight = 0;
+
+    // Scrollable area for tracks + busses
+    class StripContainer : public juce::Component {
+    public:
+        void paint(juce::Graphics& g) override {
+            g.fillAll(Theme::color(Theme::Color::bgTrack));
+        }
+    };
+    juce::Viewport viewport;
+    StripContainer stripContainer;
+
     std::vector<std::unique_ptr<TrackStrip>> trackStrips;
     std::vector<std::unique_ptr<BusStrip>> busStrips;
     std::vector<juce::String> lastTrackNames;
     std::vector<juce::String> lastBusNames;
+
+    // Fixed output strip on the right
+    OutputStrip outputStrip;
 };

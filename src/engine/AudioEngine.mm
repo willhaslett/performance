@@ -66,6 +66,9 @@ void AudioEngine::setupGraph() {
             juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
     audioOutputNodeId = audioOutputNode->nodeID;
 
+    // Master output gain (between track/bus outputs and audio output)
+    masterGainNode = graph->addNode(std::make_unique<GainProcessor>());
+
     player->setProcessor(graph.get());
     deviceManager.addAudioCallback(player.get());
 }
@@ -442,6 +445,8 @@ void AudioEngine::removeEffectFromList(std::vector<EffectNode>& effects, const j
 
 bool AudioEngine::addEffect(const juce::String& parentName, const juce::String& effectName,
                               const juce::String& pluginName, LoadCallback onLoaded) {
+    if (parentName == "Output")
+        return addEffectToList(masterEffects, parentName, effectName, pluginName, onLoaded);
     auto tit = tracks.find(parentName);
     if (tit != tracks.end())
         return addEffectToList(tit->second.effects, parentName, effectName, pluginName, onLoaded);
@@ -453,6 +458,10 @@ bool AudioEngine::addEffect(const juce::String& parentName, const juce::String& 
 }
 
 void AudioEngine::removeEffect(const juce::String& parentName, const juce::String& effectName) {
+    if (parentName == "Output") {
+        removeEffectFromList(masterEffects, parentName, effectName);
+        return;
+    }
     auto tit = tracks.find(parentName);
     if (tit != tracks.end()) {
         removeEffectFromList(tit->second.effects, parentName, effectName);
@@ -657,9 +666,9 @@ void AudioEngine::rebuildConnections() {
         if (track.outputGainNode) {
             for (int ch = 0; ch < prevNumOut; ++ch)
                 graph->addConnection({ { prevNodeId, ch }, { track.outputGainNode->nodeID, ch } });
-            // outputGainNode -> audio output
+            // outputGainNode -> master gain
             for (int ch = 0; ch < 2; ++ch)
-                graph->addConnection({ { track.outputGainNode->nodeID, ch }, { audioOutputNodeId, ch } });
+                graph->addConnection({ { track.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
         }
 
         for (auto& send : track.sends) {
@@ -717,8 +726,22 @@ void AudioEngine::rebuildConnections() {
                     graph->addConnection({ { prevNodeId, ch }, { bus.outputGainNode->nodeID, ch } });
             }
             for (int ch = 0; ch < 2; ++ch)
-                graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { audioOutputNodeId, ch } });
+                graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
         }
+    }
+
+    // Master output chain: masterGain -> [effects] -> audioOutput
+    {
+        auto prevNodeId = masterGainNode->nodeID;
+        for (auto& fx : masterEffects) {
+            if (fx.node) {
+                for (int ch = 0; ch < 2; ++ch)
+                    graph->addConnection({ { prevNodeId, ch }, { fx.node->nodeID, ch } });
+                prevNodeId = fx.node->nodeID;
+            }
+        }
+        for (int ch = 0; ch < 2; ++ch)
+            graph->addConnection({ { prevNodeId, ch }, { audioOutputNodeId, ch } });
     }
 }
 
@@ -796,6 +819,30 @@ float AudioEngine::getBusGain(const juce::String& busName) const {
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         return proc->getGain();
     return 0.0f;
+}
+
+void AudioEngine::setMasterGain(float gain) {
+    if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
+        proc->setGain(gain);
+}
+
+float AudioEngine::getMasterGain() const {
+    if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
+        return proc->getGain();
+    return 1.0f;
+}
+
+float AudioEngine::getMasterPeakLevel() const {
+    if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
+        return proc->getPeakLevel();
+    return 0.0f;
+}
+
+std::vector<AudioEngine::EffectInfo> AudioEngine::getMasterEffects() const {
+    std::vector<EffectInfo> result;
+    for (auto& fx : masterEffects)
+        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+    return result;
 }
 
 // --- Processor access ---

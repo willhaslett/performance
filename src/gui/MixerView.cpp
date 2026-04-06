@@ -2,15 +2,17 @@
 #include "gui/SendsPanel.h"
 #include "api/PerformanceAPI.h"
 
-MixerView::MixerView(PerformanceAPI& api) : api(api) {
-    setInterceptsMouseClicks(true, true);
-    setPaintingIsUnclipped(false);
+MixerView::MixerView(PerformanceAPI& api) : api(api), outputStrip(api) {
+    viewport.setViewedComponent(&stripContainer, false);
+    viewport.setScrollBarsShown(false, true);  // horizontal only
+    addAndMakeVisible(viewport);
+    addAndMakeVisible(outputStrip);
     startTimerHz(30);
 }
 
 int MixerView::getDesiredHeight() const {
     constexpr int minMixerHeight = 200;
-    int maxH = 0;
+    int maxH = outputStrip.getMinimumHeight();
     for (auto& s : trackStrips)
         maxH = std::max(maxH, s->getMinimumHeight());
     for (auto& s : busStrips)
@@ -24,22 +26,38 @@ void MixerView::paint(juce::Graphics& g) {
     if (trackStrips.empty() && busStrips.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
         g.setFont(Theme::font(14.0f));
-        g.drawText("No tracks", getLocalBounds(), juce::Justification::centred);
+        auto msgArea = getLocalBounds().withTrimmedRight(Theme::trackStripWidth);
+        g.drawText("No tracks", msgArea, juce::Justification::centred);
     }
 }
 
 void MixerView::resized() {
     auto area = getLocalBounds();
+
+    // Output strip fixed on the right
+    outputStrip.setBounds(area.removeFromRight(Theme::trackStripWidth));
+
+    // Viewport for tracks + busses takes the rest
+    viewport.setBounds(area);
+
     int totalStrips = (int)trackStrips.size() + (int)busStrips.size();
     if (totalStrips == 0) return;
 
-    int stripWidth = std::min(Theme::trackStripWidth,
-                               area.getWidth() / std::max(1, totalStrips));
+    int stripWidth = Theme::trackStripWidth;
+    int totalWidth = totalStrips * stripWidth;
+    int stripHeight = area.getHeight();
 
-    for (auto& strip : trackStrips)
-        strip->setBounds(area.removeFromLeft(stripWidth));
-    for (auto& strip : busStrips)
-        strip->setBounds(area.removeFromLeft(stripWidth));
+    stripContainer.setSize(std::max(totalWidth, area.getWidth()), stripHeight);
+
+    int x = 0;
+    for (auto& strip : trackStrips) {
+        strip->setBounds(x, 0, stripWidth, stripHeight);
+        x += stripWidth;
+    }
+    for (auto& strip : busStrips) {
+        strip->setBounds(x, 0, stripWidth, stripHeight);
+        x += stripWidth;
+    }
 }
 
 void MixerView::timerCallback() {
@@ -76,6 +94,11 @@ void MixerView::timerCallback() {
         }
     }
 
+    // Update output strip
+    outputStrip.setEffectNames(api.getMasterEffectNames());
+    outputStrip.setGain(api.getMasterGain());
+    outputStrip.setPeakLevel(api.getMasterPeakLevel());
+
     // If desired height changed, trigger parent re-layout
     int h = getDesiredHeight();
     if (h != lastDesiredHeight) {
@@ -101,14 +124,14 @@ void MixerView::rebuildStrips() {
             sends.push_back({ s.busName, s.gain, s.peakLevel });
         strip->setSends(sends);
 
-        addAndMakeVisible(*strip);
+        stripContainer.addAndMakeVisible(*strip);
         trackStrips.push_back(std::move(strip));
     }
 
     for (auto& busName : lastBusNames) {
         auto strip = std::make_unique<BusStrip>(busName, api);
         strip->setEffectNames(api.getBusEffectNames(busName));
-        addAndMakeVisible(*strip);
+        stripContainer.addAndMakeVisible(*strip);
         busStrips.push_back(std::move(strip));
     }
 
