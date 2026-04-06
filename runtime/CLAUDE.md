@@ -84,12 +84,18 @@ Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 - `listSnapshots(pluginName)` — list saved snapshots for a plugin
 
 ### Song Management
-- `song(name)` — create/set the active song (used in Lua song scripts)
+Songs live in the registry (SQLite), not as files on disk. There is always a "Default Session" which is hidden from the user and cannot be deleted — it's the unnamed workspace.
+
+- `song(name)` — create/set the active song
 - `saveInitialState()` — capture current state as the song's checkpoint
 - `loadInitialState()` — restore the saved checkpoint
 - `saveScore(json)` — save the action score (ordered list of actions)
 - `getScore()` — get the current score
 - `replayScore(upToStep)` — load initial state + replay actions 1..N
+
+To list/delete songs, use the registry CRUD:
+- `registryList("song")` — list all songs (returns table with id, name fields)
+- `registryDelete(id)` — delete a song by ID (Default Session is protected)
 
 ### Registry (generic CRUD)
 - `registryCreate(type, {fields})` — create any entity
