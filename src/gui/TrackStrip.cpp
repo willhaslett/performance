@@ -37,7 +37,7 @@ void TrackStrip::setGain(float gain) {
 
 void TrackStrip::rebuildSlots() {
     slots.clear();
-    constexpr int faderMeterReserve = 28;
+    constexpr int faderMeterReserve = 8 + 4 + 6 + Theme::trackPadding;  // fader + gap + meter + right margin
     int y = Theme::headerHeight + Theme::trackPadding;
     int slotW = getWidth() - Theme::trackPadding * 2 - faderMeterReserve;
     int x = Theme::trackPadding;
@@ -133,7 +133,8 @@ void TrackStrip::paint(juce::Graphics& g) {
         constexpr float dbMax = 6.0f;
         constexpr float dbRange = dbMax - dbMin;
         constexpr int faderWidth = 8;
-        constexpr int faderAreaRight = 6 + 4 + 4;  // meter width + margin + gap
+        constexpr int faderGap = 4;
+        constexpr int faderAreaRight = 6 + Theme::trackPadding + faderGap;
 
         auto faderArea = getLocalBounds()
             .withTrimmedRight(faderAreaRight)
@@ -172,7 +173,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     // VU meter — right edge, dB scale
     {
         constexpr int meterWidth = 6;
-        constexpr int meterMargin = 4;
+        constexpr int meterMargin = Theme::trackPadding;
         constexpr float dbMin = -60.0f;
         constexpr float dbMax = 6.0f;
         constexpr float dbRange = dbMax - dbMin;
@@ -211,7 +212,8 @@ void TrackStrip::paint(juce::Graphics& g) {
 
 static juce::Rectangle<int> getFaderArea(const juce::Rectangle<int>& bounds) {
     constexpr int faderWidth = 8;
-    constexpr int faderAreaRight = 6 + 4 + 4;
+    constexpr int faderGap = 4;
+    constexpr int faderAreaRight = 6 + Theme::trackPadding + faderGap;
     return bounds
         .withTrimmedRight(faderAreaRight)
         .removeFromRight(faderWidth + 6)
