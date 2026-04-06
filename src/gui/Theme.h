@@ -22,6 +22,13 @@ namespace Theme {
         constexpr uint32_t midiActive   = 0xff44cc44;
         constexpr uint32_t instrument   = 0xffddaa44;
         constexpr uint32_t effect       = 0xff88aacc;
+
+        // Chat
+        constexpr uint32_t chatBgUser  = 0xff2a4a6a;
+        constexpr uint32_t chatBgAsst  = 0xff2a2a2a;
+        constexpr uint32_t chatBgTool  = 0xff1a2a1a;
+        constexpr uint32_t chatBgError = 0xff3a1a1a;
+        constexpr uint32_t chatInput   = 0xff252525;
     }
 
     // Dimensions
@@ -34,6 +41,10 @@ namespace Theme {
     constexpr int   slotPadding     = 4;
     constexpr int   trackPadding    = 12;
     constexpr int   headerHeight    = 32;
+    constexpr float chatBubbleRadius = 12.0f;
+    constexpr int   chatBubblePad   = 12;
+    constexpr int   chatGap         = 8;
+    constexpr int   chatInputHeight = 40;
 
     // Font
     constexpr float fontSize        = 13.0f;

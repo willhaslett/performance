@@ -43,7 +43,7 @@ One direction. One source of truth. The engine never has state that the registry
 ### GUI
 
 - **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + terminal + mixer
-- **ChatView** (`src/gui/ChatView.h/.cpp`) — native chat UI with scrollable message list + text input. Displays user messages, assistant responses, tool calls, and errors.
+- **ChatView** (`src/gui/ChatView.h/.cpp`) — native chat UI with scrollable message list + text input. TextEditor-based bubbles (selectable, copyable). Rounded bubble backgrounds with distinct colors per message type (user/assistant/tool/error). Chat theme constants in Theme.h.
 - **ClaudeClient** (`src/api/ClaudeClient.h/.cpp`) — background-thread HTTP client for Claude Messages API. Agentic tool-use loop: sends messages, handles tool calls by executing Lua via LuaEngine on the message thread, returns results, repeats until done.
 - **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips, bus strips, output strip. Content-driven height, horizontal scroll via Viewport. Polls engine state at 30Hz.
 - **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.

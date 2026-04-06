@@ -1,24 +1,48 @@
 #include "gui/ChatView.h"
 #include "engine/Log.h"
 
+static juce::Colour bubbleColor(ChatView::Bubble::Type type) {
+    switch (type) {
+        case ChatView::Bubble::User:      return Theme::color(Theme::Color::chatBgUser);
+        case ChatView::Bubble::Assistant:  return Theme::color(Theme::Color::chatBgAsst);
+        case ChatView::Bubble::Tool:      return Theme::color(Theme::Color::chatBgTool);
+        case ChatView::Bubble::Error:     return Theme::color(Theme::Color::chatBgError);
+    }
+    return Theme::color(Theme::Color::chatBgAsst);
+}
+
+static juce::Colour textColor(ChatView::Bubble::Type type) {
+    switch (type) {
+        case ChatView::Bubble::User:      return Theme::color(Theme::Color::textWhite);
+        case ChatView::Bubble::Assistant:  return Theme::color(Theme::Color::textPrimary);
+        case ChatView::Bubble::Tool:      return Theme::color(Theme::Color::textSecondary);
+        case ChatView::Bubble::Error:     return juce::Colour(0xffcc8888);
+    }
+    return Theme::color(Theme::Color::textPrimary);
+}
+
 ChatView::ChatView(LuaEngine& lua) : client(lua) {
     client.setListener(this);
 
-    // Input field
+    // Input field — rounded, chat-style
     inputField.setMultiLine(false);
     inputField.setReturnKeyStartsNewLine(false);
     inputField.setFont(Theme::font(Theme::fontSize));
-    inputField.setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::bgSlot));
+    inputField.setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::chatInput));
     inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textWhite));
     inputField.setColour(juce::TextEditor::outlineColourId, Theme::color(Theme::Color::border));
     inputField.setColour(juce::TextEditor::focusedOutlineColourId, Theme::color(Theme::Color::accent));
     inputField.setTextToShowWhenEmpty("Message Claude...", Theme::color(Theme::Color::textDim));
+    inputField.setJustification(juce::Justification::centredLeft);
     inputField.onReturnKey = [this] { sendCurrentInput(); };
     addAndMakeVisible(inputField);
 
-    // Message list in viewport
-    messageList.owner = this;
-    messageViewport.setViewedComponent(&messageList, false);
+    // Bubble backgrounds (painted behind TextEditors)
+    bubbleBg.owner = this;
+    messageContainer.addAndMakeVisible(bubbleBg);
+
+    // Message container in viewport
+    messageViewport.setViewedComponent(&messageContainer, false);
     messageViewport.setScrollBarsShown(true, false);
     addAndMakeVisible(messageViewport);
 
@@ -31,13 +55,11 @@ void ChatView::paint(juce::Graphics& g) {
 
 void ChatView::resized() {
     auto area = getLocalBounds();
+    auto inputArea = area.removeFromBottom(Theme::chatInputHeight + Theme::chatGap * 2);
+    inputField.setBounds(inputArea.reduced(Theme::chatBubblePad, Theme::chatGap));
 
-    // Input at bottom
-    inputField.setBounds(area.removeFromBottom(inputHeight).reduced(messagePadding, 4));
-
-    // Messages fill the rest
     messageViewport.setBounds(area);
-    layoutMessages();
+    layoutBubbles();
 }
 
 void ChatView::focusInput() {
@@ -53,23 +75,23 @@ void ChatView::sendCurrentInput() {
     if (text.isEmpty() || client.isBusy()) return;
 
     inputField.clear();
-    addMessage({ DisplayMessage::User, text, {}, {} });
+    addBubble(Bubble::User, text);
     client.sendMessage(text);
 }
 
 // --- ClaudeClient::Listener ---
 
 void ChatView::onAssistantText(const juce::String& text) {
-    addMessage({ DisplayMessage::Assistant, text, {}, {} });
+    addBubble(Bubble::Assistant, text);
 }
 
 void ChatView::onToolUse(const juce::String&, const juce::String& code,
                           const juce::String& result, bool) {
-    addMessage({ DisplayMessage::Tool, {}, code, result });
+    addBubble(Bubble::Tool, code + "\n> " + result);
 }
 
 void ChatView::onError(const juce::String& error) {
-    addMessage({ DisplayMessage::Error, error, {}, {} });
+    addBubble(Bubble::Error, error);
 }
 
 void ChatView::onBusyChanged(bool busy) {
@@ -78,117 +100,93 @@ void ChatView::onBusyChanged(bool busy) {
         inputField.grabKeyboardFocus();
 }
 
-// --- Message display ---
+// --- Bubble management ---
 
-void ChatView::addMessage(DisplayMessage msg) {
-    messages.push_back(std::move(msg));
-    layoutMessages();
+ChatView::Bubble* ChatView::addBubble(Bubble::Type type, const juce::String& text) {
+    auto bubble = std::make_unique<Bubble>();
+    bubble->type = type;
+
+    auto editor = std::make_unique<juce::TextEditor>();
+    editor->setMultiLine(true);
+    editor->setReadOnly(true);
+    editor->setScrollbarsShown(false);
+    editor->setPopupMenuEnabled(true);  // right-click copy
+    editor->setFont(type == Bubble::Tool ? Theme::fontMono(Theme::fontSizeXs)
+                                          : Theme::font(Theme::fontSizeSm));
+    editor->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+    editor->setColour(juce::TextEditor::textColourId, textColor(type));
+    editor->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    editor->setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+    editor->setColour(juce::TextEditor::highlightColourId, Theme::color(Theme::Color::accent).withAlpha(0.4f));
+    editor->setText(text, false);
+
+    messageContainer.addAndMakeVisible(*editor);
+    bubble->textEditor = std::move(editor);
+
+    auto* ptr = bubble.get();
+    bubbles.push_back(std::move(bubble));
+
+    layoutBubbles();
     scrollToBottom();
+    return ptr;
 }
 
-int ChatView::computeMessageHeight(const DisplayMessage& msg, int width) const {
-    int contentWidth = width - messagePadding * 4;
-    auto font = Theme::font(Theme::fontSizeSm);
-
-    if (msg.type == DisplayMessage::Tool) {
-        auto monoFont = Theme::fontMono(Theme::fontSizeXs);
-        int lineH = (int)monoFont.getHeight();
-        int codeLines = std::max(1, (int)msg.toolCode.length() / std::max(1, contentWidth / 7) + 1);
-        int codeHeight = codeLines * lineH + 8;
-        int resultHeight = lineH + 8;
-        return codeHeight + resultHeight + bubblePadding * 2 + 4;
-    }
-
-    auto text = msg.text;
-    int lineH = (int)font.getHeight();
-    // Estimate lines from character count and average char width
-    int charsPerLine = std::max(1, contentWidth / 7);
-    int lines = std::max(1, (int)text.length() / charsPerLine + 1);
-    // Account for actual newlines
-    int newlines = 0;
-    for (auto c : text) if (c == '\n') newlines++;
-    lines = std::max(lines, newlines + 1);
-    return lines * lineH + bubblePadding * 2;
-}
-
-void ChatView::layoutMessages() {
+void ChatView::layoutBubbles() {
     int width = messageViewport.getWidth();
     if (width <= 0) return;
 
-    int totalHeight = messagePadding;
-    for (auto& msg : messages)
-        totalHeight += computeMessageHeight(msg, width) + messagePadding;
+    int bubbleWidth = width - Theme::chatBubblePad * 2;
+    int y = Theme::chatGap;
 
-    messageList.setSize(width, std::max(totalHeight, messageViewport.getHeight()));
+    for (auto& bubble : bubbles) {
+        auto& editor = *bubble->textEditor;
+        int textWidth = bubbleWidth - Theme::chatBubblePad * 2;
+
+        // Measure text height using TextLayout
+        juce::AttributedString attrStr;
+        attrStr.append(editor.getText(), editor.getFont(),
+                       editor.findColour(juce::TextEditor::textColourId));
+        juce::TextLayout layout;
+        layout.createLayout(attrStr, (float)textWidth);
+        int textHeight = std::max((int)editor.getFont().getHeight() + 4,
+                                   (int)std::ceil(layout.getHeight()) + 4);
+
+        int bubbleHeight = textHeight + Theme::chatBubblePad * 2;
+        bubble->height = bubbleHeight;
+
+        int bx = Theme::chatBubblePad;
+        editor.setBounds(bx + Theme::chatBubblePad, y + Theme::chatBubblePad,
+                          textWidth, textHeight);
+
+        y += bubbleHeight + Theme::chatGap;
+    }
+
+    int totalHeight = std::max(y, messageViewport.getHeight());
+    messageContainer.setSize(width, totalHeight);
+    bubbleBg.setBounds(0, 0, width, totalHeight);
+    bubbleBg.repaint();
 }
 
 void ChatView::scrollToBottom() {
-    messageViewport.setViewPosition(0, std::max(0, messageList.getHeight() - messageViewport.getHeight()));
+    juce::MessageManager::callAsync([this] {
+        messageViewport.setViewPosition(0,
+            std::max(0, messageContainer.getHeight() - messageViewport.getHeight()));
+    });
 }
 
-// --- Message rendering ---
+// --- Bubble background painting ---
 
-void ChatView::MessageList::paint(juce::Graphics& g) {
+void ChatView::BubbleBackground::paint(juce::Graphics& g) {
     if (!owner) return;
-    auto* chatView = owner;
 
     int width = getWidth();
-    int y = ChatView::messagePadding;
+    int bubbleWidth = width - Theme::chatBubblePad * 2;
+    int y = Theme::chatGap;
 
-    for (auto& msg : chatView->messages) {
-        int msgHeight = chatView->computeMessageHeight(msg, width);
-        auto bubbleArea = juce::Rectangle<int>(ChatView::messagePadding, y,
-                                                width - ChatView::messagePadding * 2, msgHeight);
-
-        // Background
-        juce::Colour bgColor;
-        switch (msg.type) {
-            case DisplayMessage::User:
-                bgColor = Theme::color(Theme::Color::bgHeader).withAlpha(0.3f);
-                break;
-            case DisplayMessage::Assistant:
-                bgColor = Theme::color(Theme::Color::bgSlot);
-                break;
-            case DisplayMessage::Tool:
-                bgColor = Theme::color(Theme::Color::bgPanel);
-                break;
-            case DisplayMessage::Error:
-                bgColor = juce::Colour(0xff442222);
-                break;
-        }
-        g.setColour(bgColor);
-        g.fillRoundedRectangle(bubbleArea.toFloat(), Theme::cornerRadiusSm);
-
-        auto textArea = bubbleArea.reduced(ChatView::bubblePadding);
-
-        if (msg.type == DisplayMessage::Tool) {
-            // Code block
-            auto monoFont = Theme::fontMono(Theme::fontSizeXs);
-            g.setFont(monoFont);
-            g.setColour(Theme::color(Theme::Color::instrument));
-
-            auto codeArea = textArea.removeFromTop(textArea.getHeight() / 2);
-            g.drawFittedText(msg.toolCode, codeArea, juce::Justification::topLeft, 10);
-
-            // Result
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-            g.drawFittedText(msg.toolResult, textArea, juce::Justification::topLeft, 3);
-        } else {
-            // Label
-            auto font = Theme::font(Theme::fontSizeXs);
-            g.setFont(font);
-            if (msg.type == DisplayMessage::User)
-                g.setColour(Theme::color(Theme::Color::textDim));
-            else if (msg.type == DisplayMessage::Error)
-                g.setColour(juce::Colour(0xffcc6666));
-            else
-                g.setColour(Theme::color(Theme::Color::textPrimary));
-
-            // Text
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawFittedText(msg.text, textArea, juce::Justification::topLeft, 100);
-        }
-
-        y += msgHeight + ChatView::messagePadding;
+    for (auto& bubble : owner->bubbles) {
+        auto area = juce::Rectangle<int>(Theme::chatBubblePad, y, bubbleWidth, bubble->height);
+        g.setColour(bubbleColor(bubble->type));
+        g.fillRoundedRectangle(area.toFloat(), Theme::chatBubbleRadius);
+        y += bubble->height + Theme::chatGap;
     }
 }
