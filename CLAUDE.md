@@ -159,3 +159,4 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Plugin load performance (AU plugins block message thread during instantiation — progress indicator or background process)
 - Track header: click to select (future track selection concept)
 - Delete track / delete bus from GUI
+- Insert mode swallows all key events including Cmd+Q — need to pass through system shortcuts
