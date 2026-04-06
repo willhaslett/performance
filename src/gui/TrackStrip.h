@@ -13,10 +13,14 @@ public:
     void setInstrumentName(const juce::String& name);
     void setEffectNames(const std::vector<juce::String>& names);
     void setMidiEnabled(bool enabled);
+    void setPeakLevel(float level);
+    void setGain(float gain);
 
     void paint(juce::Graphics& g) override;
     void resized() override {}
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent&) override;
 
@@ -24,8 +28,13 @@ private:
     PerformanceAPI& api;
     juce::String trackName;
     juce::String instrumentName;       // empty = no instrument loaded
+    float peakLevel = 0.0f;
     std::vector<juce::String> effectNames;
     bool midiEnabled = true;
+    float gainValue = 1.0f;
+    bool draggingFader = false;
+    float dragStartGain = 0.0f;
+    int dragStartY = 0;
     int hoveredSlot = -1;              // -1=none, 0=instrument, 1+=effects
 
     struct SlotBounds {

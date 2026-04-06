@@ -34,6 +34,7 @@ public:
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
     void setTrackGain(const juce::String& trackName, float gain);
     float getTrackGain(const juce::String& trackName);
+    float getTrackPeakLevel(const juce::String& trackName);
 
     // --- Bus management ---
     void createBus(const juce::String& name);

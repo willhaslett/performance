@@ -2,7 +2,7 @@
 #include "api/PerformanceAPI.h"
 
 MixerView::MixerView(PerformanceAPI& api) : api(api) {
-    startTimerHz(4);
+    startTimerHz(30);
 }
 
 void MixerView::paint(juce::Graphics& g) {
@@ -39,6 +39,8 @@ void MixerView::timerCallback() {
             strips[i]->setInstrumentName(api.getTrackPluginName(name));
             strips[i]->setEffectNames(api.getTrackEffectNames(name));
             strips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
+            strips[i]->setGain(api.getTrackGain(name));
+            strips[i]->setPeakLevel(api.getTrackPeakLevel(name));
         }
     }
 }

@@ -32,6 +32,7 @@ public:
                             LoadCallback onLoaded = nullptr);
     bool addTrackEffect(const juce::String& trackName, const juce::String& effectName,
                         const juce::String& pluginName, LoadCallback onLoaded = nullptr);
+    float getTrackPeakLevel(const juce::String& trackName) const;
     void removeTrackInstrument(const juce::String& trackName);
     void removeTrackEffect(const juce::String& trackName, const juce::String& effectName);
     void setTrackMidiEnabled(const juce::String& trackName, bool enabled);

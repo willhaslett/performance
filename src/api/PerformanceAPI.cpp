@@ -182,6 +182,10 @@ float PerformanceAPI::getTrackGain(const juce::String& trackName) {
     return audioEngine->getTrackGain(trackName);
 }
 
+float PerformanceAPI::getTrackPeakLevel(const juce::String& trackName) {
+    return audioEngine->getTrackPeakLevel(trackName);
+}
+
 // --- Bus management ---
 
 void PerformanceAPI::createBus(const juce::String& name) {

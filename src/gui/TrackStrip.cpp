@@ -20,17 +20,33 @@ void TrackStrip::setMidiEnabled(bool enabled) {
     repaint();
 }
 
+void TrackStrip::setPeakLevel(float level) {
+    if (std::abs(level - peakLevel) > 0.01f) {
+        peakLevel = level;
+        repaint();
+    }
+}
+
+void TrackStrip::setGain(float gain) {
+    if (draggingFader) return;  // don't override during drag
+    if (std::abs(gain - gainValue) > 0.001f) {
+        gainValue = gain;
+        repaint();
+    }
+}
+
 void TrackStrip::rebuildSlots() {
     slots.clear();
     int y = Theme::headerHeight + Theme::trackPadding;
-    int slotW = getWidth() - Theme::trackPadding * 2;
+    constexpr int faderMeterReserve = 28;  // fader + meter + margins
+    int slotW = getWidth() - Theme::trackPadding * 2 - faderMeterReserve;
     int x = Theme::trackPadding;
 
     // Instrument slot (always present)
     slots.push_back({ juce::Rectangle<int>(x, y, slotW, Theme::slotHeight), 0 });
     y += Theme::slotHeight + Theme::slotPadding;
 
-    // Separator line after instrument
+    // Gap between instrument and effects
     y += 4;
 
     // Effect slots
@@ -96,14 +112,6 @@ void TrackStrip::paint(juce::Graphics& g) {
         }
     }
 
-    // Separator
-    if (!instrumentName.isEmpty()) {
-        int sepY = slots[0].bounds.getBottom() + Theme::slotPadding + 2;
-        g.setColour(Theme::color(Theme::Color::border));
-        g.drawLine((float)(Theme::trackPadding + 4), (float)sepY,
-                   (float)(getWidth() - Theme::trackPadding - 4), (float)sepY, 1.0f);
-    }
-
     // Effect slots
     for (size_t i = 1; i < slots.size(); ++i) {
         auto& slot = slots[i];
@@ -123,9 +131,132 @@ void TrackStrip::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
         }
     }
+
+    // Fader — vertical slider next to meter
+    {
+        constexpr float dbMin = -60.0f;
+        constexpr float dbMax = 6.0f;
+        constexpr float dbRange = dbMax - dbMin;
+        constexpr int faderWidth = 8;
+        constexpr int faderAreaRight = 6 + 4 + 4;  // meter width + margin + gap
+
+        auto faderArea = getLocalBounds()
+            .withTrimmedRight(faderAreaRight)
+            .removeFromRight(faderWidth)
+            .withTrimmedTop(Theme::headerHeight + 4)
+            .withTrimmedBottom(4);
+
+        // Groove
+        auto groove = faderArea.withSizeKeepingCentre(2, faderArea.getHeight());
+        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.fillRoundedRectangle(groove.toFloat(), 1.0f);
+
+        // Handle position from gain value (dB scale)
+        float db = (gainValue > 0.0001f) ? 20.0f * std::log10(gainValue) : dbMin;
+        db = std::max(db, dbMin);
+        db = std::min(db, dbMax);
+        float normalized = (db - dbMin) / dbRange;
+        int handleY = faderArea.getBottom() - (int)(faderArea.getHeight() * normalized);
+
+        // Handle
+        auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY - 4,
+                                            faderWidth + 4, 8);
+        g.setColour(Theme::color(Theme::Color::textPrimary));
+        g.fillRoundedRectangle(handle.toFloat(), 3.0f);
+
+        // 0dB tick mark
+        float zeroNorm = (0.0f - dbMin) / dbRange;
+        int zeroY = faderArea.getBottom() - (int)(faderArea.getHeight() * zeroNorm);
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.drawLine((float)(faderArea.getX() - 3), (float)zeroY,
+                   (float)(faderArea.getRight() + 3), (float)zeroY, 1.0f);
+    }
+
+    // VU meter — right edge, dB scale
+    {
+        constexpr int meterWidth = 6;
+        constexpr int meterMargin = 4;
+        constexpr float dbMin = -60.0f;
+        constexpr float dbMax = 6.0f;
+        constexpr float dbRange = dbMax - dbMin;
+
+        auto meterArea = getLocalBounds()
+            .removeFromRight(meterWidth + meterMargin)
+            .removeFromRight(meterWidth)
+            .withTrimmedTop(Theme::headerHeight + 4)
+            .withTrimmedBottom(4);
+
+        // Background
+        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
+
+        // Level fill (dB scale)
+        if (peakLevel > 0.0001f) {
+            float db = 20.0f * std::log10(peakLevel);
+            db = std::max(db, dbMin);
+            db = std::min(db, dbMax);
+
+            float normalized = (db - dbMin) / dbRange;  // 0..1
+            int meterHeight = (int)(meterArea.getHeight() * normalized);
+            auto fillArea = meterArea.withTop(meterArea.getBottom() - meterHeight);
+
+            // Color by level: green → yellow → red
+            if (db > 0.0f)
+                g.setColour(juce::Colour(0xffcc4444));  // clipping
+            else if (db > -6.0f)
+                g.setColour(juce::Colour(0xffccaa44));  // hot
+            else
+                g.setColour(Theme::color(Theme::Color::midiActive));  // normal
+            g.fillRoundedRectangle(fillArea.toFloat(), 2.0f);
+        }
+    }
+}
+
+static juce::Rectangle<int> getFaderArea(const juce::Rectangle<int>& bounds) {
+    constexpr int faderWidth = 8;
+    constexpr int faderAreaRight = 6 + 4 + 4;
+    return bounds
+        .withTrimmedRight(faderAreaRight)
+        .removeFromRight(faderWidth + 6)  // wider hit area
+        .withTrimmedTop(Theme::headerHeight + 4)
+        .withTrimmedBottom(4);
+}
+
+void TrackStrip::mouseDown(const juce::MouseEvent& event) {
+    auto faderHitArea = getFaderArea(getLocalBounds());
+    if (faderHitArea.contains(event.getPosition())) {
+        draggingFader = true;
+        dragStartGain = gainValue;
+        dragStartY = event.getPosition().getY();
+    }
+}
+
+void TrackStrip::mouseDrag(const juce::MouseEvent& event) {
+    if (!draggingFader) return;
+
+    constexpr float dbMin = -60.0f;
+    constexpr float dbMax = 6.0f;
+    constexpr float dbRange = dbMax - dbMin;
+
+    auto faderArea = getFaderArea(getLocalBounds());
+    int deltaY = dragStartY - event.getPosition().getY();
+    float dbDelta = (float)deltaY / (float)faderArea.getHeight() * dbRange;
+
+    float startDb = (dragStartGain > 0.0001f) ? 20.0f * std::log10(dragStartGain) : dbMin;
+    float newDb = std::max(dbMin, std::min(dbMax, startDb + dbDelta));
+    float newGain = std::pow(10.0f, newDb / 20.0f);
+
+    gainValue = newGain;
+    api.setTrackGain(trackName, newGain);
+    repaint();
 }
 
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
+    if (draggingFader) {
+        draggingFader = false;
+        return;
+    }
+
     for (auto& slot : slots) {
         if (!slot.bounds.contains(event.getPosition())) continue;
 

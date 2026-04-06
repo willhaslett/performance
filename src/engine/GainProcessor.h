@@ -11,11 +11,13 @@ public:
 
     void setGain(float g) { gain.store(g, std::memory_order_relaxed); }
     float getGain() const { return gain.load(std::memory_order_relaxed); }
+    float getPeakLevel() const { return peakLevel.load(std::memory_order_relaxed); }
 
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
         buffer.applyGain(gain.load(std::memory_order_relaxed));
+        peakLevel.store(buffer.getMagnitude(0, buffer.getNumSamples()), std::memory_order_relaxed);
     }
 
     const juce::String getName() const override { return "Gain"; }
@@ -34,4 +36,5 @@ public:
 
 private:
     std::atomic<float> gain { 1.0f };
+    std::atomic<float> peakLevel { 0.0f };
 };

@@ -424,6 +424,14 @@ bool AudioEngine::addTrackEffect(const juce::String& trackName, const juce::Stri
     return true;
 }
 
+float AudioEngine::getTrackPeakLevel(const juce::String& trackName) const {
+    auto it = tracks.find(trackName);
+    if (it == tracks.end()) return 0.0f;
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return proc->getPeakLevel();
+    return 0.0f;
+}
+
 void AudioEngine::removeTrackInstrument(const juce::String& trackName) {
     auto it = tracks.find(trackName);
     if (it == tracks.end()) return;
