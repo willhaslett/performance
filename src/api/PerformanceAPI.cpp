@@ -64,7 +64,6 @@ void PerformanceAPI::shutdown() {
 juce::String PerformanceAPI::createTrack(const juce::String& name) {
     if (!currentSongId.empty()) {
         auto id = registry->createTrack(currentSongId, name.toStdString(), "");
-        engineSync->sync(currentSongId);
         return juce::String(id);
     } else {
         return audioEngine->createTrack(name);
@@ -81,7 +80,6 @@ void PerformanceAPI::removeTrack(const juce::String& trackId) {
     audioEngine->removeTrack(trackId);
     if (!currentSongId.empty()) {
         registry->remove(trackId.toStdString());  // CASCADE deletes effects, sends, etc.
-        engineSync->notifyRemoved(trackId.toStdString());
     }
 }
 
@@ -99,30 +97,26 @@ void PerformanceAPI::addInstrument(const juce::String& trackId, const juce::Stri
         if (snap) presetId = snap->id;
     }
 
-    if (!currentSongId.empty()) {
-        // Update existing track with plugin in registry
-        auto entity = registry->get(trackId.toStdString());
-        if (entity) {
-            registry->update(trackId.toStdString(), {
-                {"plugin_id", plugin->id},
-                {"preset_id", presetId}
-            });
-        }
-    }
-
-    // Engine already has the track — just load the instrument
-    audioEngine->addTrackInstrument(trackId, pluginName, nullptr);
+    perfLog("[API] addInstrument: trackId=%s plugin=%s pluginDbId=%s\n",
+            trackId.toRawUTF8(), pluginName.toRawUTF8(), plugin->id.c_str());
+    registry->update(trackId.toStdString(), {
+        {"plugin_id", plugin->id},
+        {"preset_id", presetId}
+    });
+    // Verify the write
+    auto verify = registry->get(trackId.toStdString());
+    if (verify)
+        perfLog("[API] addInstrument verify: plugin_id=%s\n", verify->get("plugin_id").c_str());
+    else
+        perfLog("[API] addInstrument verify: ENTITY NOT FOUND\n");
+    // Engine updated via Updated event — EngineSync detects plugin change and loads
 }
 
 void PerformanceAPI::removeInstrument(const juce::String& trackId) {
-    audioEngine->removeTrackInstrument(trackId);
-
-    if (!currentSongId.empty()) {
-        registry->update(trackId.toStdString(), {
-            {"plugin_id", ""},
-            {"preset_id", ""}
-        });
-    }
+    registry->update(trackId.toStdString(), {
+        {"plugin_id", ""},
+        {"preset_id", ""}
+    });
 }
 
 void PerformanceAPI::addEffect(const juce::String& parentId, const juce::String& effectName,
@@ -155,7 +149,6 @@ void PerformanceAPI::addEffect(const juce::String& parentId, const juce::String&
             if (entity) {
                 registry->createEffect(parentId.toStdString(), entity->type,
                                        uniqueName.toStdString(), plugin->id);
-                engineSync->sync(currentSongId);
             }
         }
     } else {
@@ -217,7 +210,6 @@ float PerformanceAPI::getTrackPeakLevel(const juce::String& trackId) {
 juce::String PerformanceAPI::createBus(const juce::String& name) {
     if (!currentSongId.empty()) {
         auto id = registry->createBus(currentSongId, name.toStdString());
-        engineSync->sync(currentSongId);
         return juce::String(id);
     } else {
         return audioEngine->createBus(name);
@@ -234,7 +226,6 @@ void PerformanceAPI::removeBus(const juce::String& busId) {
     audioEngine->removeBus(busId);
     if (!currentSongId.empty()) {
         registry->remove(busId.toStdString());  // CASCADE deletes effects
-        engineSync->notifyRemoved(busId.toStdString());
     }
 }
 
@@ -271,7 +262,6 @@ void PerformanceAPI::setBusGain(const juce::String& busId, float gain) {
 void PerformanceAPI::addSend(const juce::String& trackId, const juce::String& busId, float gain) {
     if (!currentSongId.empty()) {
         registry->createSend(trackId.toStdString(), busId.toStdString(), gain);
-        engineSync->sync(currentSongId);
     } else {
         audioEngine->addSend(trackId, busId, gain);
     }
@@ -691,17 +681,13 @@ void PerformanceAPI::closeTopPluginEditor() {
 // --- Song management ---
 
 std::string PerformanceAPI::createSong(const juce::String& name) {
-    // Clear engine state
-    engineSync->clear();
-
-    // If song already exists, reuse it but clear its children
     auto existing = registry->findSongByName(name.toStdString());
     if (existing) {
         currentSongId = existing->id;
         registry->deleteSong(currentSongId);
     }
     currentSongId = registry->createSong(name.toStdString());
-    engineSync->setActiveSong(currentSongId);
+    registry->setConfig("current_song_id", currentSongId);  // triggers EngineSync loadSong
     perfLog("[API] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), currentSongId.c_str());
     return currentSongId;
 }
@@ -718,15 +704,9 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
     }
 
     unloadSong();
-    engineSync->clear();
     currentSongId = songId;
-    engineSync->setActiveSong(currentSongId);
+    registry->setConfig("current_song_id", currentSongId);  // triggers EngineSync loadSong
     perfLog("[API] Loading song from registry: %s\n", song->name.c_str());
-
-    // Let EngineSync build the engine from registry
-    engineSync->sync(currentSongId);
-
-    // Master gain restored by sync() above
 
     // Load bindings
     for (auto& binding : registry->bindingsForSong(songId)) {
@@ -750,22 +730,16 @@ bool PerformanceAPI::restoreSession() {
     auto songs = registry->allSongs();
 
     if (songs.empty()) {
-        // First run — create a default unnamed session
         currentSongId = registry->createSong("Sandbox");
-        engineSync->setActiveSong(currentSongId);
+        registry->setConfig("current_song_id", currentSongId);
         perfLog("[API] Created default session\n");
         return true;
     }
 
-    // Restore existing session
     auto& song = songs[0];
     currentSongId = song.id;
-    engineSync->setActiveSong(currentSongId);
+    registry->setConfig("current_song_id", currentSongId);  // triggers EngineSync loadSong
     perfLog("[API] Restoring session: %s\n", song.name.c_str());
-
-    // Sync engine from registry
-    engineSync->clear();
-    engineSync->sync(currentSongId);
 
     // Restore bindings
     songRuntime->clearBindings();
@@ -798,8 +772,8 @@ bool PerformanceAPI::restoreSession() {
 }
 
 void PerformanceAPI::unloadSong() {
-    engineSync->setActiveSong("");
     currentSongId.clear();
+    registry->setConfig("current_song_id", "");  // triggers EngineSync clear
     songRuntime->unload();
 }
 
@@ -903,12 +877,11 @@ void PerformanceAPI::loadInitialState() {
     auto scoreStr = entity->get("score");
 
     // Clear engine
-    engineSync->clear();
 
     // Clear live registry state for this song (tracks, busses, etc.)
     registry->deleteSong(currentSongId);
     currentSongId = registry->createSong(songDef.name.toStdString());
-    engineSync->setActiveSong(currentSongId);
+    registry->setConfig("current_song_id", currentSongId);
 
     // Restore initial_state and score (lost in the delete/recreate)
     std::map<std::string, std::string> songFields = {{"initial_state", initialStateStr}};
@@ -974,7 +947,6 @@ void PerformanceAPI::loadInitialState() {
     }
 
     // Sync engine
-    engineSync->sync(currentSongId);
 
     // Restore bindings from initial state
     songRuntime->clearBindings();
@@ -1112,14 +1084,13 @@ void PerformanceAPI::registryDelete(const std::string& id) {
 
     // If deleting the current song, clear engine and fall back
     if (id == currentSongId) {
-        engineSync->clear();
         registry->remove(id);
         auto songs = registry->allSongs();
         if (!songs.empty()) {
             loadSongFromRegistry(songs[0].id);
         } else {
             currentSongId = registry->createSong("Sandbox");
-            engineSync->setActiveSong(currentSongId);
+            registry->setConfig("current_song_id", currentSongId);
         }
         return;
     }

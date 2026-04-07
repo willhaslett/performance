@@ -15,150 +15,211 @@ EngineSync::~EngineSync() {
         registry.events().unsubscribe(subscriptionId);
 }
 
-void EngineSync::onRegistryEvent(const RegistryEvent& event) {
-    if (event.action != RegistryEvent::Updated) return;
-    if (activeSongId.empty()) return;
+void EngineSync::clearEngine() {
+    engine.clearAllTracks();
+    engine.clearAllBusses();
+}
 
-    auto id = juce::String(event.entityId);
+void EngineSync::loadSong(const std::string& songId) {
+    if (songId.empty()) return;
+    activeSongId = songId;
 
-    if (event.entityType == EntityType::Track) {
-        // Read updated track from registry, apply continuous values to engine
+    clearEngine();
+
+    // Rebuild in order: busses → tracks → effects → sends
+    for (auto& bus : registry.bussesForSong(songId))
+        onBusCreated(bus.id);
+    for (auto& track : registry.tracksForSong(songId))
+        onTrackCreated(track.id);
+    for (auto& bus : registry.bussesForSong(songId))
+        for (auto& fx : registry.effectsForParent(bus.id))
+            onEffectCreated(fx.id);
+    for (auto& track : registry.tracksForSong(songId))
+        for (auto& fx : registry.effectsForParent(track.id))
+            onEffectCreated(fx.id);
+    for (auto& track : registry.tracksForSong(songId))
+        for (auto& send : registry.sendsForTrack(track.id))
+            onSendCreated(send.id);
+
+    engine.setMasterGain(registry.getMasterGain(songId));
+}
+
+// --- Individual entity handlers ---
+
+void EngineSync::onBusCreated(const std::string& busId) {
+    for (auto& bus : registry.bussesForSong(activeSongId)) {
+        if (bus.id == busId) {
+            engine.createBusWithId(juce::String(bus.id), juce::String(bus.name));
+            engine.setBusGain(juce::String(bus.id), bus.outputGain);
+            return;
+        }
+    }
+}
+
+void EngineSync::onTrackCreated(const std::string& trackId) {
+    for (auto& track : registry.tracksForSong(activeSongId)) {
+        if (track.id == trackId) {
+            engine.createTrackWithId(juce::String(track.id), juce::String(track.name));
+            engine.setTrackGain(juce::String(track.id), track.outputGain);
+            if (!track.midiEnabled)
+                engine.setTrackMidiEnabled(juce::String(track.id), false);
+
+            if (!track.pluginId.empty()) {
+                auto plugin = registry.findPluginById(track.pluginId);
+                if (plugin) {
+                    engine.addTrackInstrument(juce::String(track.id), juce::String(plugin->name),
+                        [id = track.id] {
+                            perfLog("[EngineSync] Instrument loaded: %s\n", id.c_str());
+                        });
+                }
+            }
+            return;
+        }
+    }
+}
+
+void EngineSync::onEffectCreated(const std::string& effectId) {
+    auto searchParents = [&](const std::string& parentId) {
+        for (auto& fx : registry.effectsForParent(parentId)) {
+            if (fx.id == effectId) {
+                auto plugin = registry.findPluginById(fx.pluginId);
+                if (plugin) {
+                    engine.addEffect(juce::String(parentId),
+                                      juce::String(fx.id),
+                                      juce::String(plugin->name));
+                }
+                return true;
+            }
+        }
+        return false;
+    };
+
+    for (auto& bus : registry.bussesForSong(activeSongId))
+        if (searchParents(bus.id)) return;
+    for (auto& track : registry.tracksForSong(activeSongId))
+        if (searchParents(track.id)) return;
+}
+
+void EngineSync::onSendCreated(const std::string& sendId) {
+    for (auto& track : registry.tracksForSong(activeSongId)) {
+        for (auto& send : registry.sendsForTrack(track.id)) {
+            if (send.id == sendId) {
+                engine.addSend(juce::String(track.id),
+                                juce::String(send.busId), send.gain);
+                return;
+            }
+        }
+    }
+}
+
+void EngineSync::onEntityUpdated(const std::string& entityType, const std::string& entityId) {
+    auto id = juce::String(entityId);
+
+    if (entityType == EntityType::Track) {
         for (auto& t : registry.tracksForSong(activeSongId)) {
-            if (t.id == event.entityId) {
+            if (t.id == entityId) {
                 engine.setTrackGain(id, t.outputGain);
                 engine.setTrackMidiEnabled(id, t.midiEnabled);
+                engine.renameTrack(id, juce::String(t.name));
+
+                // Detect instrument change
+                auto currentPlugin = engine.getTrackPluginName(id);
+                perfLog("[EngineSync] Track updated: %s, pluginId=%s, currentPlugin=%s\n",
+                        t.name.c_str(), t.pluginId.c_str(), currentPlugin.toRawUTF8());
+                if (!t.pluginId.empty()) {
+                    auto plugin = registry.findPluginById(t.pluginId);
+                    if (plugin && juce::String(plugin->name) != currentPlugin) {
+                        if (currentPlugin.isNotEmpty())
+                            engine.removeTrackInstrument(id);
+                        engine.addTrackInstrument(id, juce::String(plugin->name),
+                            [trackId = t.id] {
+                                perfLog("[EngineSync] Instrument loaded: %s\n", trackId.c_str());
+                            });
+                    }
+                } else if (currentPlugin.isNotEmpty()) {
+                    engine.removeTrackInstrument(id);
+                }
                 return;
             }
         }
     }
-    else if (event.entityType == EntityType::Bus) {
+    else if (entityType == EntityType::Bus) {
         for (auto& b : registry.bussesForSong(activeSongId)) {
-            if (b.id == event.entityId) {
+            if (b.id == entityId) {
                 engine.setBusGain(id, b.outputGain);
+                engine.renameBus(id, juce::String(b.name));
                 return;
             }
         }
     }
-    else if (event.entityType == EntityType::Send) {
-        // Find the send and update its gain in the engine
+    else if (entityType == EntityType::Send) {
         for (auto& t : registry.tracksForSong(activeSongId)) {
             for (auto& s : registry.sendsForTrack(t.id)) {
-                if (s.id == event.entityId) {
+                if (s.id == entityId) {
                     engine.setSendGain(juce::String(t.id), juce::String(s.busId), s.gain);
                     return;
                 }
             }
         }
     }
-    else if (event.entityType == EntityType::Song) {
-        if (event.entityId == activeSongId) {
+    else if (entityType == EntityType::Song) {
+        if (entityId == activeSongId)
             engine.setMasterGain(registry.getMasterGain(activeSongId));
-        }
     }
 }
 
-void EngineSync::notifyRemoved(const std::string& id) {
-    engineTrackIds.erase(id);
-    engineBusIds.erase(id);
-    // Effect and send IDs are orphaned by CASCADE delete —
-    // clear them so they don't block re-creation
-    engineEffectIds.clear();
-    engineSendIds.clear();
+void EngineSync::onEntityDeleted(const std::string& entityType, const std::string& entityId) {
+    auto id = juce::String(entityId);
+    if (entityType == EntityType::Track)
+        engine.removeTrack(id);
+    else if (entityType == EntityType::Bus)
+        engine.removeBus(id);
+    else if (entityType == EntityType::Effect) {
+        // Try all parents
+        for (auto& t : registry.tracksForSong(activeSongId))
+            engine.removeEffect(juce::String(t.id), id);
+        for (auto& b : registry.bussesForSong(activeSongId))
+            engine.removeEffect(juce::String(b.id), id);
+    }
 }
 
-void EngineSync::clear() {
-    engine.clearAllTracks();
-    engine.clearAllBusses();
-    engineTrackIds.clear();
-    engineBusIds.clear();
-    engineEffectIds.clear();
-    engineSendIds.clear();
-}
+// --- Event dispatch ---
 
-void EngineSync::sync(const std::string& songId) {
-    if (songId.empty()) return;
-
-    // 1. Sync busses (must exist before sends)
-    auto regBusses = registry.bussesForSong(songId);
-    for (auto& bus : regBusses) {
-        if (engineBusIds.find(bus.id) == engineBusIds.end()) {
-            engine.createBusWithId(juce::String(bus.id), juce::String(bus.name));
-            engine.setBusGain(juce::String(bus.id), bus.outputGain);
-            engineBusIds.insert(bus.id);
-        }
-
-        // Effects — always sync
-        for (auto& fx : registry.effectsForParent(bus.id)) {
-            if (engineEffectIds.count(fx.id)) continue;
-            auto plugin = registry.findPluginById(fx.pluginId);
-            if (plugin) {
-                engine.addEffect(juce::String(bus.id),
-                                  juce::String(fx.id),
-                                  juce::String(plugin->name));
-                engineEffectIds.insert(fx.id);
+void EngineSync::onRegistryEvent(const RegistryEvent& event) {
+    // Detect song switch via config change
+    if (event.entityType == "config" && event.entityId == "current_song_id") {
+        auto newSongId = registry.getConfig("current_song_id");
+        if (newSongId != activeSongId) {
+            if (newSongId.empty()) {
+                clearEngine();
+                activeSongId.clear();
+            } else {
+                loadSong(newSongId);
             }
         }
+        return;
     }
 
-    // 2. Sync tracks
-    auto regTracks = registry.tracksForSong(songId);
-    for (auto& track : regTracks) {
-        if (engineTrackIds.find(track.id) == engineTrackIds.end()) {
-            engine.createTrackWithId(juce::String(track.id), juce::String(track.name));
-            engineTrackIds.insert(track.id);
+    if (activeSongId.empty()) return;
 
-            // Load instrument if plugin is set
-            if (!track.pluginId.empty()) {
-                auto plugin = registry.findPluginById(track.pluginId);
-                if (plugin) {
-                    juce::String presetName;
-                    if (!track.presetId.empty()) {
-                        auto snap = registry.findPresetById(track.presetId);
-                        if (snap) presetName = juce::String(snap->name);
-                    }
+    switch (event.action) {
+        case RegistryEvent::Created:
+            if (event.entityType == EntityType::Bus)
+                onBusCreated(event.entityId);
+            else if (event.entityType == EntityType::Track)
+                onTrackCreated(event.entityId);
+            else if (event.entityType == EntityType::Effect)
+                onEffectCreated(event.entityId);
+            else if (event.entityType == EntityType::Send)
+                onSendCreated(event.entityId);
+            break;
 
-                    engine.addTrackInstrument(juce::String(track.id), juce::String(plugin->name),
-                        [presetName, trackId = track.id] {
-                            perfLog("[EngineSync] Instrument loaded: %s\n", trackId.c_str());
-                        });
-                }
-            }
+        case RegistryEvent::Updated:
+            onEntityUpdated(event.entityType, event.entityId);
+            break;
 
-            // Gain and MIDI
-            engine.setTrackGain(juce::String(track.id), track.outputGain);
-            if (!track.midiEnabled)
-                engine.setTrackMidiEnabled(juce::String(track.id), false);
-        }
-
-        // Effects — always sync, even for existing tracks
-        for (auto& fx : registry.effectsForParent(track.id)) {
-            if (engineEffectIds.count(fx.id)) continue;
-            auto fxPlugin = registry.findPluginById(fx.pluginId);
-            if (fxPlugin) {
-                engine.addEffect(juce::String(track.id),
-                                  juce::String(fx.id),
-                                  juce::String(fxPlugin->name));
-                engineEffectIds.insert(fx.id);
-            }
-        }
+        case RegistryEvent::Deleted:
+            onEntityDeleted(event.entityType, event.entityId);
+            break;
     }
-
-    // 3. Sync sends (tracks and busses must exist)
-    for (auto& track : regTracks) {
-        if (engineTrackIds.find(track.id) == engineTrackIds.end()) continue;
-
-        for (auto& send : registry.sendsForTrack(track.id)) {
-            if (engineSendIds.count(send.id)) continue;
-            // send.busId is the registry bus UUID — same as engine bus UUID
-            engine.addSend(juce::String(track.id),
-                            juce::String(send.busId), send.gain);
-            engineSendIds.insert(send.id);
-        }
-    }
-
-    // 4. Master gain
-    engine.setMasterGain(registry.getMasterGain(songId));
 }
-
-// persistState removed — continuous values are now written to registry
-// at the point of mutation in PerformanceAPI, not on a timer.

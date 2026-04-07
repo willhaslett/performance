@@ -104,6 +104,10 @@ void Registry::createSchema() {
             args TEXT,
             description TEXT
         );
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
     )");
 
     // Migrations for existing databases
@@ -113,6 +117,25 @@ void Registry::createSchema() {
     sqlite3_exec(db, "DELETE FROM presets", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks RENAME COLUMN snapshot_id TO preset_id", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE effects RENAME COLUMN snapshot_id TO preset_id", nullptr, nullptr, nullptr);
+}
+
+void Registry::setConfig(const std::string& key, const std::string& value) {
+    auto* stmt = prepare("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)");
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, "config", key });
+}
+
+std::string Registry::getConfig(const std::string& key, const std::string& defaultValue) const {
+    auto* stmt = prepare("SELECT value FROM config WHERE key = ?");
+    sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+    std::string result = defaultValue;
+    if (sqlite3_step(stmt) == SQLITE_ROW)
+        result = (const char*)sqlite3_column_text(stmt, 0);
+    sqlite3_finalize(stmt);
+    return result;
 }
 
 std::string Registry::generateId() {

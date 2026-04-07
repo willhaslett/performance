@@ -27,6 +27,10 @@ public:
     void open(const std::string& dbPath);
     void close();
 
+    // --- Config (key-value settings) ---
+    void setConfig(const std::string& key, const std::string& value);
+    std::string getConfig(const std::string& key, const std::string& defaultValue = "") const;
+
     // --- Generic CRUD ---
     std::string create(const std::string& type, const std::map<std::string, std::string>& fields);
     std::optional<Entity> get(const std::string& id);
