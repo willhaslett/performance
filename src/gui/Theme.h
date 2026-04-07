@@ -47,9 +47,9 @@ namespace Theme {
     constexpr int   chatInputHeight = 40;
 
     // Font
-    constexpr float fontSize        = 13.0f;
-    constexpr float fontSizeSm      = 12.0f;
-    constexpr float fontSizeXs      = 11.0f;
+    constexpr float fontSize        = 14.0f;
+    constexpr float fontSizeSm      = 13.0f;
+    constexpr float fontSizeXs      = 12.0f;
 
     // Helpers
     inline juce::Colour color(uint32_t c) { return juce::Colour(c); }
