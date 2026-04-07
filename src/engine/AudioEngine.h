@@ -46,12 +46,12 @@ public:
     void renameBus(const juce::String& busId, const juce::String& newName);
     void setBusGain(const juce::String& busId, float gain);
 
-    struct EffectInfo { juce::String name; juce::String pluginName; };
+    struct EffectInfo { juce::String id; juce::String pluginName; };
 
     // Effects — unified for tracks and busses (parentId is track/bus UUID, or "Output" for master)
-    bool addEffect(const juce::String& parentId, const juce::String& effectName,
+    bool addEffect(const juce::String& parentId, const juce::String& effectId,
                    const juce::String& pluginName, LoadCallback onLoaded = nullptr);
-    void removeEffect(const juce::String& parentId, const juce::String& effectName);
+    void removeEffect(const juce::String& parentId, const juce::String& effectId);
     void clearAllBusses();
 
     // Master output
@@ -66,8 +66,8 @@ public:
 
     // Access loaded processors by ID
     juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId) const;
-    juce::AudioProcessor* getTrackEffectProcessor(const juce::String& trackId,
-                                                   const juce::String& effectName) const;
+    juce::AudioProcessor* getEffectProcessor(const juce::String& parentId,
+                                              const juce::String& effectId) const;
 
     // Query current state
     std::vector<juce::String> getTrackNames() const;
@@ -115,7 +115,8 @@ private:
 
     // Shared effect node type
     struct EffectNode {
-        juce::String name;
+        juce::String id;          // registry effect UUID (stable identity)
+        juce::String pluginName;  // display name of loaded plugin
         juce::AudioProcessorGraph::Node::Ptr node;
     };
     std::vector<EffectNode> masterEffects;
@@ -151,11 +152,11 @@ private:
     static juce::String generateId();
 
     // Internal: shared effect manipulation
-    bool addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentName,
-                         const juce::String& effectName, const juce::String& pluginName,
+    bool addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentId,
+                         const juce::String& effectId, const juce::String& pluginName,
                          LoadCallback onLoaded);
-    void removeEffectFromList(std::vector<EffectNode>& effects, const juce::String& parentName,
-                              const juce::String& effectName);
+    void removeEffectFromList(std::vector<EffectNode>& effects, const juce::String& parentId,
+                              const juce::String& effectId);
 
     // Plugin editor windows
     std::vector<std::unique_ptr<juce::DocumentWindow>> editorWindows;

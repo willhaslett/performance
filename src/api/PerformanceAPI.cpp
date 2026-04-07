@@ -136,7 +136,7 @@ void PerformanceAPI::addEffect(const juce::String& parentId, const juce::String&
     while (true) {
         bool collision = false;
         for (auto& fx : existingEffects)
-            if (fx.name == uniqueName) { collision = true; break; }
+            if (fx.id == uniqueName) { collision = true; break; }
         if (!collision) break;
         uniqueName = effectName + " " + juce::String(suffix++);
     }
@@ -170,7 +170,7 @@ void PerformanceAPI::removeEffect(const juce::String& parentId, const juce::Stri
 
     if (!currentSongId.empty()) {
         for (auto& fx : registry->effectsForParent(parentId.toStdString())) {
-            if (fx.name == effectName.toStdString()) {
+            if (fx.id == effectName.toStdString()) {
                 registry->remove(fx.id);
                 return;
             }
@@ -257,7 +257,7 @@ float PerformanceAPI::getMasterPeakLevel() {
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getMasterEffects() {
     std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getMasterEffects())
-        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
     return result;
 }
 
@@ -530,7 +530,7 @@ void PerformanceAPI::saveTrackPreset(const juce::String& trackId, const juce::St
         auto* fxObj = new juce::DynamicObject();
         fxObj->setProperty("plugin", fx.pluginName);
         // Effect state
-        if (auto* proc = audioEngine->getTrackEffectProcessor(trackId, fx.name)) {
+        if (auto* proc = audioEngine->getEffectProcessor(trackId, fx.id)) {
             juce::MemoryBlock state;
             proc->getStateInformation(state);
             fxObj->setProperty("state", state.toBase64Encoding());
@@ -593,7 +593,7 @@ void PerformanceAPI::loadTrackPreset(const juce::String& trackId, const juce::St
     // Load effects
     if (auto* effectsArr = json.getProperty("effects", juce::var()).getArray()) {
         for (auto& fx : audioEngine->getTrackEffects(trackId))
-            removeEffect(trackId, fx.name);
+            removeEffect(trackId, fx.id);
 
         for (auto& fxVar : *effectsArr) {
             auto fxPlugin = fxVar.getProperty("plugin", "").toString();
@@ -821,7 +821,7 @@ SongDef PerformanceAPI::getCurrentSongDef() const {
         t.midiEnabled = audioEngine->isTrackMidiEnabled(regTrack.id);
 
         for (auto& fx : audioEngine->getTrackEffects(regTrack.id))
-            t.effects.push_back({ fx.name, fx.pluginName, {} });
+            t.effects.push_back({ fx.id, fx.pluginName, {} });
 
         for (auto& send : audioEngine->getTrackSends(regTrack.id))
             t.sends.push_back({ send.busName, send.gain });
@@ -835,7 +835,7 @@ SongDef PerformanceAPI::getCurrentSongDef() const {
         b.outputGain = audioEngine->getBusGain(regBus.id);
 
         for (auto& fx : audioEngine->getBusEffects(regBus.id))
-            b.effects.push_back({ fx.name, fx.pluginName, {} });
+            b.effects.push_back({ fx.id, fx.pluginName, {} });
 
         song.busses.push_back(std::move(b));
     }
@@ -1164,14 +1164,14 @@ juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackId) con
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getTrackEffects(const juce::String& trackId) const {
     std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getTrackEffects(trackId))
-        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
     return result;
 }
 
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getBusEffects(const juce::String& busId) const {
     std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getBusEffects(busId))
-        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
     return result;
 }
 

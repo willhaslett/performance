@@ -416,8 +416,8 @@ bool AudioEngine::addTrackInstrument(const juce::String& trackId, const juce::St
     return true;
 }
 
-bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentName,
-                                   const juce::String& effectName, const juce::String& pluginName,
+bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentId,
+                                   const juce::String& effectId, const juce::String& pluginName,
                                    LoadCallback onLoaded) {
     auto desc = findPluginDescription(pluginName);
     if (desc.name.isEmpty()) {
@@ -425,13 +425,10 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
         return false;
     }
 
-    effects.push_back({ effectName, nullptr });
+    effects.push_back({ effectId, pluginName, nullptr });
     auto effectIndex = effects.size() - 1;
-    perfLog("[Engine] Loading effect: %s as \"%s\" -> \"%s\"\n",
-            desc.name.toRawUTF8(), effectName.toRawUTF8(), parentName.toRawUTF8());
-
-    // parentName is already a stable UUID (or "Output")
-    juce::String parentId = parentName;
+    perfLog("[Engine] Loading effect: %s -> \"%s\"\n",
+            desc.name.toRawUTF8(), parentId.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
@@ -441,73 +438,73 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
                 return;
             }
-            // Find the effects list again (could be track, bus, or master)
             std::vector<EffectNode>* efx = nullptr;
-            juce::String displayName = parentId;
             if (parentId == "Output") {
                 efx = &masterEffects;
             } else {
                 auto tit = tracks.find(parentId);
-                if (tit != tracks.end()) { efx = &tit->second.effects; displayName = tit->second.name; }
+                if (tit != tracks.end()) efx = &tit->second.effects;
                 else {
                     auto bit = busses.find(parentId);
-                    if (bit != busses.end()) { efx = &bit->second.effects; displayName = bit->second.name; }
+                    if (bit != busses.end()) efx = &bit->second.effects;
                 }
             }
             if (!efx || effectIndex >= efx->size()) return;
+            auto loadedName = instance->getName();
             (*efx)[effectIndex].node = graph->addNode(std::move(instance));
+            (*efx)[effectIndex].pluginName = loadedName;
             rebuildConnections();
-            perfLog("[Engine] Loaded effect: %s as \"%s\" in \"%s\"\n",
-                    desc.name.toRawUTF8(), (*efx)[effectIndex].name.toRawUTF8(),
-                    displayName.toRawUTF8());
+            perfLog("[Engine] Loaded effect: %s in \"%s\"\n",
+                    loadedName.toRawUTF8(), parentId.toRawUTF8());
             if (onLoaded) onLoaded();
         });
 
     return true;
 }
 
-void AudioEngine::removeEffectFromList(std::vector<EffectNode>& effects, const juce::String& parentName,
-                                        const juce::String& effectName) {
+void AudioEngine::removeEffectFromList(std::vector<EffectNode>& effects, const juce::String& parentId,
+                                        const juce::String& effectId) {
     for (auto it = effects.begin(); it != effects.end(); ++it) {
-        if (it->name == effectName) {
+        if (it->id == effectId) {
+            auto name = it->pluginName;
             if (it->node)
                 graph->removeNode(it->node->nodeID);
             effects.erase(it);
             rebuildConnections();
             perfLog("[Engine] Removed effect \"%s\" from \"%s\"\n",
-                    effectName.toRawUTF8(), parentName.toRawUTF8());
+                    name.toRawUTF8(), parentId.toRawUTF8());
             return;
         }
     }
 }
 
-bool AudioEngine::addEffect(const juce::String& parentId, const juce::String& effectName,
+bool AudioEngine::addEffect(const juce::String& parentId, const juce::String& effectId,
                               const juce::String& pluginName, LoadCallback onLoaded) {
     if (parentId == "Output")
-        return addEffectToList(masterEffects, parentId, effectName, pluginName, onLoaded);
+        return addEffectToList(masterEffects, parentId, effectId, pluginName, onLoaded);
     auto tit = tracks.find(parentId);
     if (tit != tracks.end())
-        return addEffectToList(tit->second.effects, parentId, effectName, pluginName, onLoaded);
+        return addEffectToList(tit->second.effects, parentId, effectId, pluginName, onLoaded);
     auto bit = busses.find(parentId);
     if (bit != busses.end())
-        return addEffectToList(bit->second.effects, parentId, effectName, pluginName, onLoaded);
+        return addEffectToList(bit->second.effects, parentId, effectId, pluginName, onLoaded);
     perfLog("[Engine] Parent not found: %s\n", parentId.toRawUTF8());
     return false;
 }
 
-void AudioEngine::removeEffect(const juce::String& parentId, const juce::String& effectName) {
+void AudioEngine::removeEffect(const juce::String& parentId, const juce::String& effectId) {
     if (parentId == "Output") {
-        removeEffectFromList(masterEffects, parentId, effectName);
+        removeEffectFromList(masterEffects, parentId, effectId);
         return;
     }
     auto tit = tracks.find(parentId);
     if (tit != tracks.end()) {
-        removeEffectFromList(tit->second.effects, parentId, effectName);
+        removeEffectFromList(tit->second.effects, parentId, effectId);
         return;
     }
     auto bit = busses.find(parentId);
     if (bit != busses.end())
-        removeEffectFromList(bit->second.effects, parentId, effectName);
+        removeEffectFromList(bit->second.effects, parentId, effectId);
 }
 
 float AudioEngine::getTrackPeakLevel(const juce::String& trackId) const {
@@ -841,7 +838,7 @@ std::vector<AudioEngine::EffectInfo> AudioEngine::getTrackEffects(const juce::St
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return result;
     for (auto& fx : it->second.effects)
-        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+        result.push_back({ fx.id, fx.pluginName });
     return result;
 }
 
@@ -850,7 +847,7 @@ std::vector<AudioEngine::EffectInfo> AudioEngine::getBusEffects(const juce::Stri
     auto it = busses.find(busId);
     if (it == busses.end()) return result;
     for (auto& fx : it->second.effects)
-        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+        result.push_back({ fx.id, fx.pluginName });
     return result;
 }
 
@@ -910,7 +907,7 @@ float AudioEngine::getMasterPeakLevel() const {
 std::vector<AudioEngine::EffectInfo> AudioEngine::getMasterEffects() const {
     std::vector<EffectInfo> result;
     for (auto& fx : masterEffects)
-        result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
+        result.push_back({ fx.id, fx.pluginName });
     return result;
 }
 
@@ -923,26 +920,26 @@ juce::AudioProcessor* AudioEngine::getTrackInstrumentProcessor(const juce::Strin
     return nullptr;
 }
 
-juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& parentId,
-                                                             const juce::String& effectName) const {
+juce::AudioProcessor* AudioEngine::getEffectProcessor(const juce::String& parentId,
+                                                             const juce::String& effectId) const {
     // Check master effects
     if (parentId == "Output") {
         for (auto& fx : masterEffects)
-            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
+            if (fx.id == effectId && fx.node) return fx.node->getProcessor();
         return nullptr;
     }
     // Check tracks
     auto tit = tracks.find(parentId);
     if (tit != tracks.end()) {
         for (auto& fx : tit->second.effects)
-            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
+            if (fx.id == effectId && fx.node) return fx.node->getProcessor();
         return nullptr;
     }
     // Check busses
     auto bit = busses.find(parentId);
     if (bit != busses.end()) {
         for (auto& fx : bit->second.effects)
-            if (fx.name == effectName && fx.node) return fx.node->getProcessor();
+            if (fx.id == effectId && fx.node) return fx.node->getProcessor();
     }
     return nullptr;
 }
@@ -1090,18 +1087,18 @@ private:
     std::unique_ptr<PresetToolbar> toolbar;
 };
 
-void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::String& effectName,
+void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::String& effectId,
                                     const juce::String& title, PresetCallbacks presetCallbacks) {
     juce::AudioProcessor* processor = nullptr;
-    if (effectName.isEmpty())
+    if (effectId.isEmpty())
         processor = getTrackInstrumentProcessor(parentId);
     else
-        processor = getTrackEffectProcessor(parentId, effectName);
+        processor = getEffectProcessor(parentId, effectId);
 
     if (!processor || !processor->hasEditor()) return;
 
-    // Unique key: for instruments use trackId, for effects use effectName (which is the unique effect slot ID)
-    auto editorKey = effectName.isEmpty() ? parentId : (parentId + "::" + effectName);
+    // Unique key: for instruments use trackId, for effects use effectId (which is the unique effect slot ID)
+    auto editorKey = effectId.isEmpty() ? parentId : (parentId + "::" + effectId);
 
     // Check if editor is already open — bring to front
     for (auto& win : editorWindows) {

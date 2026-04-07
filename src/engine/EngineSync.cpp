@@ -93,7 +93,7 @@ void EngineSync::sync(const std::string& songId) {
             auto plugin = registry.findPluginById(fx.pluginId);
             if (plugin) {
                 engine.addEffect(juce::String(bus.id),
-                                  juce::String(fx.name),
+                                  juce::String(fx.id),
                                   juce::String(plugin->name));
                 engineEffectIds.insert(fx.id);
             }
@@ -136,7 +136,7 @@ void EngineSync::sync(const std::string& songId) {
             auto fxPlugin = registry.findPluginById(fx.pluginId);
             if (fxPlugin) {
                 engine.addEffect(juce::String(track.id),
-                                  juce::String(fx.name),
+                                  juce::String(fx.id),
                                   juce::String(fxPlugin->name));
                 engineEffectIds.insert(fx.id);
             }

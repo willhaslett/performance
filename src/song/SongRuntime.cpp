@@ -121,7 +121,7 @@ juce::AudioProcessorParameter* SongRuntime::findParam(const juce::String& trackN
     if (effectName.isEmpty())
         processor = engine.getTrackInstrumentProcessor(trackName);
     else
-        processor = engine.getTrackEffectProcessor(trackName, effectName);
+        processor = engine.getEffectProcessor(trackName, effectName);
 
     if (!processor) return nullptr;
 
