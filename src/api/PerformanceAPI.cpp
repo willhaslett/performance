@@ -305,11 +305,11 @@ float PerformanceAPI::getMasterPeakLevel() {
     return audioEngine->getMasterPeakLevel();
 }
 
-std::vector<juce::String> PerformanceAPI::getMasterEffectNames() {
-    std::vector<juce::String> names;
+std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getMasterEffects() {
+    std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getMasterEffects())
-        names.push_back(fx.pluginName);
-    return names;
+        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+    return result;
 }
 
 void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
@@ -1053,18 +1053,18 @@ juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackName) c
     return audioEngine->getTrackPluginName(trackName);
 }
 
-std::vector<juce::String> PerformanceAPI::getTrackEffectNames(const juce::String& trackName) const {
-    std::vector<juce::String> names;
+std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getTrackEffects(const juce::String& trackName) const {
+    std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getTrackEffects(trackName))
-        names.push_back(fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name);
-    return names;
+        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+    return result;
 }
 
-std::vector<juce::String> PerformanceAPI::getBusEffectNames(const juce::String& busName) const {
-    std::vector<juce::String> names;
+std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getBusEffects(const juce::String& busName) const {
+    std::vector<EffectSlotInfo> result;
     for (auto& fx : audioEngine->getBusEffects(busName))
-        names.push_back(fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name);
-    return names;
+        result.push_back({ fx.name, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name });
+    return result;
 }
 
 float PerformanceAPI::getBusGain(const juce::String& busName) {

@@ -14,7 +14,9 @@ public:
                ParentKind parent = OnTrack);
 
     void setPluginName(const juce::String& name);
+    void setEffectId(const juce::String& id) { effectId = id; }
     juce::String getPluginName() const { return pluginName; }
+    juce::String getEffectId() const { return effectId; }
     bool hasPlugin() const { return pluginName.isNotEmpty(); }
 
     // Called after a plugin is selected or removed
@@ -31,6 +33,7 @@ private:
     PerformanceAPI& api;
     juce::String trackOrBusName;
     juce::String pluginName;
+    juce::String effectId;  // internal key for effect lookup (empty for instruments)
     bool hovered = false;
 
     void showPicker(juce::Point<int> position);

@@ -48,7 +48,6 @@ public:
     void setMasterGain(float gain);
     float getMasterGain();
     float getMasterPeakLevel();
-    std::vector<juce::String> getMasterEffectNames();
 
     // --- Sends ---
     void addSend(const juce::String& trackName, const juce::String& busName, float gain = 1.0f);
@@ -124,7 +123,15 @@ public:
     std::vector<juce::String> listTrackNames() const;
     std::vector<juce::String> listBusNames() const;
     juce::String getTrackPluginName(const juce::String& trackName) const;
-    std::vector<juce::String> getTrackEffectNames(const juce::String& trackName) const;
+
+    struct EffectSlotInfo {
+        juce::String effectId;    // internal key for lookups
+        juce::String pluginName;  // display name
+    };
+    std::vector<EffectSlotInfo> getTrackEffects(const juce::String& trackName) const;
+    std::vector<EffectSlotInfo> getBusEffects(const juce::String& busName) const;
+    std::vector<EffectSlotInfo> getMasterEffects();
+
     bool isTrackMidiEnabled(const juce::String& trackName) const;
 
     // Send info for a track
@@ -134,7 +141,6 @@ public:
         float peakLevel;
     };
     std::vector<TrackSendInfo> getTrackSends(const juce::String& trackName) const;
-    std::vector<juce::String> getBusEffectNames(const juce::String& busName) const;
     float getBusGain(const juce::String& busName);
     float getBusPeakLevel(const juce::String& busName);
     void log(const juce::String& message);

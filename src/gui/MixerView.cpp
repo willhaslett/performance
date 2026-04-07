@@ -72,7 +72,7 @@ void MixerView::timerCallback() {
         for (size_t i = 0; i < trackStrips.size() && i < lastTrackNames.size(); ++i) {
             auto& name = lastTrackNames[i];
             trackStrips[i]->setInstrumentName(api.getTrackPluginName(name));
-            trackStrips[i]->setEffectNames(api.getTrackEffectNames(name));
+            trackStrips[i]->setEffects(api.getTrackEffects(name));
             trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
             trackStrips[i]->setGain(api.getTrackGain(name));
             trackStrips[i]->setPeakLevel(api.getTrackPeakLevel(name));
@@ -87,14 +87,14 @@ void MixerView::timerCallback() {
         // Update busses
         for (size_t i = 0; i < busStrips.size() && i < lastBusNames.size(); ++i) {
             auto& name = lastBusNames[i];
-            busStrips[i]->setEffectNames(api.getBusEffectNames(name));
+            busStrips[i]->setEffects(api.getBusEffects(name));
             busStrips[i]->setGain(api.getBusGain(name));
             busStrips[i]->setPeakLevel(api.getBusPeakLevel(name));
         }
     }
 
     // Update output strip
-    outputStrip.setEffectNames(api.getMasterEffectNames());
+    outputStrip.setEffects(api.getMasterEffects());
     outputStrip.setGain(api.getMasterGain());
     outputStrip.setPeakLevel(api.getMasterPeakLevel());
 
@@ -114,7 +114,7 @@ void MixerView::rebuildStrips() {
     for (auto& trackName : lastTrackNames) {
         auto strip = std::make_unique<TrackStrip>(trackName, api);
         strip->setInstrumentName(api.getTrackPluginName(trackName));
-        strip->setEffectNames(api.getTrackEffectNames(trackName));
+        strip->setEffects(api.getTrackEffects(trackName));
         strip->setMidiEnabled(api.isTrackMidiEnabled(trackName));
         strip->setAvailableBusses(lastBusNames);
 
@@ -129,7 +129,7 @@ void MixerView::rebuildStrips() {
 
     for (auto& busName : lastBusNames) {
         auto strip = std::make_unique<BusStrip>(busName, api);
-        strip->setEffectNames(api.getBusEffectNames(busName));
+        strip->setEffects(api.getBusEffects(busName));
         stripContainer.addAndMakeVisible(*strip);
         busStrips.push_back(std::move(strip));
     }

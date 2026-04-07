@@ -36,7 +36,7 @@ void PluginSlot::mouseUp(const juce::MouseEvent& event) {
             showContextMenu(event.getScreenPosition());
     } else {
         if (hasPlugin())
-            api.openPluginEditor(trackOrBusName, slotType == Instrument ? "" : pluginName);
+            api.openPluginEditor(trackOrBusName, slotType == Instrument ? "" : effectId);
         else
             showPicker(event.getScreenPosition());
     }
@@ -134,7 +134,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
                 if (slotType == Instrument)
                     api.removeInstrument(trackOrBusName);
                 else
-                    api.removeEffect(trackOrBusName, pluginName);
+                    api.removeEffect(trackOrBusName, effectId);
                 if (onChanged) onChanged();
                 return;
             }

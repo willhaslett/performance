@@ -3,16 +3,15 @@
 #include "gui/Theme.h"
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
+#include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
-
-class PerformanceAPI;
 
 class OutputStrip : public juce::Component {
 public:
     OutputStrip(PerformanceAPI& api);
 
-    void setEffectNames(const std::vector<juce::String>& names);
+    void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
     void setPeakLevel(float level);
     void setGain(float gain);
 
@@ -30,5 +29,5 @@ private:
     juce::Rectangle<int> headerBounds;
 
     void rebuildEffectSlots();
-    std::vector<juce::String> currentEffectNames;
+    std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
 };

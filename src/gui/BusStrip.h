@@ -4,16 +4,15 @@
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
 #include "gui/InlineEditor.h"
+#include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
-
-class PerformanceAPI;
 
 class BusStrip : public juce::Component {
 public:
     BusStrip(const juce::String& name, PerformanceAPI& api);
 
-    void setEffectNames(const std::vector<juce::String>& names);
+    void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
     void setPeakLevel(float level);
     void setGain(float gain);
 
@@ -35,5 +34,5 @@ private:
     InlineEditor nameEditor;
 
     void rebuildEffectSlots();
-    std::vector<juce::String> currentEffectNames;
+    std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
 };

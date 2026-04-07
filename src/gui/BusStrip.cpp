@@ -14,9 +14,19 @@ BusStrip::BusStrip(const juce::String& name, PerformanceAPI& api)
     rebuildEffectSlots();
 }
 
-void BusStrip::setEffectNames(const std::vector<juce::String>& names) {
-    if (names != currentEffectNames) {
-        currentEffectNames = names;
+void BusStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects) {
+    bool changed = (effects.size() != currentEffects.size());
+    if (!changed) {
+        for (size_t i = 0; i < effects.size(); ++i) {
+            if (effects[i].effectId != currentEffects[i].effectId ||
+                effects[i].pluginName != currentEffects[i].pluginName) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed) {
+        currentEffects = effects;
         rebuildEffectSlots();
     }
 }
@@ -34,9 +44,10 @@ void BusStrip::rebuildEffectSlots() {
         removeChildComponent(slot.get());
     effectSlots.clear();
 
-    for (auto& name : currentEffectNames) {
+    for (auto& fx : currentEffects) {
         auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busName, PluginSlot::OnBus);
-        slot->setPluginName(name);
+        slot->setPluginName(fx.pluginName);
+        slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
         effectSlots.push_back(std::move(slot));
     }
