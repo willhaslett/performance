@@ -585,7 +585,7 @@ float AudioEngine::getTrackGain(const juce::String& trackName) const {
 void AudioEngine::renameTrack(const juce::String& oldName, const juce::String& newName) {
     auto trackId = findTrackId(oldName);
     auto it = tracks.find(trackId);
-    if (it == tracks.end() || !findTrackId(newName).isEmpty()) return;
+    if (it == tracks.end()) return;
     it->second.name = newName;
     perfLog("[Engine] Renamed track \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
 }
@@ -593,7 +593,7 @@ void AudioEngine::renameTrack(const juce::String& oldName, const juce::String& n
 void AudioEngine::renameBus(const juce::String& oldName, const juce::String& newName) {
     auto busId = findBusId(oldName);
     auto it = busses.find(busId);
-    if (it == busses.end() || !findBusId(newName).isEmpty()) return;
+    if (it == busses.end()) return;
     it->second.name = newName;
     // No need to update send references — sends store busId (UUID), not name
     perfLog("[Engine] Renamed bus \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());

@@ -650,32 +650,22 @@ void PerformanceAPI::loadTrackPreset(const juce::String& trackName, const juce::
         return;
     }
 
-    // Rename to preset name if possible (no collision)
-    auto name = trackName;
-    if (trackName != presetName) {
-        // Check if presetName already exists as another track
-        bool nameExists = false;
-        for (auto& n : listTrackNames())
-            if (n == presetName) { nameExists = true; break; }
-        if (!nameExists) {
-            renameTrack(trackName, presetName);
-            name = presetName;
-        }
-    }
-
+    // Modify track under its current name first (unique at this point),
+    // then rename last to avoid ambiguity with duplicate names.
     auto json = juce::JSON::parse(file.loadFileAsString());
     auto pluginName = json.getProperty("plugin", "").toString();
 
     if (pluginName.isNotEmpty()) {
-        removeInstrument(name);
-        addInstrument(name, pluginName);
+        removeInstrument(trackName);
+        addInstrument(trackName, pluginName);
 
         // Restore instrument state after plugin loads
         auto stateB64 = json.getProperty("pluginState", "").toString();
         if (stateB64.isNotEmpty()) {
-            auto nameCopy = name;
-            juce::Timer::callAfterDelay(500, [this, nameCopy, stateB64] {
-                if (auto* proc = audioEngine->getTrackInstrumentProcessor(nameCopy)) {
+            // Use the preset name for deferred lookup (track will be renamed by then)
+            auto finalName = presetName;
+            juce::Timer::callAfterDelay(500, [this, finalName, stateB64] {
+                if (auto* proc = audioEngine->getTrackInstrumentProcessor(finalName)) {
                     juce::MemoryBlock state;
                     state.fromBase64Encoding(stateB64);
                     proc->setStateInformation(state.getData(), (int)state.getSize());
@@ -686,19 +676,22 @@ void PerformanceAPI::loadTrackPreset(const juce::String& trackName, const juce::
 
     // Load effects
     if (auto* effectsArr = json.getProperty("effects", juce::var()).getArray()) {
-        for (auto& fx : audioEngine->getTrackEffects(name))
-            removeEffect(name, fx.name);
+        for (auto& fx : audioEngine->getTrackEffects(trackName))
+            removeEffect(trackName, fx.name);
 
         for (auto& fxVar : *effectsArr) {
             auto fxPlugin = fxVar.getProperty("plugin", "").toString();
             if (fxPlugin.isNotEmpty())
-                addEffect(name, fxPlugin, fxPlugin);
+                addEffect(trackName, fxPlugin, fxPlugin);
         }
     }
 
     // Gain and MIDI
-    setTrackGain(name, (float)json.getProperty("gain", 1.0));
-    setTrackMidiEnabled(name, (bool)json.getProperty("midiEnabled", true));
+    setTrackGain(trackName, (float)json.getProperty("gain", 1.0));
+    setTrackMidiEnabled(trackName, (bool)json.getProperty("midiEnabled", true));
+
+    // Rename last — track name becomes the preset name (duplicates OK)
+    renameTrack(trackName, presetName);
 
     perfLog("[API] Loaded track preset \"%s\" onto track \"%s\"\n",
             presetName.toRawUTF8(), trackName.toRawUTF8());
