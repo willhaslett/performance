@@ -325,6 +325,72 @@ public:
             expectEquals((int)sends.size(), 1);
             expectEquals(sends[0].busName, juce::String("FX Bus"));
         }
+
+        beginTest("Track gain persists to registry immediately");
+        {
+            TestAPI t;
+            t->createTrack("Gain Persist");
+            t->setTrackGain("Gain Persist", 0.42f);
+            // Read directly from registry to verify
+            auto& reg = t.get().getRegistry();
+            auto songId = t.get().getCurrentSongId();
+            for (auto& track : reg.tracksForSong(songId)) {
+                if (track.name == "Gain Persist")
+                    expectWithinAbsoluteError(track.outputGain, 0.42f, 0.01f);
+            }
+        }
+
+        beginTest("Bus gain persists to registry immediately");
+        {
+            TestAPI t;
+            t->createBus("Bus Gain");
+            t->setBusGain("Bus Gain", 0.33f);
+            auto& reg = t.get().getRegistry();
+            auto songId = t.get().getCurrentSongId();
+            for (auto& bus : reg.bussesForSong(songId)) {
+                if (bus.name == "Bus Gain")
+                    expectWithinAbsoluteError(bus.outputGain, 0.33f, 0.01f);
+            }
+        }
+
+        beginTest("Master gain persists to registry immediately");
+        {
+            TestAPI t;
+            t->setMasterGain(0.65f);
+            auto& reg = t.get().getRegistry();
+            auto songId = t.get().getCurrentSongId();
+            expectWithinAbsoluteError(reg.getMasterGain(songId), 0.65f, 0.01f);
+        }
+
+        beginTest("Gain survives song switch without persist timer");
+        {
+            TestAPI t;
+            auto songA = t->createSong("Song A");
+            t->createTrack("T1");
+            t->setTrackGain("T1", 0.25f);
+
+            t->createSong("Song B");
+            t->createTrack("T2");
+
+            // Switch back to Song A — gain should be preserved
+            t->loadSongFromRegistry(songA);
+            expectWithinAbsoluteError(t->getTrackGain("T1"), 0.25f, 0.01f);
+        }
+
+        beginTest("MIDI enabled persists to registry immediately");
+        {
+            TestAPI t;
+            t->createTrack("MIDI Test");
+            expect(t->isTrackMidiEnabled("MIDI Test") == true);
+            t->setTrackMidiEnabled("MIDI Test", false);
+            // Verify in registry
+            auto& reg = t.get().getRegistry();
+            auto songId = t.get().getCurrentSongId();
+            for (auto& track : reg.tracksForSong(songId)) {
+                if (track.name == "MIDI Test")
+                    expect(track.midiEnabled == false);
+            }
+        }
     }
 };
 

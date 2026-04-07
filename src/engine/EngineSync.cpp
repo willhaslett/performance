@@ -4,21 +4,7 @@
 #include "registry/Registry.h"
 
 EngineSync::EngineSync(AudioEngine& engine, Registry& registry)
-    : engine(engine), registry(registry) {
-    startTimerHz(1);  // persist state every second
-}
-
-EngineSync::~EngineSync() {
-    stopTimer();
-    // Final persist on shutdown
-    if (!activeSongId.empty())
-        persistState(activeSongId);
-}
-
-void EngineSync::timerCallback() {
-    if (!activeSongId.empty())
-        persistState(activeSongId);
-}
+    : engine(engine), registry(registry) {}
 
 void EngineSync::notifyRemoved(const std::string& name) {
     engineTrackNames.erase(name);
@@ -131,39 +117,5 @@ void EngineSync::sync(const std::string& songId) {
     }
 }
 
-void EngineSync::persistState(const std::string& songId) {
-    if (songId.empty()) return;
-
-    // Persist track gain and MIDI enabled
-    for (auto& track : registry.tracksForSong(songId)) {
-        float engineGain = engine.getTrackGain(juce::String(track.name));
-        bool engineMidi = engine.isTrackMidiEnabled(juce::String(track.name));
-
-        bool changed = false;
-        if (std::abs(engineGain - track.outputGain) > 0.001f) {
-            track.outputGain = engineGain;
-            changed = true;
-        }
-        if (engineMidi != track.midiEnabled) {
-            track.midiEnabled = engineMidi;
-            changed = true;
-        }
-
-        if (changed)
-            registry.updateTrack(track);
-    }
-
-    // Persist bus gain
-    for (auto& bus : registry.bussesForSong(songId)) {
-        float engineGain = engine.getBusGain(juce::String(bus.name));
-        if (std::abs(engineGain - bus.outputGain) > 0.001f) {
-            registry.update(bus.id, {{"output_gain", std::to_string(engineGain)}});
-        }
-    }
-
-    // Persist master gain
-    float masterGain = engine.getMasterGain();
-    float storedMasterGain = registry.getMasterGain(songId);
-    if (std::abs(masterGain - storedMasterGain) > 0.001f)
-        registry.setMasterGain(songId, masterGain);
-}
+// persistState removed — continuous values are now written to registry
+// at the point of mutation in PerformanceAPI, not on a timer.

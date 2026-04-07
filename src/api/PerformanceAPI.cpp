@@ -230,21 +230,31 @@ void PerformanceAPI::removeEffect(const juce::String& parentName, const juce::St
 }
 
 void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
+    auto regId = findRegistryTrackId(trackName);
+    if (!regId.empty())
+        registry->setTrackMidiEnabled(regId, enabled);
     audioEngine->setTrackMidiEnabled(trackName, enabled);
+}
 
-    // Persist discrete state change immediately
-    if (!currentSongId.empty()) {
-        for (auto& t : registry->tracksForSong(currentSongId)) {
-            if (t.name == trackName.toStdString()) {
-                t.midiEnabled = enabled;
-                registry->updateTrack(t);
-                break;
-            }
-        }
-    }
+std::string PerformanceAPI::findRegistryTrackId(const juce::String& trackName) const {
+    if (currentSongId.empty()) return {};
+    for (auto& t : registry->tracksForSong(currentSongId))
+        if (t.name == trackName.toStdString()) return t.id;
+    return {};
+}
+
+std::string PerformanceAPI::findRegistryBusId(const juce::String& busName) const {
+    if (currentSongId.empty()) return {};
+    for (auto& b : registry->bussesForSong(currentSongId))
+        if (b.name == busName.toStdString()) return b.id;
+    return {};
 }
 
 void PerformanceAPI::setTrackGain(const juce::String& trackName, float gain) {
+    // Registry first (SSOT), then targeted engine update
+    auto regId = findRegistryTrackId(trackName);
+    if (!regId.empty())
+        registry->setTrackGain(regId, gain);
     audioEngine->setTrackGain(trackName, gain);
 }
 
@@ -298,6 +308,8 @@ void PerformanceAPI::removeBus(const juce::String& name) {
 // --- Master output ---
 
 void PerformanceAPI::setMasterGain(float gain) {
+    if (!currentSongId.empty())
+        registry->setMasterGain(currentSongId, gain);
     audioEngine->setMasterGain(gain);
 }
 
@@ -317,6 +329,9 @@ std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getMasterEffects() {
 }
 
 void PerformanceAPI::setBusGain(const juce::String& busName, float gain) {
+    auto regId = findRegistryBusId(busName);
+    if (!regId.empty())
+        registry->setBusGain(regId, gain);
     audioEngine->setBusGain(busName, gain);
 }
 
@@ -340,6 +355,17 @@ void PerformanceAPI::addSend(const juce::String& trackName, const juce::String& 
 }
 
 void PerformanceAPI::setSendGain(const juce::String& trackName, const juce::String& busName, float gain) {
+    // Find the send in the registry and update it
+    auto trackId = findRegistryTrackId(trackName);
+    auto busId = findRegistryBusId(busName);
+    if (!trackId.empty() && !busId.empty()) {
+        for (auto& send : registry->sendsForTrack(trackId)) {
+            if (send.busId == busId) {
+                registry->setSendGain(send.id, gain);
+                break;
+            }
+        }
+    }
     audioEngine->setSendGain(trackName, busName, gain);
 }
 
@@ -1272,16 +1298,16 @@ void PerformanceAPI::executeAction(const std::string& actionName, const juce::va
 
     if (actionName == "setActiveTrack") {
         auto trackName = getArg(0);
-        for (auto& name : audioEngine->getTrackNames())
-            audioEngine->setTrackMidiEnabled(name, name == trackName);
+        for (auto& name : listTrackNames())
+            setTrackMidiEnabled(name, name == trackName);
         perfLog("[Action] setActiveTrack: %s\n", trackName.toRawUTF8());
     }
     else if (actionName == "enableTrack") {
-        audioEngine->setTrackMidiEnabled(getArg(0), true);
+        setTrackMidiEnabled(getArg(0), true);
         perfLog("[Action] enableTrack: %s\n", getArg(0).toRawUTF8());
     }
     else if (actionName == "disableTrack") {
-        audioEngine->setTrackMidiEnabled(getArg(0), false);
+        setTrackMidiEnabled(getArg(0), false);
         perfLog("[Action] disableTrack: %s\n", getArg(0).toRawUTF8());
     }
     else if (actionName == "fadeOut") {
@@ -1289,9 +1315,9 @@ void PerformanceAPI::executeAction(const std::string& actionName, const juce::va
         auto dur = getArgFloat(1, 3.0f);
         auto easing = getArg(2).toStdString();
         auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
-        float current = audioEngine->getTrackGain(juce::String(track));
+        float current = getTrackGain(juce::String(track));
         automationEngine->interpolate(current, 0.0f, dur,
-            [this, track](float v) { audioEngine->setTrackGain(juce::String(track), v); },
+            [this, track](float v) { setTrackGain(juce::String(track), v); },
             easingFn);
     }
     else if (actionName == "fadeIn") {
@@ -1299,9 +1325,9 @@ void PerformanceAPI::executeAction(const std::string& actionName, const juce::va
         auto dur = getArgFloat(1, 3.0f);
         auto easing = getArg(2).toStdString();
         auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
-        float current = audioEngine->getTrackGain(juce::String(track));
+        float current = getTrackGain(juce::String(track));
         automationEngine->interpolate(current, 1.0f, dur,
-            [this, track](float v) { audioEngine->setTrackGain(juce::String(track), v); },
+            [this, track](float v) { setTrackGain(juce::String(track), v); },
             easingFn);
     }
     else if (actionName == "crossfade") {
@@ -1311,9 +1337,9 @@ void PerformanceAPI::executeAction(const std::string& actionName, const juce::va
         auto easing = getArg(3).toStdString();
         auto easingFn = AutomationEngine::easingByName(easing.empty() ? "cosine" : easing);
         automationEngine->interpolate(1.0f, 0.0f, dur,
-            [this, from](float v) { audioEngine->setTrackGain(juce::String(from), v); }, easingFn);
+            [this, from](float v) { setTrackGain(juce::String(from), v); }, easingFn);
         automationEngine->interpolate(0.0f, 1.0f, dur,
-            [this, to](float v) { audioEngine->setTrackGain(juce::String(to), v); }, easingFn);
+            [this, to](float v) { setTrackGain(juce::String(to), v); }, easingFn);
     }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());

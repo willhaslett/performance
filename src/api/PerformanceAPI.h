@@ -162,6 +162,10 @@ private:
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
 
+    // Registry name→ID lookups for current song
+    std::string findRegistryTrackId(const juce::String& trackName) const;
+    std::string findRegistryBusId(const juce::String& busName) const;
+
     void populatePluginRegistry();
     void registerBuiltinActions();
     void executeAction(const std::string& actionName, const juce::var& args, float value);

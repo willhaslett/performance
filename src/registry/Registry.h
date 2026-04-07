@@ -91,6 +91,8 @@ public:
     std::vector<Track> tracksForSong(const std::string& songId) const;
     void deleteTrack(const std::string& id);
     void updateTrack(const Track& track);
+    void setTrackGain(const std::string& trackId, float gain);
+    void setTrackMidiEnabled(const std::string& trackId, bool enabled);
 
     // --- Busses ---
     struct Bus {
@@ -104,6 +106,7 @@ public:
                            float outputGain = 1.0f);
     std::vector<Bus> bussesForSong(const std::string& songId) const;
     void deleteBus(const std::string& id);
+    void setBusGain(const std::string& busId, float gain);
 
     // --- Effects ---
     struct Effect {
@@ -130,6 +133,7 @@ public:
     std::string createSend(const std::string& trackId, const std::string& busId,
                             float gain = 1.0f);
     std::vector<Send> sendsForTrack(const std::string& trackId) const;
+    void setSendGain(const std::string& sendId, float gain);
 
     // --- Actions ---
     struct Action {

@@ -418,6 +418,22 @@ void Registry::updateTrack(const Track& track) {
     sqlite3_finalize(stmt);
 }
 
+void Registry::setTrackGain(const std::string& trackId, float gain) {
+    auto* stmt = prepare("UPDATE tracks SET output_gain = ? WHERE id = ?");
+    sqlite3_bind_double(stmt, 1, gain);
+    sqlite3_bind_text(stmt, 2, trackId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void Registry::setTrackMidiEnabled(const std::string& trackId, bool enabled) {
+    auto* stmt = prepare("UPDATE tracks SET midi_enabled = ? WHERE id = ?");
+    sqlite3_bind_int(stmt, 1, enabled ? 1 : 0);
+    sqlite3_bind_text(stmt, 2, trackId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
 // --- Busses ---
 
 std::string Registry::createBus(const std::string& songId, const std::string& name,
@@ -457,6 +473,14 @@ std::vector<Registry::Bus> Registry::bussesForSong(const std::string& songId) co
 void Registry::deleteBus(const std::string& id) {
     auto* stmt = prepare("DELETE FROM busses WHERE id = ?");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void Registry::setBusGain(const std::string& busId, float gain) {
+    auto* stmt = prepare("UPDATE busses SET output_gain = ? WHERE id = ?");
+    sqlite3_bind_double(stmt, 1, gain);
+    sqlite3_bind_text(stmt, 2, busId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
@@ -534,6 +558,14 @@ std::vector<Registry::Send> Registry::sendsForTrack(const std::string& trackId) 
     }
     sqlite3_finalize(stmt);
     return result;
+}
+
+void Registry::setSendGain(const std::string& sendId, float gain) {
+    auto* stmt = prepare("UPDATE sends SET gain = ? WHERE id = ?");
+    sqlite3_bind_double(stmt, 1, gain);
+    sqlite3_bind_text(stmt, 2, sendId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
 }
 
 // --- Actions ---
