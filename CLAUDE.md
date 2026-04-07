@@ -27,29 +27,31 @@ Targeted engine update (set the specific value on the engine)
 AudioEngine (audio graph — a pure view of the registry)
 ```
 
-**One direction. One source of truth.** The registry owns all state — structural (tracks, busses, effects, sends) AND continuous (gain, MIDI enabled, plugin parameters). The engine is a view: it reads state from the registry (via sync for structural changes, via targeted updates for continuous values) and produces audio.
+**One direction. One source of truth.** The registry owns ALL state. The engine is a pure view. No exceptions.
 
-**PerformanceAPI is the abstraction layer.** All consumers (GUI, Lua, Claude, MIDI) go through it. Nothing reads or writes the registry or engine directly except PerformanceAPI. If we ever need to swap SQLite for an in-memory store, only PerformanceAPI's internals change.
+**Identity is by UUID everywhere.** Every track, bus, effect, send has a UUID assigned at creation. Names are display properties only — freely renameable, allowed to be duplicates. All API methods, engine methods, GUI components, and internal references use UUIDs. Names are resolved to UUIDs exactly once, at the entry point where the user provides them (Lua scripts, Claude tool calls).
+
+**PerformanceAPI is the sole gateway.** Nothing reads or writes the registry or engine directly. All consumers (GUI, Lua, Claude, MIDI bindings) go through the API. The API writes to the registry first, then does a targeted engine update. If you're adding a new feature that mutates state, it goes through the API.
 
 **Two update paths, both through the API:**
 - **Structural changes** (create/remove/rename tracks, load plugins, add effects/sends): API writes to registry, then calls `engineSync->sync()` to diff and apply.
-- **Continuous values** (gain, send levels, plugin parameters, MIDI enabled): API writes to registry, then does a targeted engine update (e.g., `audioEngine->setTrackGain(id, value)`). No full sync — just set the one value. At MIDI/UI rates (60-200Hz), SQLite writes are ~10-50μs each, well within budget.
+- **Continuous values** (gain, send levels, MIDI enabled): API writes to registry, then does a targeted engine update (e.g., `audioEngine->setTrackGain(id, value)`). No full sync. SQLite writes are ~10-50μs, well within MIDI/UI rates.
 
-**Legitimate direct engine access (not bypasses):**
-- **Peak level reads** — transient measurements from the audio thread, not state. GUI reads these directly from engine.
-- **Plugin processor pointers** — for editor windows. References to live objects, not state.
-- **Internal graph wiring** — rebuildConnections is an engine implementation detail.
-- **processBlock** — audio thread reads gain atomics. This is the engine consuming state, not bypassing the store.
+**The engine only reads, never owns state.** The engine's atomic values (gain on GainProcessor) are set by the API after writing to the registry. The audio thread reads them. Peak levels are the only thing the engine produces that isn't in the registry — they're transient measurements, not state.
 
-**No persist timer.** The 1Hz timer that wrote engine values back to registry is eliminated. The registry already has the right values because all writes go through it first.
+**Rules for new code:**
+- NEVER call audioEngine methods directly from GUI or Lua. Go through PerformanceAPI.
+- NEVER use names as keys or identity. Use UUIDs from the registry.
+- NEVER store state in the engine that isn't in the registry. If you need new state, add it to the registry first.
+- NEVER add a timer to sync state between engine and registry. The registry is always current because writes go there first.
 
 ### Components
 
-- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args. Effects use unified `addEffect`/`removeEffect` — parent name resolves to track or bus automatically.
-- **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). Typed entities with UUIDs. Generic CRUD (`create`, `get`, `list`, `update`, `remove`) plus type-specific convenience methods. Emits events for UI updates.
+- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — sole gateway for all consumers. All methods accept UUIDs (not names). Writes to registry first, then targeted engine update. `createTrack`/`createBus` return UUIDs. `findTrackIdByName`/`findBusIdByName` for Lua convenience. Action dispatcher (`executeAction`) resolves action names + entity ID args.
+- **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). The SSOT for all state. Typed entities with UUIDs. Generic CRUD plus type-specific convenience methods (setTrackGain, setBusGain, etc.). Emits events for UI updates.
 - **RegistryEventBus** (`src/registry/RegistryEvents.h`) — pub/sub for UI components. Entity type constants in `EntityType` namespace.
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends. Used for structural changes only. Continuous values (gain, etc.) use targeted engine updates bypassing sync.
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Never written to directly except for real-time values.
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Uses `createTrackWithId`/`createBusWithId` so engine UUIDs match registry UUIDs. Structural changes only. Tracks by UUID sets.
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All public methods accept UUIDs as map keys (no name-based lookup). Pure view of the registry — never owns state. Written to only by PerformanceAPI after registry writes.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing functions.
 - **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Registers API as global functions. Loads library files from `~/.config/performance/lua_lib/`.
@@ -186,18 +188,16 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Sandbox session (always exists, undeletable, highlighted in sidebar)
 - "Preset" naming throughout (renamed from "Snapshot")
 
-**In progress:**
-- **ID-based API refactor** (next priority): All API methods currently accept track/bus NAMES and resolve to UUIDs via `findTrackId(name)` which is ambiguous when names collide (duplicate names are allowed). Fix: all API mutation methods accept track/bus UUIDs. GUI passes IDs from `listTracks()`. Lua/IPC keeps name-based convenience that resolves once at the entry point. This is required before track preset load works reliably.
-
-**Completed (state management):**
-- Registry as sole SSOT — all continuous values (gain, MIDI enabled) write to registry first
+**Completed (architecture):**
+- Registry as sole SSOT — all state (structural and continuous) writes to registry first
+- ID-based API — all methods accept UUIDs, names are display only
+- UUID-keyed engine maps — no name-based lookup, no ambiguity
 - Persist timer eliminated — registry is always current
-- Engine maps keyed by UUID — rename just changes `.name` field
-- MixerView sources identity from registry via `listTracks()`/`listBusses()`
-- TrackStrip holds a stable `trackId` from registry
+- GUI holds UUIDs from registry via `listTracks()`/`listBusses()`
+- Lua resolves names→IDs at entry point via `findTrackIdByName`/`findBusIdByName`
+- 41-test suite covering registry, API lifecycle, multi-track isolation, songs
 
 **TODOs:**
-- **ID-based API methods** (required for track preset load and duplicate names)
 - Master output needs a registry entity (effects, gain)
 - Auto-create Default preset on first plugin instantiation
 - Plugin state restore needs proper callback (not 500ms timer)
