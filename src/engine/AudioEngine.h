@@ -119,26 +119,33 @@ private:
 
     // Track: one instrument + insert effects + sends + output gain
     struct Track {
+        juce::String name;
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
         bool midiEnabled = true;
         std::vector<EffectNode> effects;
 
         struct SendNode {
-            juce::String busName;
-            juce::AudioProcessorGraph::Node::Ptr gainNode;  // GainProcessor
+            juce::String busId;  // UUID key into busses map
+            juce::AudioProcessorGraph::Node::Ptr gainNode;
         };
         std::vector<SendNode> sends;
-        juce::AudioProcessorGraph::Node::Ptr outputGainNode;  // GainProcessor
+        juce::AudioProcessorGraph::Node::Ptr outputGainNode;
     };
-    std::map<juce::String, Track> tracks;
+    std::map<juce::String, Track> tracks;  // keyed by UUID
 
     // Bus: effects chain + output gain
     struct Bus {
+        juce::String name;
         std::vector<EffectNode> effects;
-        juce::AudioProcessorGraph::Node::Ptr outputGainNode;  // GainProcessor
+        juce::AudioProcessorGraph::Node::Ptr outputGainNode;
     };
-    std::map<juce::String, Bus> busses;
+    std::map<juce::String, Bus> busses;  // keyed by UUID
+
+    // Lookup helpers — resolve display name to UUID
+    juce::String findTrackId(const juce::String& name) const;
+    juce::String findBusId(const juce::String& name) const;
+    static juce::String generateId();
 
     // Internal: shared effect manipulation
     bool addEffectToList(std::vector<EffectNode>& effects, const juce::String& parentName,
