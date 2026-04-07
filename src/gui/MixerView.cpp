@@ -1,8 +1,10 @@
 #include "gui/MixerView.h"
 #include "gui/SendsPanel.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 
-MixerView::MixerView(PerformanceAPI& api) : api(api), outputStrip(api) {
+MixerView::MixerView(StateAPI& state, EngineAPI& engine)
+    : state(state), engine(engine), outputStrip(state, engine) {
     viewport.setViewedComponent(&stripContainer, false);
     viewport.setScrollBarsShown(false, true);  // horizontal only
     addAndMakeVisible(viewport);
@@ -60,8 +62,16 @@ void MixerView::resized() {
 }
 
 void MixerView::timerCallback() {
-    auto tracks = api.listTracks();
-    auto busses = api.listBusses();
+    auto stateTracks = state.listTracks();
+    auto stateBusses = state.listBusses();
+
+    // Convert to local types for comparison
+    std::vector<TrackInfo> tracks;
+    for (auto& t : stateTracks)
+        tracks.push_back({ juce::String(t.id), juce::String(t.name) });
+    std::vector<BusInfo> busses;
+    for (auto& b : stateBusses)
+        busses.push_back({ juce::String(b.id), juce::String(b.name) });
 
     // Detect changes by comparing IDs and names
     bool tracksChanged = (tracks.size() != lastTracks.size());
@@ -96,32 +106,50 @@ void MixerView::timerCallback() {
         // Update tracks
         for (size_t i = 0; i < trackStrips.size() && i < lastTracks.size(); ++i) {
             auto& id = lastTracks[i].id;
-            trackStrips[i]->setInstrumentName(api.getTrackPluginName(id));
-            trackStrips[i]->setEffects(api.getTrackEffects(id));
-            trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(id));
-            trackStrips[i]->setGain(api.getTrackGain(id));
-            trackStrips[i]->setPeakLevel(api.getTrackPeakLevel(id));
+            trackStrips[i]->setInstrumentName(juce::String(state.getTrackPluginName(id.toStdString())));
+
+            // Convert StateAPI::EffectSlotInfo to TrackStrip::EffectSlotInfo
+            auto stateEffects = state.getTrackEffects(id.toStdString());
+            std::vector<TrackStrip::EffectSlotInfo> effects;
+            for (auto& e : stateEffects)
+                effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+            trackStrips[i]->setEffects(effects);
+
+            trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(id.toStdString()));
+            trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
+            trackStrips[i]->setPeakLevel(engine.getTrackPeakLevel(id));
 
             // Sends
+            auto stateSends = state.getTrackSends(id.toStdString());
             std::vector<SendsPanel::SendInfo> sends;
-            for (auto& s : api.getTrackSends(id))
-                sends.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
+            for (auto& s : stateSends)
+                sends.push_back({ juce::String(s.busName), juce::String(s.busId), s.gain, 0.0f });
             trackStrips[i]->setSends(sends);
             trackStrips[i]->setAvailableBusses(busOptions);
         }
         // Update busses
         for (size_t i = 0; i < busStrips.size() && i < lastBusses.size(); ++i) {
             auto& id = lastBusses[i].id;
-            busStrips[i]->setEffects(api.getBusEffects(id));
-            busStrips[i]->setGain(api.getBusGain(id));
-            busStrips[i]->setPeakLevel(api.getBusPeakLevel(id));
+
+            auto stateEffects = state.getBusEffects(id.toStdString());
+            std::vector<BusStrip::EffectSlotInfo> effects;
+            for (auto& e : stateEffects)
+                effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+            busStrips[i]->setEffects(effects);
+
+            busStrips[i]->setGain(state.getBusGain(id.toStdString()));
+            busStrips[i]->setPeakLevel(engine.getBusPeakLevel(id));
         }
     }
 
     // Update output strip
-    outputStrip.setEffects(api.getMasterEffects());
-    outputStrip.setGain(api.getMasterGain());
-    outputStrip.setPeakLevel(api.getMasterPeakLevel());
+    auto stateMasterEffects = state.getMasterEffects();
+    std::vector<OutputStrip::EffectSlotInfo> masterEffects;
+    for (auto& e : stateMasterEffects)
+        masterEffects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+    outputStrip.setEffects(masterEffects);
+    outputStrip.setGain(state.getMasterGain());
+    outputStrip.setPeakLevel(engine.getMasterPeakLevel());
 
     // If desired height changed, trigger parent re-layout
     int h = getDesiredHeight();
@@ -141,15 +169,22 @@ void MixerView::rebuildStrips() {
         busOptions.push_back({ b.id, b.name });
 
     for (auto& t : lastTracks) {
-        auto strip = std::make_unique<TrackStrip>(t.id, t.name, api);
-        strip->setInstrumentName(api.getTrackPluginName(t.id));
-        strip->setEffects(api.getTrackEffects(t.id));
-        strip->setMidiEnabled(api.isTrackMidiEnabled(t.id));
+        auto strip = std::make_unique<TrackStrip>(t.id, t.name, state, engine);
+        strip->setInstrumentName(juce::String(state.getTrackPluginName(t.id.toStdString())));
+
+        auto stateEffects = state.getTrackEffects(t.id.toStdString());
+        std::vector<TrackStrip::EffectSlotInfo> effects;
+        for (auto& e : stateEffects)
+            effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+        strip->setEffects(effects);
+
+        strip->setMidiEnabled(state.isTrackMidiEnabled(t.id.toStdString()));
         strip->setAvailableBusses(busOptions);
 
+        auto stateSends = state.getTrackSends(t.id.toStdString());
         std::vector<SendsPanel::SendInfo> sends;
-        for (auto& s : api.getTrackSends(t.id))
-            sends.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
+        for (auto& s : stateSends)
+            sends.push_back({ juce::String(s.busName), juce::String(s.busId), s.gain, 0.0f });
         strip->setSends(sends);
 
         stripContainer.addAndMakeVisible(*strip);
@@ -157,8 +192,14 @@ void MixerView::rebuildStrips() {
     }
 
     for (auto& b : lastBusses) {
-        auto strip = std::make_unique<BusStrip>(b.id, b.name, api);
-        strip->setEffects(api.getBusEffects(b.id));
+        auto strip = std::make_unique<BusStrip>(b.id, b.name, state, engine);
+
+        auto stateEffects = state.getBusEffects(b.id.toStdString());
+        std::vector<BusStrip::EffectSlotInfo> effects;
+        for (auto& e : stateEffects)
+            effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+        strip->setEffects(effects);
+
         stripContainer.addAndMakeVisible(*strip);
         busStrips.push_back(std::move(strip));
     }

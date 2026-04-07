@@ -3,15 +3,16 @@
 #include "gui/Theme.h"
 #include <functional>
 
-class PerformanceAPI;
+class StateAPI;
+class EngineAPI;
 
 class PluginSlot : public juce::Component, private juce::Timer {
 public:
     enum Type { Instrument, Effect };
 
     enum ParentKind { OnTrack, OnBus };
-    PluginSlot(Type type, PerformanceAPI& api, const juce::String& parentId,
-               ParentKind parent = OnTrack);
+    PluginSlot(Type type, StateAPI& state, EngineAPI& engine,
+               const juce::String& parentId, ParentKind parent = OnTrack);
 
     void setPluginName(const juce::String& name);
     void setEffectId(const juce::String& id) { effectId = id; }
@@ -30,7 +31,8 @@ public:
 private:
     Type slotType;
     ParentKind parentKind;
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
     juce::String parentId;  // track/bus/song UUID
     juce::String pluginName;
     juce::String effectId;  // internal key for effect lookup (empty for instruments)

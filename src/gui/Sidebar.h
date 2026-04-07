@@ -3,16 +3,17 @@
 #include "gui/RegistryTree.h"
 #include "gui/Theme.h"
 
-class PerformanceAPI;
-class Registry;
+class StateAPI;
 
 class Sidebar : public juce::Component, private juce::Timer {
 public:
     Sidebar();
     ~Sidebar() override;
 
-    void setAPI(PerformanceAPI* a) { api = a; }
-    void setRegistry(Registry* reg);
+    void setStateAPI(StateAPI* s);
+
+    // Callback for song loading (coordinator-level operation)
+    std::function<void(const std::string& songId)> onLoadSong;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -21,8 +22,7 @@ private:
     void timerCallback() override;
     void refreshTree();
 
-    PerformanceAPI* api = nullptr;
-    Registry* registry = nullptr;
+    StateAPI* state = nullptr;
     RegistryTree tree;
     int subscriptionId = -1;
     bool needsRefresh = false;

@@ -6,12 +6,13 @@
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
-class PerformanceAPI;
+class StateAPI;
+class EngineAPI;
 class LuaEngine;
 
 class MainLayout : public juce::Component {
 public:
-    MainLayout(PerformanceAPI& api, LuaEngine& lua);
+    MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -19,8 +20,11 @@ public:
 
     bool handleGlobalKey(const juce::KeyPress& key);
 
+    Sidebar& getSidebar() { return sidebar; }
+
 private:
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
 
     Sidebar sidebar;
     ChatView chatView;

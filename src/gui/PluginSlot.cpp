@@ -1,10 +1,11 @@
 #include "gui/PluginSlot.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 #include "engine/Log.h"
 
-PluginSlot::PluginSlot(Type type, PerformanceAPI& api, const juce::String& id,
-                       ParentKind parent)
-    : slotType(type), parentKind(parent), api(api), parentId(id) {}
+PluginSlot::PluginSlot(Type type, StateAPI& state, EngineAPI& engine,
+                       const juce::String& id, ParentKind parent)
+    : slotType(type), parentKind(parent), state(state), engine(engine), parentId(id) {}
 
 void PluginSlot::setPluginName(const juce::String& name) {
     if (pluginName != name) {
@@ -23,7 +24,7 @@ void PluginSlot::timerCallback() {
     // Retry a few times, then give up.
     stopTimer();
     waitingForLoad = false;
-    api.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
+    engine.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
 }
 
 void PluginSlot::paint(juce::Graphics& g) {
@@ -49,7 +50,7 @@ void PluginSlot::mouseUp(const juce::MouseEvent& event) {
             showContextMenu(event.getScreenPosition());
     } else {
         if (hasPlugin())
-            api.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
+            engine.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
         else
             showPicker(event.getScreenPosition());
     }
@@ -65,11 +66,11 @@ void PluginSlot::mouseExit(const juce::MouseEvent&) {
 
 void PluginSlot::showPicker(juce::Point<int> position) {
     juce::PopupMenu menu;
-    auto plugins = (slotType == Instrument) ? api.listInstrumentPlugins() : api.listEffectPlugins();
+    auto plugins = (slotType == Instrument) ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
 
     for (int p = 0; p < (int)plugins.size(); ++p) {
         auto& pname = plugins[p];
-        auto presets = api.listPresets(pname);
+        auto presets = engine.listPresets(pname);
         // Only show submenu if there are user presets beyond Default
         bool hasUserPresets = false;
         for (auto& pr : presets)
@@ -98,17 +99,29 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             auto selectedPlugin = plugins[pluginIdx];
             juce::String presetName;
             if (presetChoice >= 100) {
-                auto presets = api.listPresets(selectedPlugin);
+                auto presets = engine.listPresets(selectedPlugin);
                 int presetIdx = presetChoice - 100;
                 if (presetIdx < (int)presets.size())
                     presetName = presets[presetIdx];
             }
 
             waitingForLoad = true;
-            if (slotType == Instrument)
-                api.addInstrument(parentId, selectedPlugin, presetName);
-            else
-                api.addEffect(parentId, selectedPlugin, selectedPlugin);
+            if (slotType == Instrument) {
+                // Resolve plugin name to ID, then set on track
+                auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
+                if (pluginInfo) {
+                    std::string presetId;
+                    if (presetName.isNotEmpty()) {
+                        auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
+                        if (preset) presetId = preset->id;
+                    }
+                    state.setTrackPlugin(parentId.toStdString(), pluginInfo->id, presetId);
+                }
+            } else {
+                auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
+                if (pluginInfo)
+                    state.addEffect(parentId.toStdString(), selectedPlugin.toStdString(), pluginInfo->id);
+            }
 
             if (onChanged) onChanged();
         });
@@ -120,10 +133,10 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
     menu.addSeparator();
 
     juce::PopupMenu replaceMenu;
-    auto plugins = (slotType == Instrument) ? api.listInstrumentPlugins() : api.listEffectPlugins();
+    auto plugins = (slotType == Instrument) ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
     for (int p = 0; p < (int)plugins.size(); ++p) {
         auto& pname = plugins[p];
-        auto presets = api.listPresets(pname);
+        auto presets = engine.listPresets(pname);
         bool hasUserPresets = false;
         for (auto& pr : presets)
             if (pr != "Default") { hasUserPresets = true; break; }
@@ -146,9 +159,9 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
 
             if (result == 1) {
                 if (slotType == Instrument)
-                    api.removeInstrument(parentId);
+                    state.clearTrackPlugin(parentId.toStdString());
                 else
-                    api.removeEffect(parentId, effectId);
+                    state.removeEffect(effectId.toStdString());
                 if (onChanged) onChanged();
                 return;
             }
@@ -160,17 +173,28 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             auto selectedPlugin = plugins[pluginIdx];
             juce::String presetName;
             if (presetChoice >= 100) {
-                auto presets = api.listPresets(selectedPlugin);
+                auto presets = engine.listPresets(selectedPlugin);
                 int presetIdx = presetChoice - 100;
                 if (presetIdx < (int)presets.size())
                     presetName = presets[presetIdx];
             }
 
             waitingForLoad = true;
-            if (slotType == Instrument)
-                api.addInstrument(parentId, selectedPlugin, presetName);
-            else
-                api.addEffect(parentId, selectedPlugin, selectedPlugin);
+            if (slotType == Instrument) {
+                auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
+                if (pluginInfo) {
+                    std::string presetId;
+                    if (presetName.isNotEmpty()) {
+                        auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
+                        if (preset) presetId = preset->id;
+                    }
+                    state.setTrackPlugin(parentId.toStdString(), pluginInfo->id, presetId);
+                }
+            } else {
+                auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
+                if (pluginInfo)
+                    state.addEffect(parentId.toStdString(), selectedPlugin.toStdString(), pluginInfo->id);
+            }
 
             if (onChanged) onChanged();
         });

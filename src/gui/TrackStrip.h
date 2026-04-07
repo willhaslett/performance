@@ -6,21 +6,31 @@
 #include "gui/SendsPanel.h"
 #include "gui/InlineEditor.h"
 #include "gui/SaveAsDialog.h"
-#include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
 
+class StateAPI;
+class EngineAPI;
+
 class TrackStrip : public juce::Component {
 public:
-    TrackStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api);
+    TrackStrip(const juce::String& id, const juce::String& name,
+               StateAPI& state, EngineAPI& engine);
+
+    struct EffectSlotInfo { juce::String effectId; juce::String pluginName; };
 
     void setInstrumentName(const juce::String& name);
-    void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
+    void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setMidiEnabled(bool enabled);
     void setPeakLevel(float level);
     void setGain(float gain);
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
     void setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions);
+
+    // Callbacks for coordinator-level operations (track presets)
+    std::function<void(const juce::String& trackId, const juce::String& presetName)> onSaveTrackPreset;
+    std::function<void(const juce::String& trackId, const juce::String& presetName)> onLoadTrackPreset;
+    std::function<std::vector<juce::String>()> onListTrackPresets;
 
     int getMinimumHeight() const;
 
@@ -30,7 +40,8 @@ public:
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
 private:
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
     juce::String trackId;    // stable UUID from registry
     juce::String trackName;  // display name
     bool midiEnabled = true;
@@ -48,6 +59,6 @@ private:
     void showTrackMenu(juce::Point<int> screenPos);
 
     void rebuildEffectSlots();
-    std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
+    std::vector<EffectSlotInfo> currentEffects;
     bool pendingEffectOpen = false;
 };

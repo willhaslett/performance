@@ -4,15 +4,20 @@
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
 #include "gui/InlineEditor.h"
-#include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
 
+class StateAPI;
+class EngineAPI;
+
 class BusStrip : public juce::Component {
 public:
-    BusStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api);
+    BusStrip(const juce::String& id, const juce::String& name,
+             StateAPI& state, EngineAPI& engine);
 
-    void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
+    struct EffectSlotInfo { juce::String effectId; juce::String pluginName; };
+
+    void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setPeakLevel(float level);
     void setGain(float gain);
 
@@ -24,7 +29,8 @@ public:
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
 private:
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
     juce::String busId;    // stable UUID from registry
     juce::String busName;  // display name
 
@@ -35,6 +41,6 @@ private:
     InlineEditor nameEditor;
 
     void rebuildEffectSlots();
-    std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
+    std::vector<EffectSlotInfo> currentEffects;
     bool pendingEffectOpen = false;
 };

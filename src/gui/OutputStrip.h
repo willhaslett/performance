@@ -3,15 +3,19 @@
 #include "gui/Theme.h"
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
-#include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
 
+class StateAPI;
+class EngineAPI;
+
 class OutputStrip : public juce::Component {
 public:
-    OutputStrip(PerformanceAPI& api);
+    OutputStrip(StateAPI& state, EngineAPI& engine);
 
-    void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
+    struct EffectSlotInfo { juce::String effectId; juce::String pluginName; };
+
+    void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setPeakLevel(float level);
     void setGain(float gain);
 
@@ -21,7 +25,8 @@ public:
     void resized() override;
 
 private:
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
 
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;
@@ -29,6 +34,6 @@ private:
     juce::Rectangle<int> headerBounds;
 
     void rebuildEffectSlots();
-    std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
+    std::vector<EffectSlotInfo> currentEffects;
     bool pendingEffectOpen = false;
 };

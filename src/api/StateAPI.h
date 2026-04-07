@@ -60,6 +60,7 @@ public:
     std::string addSend(const std::string& trackId, const std::string& busId, float gain = 1.0f);
     void removeSend(const std::string& sendId);
     void setSendGain(const std::string& sendId, float gain);
+    void setSendGainByBus(const std::string& trackId, const std::string& busId, float gain);
 
     // --- Bindings (songId empty = global, otherwise song-scoped) ---
     std::string addBinding(const std::string& songId, const std::string& controlType,

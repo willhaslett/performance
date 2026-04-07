@@ -4,11 +4,11 @@
 #include <vector>
 #include <functional>
 
-class PerformanceAPI;
+class StateAPI;
 
 class SendsPanel : public juce::Component {
 public:
-    SendsPanel(const juce::String& trackId, PerformanceAPI& api);
+    SendsPanel(const juce::String& trackId, StateAPI& state);
 
     struct SendInfo {
         juce::String busName;
@@ -32,7 +32,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
 
 private:
-    PerformanceAPI& api;
+    StateAPI& state;
     juce::String trackId;
 
     struct SendRow {

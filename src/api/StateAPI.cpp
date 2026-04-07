@@ -406,6 +406,17 @@ void StateAPI::removeSend(const std::string& sendId) {
     eventBus.emit({ StateEvent::Deleted, StateEvent::Send, sendId, trackId });
 }
 
+void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& busId, float gain) {
+    auto* track = findTrack(trackId);
+    if (!track) return;
+    for (auto& s : track->sends) {
+        if (s.busId == busId) {
+            setSendGain(s.id, gain);
+            return;
+        }
+    }
+}
+
 void StateAPI::setSendGain(const std::string& sendId, float gain) {
     auto* song = currentSong();
     if (!song) return;

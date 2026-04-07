@@ -1,5 +1,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "api/PerformanceAPI.h"
+#include "api/PerformanceCoordinator.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 #include "gui/MainLayout.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
@@ -8,11 +11,11 @@
 
 class MainWindow : public juce::DocumentWindow {
 public:
-    MainWindow(PerformanceAPI& api, LuaEngine& lua)
+    MainWindow(StateAPI& state, EngineAPI& engine, LuaEngine& lua)
         : DocumentWindow("Performance",
                          juce::Colour(0xff121212),
                          DocumentWindow::allButtons),
-          mainLayout(new MainLayout(api, lua)) {
+          mainLayout(new MainLayout(state, engine, lua)) {
         setUsingNativeTitleBar(true);
         setResizable(true, true);
         setContentOwned(mainLayout, false);
@@ -53,6 +56,8 @@ public:
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
     }
 
+    MainLayout* getMainLayout() { return mainLayout; }
+
 private:
     MainLayout* mainLayout;
     id keyMonitor = nil;
@@ -73,8 +78,8 @@ enum CommandIDs {
 
 class AppMenuBar : public juce::MenuBarModel {
 public:
-    AppMenuBar(PerformanceAPI& api, LuaEngine& lua, MainLayout& layout)
-        : api(api), lua(lua), layout(layout) {}
+    AppMenuBar(PerformanceAPI& api, StateAPI& state, LuaEngine& lua, MainLayout& layout)
+        : api(api), state(state), lua(lua), layout(layout) {}
 
     juce::StringArray getMenuBarNames() override {
         return { "File", "Track", "View" };
@@ -122,15 +127,15 @@ public:
             api.unloadSong();
         }
         else if (menuItemID == CommandIDs::newInstrumentTrack) {
-            auto trackNames = api.listTrackNames();
-            auto name = "Track " + juce::String((int)trackNames.size() + 1);
-            api.createTrack(name);
+            auto tracks = state.listTracks();
+            auto name = "Track " + juce::String((int)tracks.size() + 1);
+            state.createTrack(name.toStdString());
             perfLog("[Menu] Created track: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::newEffectsBus) {
-            auto busNames = api.listBusNames();
-            auto name = "Bus " + juce::String((int)busNames.size() + 1);
-            api.createBus(name);
+            auto busses = state.listBusses();
+            auto name = "Bus " + juce::String((int)busses.size() + 1);
+            state.createBus(name.toStdString());
             perfLog("[Menu] Created bus: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::toggleSidebar) {
@@ -152,6 +157,7 @@ public:
 
 private:
     PerformanceAPI& api;
+    StateAPI& state;
     LuaEngine& lua;
     MainLayout& layout;
 };
@@ -171,14 +177,22 @@ public:
         api = std::make_unique<PerformanceAPI>();
         api->initialise();
 
+        coordinator = std::make_unique<PerformanceCoordinator>();
+        coordinator->initialise();
+
         luaEngine = std::make_unique<LuaEngine>(*api);
 
-        mainWindow = std::make_unique<MainWindow>(*api, *luaEngine);
+        mainWindow = std::make_unique<MainWindow>(coordinator->state(), coordinator->engine(), *luaEngine);
 
-        // Menu bar (needs references to api, lua, and layout)
-        auto* layout = dynamic_cast<MainLayout*>(mainWindow->getContentComponent());
-        menuBar = std::make_unique<AppMenuBar>(*api, *luaEngine, *layout);
+        // Menu bar (needs references to api, state, lua, and layout)
+        auto* layout = mainWindow->getMainLayout();
+        menuBar = std::make_unique<AppMenuBar>(*api, coordinator->state(), *luaEngine, *layout);
         juce::MenuBarModel::setMacMainMenu(menuBar.get());
+
+        // Wire sidebar song loading through coordinator
+        layout->getSidebar().onLoadSong = [this](const std::string& songId) {
+            api->loadSongFromRegistry(songId);
+        };
 
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
@@ -195,6 +209,7 @@ public:
         ipcServer.reset();
         luaEngine.reset();
         mainWindow.reset();
+        coordinator.reset();
         api.reset();
     }
 
@@ -205,6 +220,7 @@ public:
 private:
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<PerformanceAPI> api;
+    std::unique_ptr<PerformanceCoordinator> coordinator;
     std::unique_ptr<LuaEngine> luaEngine;
     std::unique_ptr<IPCServer> ipcServer;
     std::unique_ptr<AppMenuBar> menuBar;

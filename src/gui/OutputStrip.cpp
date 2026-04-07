@@ -1,17 +1,19 @@
 #include "gui/OutputStrip.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 
-OutputStrip::OutputStrip(PerformanceAPI& api) : api(api) {
+OutputStrip::OutputStrip(StateAPI& state, EngineAPI& engine)
+    : state(state), engine(engine) {
     addAndMakeVisible(faderMeter);
 
     faderMeter.onGainChanged = [&](float newGain) {
-        api.setMasterGain(newGain);
+        state.setMasterGain(newGain);
     };
 
     rebuildEffectSlots();
 }
 
-void OutputStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects) {
+void OutputStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
     bool changed = (effects.size() != currentEffects.size());
     if (!changed) {
         for (size_t i = 0; i < effects.size(); ++i) {
@@ -30,7 +32,8 @@ void OutputStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& 
         if (effectAdded && !currentEffects.empty()) {
             pendingEffectOpen = false;
             auto& newFx = currentEffects.back();
-            api.openPluginEditor(api.getMasterOutputId(), newFx.effectId);
+            auto masterOutputId = juce::String(state.getMasterOutputId());
+            engine.openPluginEditor(masterOutputId, newFx.effectId);
         }
     }
 }
@@ -55,9 +58,9 @@ void OutputStrip::rebuildEffectSlots() {
         removeChildComponent(slot.get());
     effectSlots.clear();
 
-    auto masterOutputId = api.getMasterOutputId();
+    auto masterOutputId = juce::String(state.getMasterOutputId());
     for (auto& fx : currentEffects) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, masterOutputId, PluginSlot::OnBus);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, masterOutputId, PluginSlot::OnBus);
         slot->setPluginName(fx.pluginName);
         slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
@@ -65,7 +68,7 @@ void OutputStrip::rebuildEffectSlots() {
     }
 
     // Always an empty slot for adding new effect
-    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, masterOutputId, PluginSlot::OnBus);
+    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, masterOutputId, PluginSlot::OnBus);
     slot->onChanged = [this]() { pendingEffectOpen = true; };
     addAndMakeVisible(*slot);
     effectSlots.push_back(std::move(slot));

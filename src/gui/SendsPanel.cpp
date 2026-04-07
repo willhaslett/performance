@@ -1,8 +1,8 @@
 #include "gui/SendsPanel.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
 
-SendsPanel::SendsPanel(const juce::String& trackId, PerformanceAPI& api)
-    : api(api), trackId(trackId) {}
+SendsPanel::SendsPanel(const juce::String& trackId, StateAPI& state)
+    : state(state), trackId(trackId) {}
 
 void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
     // Rebuild rows: one per existing send + one empty "add send" row
@@ -170,7 +170,7 @@ void SendsPanel::mouseDrag(const juce::MouseEvent& event) {
     float newGain = std::pow(10.0f, newDb / 20.0f);
 
     rows[draggingRow].gain = newGain;
-    api.setSendGain(trackId, rows[draggingRow].busId, newGain);
+    state.setSendGainByBus(trackId.toStdString(), rows[draggingRow].busId.toStdString(), newGain);
     repaint();
 }
 
@@ -188,6 +188,6 @@ void SendsPanel::showBusPicker(int rowIndex, juce::Point<int> position) {
         [this, rowIndex](int result) {
             if (result == 0 || result - 1 >= (int)availableBusses.size()) return;
             auto& bus = availableBusses[result - 1];
-            api.addSend(trackId, bus.id, 1.0f);
+            state.addSend(trackId.toStdString(), bus.id.toStdString(), 1.0f);
         });
 }

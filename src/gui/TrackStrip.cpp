@@ -1,17 +1,19 @@
 #include "gui/TrackStrip.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 
-TrackStrip::TrackStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api)
-    : api(api), trackId(id), trackName(name),
-      instrumentSlot(PluginSlot::Instrument, api, id),
-      sendsPanel(id, api) {
+TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
+                       StateAPI& state, EngineAPI& engine)
+    : state(state), engine(engine), trackId(id), trackName(name),
+      instrumentSlot(PluginSlot::Instrument, state, engine, id),
+      sendsPanel(id, state) {
 
     addAndMakeVisible(instrumentSlot);
     addAndMakeVisible(faderMeter);
     addChildComponent(sendsPanel);  // hidden until busses exist
 
     faderMeter.onGainChanged = [&](float newGain) {
-        api.setTrackGain(trackId, newGain);
+        state.setTrackGain(trackId.toStdString(), newGain);
     };
 
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
@@ -24,7 +26,7 @@ void TrackStrip::setInstrumentName(const juce::String& name) {
         rebuildEffectSlots();
 }
 
-void TrackStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects) {
+void TrackStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
     bool changed = (effects.size() != currentEffects.size());
     if (!changed) {
         for (size_t i = 0; i < effects.size(); ++i) {
@@ -43,7 +45,7 @@ void TrackStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& e
         if (effectAdded && !currentEffects.empty()) {
             pendingEffectOpen = false;
             auto& newFx = currentEffects.back();
-            api.openPluginEditor(trackId, newFx.effectId);
+            engine.openPluginEditor(trackId, newFx.effectId);
         }
     }
 }
@@ -82,7 +84,7 @@ void TrackStrip::rebuildEffectSlots() {
     effectSlots.clear();
 
     for (auto& fx : currentEffects) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, trackId);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, trackId);
         slot->setPluginName(fx.pluginName);
         slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
@@ -90,7 +92,7 @@ void TrackStrip::rebuildEffectSlots() {
     }
 
     if (instrumentSlot.hasPlugin()) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, trackId);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, trackId);
         slot->onChanged = [this]() { pendingEffectOpen = true; };
         addAndMakeVisible(*slot);
         effectSlots.push_back(std::move(slot));
@@ -212,7 +214,7 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     auto midiHitArea = midiDotBounds.expanded(6);
     if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         midiEnabled = !midiEnabled;
-        api.setTrackMidiEnabled(trackId, midiEnabled);
+        state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
         repaint();
     }
 }
@@ -222,7 +224,10 @@ void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
     menu.addItem(1, "Save Track Preset...");
 
     // Load submenu — only if presets exist
-    auto presets = api.listTrackPresets();
+    std::vector<juce::String> presets;
+    if (onListTrackPresets)
+        presets = onListTrackPresets();
+
     if (!presets.empty()) {
         juce::PopupMenu loadMenu;
         for (int i = 0; i < (int)presets.size(); ++i)
@@ -242,14 +247,16 @@ void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
                     existing.add(n);
                 SaveAsDialog::show("Save Track Preset", trackName, existing,
                     [this](const juce::String& name) {
-                        api.saveTrackPreset(trackId, name);
+                        if (onSaveTrackPreset)
+                            onSaveTrackPreset(trackId, name);
                     });
             }
             else if (result >= 100 && result - 100 < (int)presets.size()) {
-                api.loadTrackPreset(trackId, presets[result - 100]);
+                if (onLoadTrackPreset)
+                    onLoadTrackPreset(trackId, presets[result - 100]);
             }
             else if (result == 10) {
-                api.removeTrack(trackId);
+                state.removeTrack(trackId.toStdString());
             }
         });
 }
@@ -258,7 +265,7 @@ void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
             if (newName != trackName) {
-                api.renameTrack(trackId, newName);
+                state.renameTrack(trackId.toStdString(), newName.toStdString());
                 trackName = newName;
                 repaint();
             }

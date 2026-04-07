@@ -7,11 +7,12 @@
 #include <memory>
 #include <vector>
 
-class PerformanceAPI;
+class StateAPI;
+class EngineAPI;
 
 class MixerView : public juce::Component, private juce::Timer {
 public:
-    MixerView(PerformanceAPI& api);
+    MixerView(StateAPI& state, EngineAPI& engine);
 
     int getDesiredHeight() const;
 
@@ -22,7 +23,8 @@ private:
     void timerCallback() override;
     void rebuildStrips();
 
-    PerformanceAPI& api;
+    StateAPI& state;
+    EngineAPI& engine;
     int lastDesiredHeight = 0;
 
     // Scrollable area for tracks + busses
@@ -35,10 +37,13 @@ private:
     juce::Viewport viewport;
     StripContainer stripContainer;
 
+    struct TrackInfo { juce::String id; juce::String name; };
+    struct BusInfo { juce::String id; juce::String name; };
+
     std::vector<std::unique_ptr<TrackStrip>> trackStrips;
     std::vector<std::unique_ptr<BusStrip>> busStrips;
-    std::vector<PerformanceAPI::TrackInfo> lastTracks;
-    std::vector<PerformanceAPI::BusInfo> lastBusses;
+    std::vector<TrackInfo> lastTracks;
+    std::vector<BusInfo> lastBusses;
 
     // Fixed output strip on the right
     OutputStrip outputStrip;

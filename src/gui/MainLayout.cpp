@@ -1,10 +1,10 @@
 #include "gui/MainLayout.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 
-MainLayout::MainLayout(PerformanceAPI& api, LuaEngine& lua)
-    : api(api), chatView(lua), mixerView(api) {
-    sidebar.setAPI(&api);
-    sidebar.setRegistry(&api.getRegistry());
+MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua)
+    : state(state), engine(engine), chatView(lua), mixerView(state, engine) {
+    sidebar.setStateAPI(&state);
     addAndMakeVisible(sidebar);
     // Pane container: placeholder left (60%), chat right (40%)
     paneContainer.addPane(&placeholderPane, 0.6f);
@@ -142,7 +142,7 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     }
 
     if (key == juce::KeyPress::escapeKey) {
-        api.closeTopPluginEditor();
+        engine.closeTopPluginEditor();
         return true;
     }
 

@@ -1,7 +1,6 @@
 #include "gui/Sidebar.h"
-#include "api/PerformanceAPI.h"
-#include "registry/Registry.h"
-#include "registry/RegistryEvents.h"
+#include "api/StateAPI.h"
+#include "state/StateEvents.h"
 #include "engine/Log.h"
 
 Sidebar::Sidebar() {
@@ -9,28 +8,28 @@ Sidebar::Sidebar() {
     startTimerHz(4);  // check active song highlight
 
     tree.setOnNodeClick([this](const std::string& type, const std::string& id, const std::string& label) {
-        if (!api) return;
+        if (!state) return;
         perfLog("[Sidebar] Clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
 
-        if (type == EntityType::Song)
-            api->loadSongFromRegistry(id);
+        if (type == "song" && onLoadSong)
+            onLoadSong(id);
     });
 }
 
 Sidebar::~Sidebar() {
-    if (registry && subscriptionId >= 0)
-        registry->events().unsubscribe(subscriptionId);
+    if (state && subscriptionId >= 0)
+        state->events().unsubscribe(subscriptionId);
 }
 
-void Sidebar::setRegistry(Registry* reg) {
-    if (registry && subscriptionId >= 0)
-        registry->events().unsubscribe(subscriptionId);
+void Sidebar::setStateAPI(StateAPI* s) {
+    if (state && subscriptionId >= 0)
+        state->events().unsubscribe(subscriptionId);
 
-    registry = reg;
-    if (!registry) return;
+    state = s;
+    if (!state) return;
 
-    // Subscribe to all registry changes
-    subscriptionId = registry->events().subscribe([this](const RegistryEvent&) {
+    // Subscribe to all state changes
+    subscriptionId = state->events().subscribe([this](const StateEvent&) {
         // Flag for refresh — we may be on a non-message thread
         needsRefresh = true;
         juce::MessageManager::callAsync([this] {
@@ -57,8 +56,9 @@ void Sidebar::resized() {
 }
 
 void Sidebar::timerCallback() {
-    if (!api) return;
-    auto currentId = api->getCurrentSongId();
+    if (!state) return;
+    auto song = state->currentSong();
+    std::string currentId = song ? song->id : "";
     if (currentId != lastHighlightedId) {
         lastHighlightedId = currentId;
         tree.setHighlightedId(currentId);
@@ -66,6 +66,8 @@ void Sidebar::timerCallback() {
 }
 
 void Sidebar::refreshTree() {
+    if (!state) return;
+
     std::vector<TreeNode> roots;
 
     // Songs — Sandbox always first, then user songs
@@ -75,7 +77,7 @@ void Sidebar::refreshTree() {
         songsNode.type = "category";
 
         // Sandbox always at the top
-        for (auto& song : registry->allSongs()) {
+        for (auto& song : state->allSongs()) {
             if (song.name == "Sandbox") {
                 TreeNode sandboxNode;
                 sandboxNode.label = "Sandbox";
@@ -88,7 +90,7 @@ void Sidebar::refreshTree() {
         }
 
         // User songs
-        for (auto& song : registry->allSongs()) {
+        for (auto& song : state->allSongs()) {
             if (song.name == "Sandbox") continue;
             TreeNode songNode;
             songNode.label = song.name;
@@ -115,8 +117,8 @@ void Sidebar::refreshTree() {
         effectsNode.label = "Effects";
         effectsNode.type = "category";
 
-        for (auto& plugin : registry->allPlugins()) {
-            auto presets = registry->presetsForPlugin(plugin.id);
+        for (auto& plugin : state->allPlugins()) {
+            auto presets = state->presetsForPlugin(plugin.id);
             if (presets.empty()) continue;
 
             TreeNode pluginNode;
@@ -126,20 +128,15 @@ void Sidebar::refreshTree() {
 
             for (auto& preset : presets) {
                 TreeNode presetLeaf;
-                presetLeaf.label = preset.name;
-                presetLeaf.id = preset.id;
+                presetLeaf.label = preset->name;
+                presetLeaf.id = preset->id;
                 presetLeaf.type = "preset";
                 presetLeaf.isLeaf = true;
                 pluginNode.children.push_back(presetLeaf);
             }
 
             // Determine if instrument or effect from plugin description
-            auto desc = registry->findPluginById(plugin.id);
-            bool isInstrument = false;
-            if (desc) {
-                // Check format_id for "Synths/" prefix
-                isInstrument = desc->formatId.find("Synths/") != std::string::npos;
-            }
+            bool isInstrument = plugin.isInstrument;
 
             if (isInstrument)
                 instrumentsNode.children.push_back(pluginNode);
@@ -161,7 +158,7 @@ void Sidebar::refreshTree() {
         actionsNode.label = "Actions";
         actionsNode.type = "category";
 
-        for (auto& action : registry->allActions()) {
+        for (auto& action : state->allActions()) {
             TreeNode actionLeaf;
             actionLeaf.label = action.label.empty() ? action.name : action.label;
             actionLeaf.id = action.id;

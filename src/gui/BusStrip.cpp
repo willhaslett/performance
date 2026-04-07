@@ -1,20 +1,22 @@
 #include "gui/BusStrip.h"
-#include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 
-BusStrip::BusStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api)
-    : api(api), busId(id), busName(name) {
+BusStrip::BusStrip(const juce::String& id, const juce::String& name,
+                   StateAPI& state, EngineAPI& engine)
+    : state(state), engine(engine), busId(id), busName(name) {
 
     addAndMakeVisible(faderMeter);
 
     faderMeter.onGainChanged = [&](float newGain) {
-        api.setBusGain(busId, newGain);
+        state.setBusGain(busId.toStdString(), newGain);
     };
 
     // Start with one empty effect slot
     rebuildEffectSlots();
 }
 
-void BusStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects) {
+void BusStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
     bool changed = (effects.size() != currentEffects.size());
     if (!changed) {
         for (size_t i = 0; i < effects.size(); ++i) {
@@ -33,7 +35,7 @@ void BusStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& eff
         if (effectAdded && !currentEffects.empty()) {
             pendingEffectOpen = false;
             auto& newFx = currentEffects.back();
-            api.openPluginEditor(busId, newFx.effectId);
+            engine.openPluginEditor(busId, newFx.effectId);
         }
     }
 }
@@ -52,7 +54,7 @@ void BusStrip::rebuildEffectSlots() {
     effectSlots.clear();
 
     for (auto& fx : currentEffects) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busId, PluginSlot::OnBus);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, busId, PluginSlot::OnBus);
         slot->setPluginName(fx.pluginName);
         slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
@@ -60,7 +62,7 @@ void BusStrip::rebuildEffectSlots() {
     }
 
     // Always an empty slot for adding new effect
-    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busId, PluginSlot::OnBus);
+    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, busId, PluginSlot::OnBus);
     slot->onChanged = [this]() { pendingEffectOpen = true; };
     addAndMakeVisible(*slot);
     effectSlots.push_back(std::move(slot));
@@ -104,7 +106,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this](int result) {
                 if (result == 1)
-                    api.removeBus(busId);
+                    state.removeBus(busId.toStdString());
             });
     }
 }
@@ -113,7 +115,7 @@ void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
             if (newName != busName) {
-                api.renameBus(busId, newName);
+                state.renameBus(busId.toStdString(), newName.toStdString());
                 busName = newName;
                 repaint();
             }
