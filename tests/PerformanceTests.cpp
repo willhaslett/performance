@@ -459,6 +459,36 @@ public:
             expectEquals(trackNames[0], juce::String("A Track"));
             expectEquals((int)t->listBusNames().size(), 1);
         }
+
+        beginTest("Instrument assignment survives song switch");
+        {
+            TestAPI t;
+            auto songA = t->createSong("Inst Song");
+            auto trackId = t->createTrack("Keys");
+            t->addInstrument(trackId, "DLSMusicDevice");
+
+            // Verify instrument is assigned in registry
+            auto& reg = t.get().getRegistry();
+            auto tracks = reg.tracksForSong(t.get().getCurrentSongId());
+            expect(!tracks.empty());
+            expect(!tracks[0].pluginId.empty());
+
+            // Verify registry has the plugin assignment (SSOT check)
+            auto regTracks = reg.tracksForSong(t.get().getCurrentSongId());
+            expect(!regTracks.empty());
+            expect(!regTracks[0].pluginId.empty());
+
+            // Switch to another song and back
+            t->createSong("Other");
+            t->loadSongFromRegistry(songA);
+
+            // Verify registry still has the instrument after switch
+            auto restoredTracks = t->listTracks();
+            expectEquals((int)restoredTracks.size(), 1);
+            auto restoredRegTracks = reg.tracksForSong(songA);
+            expect(!restoredRegTracks.empty());
+            expect(!restoredRegTracks[0].pluginId.empty());
+        }
     }
 };
 
