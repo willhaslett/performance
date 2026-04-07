@@ -968,36 +968,112 @@ private:
     void showSaveDialog() {
         if (!callbacks.savePreset) return;
 
-        auto* alertWindow = new juce::AlertWindow("Save Preset", "", juce::MessageBoxIconType::NoIcon);
-        alertWindow->addTextEditor("name", presetLabel.getText(), "Preset name:");
+        // Custom save dialog with clickable preset list
+        auto* dialog = new juce::DialogWindow("Save Preset",
+            juce::Colour(0xff1e1e1e), true, true);
 
-        // Show existing presets for reference
-        if (callbacks.listPresets) {
-            auto presets = callbacks.listPresets();
-            if (!presets.empty()) {
-                juce::String listText = "Existing: ";
-                for (int i = 0; i < (int)presets.size(); ++i) {
-                    if (i > 0) listText += ", ";
-                    listText += presets[i];
+        class SaveContent : public juce::Component {
+        public:
+            juce::TextEditor nameField;
+            juce::TextButton saveBtn { "Save" };
+            juce::TextButton cancelBtn { "Cancel" };
+            juce::ListBox presetList;
+            juce::StringArray presetNames;
+            std::function<void(const juce::String&)> onSave;
+            juce::DialogWindow* owner = nullptr;
+
+            class PresetListModel : public juce::ListBoxModel {
+            public:
+                SaveContent* content = nullptr;
+                int getNumRows() override { return content ? content->presetNames.size() : 0; }
+                void paintListBoxItem(int row, juce::Graphics& g, int w, int h, bool selected) override {
+                    if (selected)
+                        g.fillAll(juce::Colour(0xff2a4a6a));
+                    g.setColour(juce::Colour(0xffcccccc));
+                    g.setFont(14.0f);
+                    if (row >= 0 && row < content->presetNames.size())
+                        g.drawText(content->presetNames[row], 8, 0, w - 16, h,
+                                   juce::Justification::centredLeft);
                 }
-                alertWindow->addTextBlock(listText);
+                void listBoxItemClicked(int row, const juce::MouseEvent&) override {
+                    if (row >= 0 && row < content->presetNames.size())
+                        content->nameField.setText(content->presetNames[row]);
+                }
+            };
+            PresetListModel listModel;
+
+            SaveContent(const juce::String& currentName, const juce::StringArray& names) {
+                presetNames = names;
+                listModel.content = this;
+
+                nameField.setFont(juce::Font(14.0f));
+                nameField.setText(currentName);
+                nameField.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff2a2a2a));
+                nameField.setColour(juce::TextEditor::textColourId, juce::Colour(0xffffffff));
+                nameField.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff3a3a3a));
+                nameField.setSelectAllWhenFocused(true);
+                addAndMakeVisible(nameField);
+
+                presetList.setModel(&listModel);
+                presetList.setColour(juce::ListBox::backgroundColourId, juce::Colour(0xff1a1a1a));
+                presetList.setColour(juce::ListBox::outlineColourId, juce::Colour(0xff3a3a3a));
+                presetList.setOutlineThickness(1);
+                presetList.setRowHeight(24);
+                addAndMakeVisible(presetList);
+
+                saveBtn.onClick = [this] {
+                    auto name = nameField.getText().trim();
+                    if (name.isNotEmpty() && onSave) onSave(name);
+                    if (owner) owner->setVisible(false);
+                };
+                cancelBtn.onClick = [this] {
+                    if (owner) owner->setVisible(false);
+                };
+                addAndMakeVisible(saveBtn);
+                addAndMakeVisible(cancelBtn);
+
+                setSize(300, 280);
             }
-        }
 
-        alertWindow->addButton("Save", 1);
-        alertWindow->addButton("Cancel", 0);
+            void resized() override {
+                auto area = getLocalBounds().reduced(16);
+                nameField.setBounds(area.removeFromTop(28));
+                area.removeFromTop(8);
 
-        alertWindow->enterModalState(true, juce::ModalCallbackFunction::create(
-            [this, alertWindow](int result) {
-                if (result == 1) {
-                    auto name = alertWindow->getTextEditorContents("name").trim();
-                    if (name.isNotEmpty() && callbacks.savePreset) {
-                        callbacks.savePreset(name);
-                        presetLabel.setText(name, juce::dontSendNotification);
-                    }
-                }
-                delete alertWindow;
-            }), false);
+                auto buttonArea = area.removeFromBottom(30);
+                cancelBtn.setBounds(buttonArea.removeFromRight(80));
+                buttonArea.removeFromRight(8);
+                saveBtn.setBounds(buttonArea.removeFromRight(80));
+
+                area.removeFromBottom(8);
+                presetList.setBounds(area);
+            }
+
+            void paint(juce::Graphics& g) override {
+                g.fillAll(juce::Colour(0xff1e1e1e));
+            }
+        };
+
+        juce::StringArray names;
+        if (callbacks.listPresets)
+            for (auto& n : callbacks.listPresets())
+                names.add(n);
+
+        auto* content = new SaveContent(presetLabel.getText(), names);
+        content->owner = dialog;
+        content->onSave = [this](const juce::String& name) {
+            if (callbacks.savePreset) callbacks.savePreset(name);
+            presetLabel.setText(name, juce::dontSendNotification);
+        };
+
+        dialog->setContentOwned(content, true);
+        dialog->setUsingNativeTitleBar(false);
+        dialog->setResizable(false, false);
+        dialog->centreWithSize(content->getWidth(), content->getHeight() + dialog->getTitleBarHeight());
+        dialog->setVisible(true);
+        // Dialog deletes itself when closed (modal callback or close button)
+        dialog->enterModalState(true, juce::ModalCallbackFunction::create(
+            [dialog](int) { delete dialog; }), false);
     }
 };
 
