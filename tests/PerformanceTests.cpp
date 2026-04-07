@@ -584,6 +584,59 @@ public:
             expectEquals((int)sends.size(), 1);
         }
 
+        beginTest("Track preset load changes track name and gain");
+        {
+            TestAPI t;
+            t->createTrack("Source");
+            t->setTrackGain("Source", 0.42f);
+            t->setTrackMidiEnabled("Source", false);
+            t->saveTrackPreset("Source", "MyPreset");
+
+            t->createTrack("Target");
+            t->setTrackGain("Target", 1.0f);
+            expectEquals((int)t->listTrackNames().size(), 2);
+
+            t->loadTrackPreset("Target", "MyPreset");
+
+            // Target should be renamed to MyPreset
+            auto names = t->listTrackNames();
+            bool foundMyPreset = false;
+            bool foundSource = false;
+            for (auto& n : names) {
+                if (n == "MyPreset") foundMyPreset = true;
+                if (n == "Source") foundSource = true;
+            }
+            expect(foundMyPreset);
+            expect(foundSource);
+
+            // Loaded track should have the preset's gain
+            expectWithinAbsoluteError(t->getTrackGain("MyPreset"), 0.42f, 0.01f);
+            // Source should be unaffected
+            expectWithinAbsoluteError(t->getTrackGain("Source"), 0.42f, 0.01f);
+        }
+
+        beginTest("Track preset load doesn't affect other tracks");
+        {
+            TestAPI t;
+            t->createTrack("Keep");
+            t->setTrackGain("Keep", 0.77f);
+            t->setTrackMidiEnabled("Keep", false);
+
+            t->createTrack("Replace");
+            t->setTrackGain("Replace", 0.99f);
+
+            t->saveTrackPreset("Replace", "ReplacePreset");
+
+            // Now save Keep's state, load ReplacePreset onto Keep
+            float keepGainBefore = t->getTrackGain("Keep");
+            t->loadTrackPreset("Keep", "ReplacePreset");
+
+            // Replace track should be completely unaffected
+            // (it still exists as "Replace" with its original gain)
+            expectWithinAbsoluteError(t->getTrackGain("Replace"), 0.99f, 0.01f);
+            expect(t->isTrackMidiEnabled("Replace") == true);
+        }
+
         beginTest("Registry state consistent after multiple operations");
         {
             TestAPI t;

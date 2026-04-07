@@ -650,9 +650,18 @@ void PerformanceAPI::loadTrackPreset(const juce::String& trackName, const juce::
         return;
     }
 
-    // Rename first — all subsequent operations use the new name
-    renameTrack(trackName, presetName);
-    auto name = presetName;  // use this for all operations below
+    // Rename to preset name if possible (no collision)
+    auto name = trackName;
+    if (trackName != presetName) {
+        // Check if presetName already exists as another track
+        bool nameExists = false;
+        for (auto& n : listTrackNames())
+            if (n == presetName) { nameExists = true; break; }
+        if (!nameExists) {
+            renameTrack(trackName, presetName);
+            name = presetName;
+        }
+    }
 
     auto json = juce::JSON::parse(file.loadFileAsString());
     auto pluginName = json.getProperty("plugin", "").toString();
