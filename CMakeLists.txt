@@ -41,6 +41,7 @@ target_sources(Performance PRIVATE
     src/main.mm
     src/api/PerformanceAPI.cpp
     src/api/StateAPI.cpp
+    src/api/EngineAPI.cpp
     src/persistence/PersistenceLayer.cpp
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
@@ -97,6 +98,7 @@ target_sources(PerformanceTests PRIVATE
     tests/PerformanceTests.cpp
     src/api/PerformanceAPI.cpp
     src/api/StateAPI.cpp
+    src/api/EngineAPI.cpp
     src/persistence/PersistenceLayer.cpp
     src/registry/Registry.cpp
     src/engine/EngineSync.cpp
