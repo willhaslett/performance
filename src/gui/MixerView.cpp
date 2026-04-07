@@ -60,17 +60,37 @@ void MixerView::resized() {
 }
 
 void MixerView::timerCallback() {
-    auto trackNames = api.listTrackNames();
-    auto busNames = api.listBusNames();
+    auto tracks = api.listTracks();
+    auto busses = api.listBusses();
 
-    if (trackNames != lastTrackNames || busNames != lastBusNames) {
-        lastTrackNames = trackNames;
-        lastBusNames = busNames;
+    // Detect changes by comparing IDs and names
+    bool tracksChanged = (tracks.size() != lastTracks.size());
+    if (!tracksChanged) {
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            if (tracks[i].id != lastTracks[i].id || tracks[i].name != lastTracks[i].name) {
+                tracksChanged = true;
+                break;
+            }
+        }
+    }
+    bool bussesChanged = (busses.size() != lastBusses.size());
+    if (!bussesChanged) {
+        for (size_t i = 0; i < busses.size(); ++i) {
+            if (busses[i].id != lastBusses[i].id || busses[i].name != lastBusses[i].name) {
+                bussesChanged = true;
+                break;
+            }
+        }
+    }
+
+    if (tracksChanged || bussesChanged) {
+        lastTracks = tracks;
+        lastBusses = busses;
         rebuildStrips();
     } else {
         // Update tracks
-        for (size_t i = 0; i < trackStrips.size() && i < lastTrackNames.size(); ++i) {
-            auto& name = lastTrackNames[i];
+        for (size_t i = 0; i < trackStrips.size() && i < lastTracks.size(); ++i) {
+            auto& name = lastTracks[i].name;
             trackStrips[i]->setInstrumentName(api.getTrackPluginName(name));
             trackStrips[i]->setEffects(api.getTrackEffects(name));
             trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
@@ -82,11 +102,14 @@ void MixerView::timerCallback() {
             for (auto& s : api.getTrackSends(name))
                 sends.push_back({ s.busName, s.gain, s.peakLevel });
             trackStrips[i]->setSends(sends);
-            trackStrips[i]->setAvailableBusses(lastBusNames);
+
+            std::vector<juce::String> bn;
+            for (auto& b : lastBusses) bn.push_back(b.name);
+            trackStrips[i]->setAvailableBusses(bn);
         }
         // Update busses
-        for (size_t i = 0; i < busStrips.size() && i < lastBusNames.size(); ++i) {
-            auto& name = lastBusNames[i];
+        for (size_t i = 0; i < busStrips.size() && i < lastBusses.size(); ++i) {
+            auto& name = lastBusses[i].name;
             busStrips[i]->setEffects(api.getBusEffects(name));
             busStrips[i]->setGain(api.getBusGain(name));
             busStrips[i]->setPeakLevel(api.getBusPeakLevel(name));
@@ -111,15 +134,18 @@ void MixerView::rebuildStrips() {
     trackStrips.clear();
     busStrips.clear();
 
-    for (auto& trackName : lastTrackNames) {
-        auto strip = std::make_unique<TrackStrip>(trackName, api);
-        strip->setInstrumentName(api.getTrackPluginName(trackName));
-        strip->setEffects(api.getTrackEffects(trackName));
-        strip->setMidiEnabled(api.isTrackMidiEnabled(trackName));
-        strip->setAvailableBusses(lastBusNames);
+    std::vector<juce::String> busNamesVec;
+    for (auto& b : lastBusses) busNamesVec.push_back(b.name);
+
+    for (auto& t : lastTracks) {
+        auto strip = std::make_unique<TrackStrip>(t.id, t.name, api);
+        strip->setInstrumentName(api.getTrackPluginName(t.name));
+        strip->setEffects(api.getTrackEffects(t.name));
+        strip->setMidiEnabled(api.isTrackMidiEnabled(t.name));
+        strip->setAvailableBusses(busNamesVec);
 
         std::vector<SendsPanel::SendInfo> sends;
-        for (auto& s : api.getTrackSends(trackName))
+        for (auto& s : api.getTrackSends(t.name))
             sends.push_back({ s.busName, s.gain, s.peakLevel });
         strip->setSends(sends);
 
@@ -127,9 +153,9 @@ void MixerView::rebuildStrips() {
         trackStrips.push_back(std::move(strip));
     }
 
-    for (auto& busName : lastBusNames) {
-        auto strip = std::make_unique<BusStrip>(busName, api);
-        strip->setEffects(api.getBusEffects(busName));
+    for (auto& b : lastBusses) {
+        auto strip = std::make_unique<BusStrip>(b.name, api);
+        strip->setEffects(api.getBusEffects(b.name));
         stripContainer.addAndMakeVisible(*strip);
         busStrips.push_back(std::move(strip));
     }

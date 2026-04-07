@@ -37,8 +37,8 @@ private:
 
     std::vector<std::unique_ptr<TrackStrip>> trackStrips;
     std::vector<std::unique_ptr<BusStrip>> busStrips;
-    std::vector<juce::String> lastTrackNames;
-    std::vector<juce::String> lastBusNames;
+    std::vector<PerformanceAPI::TrackInfo> lastTracks;
+    std::vector<PerformanceAPI::BusInfo> lastBusses;
 
     // Fixed output strip on the right
     OutputStrip outputStrip;

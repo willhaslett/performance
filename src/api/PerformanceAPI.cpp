@@ -1196,12 +1196,34 @@ void PerformanceAPI::registryDelete(const std::string& id) {
     registry->remove(id);
 }
 
+std::vector<PerformanceAPI::TrackInfo> PerformanceAPI::listTracks() const {
+    std::vector<TrackInfo> result;
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId))
+            result.push_back({ juce::String(t.id), juce::String(t.name) });
+    }
+    return result;
+}
+
+std::vector<PerformanceAPI::BusInfo> PerformanceAPI::listBusses() const {
+    std::vector<BusInfo> result;
+    if (!currentSongId.empty()) {
+        for (auto& b : registry->bussesForSong(currentSongId))
+            result.push_back({ juce::String(b.id), juce::String(b.name) });
+    }
+    return result;
+}
+
 std::vector<juce::String> PerformanceAPI::listTrackNames() const {
-    return audioEngine->getTrackNames();
+    std::vector<juce::String> names;
+    for (auto& t : listTracks()) names.push_back(t.name);
+    return names;
 }
 
 std::vector<juce::String> PerformanceAPI::listBusNames() const {
-    return audioEngine->getBusNames();
+    std::vector<juce::String> names;
+    for (auto& b : listBusses()) names.push_back(b.name);
+    return names;
 }
 
 juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackName) const {

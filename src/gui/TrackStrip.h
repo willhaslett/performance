@@ -12,7 +12,7 @@
 
 class TrackStrip : public juce::Component {
 public:
-    TrackStrip(const juce::String& name, PerformanceAPI& api);
+    TrackStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api);
 
     void setInstrumentName(const juce::String& name);
     void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
@@ -31,7 +31,8 @@ public:
 
 private:
     PerformanceAPI& api;
-    juce::String trackName;
+    juce::String trackId;    // stable UUID from registry
+    juce::String trackName;  // display name
     bool midiEnabled = true;
 
     PluginSlot instrumentSlot;

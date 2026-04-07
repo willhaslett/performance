@@ -125,6 +125,11 @@ public:
     std::vector<juce::String> listPlugins() const;
     std::vector<juce::String> listInstrumentPlugins() const;
     std::vector<juce::String> listEffectPlugins() const;
+
+    struct TrackInfo { juce::String id; juce::String name; };
+    struct BusInfo { juce::String id; juce::String name; };
+    std::vector<TrackInfo> listTracks() const;
+    std::vector<BusInfo> listBusses() const;
     std::vector<juce::String> listTrackNames() const;
     std::vector<juce::String> listBusNames() const;
     juce::String getTrackPluginName(const juce::String& trackName) const;

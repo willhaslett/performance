@@ -1,8 +1,8 @@
 #include "gui/TrackStrip.h"
 #include "api/PerformanceAPI.h"
 
-TrackStrip::TrackStrip(const juce::String& name, PerformanceAPI& api)
-    : api(api), trackName(name),
+TrackStrip::TrackStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api)
+    : api(api), trackId(id), trackName(name),
       instrumentSlot(PluginSlot::Instrument, api, name),
       sendsPanel(name, api) {
 
