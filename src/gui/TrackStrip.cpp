@@ -125,8 +125,19 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
+    g.drawText(trackName, headerBounds.withTrimmedLeft(26).withTrimmedRight(20).reduced(4, 0),
                juce::Justification::centredLeft);
+
+    // Vertical dots menu button
+    menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18,
+                                           headerBounds.getCentreY() - 7, 14, 14);
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    auto dx = (float)menuDotsBounds.getCentreX();
+    auto dy = (float)menuDotsBounds.getY() + 2.0f;
+    for (int i = 0; i < 3; ++i) {
+        g.fillEllipse(dx - 1.5f, dy, 3.0f, 3.0f);
+        dy += 5.0f;
+    }
 }
 
 int TrackStrip::getMinimumHeight() const {
@@ -178,15 +189,15 @@ void TrackStrip::resized() {
 }
 
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
+    // Vertical dots menu
+    if (menuDotsBounds.expanded(4).contains(event.getPosition())) {
+        showTrackMenu(event.getScreenPosition());
+        return;
+    }
+
+    // Right-click header also opens menu
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
-        juce::PopupMenu menu;
-        menu.addItem(1, "Delete Track");
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-            juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
-            [this](int result) {
-                if (result == 1)
-                    api.removeTrack(trackName);
-            });
+        showTrackMenu(event.getScreenPosition());
         return;
     }
 
@@ -196,6 +207,43 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         api.setTrackMidiEnabled(trackName, midiEnabled);
         repaint();
     }
+}
+
+void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Save Track Preset...");
+
+    // Load submenu — only if presets exist
+    auto presets = api.listTrackPresets();
+    if (!presets.empty()) {
+        juce::PopupMenu loadMenu;
+        for (int i = 0; i < (int)presets.size(); ++i)
+            loadMenu.addItem(100 + i, presets[i]);
+        menu.addSubMenu("Load Track Preset", loadMenu);
+    }
+
+    menu.addSeparator();
+    menu.addItem(10, "Delete Track");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, presets](int result) {
+            if (result == 1) {
+                juce::StringArray existing;
+                for (auto& n : presets)
+                    existing.add(n);
+                SaveAsDialog::show("Save Track Preset", trackName, existing,
+                    [this](const juce::String& name) {
+                        api.saveTrackPreset(trackName, name);
+                    });
+            }
+            else if (result >= 100 && result - 100 < (int)presets.size()) {
+                api.loadTrackPreset(trackName, presets[result - 100]);
+            }
+            else if (result == 10) {
+                api.removeTrack(trackName);
+            }
+        });
 }
 
 void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {

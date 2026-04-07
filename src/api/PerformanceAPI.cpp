@@ -554,6 +554,129 @@ std::vector<juce::String> PerformanceAPI::listPresets(const juce::String& plugin
     return names;
 }
 
+// --- Track presets ---
+
+static juce::File getTrackPresetsDir() {
+    return juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+        .getChildFile(".config/performance/track_presets");
+}
+
+void PerformanceAPI::saveTrackPreset(const juce::String& trackName, const juce::String& presetName) {
+    auto* body = new juce::DynamicObject();
+
+    // Instrument
+    auto pluginName = audioEngine->getTrackPluginName(trackName);
+    body->setProperty("plugin", pluginName);
+
+    // Instrument state (base64)
+    if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackName)) {
+        juce::MemoryBlock state;
+        proc->getStateInformation(state);
+        body->setProperty("pluginState", state.toBase64Encoding());
+    }
+
+    // Effects
+    juce::Array<juce::var> effectsArr;
+    for (auto& fx : audioEngine->getTrackEffects(trackName)) {
+        auto* fxObj = new juce::DynamicObject();
+        fxObj->setProperty("plugin", fx.pluginName);
+        // Effect state
+        if (auto* proc = audioEngine->getTrackEffectProcessor(trackName, fx.name)) {
+            juce::MemoryBlock state;
+            proc->getStateInformation(state);
+            fxObj->setProperty("state", state.toBase64Encoding());
+        }
+        effectsArr.add(juce::var(fxObj));
+    }
+    body->setProperty("effects", effectsArr);
+
+    // Sends
+    juce::Array<juce::var> sendsArr;
+    for (auto& send : audioEngine->getTrackSends(trackName)) {
+        auto* sendObj = new juce::DynamicObject();
+        sendObj->setProperty("bus", send.busName);
+        sendObj->setProperty("gain", send.gain);
+        sendsArr.add(juce::var(sendObj));
+    }
+    body->setProperty("sends", sendsArr);
+
+    // Gain and MIDI
+    body->setProperty("gain", audioEngine->getTrackGain(trackName));
+    body->setProperty("midiEnabled", audioEngine->isTrackMidiEnabled(trackName));
+
+    auto dir = getTrackPresetsDir();
+    dir.createDirectory();
+    auto file = dir.getChildFile(presetName + ".json");
+    file.replaceWithText(juce::JSON::toString(juce::var(body), true));
+
+    perfLog("[API] Saved track preset \"%s\" from track \"%s\"\n",
+            presetName.toRawUTF8(), trackName.toRawUTF8());
+}
+
+void PerformanceAPI::loadTrackPreset(const juce::String& trackName, const juce::String& presetName) {
+    auto file = getTrackPresetsDir().getChildFile(presetName + ".json");
+    if (!file.existsAsFile()) {
+        perfLog("[API] Track preset not found: \"%s\"\n", presetName.toRawUTF8());
+        return;
+    }
+
+    // Rename first — all subsequent operations use the new name
+    renameTrack(trackName, presetName);
+    auto name = presetName;  // use this for all operations below
+
+    auto json = juce::JSON::parse(file.loadFileAsString());
+    auto pluginName = json.getProperty("plugin", "").toString();
+
+    if (pluginName.isNotEmpty()) {
+        removeInstrument(name);
+        addInstrument(name, pluginName);
+
+        // Restore instrument state after plugin loads
+        auto stateB64 = json.getProperty("pluginState", "").toString();
+        if (stateB64.isNotEmpty()) {
+            auto nameCopy = name;
+            juce::Timer::callAfterDelay(500, [this, nameCopy, stateB64] {
+                if (auto* proc = audioEngine->getTrackInstrumentProcessor(nameCopy)) {
+                    juce::MemoryBlock state;
+                    state.fromBase64Encoding(stateB64);
+                    proc->setStateInformation(state.getData(), (int)state.getSize());
+                }
+            });
+        }
+    }
+
+    // Load effects
+    if (auto* effectsArr = json.getProperty("effects", juce::var()).getArray()) {
+        for (auto& fx : audioEngine->getTrackEffects(name))
+            removeEffect(name, fx.name);
+
+        for (auto& fxVar : *effectsArr) {
+            auto fxPlugin = fxVar.getProperty("plugin", "").toString();
+            if (fxPlugin.isNotEmpty())
+                addEffect(name, fxPlugin, fxPlugin);
+        }
+    }
+
+    // Gain and MIDI
+    setTrackGain(name, (float)json.getProperty("gain", 1.0));
+    setTrackMidiEnabled(name, (bool)json.getProperty("midiEnabled", true));
+
+    perfLog("[API] Loaded track preset \"%s\" onto track \"%s\"\n",
+            presetName.toRawUTF8(), trackName.toRawUTF8());
+}
+
+std::vector<juce::String> PerformanceAPI::listTrackPresets() {
+    std::vector<juce::String> names;
+    auto dir = getTrackPresetsDir();
+    if (!dir.isDirectory()) return names;
+
+    for (auto& entry : juce::RangedDirectoryIterator(dir, false, "*.json"))
+        names.push_back(entry.getFile().getFileNameWithoutExtension());
+
+    std::sort(names.begin(), names.end());
+    return names;
+}
+
 // --- Automation ---
 
 int PerformanceAPI::interpolate(float from, float to, float durationSec,

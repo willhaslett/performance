@@ -5,6 +5,7 @@
 #include "gui/FaderMeter.h"
 #include "gui/SendsPanel.h"
 #include "gui/InlineEditor.h"
+#include "gui/SaveAsDialog.h"
 #include "api/PerformanceAPI.h"
 #include <vector>
 #include <memory>
@@ -41,6 +42,9 @@ private:
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> midiDotBounds;
+    juce::Rectangle<int> menuDotsBounds;
+
+    void showTrackMenu(juce::Point<int> screenPos);
 
     void rebuildEffectSlots();
     std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;

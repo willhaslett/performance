@@ -84,6 +84,11 @@ public:
     void loadPreset(const juce::String& trackName, const juce::String& presetName);
     std::vector<juce::String> listPresets(const juce::String& pluginName);
 
+    // --- Track presets ---
+    void saveTrackPreset(const juce::String& trackName, const juce::String& presetName);
+    void loadTrackPreset(const juce::String& trackName, const juce::String& presetName);
+    std::vector<juce::String> listTrackPresets();
+
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
     void closeTopPluginEditor();
