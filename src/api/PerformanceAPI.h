@@ -19,7 +19,7 @@ public:
     PerformanceAPI();
     ~PerformanceAPI();
 
-    void initialise();
+    void initialise(const juce::String& dbPath = "");
     void shutdown();
 
     // --- Track management ---

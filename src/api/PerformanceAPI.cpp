@@ -14,13 +14,17 @@ PerformanceAPI::~PerformanceAPI() {
     shutdown();
 }
 
-void PerformanceAPI::initialise() {
+void PerformanceAPI::initialise(const juce::String& dbPath) {
     // Open registry
     registry = std::make_unique<Registry>();
-    auto configDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-                         .getChildFile(".config/performance");
-    configDir.createDirectory();
-    registry->open(configDir.getChildFile("registry.db").getFullPathName().toStdString());
+    if (dbPath.isNotEmpty()) {
+        registry->open(dbPath.toStdString());
+    } else {
+        auto configDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                             .getChildFile(".config/performance");
+        configDir.createDirectory();
+        registry->open(configDir.getChildFile("registry.db").getFullPathName().toStdString());
+    }
 
     audioEngine = std::make_unique<AudioEngine>();
     audioEngine->initialise();

@@ -88,3 +88,44 @@ target_link_libraries(Performance PRIVATE
     sqlite3
 )
 
+# --- Tests ---
+juce_add_console_app(PerformanceTests PRODUCT_NAME "PerformanceTests")
+
+target_sources(PerformanceTests PRIVATE
+    tests/PerformanceTests.cpp
+    src/api/PerformanceAPI.cpp
+    src/registry/Registry.cpp
+    src/engine/EngineSync.cpp
+    src/engine/AudioEngine.mm
+    src/engine/MIDIEngine.cpp
+    src/engine/Log.cpp
+    src/automation/AutomationEngine.cpp
+    src/scripting/LuaEngine.cpp
+    src/ipc/IPCServer.cpp
+    src/song/SongRuntime.cpp
+)
+
+target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)
+
+target_compile_definitions(PerformanceTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_PLUGINHOST_AU=1
+    JUCE_PLUGINHOST_VST3=0
+)
+
+target_link_libraries(PerformanceTests PRIVATE
+    juce::juce_audio_basics
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_audio_processors
+    juce::juce_audio_utils
+    juce::juce_core
+    juce::juce_events
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+    lua_static
+    sol2
+    sqlite3
+)

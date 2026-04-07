@@ -1,0 +1,7 @@
+#!/bin/bash
+# Build and run the Performance test suite
+set -e
+cd "$(dirname "$0")/.."
+cmake --build build --target PerformanceTests 2>&1 | tail -3
+echo "---"
+./build/PerformanceTests_artefacts/Debug/PerformanceTests 2>&1 | grep -v "^\[" | grep -v "^JUCE" | grep -v "^$" | grep -v "^Random"
