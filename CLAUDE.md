@@ -27,6 +27,14 @@ AudioEngine (audio graph matches registry)
 
 One direction. One source of truth. The engine never has state that the registry doesn't know about. Sync is idempotent — call it as many times as you want.
 
+**Known tension:** Some operations bypass the registry and go direct to the engine:
+- Real-time values (gain, MIDI enabled) go direct to engine, persisted back by 1Hz timer
+- `renameTrack`/`renameBus` update both engine and registry in one call
+- Master output effects bypass the registry entirely (no registry entity for master output)
+- Track preset load was attempting to modify engine state through the API without proper registry updates — **currently disabled** pending redesign
+
+This dual-write pattern is a source of bugs. The correct model: ALL mutations go through the registry, EngineSync syncs the engine. Real-time values (gain) are the only exception, and those are written back by the persist timer. Any new feature that modifies track/bus structure should go through the registry, not the engine directly.
+
 ### Components
 
 - **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args. Effects use unified `addEffect`/`removeEffect` — parent name resolves to track or bus automatically.
@@ -160,17 +168,35 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Master output strip: GainProcessor, master effects, gain persistence across sessions
 - Unified addEffect/removeEffect API (tracks, busses, and master output)
 - Inline rename (double-click header) for tracks and busses
-- Right-click delete for tracks and busses
+- Vertical dots menu on track headers (save/load track preset, delete)
 - VU meter noise floor gate + unconditional peak level updates (no stuck meters)
+- UUID-keyed track/bus maps in engine (stable identity, rename-safe)
+- Plugin preset toolbar in editor windows (load/save with save-as dialog)
+- Reusable SaveAsDialog component
+- Native chat UI with Claude API (tool use for Lua execution)
+- N-way resizable split panes (PaneContainer)
+- Sandbox session (always exists, undeletable, highlighted in sidebar)
+- "Preset" naming throughout (renamed from "Snapshot")
+
+**In progress / disabled:**
+- Track preset LOAD disabled — save works, load has bugs from dual-write pattern (modifies engine without updating registry). Needs redesign: load should write to registry, let EngineSync rebuild.
+
+**Architecture debt (address before adding more features):**
+- Registry-engine consistency: some operations bypass registry and go direct to engine. Need to audit all mutation paths and ensure registry is always written first, engine follows via sync. Specific issues:
+  - Master output effects have no registry entity
+  - Track preset load attempted engine-direct mutations
+  - renameTrack/renameBus write to both engine and registry separately
+- Auto-create Default preset on first plugin instantiation (not yet implemented)
+- Effect state not saved/restored in track presets (async load makes it complex)
+- The 500ms timer hack for deferred plugin state restore needs a proper callback-based approach
 
 **TODOs:**
-- Track presets (save/load a full track configuration)
-- Undo/redo via registry history table (log old/new values per mutation, walk backward/forward)
+- **Test suite** — first priority. Track/bus lifecycle, preset save/load, rename, song switching. The system is complex enough that manual testing misses interaction bugs.
+- Undo/redo via registry history table
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
-- Plugin load performance (AU plugins block message thread during instantiation — progress indicator or background process)
+- Plugin load performance (progress indicator or background loading)
 - Track/bus selection (click to select, shift/cmd-click for multi-select)
 - Master output effects persistence in registry
-- Insert mode swallows all key events including Cmd+Q — need to pass through system shortcuts
-- Fader/knob drag: value stops changing at screen edge — need unbounded drag without cursor glitches
+- Fader/knob drag: value stops changing at screen edge

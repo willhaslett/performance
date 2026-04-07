@@ -28,7 +28,8 @@ DELETE FROM presets;
 DELETE FROM songs;
 SQL
 
-# Remove preset files
+# Remove preset files from disk
 rm -rf "$HOME/.config/performance/snapshots/"*
+rm -rf "$HOME/.config/performance/track_presets/"*
 
 echo "Done. Registry reset. Restart the app to get a fresh Sandbox."
