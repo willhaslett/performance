@@ -238,8 +238,7 @@ void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
                     });
             }
             else if (result >= 100 && result - 100 < (int)presets.size()) {
-                // Track preset load disabled — needs registry-driven redesign
-                // api.loadTrackPreset(trackName, presets[result - 100]);
+                api.loadTrackPreset(trackName, presets[result - 100]);
             }
             else if (result == 10) {
                 api.removeTrack(trackName);
