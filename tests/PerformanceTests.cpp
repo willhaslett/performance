@@ -278,6 +278,23 @@ public:
             expect(effects[0].effectId != effects[1].effectId);
         }
 
+        beginTest("Remove one of two duplicate effects by ID");
+        {
+            TestAPI t;
+            auto trackId = t->createTrack("Dupes2");
+            t->addEffect(trackId, "DLSMusicDevice", "DLSMusicDevice");
+            t->addEffect(trackId, "DLSMusicDevice", "DLSMusicDevice");
+            auto effects = t->getTrackEffects(trackId);
+            expectEquals((int)effects.size(), 2);
+
+            // Remove the first one by ID
+            t->removeEffect(trackId, effects[0].effectId);
+            auto remaining = t->getTrackEffects(trackId);
+            expectEquals((int)remaining.size(), 1);
+            // The remaining one should be the second one
+            expectEquals(remaining[0].effectId, effects[1].effectId);
+        }
+
         beginTest("Set and get track gain");
         {
             TestAPI t;
