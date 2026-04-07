@@ -147,9 +147,23 @@ void PerformanceAPI::removeInstrument(const juce::String& trackName) {
 
 void PerformanceAPI::addEffect(const juce::String& parentName, const juce::String& effectName,
                                 const juce::String& pluginName) {
+    // Generate a unique effect key to avoid collisions with duplicate plugins
+    auto uniqueName = effectName;
+    auto existingEffects = audioEngine->getTrackEffects(parentName);
+    if (existingEffects.empty())
+        existingEffects = audioEngine->getBusEffects(parentName);
+    int suffix = 2;
+    while (true) {
+        bool collision = false;
+        for (auto& fx : existingEffects)
+            if (fx.name == uniqueName) { collision = true; break; }
+        if (!collision) break;
+        uniqueName = effectName + " " + juce::String(suffix++);
+    }
+
     // Master output — direct to engine, no registry entity
     if (parentName == "Output") {
-        audioEngine->addEffect(parentName, effectName, pluginName);
+        audioEngine->addEffect(parentName, uniqueName, pluginName);
         return;
     }
 
@@ -160,7 +174,7 @@ void PerformanceAPI::addEffect(const juce::String& parentName, const juce::Strin
             for (auto& t : registry->tracksForSong(currentSongId)) {
                 if (t.name == parentName.toStdString()) {
                     registry->createEffect(t.id, EntityType::Track,
-                                           effectName.toStdString(), plugin->id);
+                                           uniqueName.toStdString(), plugin->id);
                     engineSync->sync(currentSongId);
                     return;
                 }
@@ -168,14 +182,14 @@ void PerformanceAPI::addEffect(const juce::String& parentName, const juce::Strin
             for (auto& b : registry->bussesForSong(currentSongId)) {
                 if (b.name == parentName.toStdString()) {
                     registry->createEffect(b.id, EntityType::Bus,
-                                           effectName.toStdString(), plugin->id);
+                                           uniqueName.toStdString(), plugin->id);
                     engineSync->sync(currentSongId);
                     return;
                 }
             }
         }
     } else {
-        audioEngine->addEffect(parentName, effectName, pluginName);
+        audioEngine->addEffect(parentName, uniqueName, pluginName);
     }
 }
 
