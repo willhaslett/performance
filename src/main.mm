@@ -1,5 +1,4 @@
 #include <juce_gui_basics/juce_gui_basics.h>
-#include "api/PerformanceAPI.h"
 #include "api/PerformanceCoordinator.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
@@ -67,19 +66,18 @@ private:
 
 enum CommandIDs {
     newSong = 1,
-    openSong,
-    saveSong,
-    closeSong,
-    newInstrumentTrack,
-    newEffectsBus,
-    toggleSidebar,
-    toggleMixer,
+    saveSong = 3,
+    closeSong = 4,
+    newInstrumentTrack = 5,
+    newEffectsBus = 6,
+    toggleSidebar = 7,
+    toggleMixer = 8,
 };
 
 class AppMenuBar : public juce::MenuBarModel {
 public:
-    AppMenuBar(PerformanceAPI& api, StateAPI& state, LuaEngine& lua, MainLayout& layout)
-        : api(api), state(state), lua(lua), layout(layout) {}
+    AppMenuBar(PerformanceCoordinator& coord, LuaEngine& lua, MainLayout& layout)
+        : coord(coord), lua(lua), layout(layout) {}
 
     juce::StringArray getMenuBarNames() override {
         return { "File", "Track", "View" };
@@ -89,18 +87,20 @@ public:
         juce::PopupMenu menu;
         if (index == 0) {  // File
             menu.addItem(CommandIDs::newSong, "New Song");
-            menu.addItem(CommandIDs::saveSong, "Save Song", api.isSongLoaded());
+            menu.addItem(CommandIDs::saveSong, "Save");
             menu.addSeparator();
 
-            // Song list
-            auto songs = lua.listSongs();
+            // Song list from state
+            auto& songs = coord.state().allSongs();
             for (int i = 0; i < (int)songs.size(); ++i) {
-                menu.addItem(100 + i, juce::String("Load: ") + juce::String(songs[i]));
+                auto isCurrent = songs[i].id == coord.state().getMasterOutputId();
+                menu.addItem(100 + i, juce::String(songs[i].name),
+                             true, isCurrent);
             }
 
             if (!songs.empty())
                 menu.addSeparator();
-            menu.addItem(CommandIDs::closeSong, "Close Song", api.isSongLoaded());
+            menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Track
             menu.addItem(CommandIDs::newInstrumentTrack, "New Instrument Track");
@@ -114,29 +114,27 @@ public:
     }
 
     void menuItemSelected(int menuItemID, int) override {
+        auto& state = coord.state();
+
         if (menuItemID == CommandIDs::newSong) {
-            // Create a new empty song
             auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
-            api.createSong(name);
-            perfLog("[Menu] Created new song: %s\n", name.toRawUTF8());
+            coord.createSong(name);
         }
         else if (menuItemID == CommandIDs::saveSong) {
-            api.saveInitialState();
+            coord.save();
         }
         else if (menuItemID == CommandIDs::closeSong) {
-            api.unloadSong();
+            coord.unloadSong();
         }
         else if (menuItemID == CommandIDs::newInstrumentTrack) {
             auto tracks = state.listTracks();
             auto name = "Track " + juce::String((int)tracks.size() + 1);
             state.createTrack(name.toStdString());
-            perfLog("[Menu] Created track: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::newEffectsBus) {
             auto busses = state.listBusses();
             auto name = "Bus " + juce::String((int)busses.size() + 1);
             state.createBus(name.toStdString());
-            perfLog("[Menu] Created bus: %s\n", name.toRawUTF8());
         }
         else if (menuItemID == CommandIDs::toggleSidebar) {
             layout.handleGlobalKey(juce::KeyPress('s', {}, 's'));
@@ -145,19 +143,15 @@ public:
             layout.handleGlobalKey(juce::KeyPress('x', {}, 'x'));
         }
         else if (menuItemID >= 100) {
-            // Load song by index
-            auto songs = lua.listSongs();
+            auto& songs = state.allSongs();
             int idx = menuItemID - 100;
-            if (idx < (int)songs.size()) {
-                auto path = LuaEngine::getSongsDirectory() + "/" + songs[idx] + ".lua";
-                lua.loadSong(path);
-            }
+            if (idx < (int)songs.size())
+                coord.loadSong(songs[idx].id);
         }
     }
 
 private:
-    PerformanceAPI& api;
-    StateAPI& state;
+    PerformanceCoordinator& coord;
     LuaEngine& lua;
     MainLayout& layout;
 };
@@ -174,32 +168,35 @@ public:
         initLog();
         perfLog("[App] Starting Performance\n");
 
-        api = std::make_unique<PerformanceAPI>();
-        api->initialise();
-
+        // New system: in-memory state + persistence
         coordinator = std::make_unique<PerformanceCoordinator>();
         coordinator->initialise();
 
-        luaEngine = std::make_unique<LuaEngine>(*api);
+        luaEngine = std::make_unique<LuaEngine>(
+            coordinator->state(), coordinator->engine(), *coordinator);
 
-        mainWindow = std::make_unique<MainWindow>(coordinator->state(), coordinator->engine(), *luaEngine);
+        mainWindow = std::make_unique<MainWindow>(
+            coordinator->state(), coordinator->engine(), *luaEngine);
 
-        // Menu bar (needs references to api, state, lua, and layout)
+        // Menu bar
         auto* layout = mainWindow->getMainLayout();
-        menuBar = std::make_unique<AppMenuBar>(*api, coordinator->state(), *luaEngine, *layout);
+        menuBar = std::make_unique<AppMenuBar>(*coordinator, *luaEngine, *layout);
         juce::MenuBarModel::setMacMainMenu(menuBar.get());
 
-        // Wire sidebar song loading through coordinator
+        // Wire sidebar song loading
         layout->getSidebar().onLoadSong = [this](const std::string& songId) {
-            api->loadSongFromRegistry(songId);
+            coordinator->loadSong(songId);
         };
+
+        // Wire track preset callbacks on mixer strips
+        // (MixerView will set these when it creates TrackStrips)
 
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Restore session from registry (creates default if first run)
+        // Restore session (creates Sandbox if first run)
         juce::Timer::callAfterDelay(100, [this] {
-            api->restoreSession();
+            coordinator->restoreSession();
         });
     }
 
@@ -210,16 +207,16 @@ public:
         luaEngine.reset();
         mainWindow.reset();
         coordinator.reset();
-        api.reset();
     }
 
     void systemRequestedQuit() override {
+        if (coordinator)
+            coordinator->save();
         quit();
     }
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
-    std::unique_ptr<PerformanceAPI> api;
     std::unique_ptr<PerformanceCoordinator> coordinator;
     std::unique_ptr<LuaEngine> luaEngine;
     std::unique_ptr<IPCServer> ipcServer;
