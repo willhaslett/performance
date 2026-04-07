@@ -28,12 +28,13 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     inputField.setMultiLine(false);
     inputField.setReturnKeyStartsNewLine(false);
     inputField.setFont(Theme::font(Theme::fontSize));
-    inputField.setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::chatInput));
+    inputField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textWhite));
-    inputField.setColour(juce::TextEditor::outlineColourId, Theme::color(Theme::Color::border));
-    inputField.setColour(juce::TextEditor::focusedOutlineColourId, Theme::color(Theme::Color::accent));
+    inputField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+    inputField.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     inputField.setTextToShowWhenEmpty("Message Claude...", Theme::color(Theme::Color::textDim));
     inputField.setJustification(juce::Justification::centredLeft);
+    inputField.setIndents((int)(Theme::chatInputHeight * 0.4f), 0);
     inputField.onReturnKey = [this] { sendCurrentInput(); };
     addAndMakeVisible(inputField);
 
@@ -51,12 +52,24 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
 
 void ChatView::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
+
+    // Draw rounded input background
+    auto inputBounds = inputField.getBounds().toFloat().expanded(2.0f, 0.0f);
+    float radius = inputBounds.getHeight() * 0.5f;
+    g.setColour(Theme::color(Theme::Color::chatInput));
+    g.fillRoundedRectangle(inputBounds, radius);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawRoundedRectangle(inputBounds, radius, 1.0f);
 }
 
 void ChatView::resized() {
     auto area = getLocalBounds();
-    auto inputArea = area.removeFromBottom(Theme::chatInputHeight + Theme::chatGap * 2);
-    inputField.setBounds(inputArea.reduced(Theme::chatBubblePad, Theme::chatGap));
+    int pad = Theme::chatBubblePad;
+    auto inputArea = area.removeFromBottom(Theme::chatInputHeight + pad * 2);
+    auto fieldBounds = inputArea.reduced(pad + 4, 0)
+                                .withSizeKeepingCentre(inputArea.getWidth() - (pad + 4) * 2,
+                                                       Theme::chatInputHeight);
+    inputField.setBounds(fieldBounds);
 
     messageViewport.setBounds(area);
     layoutBubbles();
@@ -64,6 +77,7 @@ void ChatView::resized() {
 
 void ChatView::focusInput() {
     inputField.grabKeyboardFocus();
+    repaint();
 }
 
 void ChatView::unfocusInput() {
@@ -89,9 +103,10 @@ void ChatView::onAssistantText(const juce::String& text) {
     addBubble(Bubble::Assistant, text);
 }
 
-void ChatView::onToolUse(const juce::String&, const juce::String& code,
-                          const juce::String& result, bool) {
-    addBubble(Bubble::Tool, code + "\n> " + result);
+void ChatView::onToolUse(const juce::String&, const juce::String&,
+                          const juce::String&, bool) {
+    // Tool calls are internal — don't show to user.
+    // The assistant's text response after tool use is what the user sees.
 }
 
 void ChatView::onError(const juce::String& error) {
