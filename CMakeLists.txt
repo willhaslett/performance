@@ -40,6 +40,7 @@ juce_add_gui_app(Performance
 target_sources(Performance PRIVATE
     src/main.mm
     src/api/PerformanceAPI.cpp
+    src/api/StateAPI.cpp
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
     src/gui/TrackStrip.cpp
@@ -94,6 +95,7 @@ juce_add_console_app(PerformanceTests PRODUCT_NAME "PerformanceTests")
 target_sources(PerformanceTests PRIVATE
     tests/PerformanceTests.cpp
     src/api/PerformanceAPI.cpp
+    src/api/StateAPI.cpp
     src/registry/Registry.cpp
     src/engine/EngineSync.cpp
     src/engine/AudioEngine.mm
