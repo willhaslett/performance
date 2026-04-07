@@ -443,6 +443,186 @@ public:
 static SongTests songTests;
 
 // ============================================================================
+// Multi-track e2e tests
+// ============================================================================
+
+class MultiTrackTests : public juce::UnitTest {
+public:
+    MultiTrackTests() : UnitTest("Multi-Track E2E", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Multiple tracks coexist with independent state");
+        {
+            TestAPI t;
+            t->createTrack("Keys");
+            t->createTrack("Bass");
+            t->setTrackGain("Keys", 0.8f);
+            t->setTrackGain("Bass", 0.3f);
+            t->setTrackMidiEnabled("Keys", false);
+
+            expectEquals((int)t->listTrackNames().size(), 2);
+            expectWithinAbsoluteError(t->getTrackGain("Keys"), 0.8f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain("Bass"), 0.3f, 0.01f);
+            expect(t->isTrackMidiEnabled("Keys") == false);
+            expect(t->isTrackMidiEnabled("Bass") == true);
+        }
+
+        beginTest("Renaming one track doesn't affect another");
+        {
+            TestAPI t;
+            t->createTrack("Track 1");
+            t->createTrack("Track 2");
+            t->setTrackGain("Track 1", 0.5f);
+            t->setTrackGain("Track 2", 0.9f);
+
+            t->renameTrack("Track 1", "Piano");
+
+            // Piano should have Track 1's gain
+            expectWithinAbsoluteError(t->getTrackGain("Piano"), 0.5f, 0.01f);
+            // Track 2 should be unaffected
+            expectWithinAbsoluteError(t->getTrackGain("Track 2"), 0.9f, 0.01f);
+            expectEquals((int)t->listTrackNames().size(), 2);
+        }
+
+        beginTest("Deleting one track doesn't affect another");
+        {
+            TestAPI t;
+            t->createTrack("Keep");
+            t->createTrack("Delete");
+            t->setTrackGain("Keep", 0.7f);
+
+            t->removeTrack("Delete");
+
+            expectEquals((int)t->listTrackNames().size(), 1);
+            expectEquals(t->listTrackNames()[0], juce::String("Keep"));
+            expectWithinAbsoluteError(t->getTrackGain("Keep"), 0.7f, 0.01f);
+        }
+
+        beginTest("Multiple tracks with effects — independent");
+        {
+            TestAPI t;
+            t->createTrack("T1");
+            t->createTrack("T2");
+            t->addEffect("T1", "FX1", "DLSMusicDevice");
+            t->addEffect("T2", "FX2", "DLSMusicDevice");
+
+            auto t1fx = t->getTrackEffects("T1");
+            auto t2fx = t->getTrackEffects("T2");
+            expectEquals((int)t1fx.size(), 1);
+            expectEquals((int)t2fx.size(), 1);
+            expect(t1fx[0].effectId != t2fx[0].effectId);
+
+            // Remove effect from T1, T2 should be unaffected
+            t->removeEffect("T1", t1fx[0].effectId);
+            expectEquals((int)t->getTrackEffects("T1").size(), 0);
+            expectEquals((int)t->getTrackEffects("T2").size(), 1);
+        }
+
+        beginTest("Sends between tracks and busses — independent");
+        {
+            TestAPI t;
+            t->createTrack("T1");
+            t->createTrack("T2");
+            t->createBus("Reverb");
+            t->createBus("Delay");
+
+            t->addSend("T1", "Reverb", 0.5f);
+            t->addSend("T2", "Delay", 0.8f);
+
+            auto t1sends = t->getTrackSends("T1");
+            auto t2sends = t->getTrackSends("T2");
+            expectEquals((int)t1sends.size(), 1);
+            expectEquals((int)t2sends.size(), 1);
+            expectEquals(t1sends[0].busName, juce::String("Reverb"));
+            expectEquals(t2sends[0].busName, juce::String("Delay"));
+        }
+
+        beginTest("Track preset save captures correct track");
+        {
+            TestAPI t;
+            t->createTrack("Source");
+            t->setTrackGain("Source", 0.42f);
+            t->setTrackMidiEnabled("Source", false);
+
+            t->saveTrackPreset("Source", "TestPreset");
+
+            // Verify file was created
+            auto file = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                .getChildFile(".config/performance/track_presets/TestPreset.json");
+            expect(file.existsAsFile());
+
+            // Parse and verify contents
+            auto json = juce::JSON::parse(file.loadFileAsString());
+            expectWithinAbsoluteError((float)json.getProperty("gain", 0.0), 0.42f, 0.01f);
+            expect((bool)json.getProperty("midiEnabled", true) == false);
+
+            // Clean up
+            file.deleteFile();
+        }
+
+        beginTest("Multiple tracks survive song switch roundtrip");
+        {
+            TestAPI t;
+            auto songA = t->createSong("Multi A");
+            t->createTrack("A1");
+            t->createTrack("A2");
+            t->createBus("A Bus");
+            t->setTrackGain("A1", 0.1f);
+            t->setTrackGain("A2", 0.2f);
+            t->addSend("A1", "A Bus", 0.5f);
+
+            // Switch away and back
+            t->createSong("Temp");
+            t->loadSongFromRegistry(songA);
+
+            expectEquals((int)t->listTrackNames().size(), 2);
+            expectEquals((int)t->listBusNames().size(), 1);
+            expectWithinAbsoluteError(t->getTrackGain("A1"), 0.1f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain("A2"), 0.2f, 0.01f);
+            auto sends = t->getTrackSends("A1");
+            expectEquals((int)sends.size(), 1);
+        }
+
+        beginTest("Registry state consistent after multiple operations");
+        {
+            TestAPI t;
+            auto& reg = t.get().getRegistry();
+            auto songId = t.get().getCurrentSongId();
+
+            t->createTrack("T1");
+            t->createTrack("T2");
+            t->createBus("B1");
+            t->setTrackGain("T1", 0.5f);
+            t->setBusGain("B1", 0.7f);
+            t->addSend("T1", "B1", 0.3f);
+            t->renameTrack("T2", "Bass");
+
+            // Verify registry matches what the API reports
+            auto regTracks = reg.tracksForSong(songId);
+            expectEquals((int)regTracks.size(), 2);
+
+            bool foundT1 = false, foundBass = false;
+            for (auto& rt : regTracks) {
+                if (rt.name == "T1") {
+                    expectWithinAbsoluteError(rt.outputGain, 0.5f, 0.01f);
+                    foundT1 = true;
+                }
+                if (rt.name == "Bass") foundBass = true;
+            }
+            expect(foundT1);
+            expect(foundBass);
+
+            auto regBusses = reg.bussesForSong(songId);
+            expectEquals((int)regBusses.size(), 1);
+            expectWithinAbsoluteError(regBusses[0].outputGain, 0.7f, 0.01f);
+        }
+    }
+};
+
+static MultiTrackTests multiTrackTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 
