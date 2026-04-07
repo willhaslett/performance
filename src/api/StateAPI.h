@@ -61,12 +61,17 @@ public:
     void removeSend(const std::string& sendId);
     void setSendGain(const std::string& sendId, float gain);
 
-    // --- Bindings ---
-    std::string addBinding(const std::string& controlType, int channel, int number,
-                           const std::string& actionId, const std::string& args = "[]",
-                           const std::string& description = "");
+    // --- Bindings (songId empty = global, otherwise song-scoped) ---
+    std::string addBinding(const std::string& songId, const std::string& controlType,
+                           int channel, int number, const std::string& actionId,
+                           const std::string& args = "[]", const std::string& description = "");
+    std::string addGlobalBinding(const std::string& controlType, int channel, int number,
+                                  const std::string& actionId, const std::string& args = "[]",
+                                  const std::string& description = "");
     void removeBinding(const std::string& id);
-    std::vector<BindingState> bindingsForCurrentSong() const;
+    std::vector<BindingState> bindingsForSong(const std::string& songId) const;
+    std::vector<BindingState> globalBindings() const;
+    std::vector<BindingState> effectiveBindings() const;  // global + current song (song wins on conflict)
 
     // --- Catalog: Plugins ---
     std::string registerPlugin(const std::string& name, const std::string& manufacturer,
@@ -77,7 +82,7 @@ public:
 
     // --- Catalog: Presets ---
     std::string createPreset(const std::string& pluginId, const std::string& name,
-                             const std::string& statePath);
+                             const std::string& statePath, PresetKind kind = PresetKind::Instrument);
     const PresetInfo* findPreset(const std::string& pluginId, const std::string& name) const;
     const PresetInfo* findPresetById(const std::string& id) const;
     std::vector<const PresetInfo*> presetsForPlugin(const std::string& pluginId) const;
@@ -127,6 +132,7 @@ public:
 
     // --- Direct access to full state (for persistence layer) ---
     const AppState& appState() const { return state; }
+    AppState& mutableState() { return state; }  // for persistence load only
 
     // --- UUID generation ---
     static std::string generateId();

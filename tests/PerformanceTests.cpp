@@ -2,6 +2,7 @@
 #include <juce_events/juce_events.h>
 #include "api/PerformanceAPI.h"
 #include "api/StateAPI.h"
+#include "persistence/PersistenceLayer.h"
 #include "registry/Registry.h"
 #include "engine/Log.h"
 
@@ -1082,19 +1083,69 @@ public:
             expectEquals((int)s.allActions().size(), 1);
         }
 
-        beginTest("Bindings");
+        beginTest("Song-scoped bindings");
         {
             StateAPI s;
-            s.setCurrentSong(s.createSong("S"));
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
             auto actionId = s.registerAction("test", "Test");
-            auto bindId = s.addBinding("cc", 1, 42, actionId, "[\"arg\"]", "Test binding");
+            auto bindId = s.addBinding(songId, "cc", 1, 42, actionId, "[\"arg\"]", "Test binding");
             expect(!bindId.empty());
-            auto bindings = s.bindingsForCurrentSong();
+            auto bindings = s.bindingsForSong(songId);
             expectEquals((int)bindings.size(), 1);
             expectEquals(bindings[0].controlType, std::string("cc"));
             expectEquals(bindings[0].number, 42);
+            expect(!bindings[0].songId.empty());
             s.removeBinding(bindId);
-            expect(s.bindingsForCurrentSong().empty());
+            expect(s.bindingsForSong(songId).empty());
+        }
+
+        beginTest("Global bindings");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto actionId = s.registerAction("masterVol", "Master Volume");
+            auto bindId = s.addGlobalBinding("cc", 1, 7, actionId, "[]", "Master vol fader");
+            expect(!bindId.empty());
+            auto globals = s.globalBindings();
+            expectEquals((int)globals.size(), 1);
+            expect(globals[0].songId.empty());  // no song scope
+
+            // Global binding survives song delete
+            s.deleteSong(songId);
+            expectEquals((int)s.globalBindings().size(), 1);
+
+            // Can remove global binding
+            s.removeBinding(bindId);
+            expect(s.globalBindings().empty());
+        }
+
+        beginTest("Effective bindings — song overrides global");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto action1 = s.registerAction("globalAction", "Global");
+            auto action2 = s.registerAction("songAction", "Song");
+
+            // Global: CC1 ch1 #7 → globalAction
+            s.addGlobalBinding("cc", 1, 7, action1);
+            // Song: CC1 ch1 #7 → songAction (overrides)
+            s.addBinding(songId, "cc", 1, 7, action2);
+            // Global: CC1 ch1 #10 → globalAction (no conflict)
+            s.addGlobalBinding("cc", 1, 10, action1);
+
+            auto effective = s.effectiveBindings();
+            expectEquals((int)effective.size(), 2);  // #7 (song wins) + #10 (global)
+
+            // Find the binding for #7 — should be the song one
+            for (auto& b : effective) {
+                if (b.number == 7)
+                    expectEquals(b.actionId, action2);
+                if (b.number == 10)
+                    expectEquals(b.actionId, action1);
+            }
         }
 
         beginTest("Config key-value store");
@@ -1199,6 +1250,187 @@ public:
 };
 
 static StateAPITests stateAPITests;
+
+// ============================================================================
+// PersistenceLayer round-trip tests
+// ============================================================================
+
+class PersistenceTests : public juce::UnitTest {
+public:
+    PersistenceTests() : UnitTest("Persistence", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Save and load round-trip");
+        {
+            TempDB db;
+
+            // Build state
+            StateAPI original;
+            auto pluginId = original.registerPlugin("DLS", "Apple", "au-id", true);
+            auto fxPluginId = original.registerPlugin("AUDelay", "Apple", "au-delay", false);
+            original.createPreset(pluginId, "Warm", "/tmp/warm.state", PresetKind::Instrument);
+            original.registerAction("fadeOut", "Fade out", "[{\"name\":\"track\"}]");
+
+            auto songId = original.createSong("My Song");
+            original.setCurrentSong(songId);
+            original.setMasterGain(0.8f);
+
+            auto t1 = original.createTrack("Keys");
+            original.setTrackGain(t1, 0.6f);
+            original.setTrackMidiEnabled(t1, false);
+            original.setTrackPlugin(t1, pluginId);
+
+            auto t2 = original.createTrack("Bass");
+            original.setTrackGain(t2, 0.4f);
+
+            auto busId = original.createBus("Reverb");
+            original.setBusGain(busId, 0.7f);
+
+            original.addEffect(t1, "Delay", fxPluginId);
+            original.addEffect(busId, "Delay2", fxPluginId);
+            original.addEffect(songId, "MasterFX", fxPluginId);  // master effect
+
+            original.addSend(t1, busId, 0.5f);
+
+            auto actionId = original.findActionByName("fadeOut")->id;
+            original.addBinding(songId, "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
+            original.addGlobalBinding("cc", 1, 7, actionId, "[]", "Master vol");
+
+            // Save
+            {
+                PersistenceLayer persistence;
+                persistence.open(db.path().toStdString());
+                persistence.saveFrom(original);
+            }
+
+            // Load into fresh state
+            StateAPI loaded;
+            {
+                PersistenceLayer persistence;
+                persistence.open(db.path().toStdString());
+                persistence.loadInto(loaded);
+            }
+
+            // Verify catalog
+            expectEquals((int)loaded.allPlugins().size(), 2);
+            expect(loaded.findPluginByName("DLS") != nullptr);
+            expect(loaded.findPluginByName("DLS")->isInstrument == true);
+            expect(loaded.findPluginByName("AUDelay") != nullptr);
+            expect(loaded.findPluginByName("AUDelay")->isInstrument == false);
+            expect(loaded.findActionByName("fadeOut") != nullptr);
+
+            // Verify song
+            expectEquals((int)loaded.allSongs().size(), 1);
+            auto* song = loaded.currentSong();
+            expect(song != nullptr);
+            expectEquals(song->name, std::string("My Song"));
+            expectWithinAbsoluteError(song->masterGain, 0.8f, 0.001f);
+
+            // Verify tracks
+            auto tracks = loaded.listTracks();
+            expectEquals((int)tracks.size(), 2);
+
+            // Find Keys track
+            const TrackState* keys = nullptr;
+            const TrackState* bass = nullptr;
+            for (auto& ti : tracks) {
+                auto* t = loaded.findTrack(ti.id);
+                if (t->name == "Keys") keys = t;
+                if (t->name == "Bass") bass = t;
+            }
+            expect(keys != nullptr);
+            expect(bass != nullptr);
+            expectWithinAbsoluteError(keys->outputGain, 0.6f, 0.001f);
+            expect(keys->midiEnabled == false);
+            expect(!keys->pluginId.empty());
+            expectWithinAbsoluteError(bass->outputGain, 0.4f, 0.001f);
+
+            // Verify bus
+            auto busses = loaded.listBusses();
+            expectEquals((int)busses.size(), 1);
+            expectWithinAbsoluteError(loaded.getBusGain(busses[0].id), 0.7f, 0.001f);
+
+            // Verify effects
+            auto keysEffects = loaded.getTrackEffects(keys->id);
+            expectEquals((int)keysEffects.size(), 1);
+            auto busEffects = loaded.getBusEffects(busses[0].id);
+            expectEquals((int)busEffects.size(), 1);
+            auto masterEffects = loaded.getMasterEffects();
+            expectEquals((int)masterEffects.size(), 1);
+
+            // Verify sends
+            auto sends = loaded.getTrackSends(keys->id);
+            expectEquals((int)sends.size(), 1);
+            expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
+
+            // Verify song-scoped bindings
+            auto songBindings = loaded.bindingsForSong(song->id);
+            expectEquals((int)songBindings.size(), 1);
+            expectEquals(songBindings[0].controlType, std::string("cc"));
+            expectEquals(songBindings[0].number, 42);
+
+            // Verify global bindings
+            auto globals = loaded.globalBindings();
+            expectEquals((int)globals.size(), 1);
+            expectEquals(globals[0].number, 7);
+
+            // Verify not dirty after load
+            expect(!loaded.isDirty());
+        }
+
+        beginTest("Multiple songs round-trip");
+        {
+            TempDB db;
+
+            StateAPI original;
+            original.registerPlugin("Synth", "Mfg", "fmt", true);
+            auto s1 = original.createSong("Song A");
+            original.setCurrentSong(s1);
+            original.createTrack("A Track");
+            auto s2 = original.createSong("Song B");
+            original.setCurrentSong(s2);
+            original.createTrack("B Track");
+            original.setConfig("current_song_id", s2);
+
+            {
+                PersistenceLayer p;
+                p.open(db.path().toStdString());
+                p.saveFrom(original);
+            }
+
+            StateAPI loaded;
+            {
+                PersistenceLayer p;
+                p.open(db.path().toStdString());
+                p.loadInto(loaded);
+            }
+
+            expectEquals((int)loaded.allSongs().size(), 2);
+
+            // Switch to Song A and verify its track
+            auto* songA = loaded.allSongs()[0].name == "Song A" ? &loaded.allSongs()[0] : &loaded.allSongs()[1];
+            loaded.setCurrentSong(songA->id);
+            auto tracks = loaded.listTracks();
+            expectEquals((int)tracks.size(), 1);
+            expectEquals(tracks[0].name, std::string("A Track"));
+        }
+
+        beginTest("Empty database creates clean state");
+        {
+            TempDB db;
+            StateAPI state;
+            PersistenceLayer p;
+            p.open(db.path().toStdString());
+            p.loadInto(state);
+            expect(state.allSongs().empty());
+            expect(state.allPlugins().empty());
+            expect(!state.isDirty());
+        }
+    }
+};
+
+static PersistenceTests persistenceTests;
 
 // ============================================================================
 // Test runner — main()

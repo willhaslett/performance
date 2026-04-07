@@ -423,13 +423,14 @@ void StateAPI::setSendGain(const std::string& sendId, float gain) {
 
 // --- Bindings ---
 
-std::string StateAPI::addBinding(const std::string& controlType, int channel, int number,
-                                  const std::string& actionId, const std::string& args,
-                                  const std::string& description) {
-    auto* song = currentSong();
+std::string StateAPI::addBinding(const std::string& songId, const std::string& controlType,
+                                  int channel, int number, const std::string& actionId,
+                                  const std::string& args, const std::string& description) {
+    auto* song = findSong(songId);
     if (!song) return {};
     BindingState binding;
     binding.id = generateId();
+    binding.songId = songId;
     binding.controlType = controlType;
     binding.channel = channel;
     binding.number = number;
@@ -438,25 +439,81 @@ std::string StateAPI::addBinding(const std::string& controlType, int channel, in
     binding.description = description;
     song->bindings.push_back(std::move(binding));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Binding, song->bindings.back().id, song->id });
+    eventBus.emit({ StateEvent::Created, StateEvent::Binding, song->bindings.back().id, songId });
     return song->bindings.back().id;
 }
 
-void StateAPI::removeBinding(const std::string& id) {
-    auto* song = currentSong();
-    if (!song) return;
-    song->bindings.erase(
-        std::remove_if(song->bindings.begin(), song->bindings.end(),
-                       [&](auto& b) { return b.id == id; }),
-        song->bindings.end());
+std::string StateAPI::addGlobalBinding(const std::string& controlType, int channel, int number,
+                                        const std::string& actionId, const std::string& args,
+                                        const std::string& description) {
+    BindingState binding;
+    binding.id = generateId();
+    // songId left empty = global
+    binding.controlType = controlType;
+    binding.channel = channel;
+    binding.number = number;
+    binding.actionId = actionId;
+    binding.args = args;
+    binding.description = description;
+    state.globalBindings.push_back(std::move(binding));
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, song->id });
+    eventBus.emit({ StateEvent::Created, StateEvent::Binding, state.globalBindings.back().id, "" });
+    return state.globalBindings.back().id;
 }
 
-std::vector<BindingState> StateAPI::bindingsForCurrentSong() const {
+void StateAPI::removeBinding(const std::string& id) {
+    // Check global bindings first
+    auto git = std::find_if(state.globalBindings.begin(), state.globalBindings.end(),
+                            [&](auto& b) { return b.id == id; });
+    if (git != state.globalBindings.end()) {
+        state.globalBindings.erase(git);
+        markDirty();
+        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, "" });
+        return;
+    }
+    // Then check current song
     auto* song = currentSong();
+    if (!song) return;
+    auto sit = std::find_if(song->bindings.begin(), song->bindings.end(),
+                            [&](auto& b) { return b.id == id; });
+    if (sit != song->bindings.end()) {
+        song->bindings.erase(sit);
+        markDirty();
+        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, song->id });
+    }
+}
+
+std::vector<BindingState> StateAPI::bindingsForSong(const std::string& songId) const {
+    auto* song = findSong(songId);
     if (!song) return {};
     return song->bindings;
+}
+
+std::vector<BindingState> StateAPI::globalBindings() const {
+    return state.globalBindings;
+}
+
+std::vector<BindingState> StateAPI::effectiveBindings() const {
+    // Start with global bindings
+    std::vector<BindingState> result = state.globalBindings;
+
+    // Song bindings override globals on same control
+    auto* song = currentSong();
+    if (song) {
+        for (auto& sb : song->bindings) {
+            // Remove any global binding on the same control
+            result.erase(
+                std::remove_if(result.begin(), result.end(),
+                    [&](auto& gb) {
+                        return gb.controlType == sb.controlType &&
+                               gb.channel == sb.channel &&
+                               gb.number == sb.number;
+                    }),
+                result.end());
+            result.push_back(sb);
+        }
+    }
+    return result;
 }
 
 // --- Catalog: Plugins ---
@@ -549,7 +606,7 @@ const std::vector<PluginInfo>& StateAPI::allPlugins() const {
 // --- Catalog: Presets ---
 
 std::string StateAPI::createPreset(const std::string& pluginId, const std::string& name,
-                                    const std::string& statePath) {
+                                    const std::string& statePath, PresetKind kind) {
     // Deduplicate by pluginId + name
     for (auto& p : state.presets)
         if (p.pluginId == pluginId && p.name == name) return p.id;
@@ -558,6 +615,7 @@ std::string StateAPI::createPreset(const std::string& pluginId, const std::strin
     preset.pluginId = pluginId;
     preset.name = name;
     preset.statePath = statePath;
+    preset.kind = kind;
     state.presets.push_back(std::move(preset));
     eventBus.emit({ StateEvent::Created, StateEvent::Preset, state.presets.back().id, "" });
     return state.presets.back().id;

@@ -16,11 +16,14 @@ struct PluginInfo {
     bool isInstrument = false;
 };
 
+enum class PresetKind { Instrument, Effect, Track };
+
 struct PresetInfo {
     std::string id;
     std::string pluginId;
     std::string name;
     std::string statePath;
+    PresetKind kind = PresetKind::Instrument;
 };
 
 struct ActionInfo {
@@ -72,11 +75,18 @@ struct BusState {
 
 struct BindingState {
     std::string id;
+    std::string songId;  // empty = global binding
     std::string controlType;
     int channel = 0;
     int number = 0;
     std::string actionId;
     std::string args;  // JSON
+    std::string description;
+};
+
+struct ScoreStep {
+    std::string actionId;
+    std::string args;         // JSON
     std::string description;
 };
 
@@ -87,9 +97,9 @@ struct SongState {
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;
-    std::vector<BindingState> bindings;
-    std::string initialState;  // JSON snapshot
-    std::string score;          // JSON action list
+    std::vector<BindingState> bindings;      // song-scoped bindings
+    std::string initialState;                 // JSON snapshot
+    std::vector<ScoreStep> score;
 
     // Selection state (observable, not persisted)
     std::vector<std::string> selectedTrackIds;
@@ -103,5 +113,6 @@ struct AppState {
     std::vector<PluginInfo> plugins;
     std::vector<PresetInfo> presets;
     std::vector<ActionInfo> actions;
+    std::vector<BindingState> globalBindings;  // song_id empty = applies everywhere
     std::map<std::string, std::string> config;
 };
