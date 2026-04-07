@@ -562,7 +562,23 @@ void PerformanceAPI::cancelAllAutomation() {
 // --- Plugin UI ---
 
 void PerformanceAPI::openPluginEditor(const juce::String& trackName, const juce::String& effectName) {
-    audioEngine->openPluginEditor(trackName, effectName);
+    // Build preset callbacks for the instrument (not effects, for now)
+    AudioEngine::PresetCallbacks callbacks;
+    if (effectName.isEmpty()) {
+        auto pluginName = audioEngine->getTrackPluginName(trackName);
+        if (pluginName.isNotEmpty()) {
+            callbacks.listPresets = [this, pluginName]() {
+                return listPresets(pluginName);
+            };
+            callbacks.savePreset = [this, trackName](const juce::String& name) {
+                savePreset(trackName, name);
+            };
+            callbacks.loadPreset = [this, trackName](const juce::String& name) {
+                loadPreset(trackName, name);
+            };
+        }
+    }
+    audioEngine->openPluginEditor(trackName, effectName, std::move(callbacks));
 }
 
 void PerformanceAPI::closeTopPluginEditor() {

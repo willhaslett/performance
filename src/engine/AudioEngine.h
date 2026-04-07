@@ -80,7 +80,14 @@ public:
     float getBusPeakLevel(const juce::String& busName) const;
 
     // Plugin editor windows
-    void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");
+    struct PresetCallbacks {
+        std::function<std::vector<juce::String>()> listPresets;
+        std::function<void(const juce::String&)> savePreset;
+        std::function<void(const juce::String&)> loadPreset;
+        juce::String currentPresetName;
+    };
+    void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "",
+                          PresetCallbacks presetCallbacks = {});
     void closeTopPluginEditor();
 
     // MIDI input to the graph

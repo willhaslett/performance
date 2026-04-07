@@ -906,15 +906,131 @@ juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& t
     return nullptr;
 }
 
+// Toolbar above the plugin editor with preset save/load
+class PresetToolbar : public juce::Component {
+public:
+    PresetToolbar(AudioEngine::PresetCallbacks cbs) : callbacks(std::move(cbs)) {
+        loadButton.setButtonText("Load");
+        loadButton.onClick = [this] { showPresetMenu(); };
+        addAndMakeVisible(loadButton);
+
+        saveButton.setButtonText("Save");
+        saveButton.onClick = [this] { showSaveDialog(); };
+        addAndMakeVisible(saveButton);
+
+        presetLabel.setText(callbacks.currentPresetName.isNotEmpty()
+                            ? callbacks.currentPresetName : "Default",
+                            juce::dontSendNotification);
+        presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xffcccccc));
+        presetLabel.setFont(juce::Font(18.0f));
+        addAndMakeVisible(presetLabel);
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(4, 2);
+        loadButton.setBounds(area.removeFromRight(50));
+        area.removeFromRight(4);
+        saveButton.setBounds(area.removeFromRight(50));
+        area.removeFromRight(4);
+        presetLabel.setBounds(area);
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(juce::Colour(0xff2a2a2a));
+        g.setColour(juce::Colour(0xff3a3a3a));
+        g.drawLine(0.0f, (float)getHeight(), (float)getWidth(), (float)getHeight(), 1.0f);
+    }
+
+private:
+    AudioEngine::PresetCallbacks callbacks;
+    juce::Label presetLabel;
+    juce::TextButton loadButton;
+    juce::TextButton saveButton;
+
+    void showPresetMenu() {
+        if (!callbacks.listPresets) return;
+        auto presets = callbacks.listPresets();
+        if (presets.empty()) return;
+
+        juce::PopupMenu menu;
+        for (int i = 0; i < (int)presets.size(); ++i)
+            menu.addItem(i + 1, presets[i]);
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&loadButton),
+            [this, presets](int result) {
+                if (result == 0 || result - 1 >= (int)presets.size()) return;
+                auto name = presets[result - 1];
+                if (callbacks.loadPreset) callbacks.loadPreset(name);
+                presetLabel.setText(name, juce::dontSendNotification);
+            });
+    }
+
+    void showSaveDialog() {
+        if (!callbacks.savePreset) return;
+
+        auto* alertWindow = new juce::AlertWindow("Save Preset", "", juce::MessageBoxIconType::NoIcon);
+        alertWindow->addTextEditor("name", presetLabel.getText(), "Preset name:");
+
+        // Show existing presets for reference
+        if (callbacks.listPresets) {
+            auto presets = callbacks.listPresets();
+            if (!presets.empty()) {
+                juce::String listText = "Existing: ";
+                for (int i = 0; i < (int)presets.size(); ++i) {
+                    if (i > 0) listText += ", ";
+                    listText += presets[i];
+                }
+                alertWindow->addTextBlock(listText);
+            }
+        }
+
+        alertWindow->addButton("Save", 1);
+        alertWindow->addButton("Cancel", 0);
+
+        alertWindow->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, alertWindow](int result) {
+                if (result == 1) {
+                    auto name = alertWindow->getTextEditorContents("name").trim();
+                    if (name.isNotEmpty() && callbacks.savePreset) {
+                        callbacks.savePreset(name);
+                        presetLabel.setText(name, juce::dontSendNotification);
+                    }
+                }
+                delete alertWindow;
+            }), false);
+    }
+};
+
+// Plugin editor window with optional preset toolbar
 class PluginEditorWindow : public juce::DocumentWindow {
 public:
-    PluginEditorWindow(const juce::String& name, std::vector<std::unique_ptr<juce::DocumentWindow>>& windows)
+    PluginEditorWindow(const juce::String& name,
+                       std::vector<std::unique_ptr<juce::DocumentWindow>>& windows,
+                       juce::AudioProcessorEditor* editor,
+                       AudioEngine::PresetCallbacks presetCallbacks)
         : DocumentWindow(name, juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
-          ownerWindows(windows) {}
+          ownerWindows(windows) {
+
+        bool hasPresets = presetCallbacks.listPresets != nullptr;
+        int toolbarHeight = hasPresets ? 32 : 0;
+
+        auto* container = new juce::Component();
+        container->setSize(editor->getWidth(), editor->getHeight() + toolbarHeight);
+
+        if (hasPresets) {
+            toolbar = std::make_unique<PresetToolbar>(std::move(presetCallbacks));
+            toolbar->setBounds(0, 0, editor->getWidth(), toolbarHeight);
+            container->addAndMakeVisible(toolbar.get());
+        }
+
+        editor->setTopLeftPosition(0, toolbarHeight);
+        container->addAndMakeVisible(editor);
+
+        setContentOwned(container, true);
+    }
 
     void closeButtonPressed() override {
         setVisible(false);
-        // Defer removal to avoid deleting ourselves mid-callback
         juce::MessageManager::callAsync([this] {
             auto& wins = ownerWindows;
             wins.erase(std::remove_if(wins.begin(), wins.end(),
@@ -924,9 +1040,11 @@ public:
 
 private:
     std::vector<std::unique_ptr<juce::DocumentWindow>>& ownerWindows;
+    std::unique_ptr<PresetToolbar> toolbar;
 };
 
-void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::String& effectName) {
+void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::String& effectName,
+                                    PresetCallbacks presetCallbacks) {
     juce::AudioProcessor* processor = nullptr;
     if (effectName.isEmpty())
         processor = getTrackInstrumentProcessor(trackName);
@@ -947,10 +1065,11 @@ void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::St
     auto* editor = processor->createEditor();
     if (!editor) return;
 
-    auto window = std::make_unique<PluginEditorWindow>(processor->getName(), editorWindows);
-    window->setContentOwned(editor, true);
+    auto window = std::make_unique<PluginEditorWindow>(
+        processor->getName(), editorWindows, editor, std::move(presetCallbacks));
     window->setUsingNativeTitleBar(true);
-    window->centreWithSize(editor->getWidth(), editor->getHeight());
+    window->centreWithSize(window->getContentComponent()->getWidth(),
+                            window->getContentComponent()->getHeight());
     window->setVisible(true);
 
     editorWindows.push_back(std::move(window));

@@ -50,7 +50,8 @@ One direction. One source of truth. The engine never has state that the registry
 - **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots, fader+meter.
 - **OutputStrip** (`src/gui/OutputStrip.h/.cpp`) — dark green header, master effect slots, master fader+meter. Singleton, always present after busses. Master GainProcessor in audio graph.
-- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with preset submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
+- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker (no submenu when only Default preset, submenu when user presets exist), right-click context menu (No Plugin / Replace). Works for both tracks and busses.
+- **PresetToolbar** (in `AudioEngine.mm`) — toolbar in plugin editor windows with preset name display, Load button (dropdown of presets), and Save button (save-as dialog with existing presets listed).
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
 - **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
