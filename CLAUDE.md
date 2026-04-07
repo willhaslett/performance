@@ -187,13 +187,19 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - "Preset" naming throughout (renamed from "Snapshot")
 
 **In progress:**
-- **State management refactor** (active): enforce registry as sole SSOT. All mutations through API → Registry → targeted engine update. Eliminate persist timer and dual-write patterns. See Data Flow section above.
-- Track preset LOAD disabled pending the refactor (save works).
+- **ID-based API refactor** (next priority): All API methods currently accept track/bus NAMES and resolve to UUIDs via `findTrackId(name)` which is ambiguous when names collide (duplicate names are allowed). Fix: all API mutation methods accept track/bus UUIDs. GUI passes IDs from `listTracks()`. Lua/IPC keeps name-based convenience that resolves once at the entry point. This is required before track preset load works reliably.
+
+**Completed (state management):**
+- Registry as sole SSOT — all continuous values (gain, MIDI enabled) write to registry first
+- Persist timer eliminated — registry is always current
+- Engine maps keyed by UUID — rename just changes `.name` field
+- MixerView sources identity from registry via `listTracks()`/`listBusses()`
+- TrackStrip holds a stable `trackId` from registry
 
 **TODOs:**
+- **ID-based API methods** (required for track preset load and duplicate names)
 - Master output needs a registry entity (effects, gain)
 - Auto-create Default preset on first plugin instantiation
-- Re-enable track preset load (write to registry, sync)
 - Plugin state restore needs proper callback (not 500ms timer)
 - Test suite expansion: continuous value paths, preset lifecycle
 - Live audio tracks (input from audio device, same track model)
