@@ -16,31 +16,39 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 ### Data Flow
 
 ```
-Mutation (API call from Lua, Claude, GUI, IPC)
+All mutations (GUI, Claude/Lua, IPC, MIDI bindings)
     ↓
-Registry (SQLite — write)
+PerformanceAPI (the single chokepoint — de facto StateStore interface)
     ↓
-EngineSync.sync() (diff registry vs engine, apply changes)
+Registry (SQLite — the SSOT for ALL state, structural and continuous)
     ↓
-AudioEngine (audio graph matches registry)
+Targeted engine update (set the specific value on the engine)
+    ↓
+AudioEngine (audio graph — a pure view of the registry)
 ```
 
-One direction. One source of truth. The engine never has state that the registry doesn't know about. Sync is idempotent — call it as many times as you want.
+**One direction. One source of truth.** The registry owns all state — structural (tracks, busses, effects, sends) AND continuous (gain, MIDI enabled, plugin parameters). The engine is a view: it reads state from the registry (via sync for structural changes, via targeted updates for continuous values) and produces audio.
 
-**Known tension:** Some operations bypass the registry and go direct to the engine:
-- Real-time values (gain, MIDI enabled) go direct to engine, persisted back by 1Hz timer
-- `renameTrack`/`renameBus` update both engine and registry in one call
-- Master output effects bypass the registry entirely (no registry entity for master output)
-- Track preset load was attempting to modify engine state through the API without proper registry updates — **currently disabled** pending redesign
+**PerformanceAPI is the abstraction layer.** All consumers (GUI, Lua, Claude, MIDI) go through it. Nothing reads or writes the registry or engine directly except PerformanceAPI. If we ever need to swap SQLite for an in-memory store, only PerformanceAPI's internals change.
 
-This dual-write pattern is a source of bugs. The correct model: ALL mutations go through the registry, EngineSync syncs the engine. Real-time values (gain) are the only exception, and those are written back by the persist timer. Any new feature that modifies track/bus structure should go through the registry, not the engine directly.
+**Two update paths, both through the API:**
+- **Structural changes** (create/remove/rename tracks, load plugins, add effects/sends): API writes to registry, then calls `engineSync->sync()` to diff and apply.
+- **Continuous values** (gain, send levels, plugin parameters, MIDI enabled): API writes to registry, then does a targeted engine update (e.g., `audioEngine->setTrackGain(id, value)`). No full sync — just set the one value. At MIDI/UI rates (60-200Hz), SQLite writes are ~10-50μs each, well within budget.
+
+**Legitimate direct engine access (not bypasses):**
+- **Peak level reads** — transient measurements from the audio thread, not state. GUI reads these directly from engine.
+- **Plugin processor pointers** — for editor windows. References to live objects, not state.
+- **Internal graph wiring** — rebuildConnections is an engine implementation detail.
+- **processBlock** — audio thread reads gain atomics. This is the engine consuming state, not bypassing the store.
+
+**No persist timer.** The 1Hz timer that wrote engine values back to registry is eliminated. The registry already has the right values because all writes go through it first.
 
 ### Components
 
 - **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — single interface for all consumers. Writes to registry, calls `engineSync->sync()`. Real-time values (gain) go direct to engine, persisted by 1Hz timer. Discrete state (MIDI enabled) writes to registry immediately. Action dispatcher (`executeAction`) resolves action names + entity ID args. Effects use unified `addEffect`/`removeEffect` — parent name resolves to track or bus automatically.
 - **Registry** (`src/registry/Registry.h/.cpp`) — SQLite database (`~/.config/performance/registry.db`). Typed entities with UUIDs. Generic CRUD (`create`, `get`, `list`, `update`, `remove`) plus type-specific convenience methods. Emits events for UI updates.
 - **RegistryEventBus** (`src/registry/RegistryEvents.h`) — pub/sub for UI components. Entity type constants in `EntityType` namespace.
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends. Also runs 1Hz persist timer writing engine values back to registry. Only creates new entities; never overwrites values on existing ones (engine owns live values after creation).
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — reads the registry for a song, diffs against engine state, creates/removes what's needed. Order: busses → tracks → effects → sends. Used for structural changes only. Continuous values (gain, etc.) use targeted engine updates bypassing sync.
 - **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph, plugin hosting, Track/Bus DAG wiring, GainProcessor nodes. Never written to directly except for real-time values.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing functions.
@@ -178,25 +186,21 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Sandbox session (always exists, undeletable, highlighted in sidebar)
 - "Preset" naming throughout (renamed from "Snapshot")
 
-**In progress / disabled:**
-- Track preset LOAD disabled — save works, load has bugs from dual-write pattern (modifies engine without updating registry). Needs redesign: load should write to registry, let EngineSync rebuild.
-
-**Architecture debt (address before adding more features):**
-- Registry-engine consistency: some operations bypass registry and go direct to engine. Need to audit all mutation paths and ensure registry is always written first, engine follows via sync. Specific issues:
-  - Master output effects have no registry entity
-  - Track preset load attempted engine-direct mutations
-  - renameTrack/renameBus write to both engine and registry separately
-- Auto-create Default preset on first plugin instantiation (not yet implemented)
-- Effect state not saved/restored in track presets (async load makes it complex)
-- The 500ms timer hack for deferred plugin state restore needs a proper callback-based approach
+**In progress:**
+- **State management refactor** (active): enforce registry as sole SSOT. All mutations through API → Registry → targeted engine update. Eliminate persist timer and dual-write patterns. See Data Flow section above.
+- Track preset LOAD disabled pending the refactor (save works).
 
 **TODOs:**
-- **Test suite** — first priority. Track/bus lifecycle, preset save/load, rename, song switching. The system is complex enough that manual testing misses interaction bugs.
+- Master output needs a registry entity (effects, gain)
+- Auto-create Default preset on first plugin instantiation
+- Re-enable track preset load (write to registry, sync)
+- Plugin state restore needs proper callback (not 500ms timer)
+- Test suite expansion: continuous value paths, preset lifecycle
+- Live audio tracks (input from audio device, same track model)
 - Undo/redo via registry history table
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
 - Plugin load performance (progress indicator or background loading)
 - Track/bus selection (click to select, shift/cmd-click for multi-select)
-- Master output effects persistence in registry
 - Fader/knob drag: value stops changing at screen edge
