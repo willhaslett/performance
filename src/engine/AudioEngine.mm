@@ -1047,12 +1047,14 @@ private:
 // Plugin editor window with optional preset toolbar
 class PluginEditorWindow : public juce::DocumentWindow {
 public:
-    PluginEditorWindow(const juce::String& name,
+    PluginEditorWindow(const juce::String& key,
                        std::vector<std::unique_ptr<juce::DocumentWindow>>& windows,
                        juce::AudioProcessorEditor* editor,
                        AudioEngine::PresetCallbacks presetCallbacks)
-        : DocumentWindow(name, juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
+        : DocumentWindow(editor->getAudioProcessor()->getName(),
+                         juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
           ownerWindows(windows) {
+        editorKey = key;
 
         bool hasPresets = presetCallbacks.listPresets != nullptr;
         int toolbarHeight = hasPresets ? PresetToolbar::totalHeight : 0;
@@ -1072,6 +1074,8 @@ public:
 
         setContentOwned(container, true);
     }
+
+    juce::String editorKey;  // unique ID for "already open" detection
 
     void closeButtonPressed() override {
         setVisible(false);
@@ -1097,9 +1101,13 @@ void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::Str
 
     if (!processor || !processor->hasEditor()) return;
 
+    // Unique key: for instruments use trackId, for effects use effectName (which is the unique effect slot ID)
+    auto editorKey = effectName.isEmpty() ? parentId : (parentId + "::" + effectName);
+
     // Check if editor is already open — bring to front
     for (auto& win : editorWindows) {
-        if (win->getName() == processor->getName()) {
+        auto* pew = dynamic_cast<PluginEditorWindow*>(win.get());
+        if (pew && pew->editorKey == editorKey) {
             win->setVisible(true);
             win->toFront(true);
             return;
@@ -1110,7 +1118,7 @@ void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::Str
     if (!editor) return;
 
     auto window = std::make_unique<PluginEditorWindow>(
-        processor->getName(), editorWindows, editor, std::move(presetCallbacks));
+        editorKey, editorWindows, editor, std::move(presetCallbacks));
     window->setUsingNativeTitleBar(true);
     window->centreWithSize(window->getContentComponent()->getWidth(),
                             window->getContentComponent()->getHeight());
