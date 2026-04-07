@@ -647,23 +647,41 @@ void PerformanceAPI::cancelAllAutomation() {
 // --- Plugin UI ---
 
 void PerformanceAPI::openPluginEditor(const juce::String& parentId, const juce::String& effectName) {
-    // Build preset callbacks for the instrument (not effects, for now)
-    AudioEngine::PresetCallbacks callbacks;
+    // Get plugin name from registry (SSOT), not from engine
+    juce::String pluginName;
     if (effectName.isEmpty()) {
-        auto pluginName = audioEngine->getTrackPluginName(parentId);
-        if (pluginName.isNotEmpty()) {
-            callbacks.listPresets = [this, pluginName]() {
-                return listPresets(pluginName);
-            };
-            callbacks.savePreset = [this, parentId](const juce::String& name) {
-                savePreset(parentId, name);
-            };
-            callbacks.loadPreset = [this, parentId](const juce::String& name) {
-                loadPreset(parentId, name);
-            };
+        // Instrument — look up track's pluginId in registry
+        if (!currentSongId.empty()) {
+            for (auto& t : registry->tracksForSong(currentSongId)) {
+                if (t.id == parentId.toStdString() && !t.pluginId.empty()) {
+                    auto plugin = registry->findPluginById(t.pluginId);
+                    if (plugin) pluginName = juce::String(plugin->name);
+                    break;
+                }
+            }
         }
+    } else {
+        // Effect — the effectName is the slot ID, look up in engine (processor name)
+        // Effects don't have a separate pluginId in the registry effect table — use engine
+        pluginName = effectName;  // display the slot ID for now
     }
-    audioEngine->openPluginEditor(parentId, effectName, std::move(callbacks));
+
+    // Build preset callbacks for instruments
+    AudioEngine::PresetCallbacks callbacks;
+    if (effectName.isEmpty() && pluginName.isNotEmpty()) {
+        callbacks.listPresets = [this, pluginName]() {
+            return listPresets(pluginName);
+        };
+        callbacks.savePreset = [this, parentId](const juce::String& name) {
+            savePreset(parentId, name);
+        };
+        callbacks.loadPreset = [this, parentId](const juce::String& name) {
+            loadPreset(parentId, name);
+        };
+    }
+
+    auto title = pluginName.isNotEmpty() ? pluginName : "Plugin";
+    audioEngine->openPluginEditor(parentId, effectName, title, std::move(callbacks));
 }
 
 void PerformanceAPI::closeTopPluginEditor() {

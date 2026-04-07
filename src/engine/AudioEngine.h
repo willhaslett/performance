@@ -89,6 +89,7 @@ public:
         juce::String currentPresetName;
     };
     void openPluginEditor(const juce::String& parentId, const juce::String& effectName = "",
+                          const juce::String& title = "",
                           PresetCallbacks presetCallbacks = {});
     void closeTopPluginEditor();
 

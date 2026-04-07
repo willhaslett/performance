@@ -1047,12 +1047,11 @@ private:
 // Plugin editor window with optional preset toolbar
 class PluginEditorWindow : public juce::DocumentWindow {
 public:
-    PluginEditorWindow(const juce::String& key,
+    PluginEditorWindow(const juce::String& key, const juce::String& displayTitle,
                        std::vector<std::unique_ptr<juce::DocumentWindow>>& windows,
                        juce::AudioProcessorEditor* editor,
                        AudioEngine::PresetCallbacks presetCallbacks)
-        : DocumentWindow(editor->getAudioProcessor()->getName(),
-                         juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
+        : DocumentWindow(displayTitle, juce::Colours::darkgrey, juce::DocumentWindow::closeButton),
           ownerWindows(windows) {
         editorKey = key;
 
@@ -1092,7 +1091,7 @@ private:
 };
 
 void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::String& effectName,
-                                    PresetCallbacks presetCallbacks) {
+                                    const juce::String& title, PresetCallbacks presetCallbacks) {
     juce::AudioProcessor* processor = nullptr;
     if (effectName.isEmpty())
         processor = getTrackInstrumentProcessor(parentId);
@@ -1115,10 +1114,14 @@ void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::Str
     }
 
     auto* editor = processor->createEditor();
-    if (!editor) return;
+    if (!editor) {
+        perfLog("[Engine] Plugin has no editor: %s\n", processor->getName().toRawUTF8());
+        return;
+    }
 
+    auto displayTitle = title.isNotEmpty() ? title : processor->getName();
     auto window = std::make_unique<PluginEditorWindow>(
-        editorKey, editorWindows, editor, std::move(presetCallbacks));
+        editorKey, displayTitle, editorWindows, editor, std::move(presetCallbacks));
     window->setUsingNativeTitleBar(true);
     window->centreWithSize(window->getContentComponent()->getWidth(),
                             window->getContentComponent()->getHeight());
