@@ -1,0 +1,5 @@
+#!/bin/bash
+# Send test MIDI notes via a virtual port.
+# Usage: bin/midi-test [note] [velocity] [count] [interval]
+cd "$(dirname "$0")/.."
+uvx --from python-rtmidi python3 tools/send_notes.py "$@"
