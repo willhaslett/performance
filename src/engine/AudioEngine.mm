@@ -910,41 +910,63 @@ juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& t
 class PresetToolbar : public juce::Component {
 public:
     PresetToolbar(AudioEngine::PresetCallbacks cbs) : callbacks(std::move(cbs)) {
-        loadButton.setButtonText("Load");
-        loadButton.onClick = [this] { showPresetMenu(); };
-        addAndMakeVisible(loadButton);
-
         saveButton.setButtonText("Save");
         saveButton.onClick = [this] { showSaveDialog(); };
         addAndMakeVisible(saveButton);
 
-        presetLabel.setText(callbacks.currentPresetName.isNotEmpty()
-                            ? callbacks.currentPresetName : "Default",
-                            juce::dontSendNotification);
-        presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xffcccccc));
-        presetLabel.setFont(juce::Font(18.0f));
-        addAndMakeVisible(presetLabel);
+        presetButton.setButtonText(callbacks.currentPresetName.isNotEmpty()
+                                    ? callbacks.currentPresetName : "Default");
+        presetButton.onClick = [this] { showPresetMenu(); };
+        presetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff252525));
+        presetButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffdddddd));
+        addAndMakeVisible(presetButton);
     }
 
+    static constexpr int toolbarHeight = 44;
+    static constexpr int titleHeight = 16;
+    static constexpr int totalHeight = toolbarHeight + titleHeight;
+
     void resized() override {
-        auto area = getLocalBounds().reduced(4, 2);
-        loadButton.setBounds(area.removeFromRight(50));
-        area.removeFromRight(4);
-        saveButton.setBounds(area.removeFromRight(50));
-        area.removeFromRight(4);
-        presetLabel.setBounds(area);
+        auto controlArea = getControlArea();
+        auto group = controlArea;
+        saveButton.setBounds(group.removeFromRight(50));
+        group.removeFromRight(6);
+        presetButton.setBounds(group);
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(juce::Colour(0xff2a2a2a));
+        g.fillAll(juce::Colour(0xff1e1e1e));
+
+        auto controlArea = getControlArea();
+        auto borderArea = controlArea.toFloat().expanded(6, 4);
+
+        // Bordered group
         g.setColour(juce::Colour(0xff3a3a3a));
-        g.drawLine(0.0f, (float)getHeight(), (float)getWidth(), (float)getHeight(), 1.0f);
+        g.drawRoundedRectangle(borderArea, 4.0f, 1.0f);
+
+        // Title above the bordered area
+        g.setColour(juce::Colour(0xff666666));
+        g.setFont(juce::Font(11.0f));
+        g.drawText("Performance Presets",
+                    controlArea.getX(), (int)borderArea.getY() - titleHeight - 1,
+                    controlArea.getWidth(), titleHeight,
+                    juce::Justification::centredLeft);
+    }
+
+    juce::Rectangle<int> getControlArea() const {
+        int groupWidth = std::min(360, getWidth() - 24);
+        int controlHeight = 28;
+        // Center vertically in the toolbar area (below title), with equal space above and below
+        int topOfToolbar = titleHeight;
+        int availableHeight = getHeight() - topOfToolbar;
+        int y = topOfToolbar + (availableHeight - controlHeight) / 2;
+        int x = (getWidth() - groupWidth) / 2;
+        return { x, y, groupWidth, controlHeight };
     }
 
 private:
     AudioEngine::PresetCallbacks callbacks;
-    juce::Label presetLabel;
-    juce::TextButton loadButton;
+    juce::TextButton presetButton;
     juce::TextButton saveButton;
 
     void showPresetMenu() {
@@ -956,12 +978,12 @@ private:
         for (int i = 0; i < (int)presets.size(); ++i)
             menu.addItem(i + 1, presets[i]);
 
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&loadButton),
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&presetButton),
             [this, presets](int result) {
                 if (result == 0 || result - 1 >= (int)presets.size()) return;
                 auto name = presets[result - 1];
                 if (callbacks.loadPreset) callbacks.loadPreset(name);
-                presetLabel.setText(name, juce::dontSendNotification);
+                presetButton.setButtonText(name);
             });
     }
 
@@ -1059,11 +1081,11 @@ private:
             for (auto& n : callbacks.listPresets())
                 names.add(n);
 
-        auto* content = new SaveContent(presetLabel.getText(), names);
+        auto* content = new SaveContent(presetButton.getButtonText(), names);
         content->owner = dialog;
         content->onSave = [this](const juce::String& name) {
             if (callbacks.savePreset) callbacks.savePreset(name);
-            presetLabel.setText(name, juce::dontSendNotification);
+            presetButton.setButtonText(name);
         };
 
         dialog->setContentOwned(content, true);
@@ -1088,7 +1110,7 @@ public:
           ownerWindows(windows) {
 
         bool hasPresets = presetCallbacks.listPresets != nullptr;
-        int toolbarHeight = hasPresets ? 32 : 0;
+        int toolbarHeight = hasPresets ? PresetToolbar::totalHeight : 0;
 
         auto* container = new juce::Component();
         container->setSize(editor->getWidth(), editor->getHeight() + toolbarHeight);
