@@ -20,7 +20,7 @@ public:
     void setPeakLevel(float level);
     void setGain(float gain);
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
-    void setAvailableBusses(const std::vector<juce::String>& busNames);
+    void setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions);
 
     int getMinimumHeight() const;
 

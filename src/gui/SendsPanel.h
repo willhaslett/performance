@@ -8,15 +8,21 @@ class PerformanceAPI;
 
 class SendsPanel : public juce::Component {
 public:
-    SendsPanel(const juce::String& trackName, PerformanceAPI& api);
+    SendsPanel(const juce::String& trackId, PerformanceAPI& api);
 
     struct SendInfo {
         juce::String busName;
+        juce::String busId;
         float gain;
         float peakLevel;
     };
     void setSends(const std::vector<SendInfo>& sends);
-    void setAvailableBusses(const std::vector<juce::String>& busNames);
+
+    struct BusOption {
+        juce::String id;
+        juce::String name;
+    };
+    void setAvailableBusses(const std::vector<BusOption>& busOptions);
 
     int getDesiredHeight() const;
 
@@ -27,15 +33,16 @@ public:
 
 private:
     PerformanceAPI& api;
-    juce::String trackName;
+    juce::String trackId;
 
     struct SendRow {
-        juce::String busName;  // empty = unassigned "Send" pill
+        juce::String busName;  // display name (empty = unassigned "Send" pill)
+        juce::String busId;    // UUID
         float gain = 1.0f;
         float peakLevel = 0.0f;
     };
     std::vector<SendRow> rows;
-    std::vector<juce::String> availableBusses;
+    std::vector<BusOption> availableBusses;
 
     static constexpr int rowHeight = 24;
     static constexpr int rowGap = 4;

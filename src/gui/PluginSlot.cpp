@@ -2,9 +2,9 @@
 #include "api/PerformanceAPI.h"
 #include "engine/Log.h"
 
-PluginSlot::PluginSlot(Type type, PerformanceAPI& api, const juce::String& name,
+PluginSlot::PluginSlot(Type type, PerformanceAPI& api, const juce::String& id,
                        ParentKind parent)
-    : slotType(type), parentKind(parent), api(api), trackOrBusName(name) {}
+    : slotType(type), parentKind(parent), api(api), parentId(id) {}
 
 void PluginSlot::setPluginName(const juce::String& name) {
     if (pluginName != name) {
@@ -36,7 +36,7 @@ void PluginSlot::mouseUp(const juce::MouseEvent& event) {
             showContextMenu(event.getScreenPosition());
     } else {
         if (hasPlugin())
-            api.openPluginEditor(trackOrBusName, slotType == Instrument ? "" : effectId);
+            api.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
         else
             showPicker(event.getScreenPosition());
     }
@@ -92,9 +92,9 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             }
 
             if (slotType == Instrument)
-                api.addInstrument(trackOrBusName, selectedPlugin, presetName);
+                api.addInstrument(parentId, selectedPlugin, presetName);
             else
-                api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
+                api.addEffect(parentId, selectedPlugin, selectedPlugin);
 
             if (onChanged) onChanged();
         });
@@ -132,9 +132,9 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
 
             if (result == 1) {
                 if (slotType == Instrument)
-                    api.removeInstrument(trackOrBusName);
+                    api.removeInstrument(parentId);
                 else
-                    api.removeEffect(trackOrBusName, effectId);
+                    api.removeEffect(parentId, effectId);
                 if (onChanged) onChanged();
                 return;
             }
@@ -153,9 +153,9 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             }
 
             if (slotType == Instrument)
-                api.addInstrument(trackOrBusName, selectedPlugin, presetName);
+                api.addInstrument(parentId, selectedPlugin, presetName);
             else
-                api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
+                api.addEffect(parentId, selectedPlugin, selectedPlugin);
 
             if (onChanged) onChanged();
         });

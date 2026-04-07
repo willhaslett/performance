@@ -26,30 +26,32 @@ public:
 
     // Track management
     using LoadCallback = std::function<void()>;
-    void createTrack(const juce::String& trackName);
-    void removeTrack(const juce::String& trackName);
-    bool addTrackInstrument(const juce::String& trackName, const juce::String& pluginName,
+    juce::String createTrack(const juce::String& trackName);  // generates UUID, returns it
+    void createTrackWithId(const juce::String& id, const juce::String& trackName);  // use given UUID
+    void removeTrack(const juce::String& trackId);
+    bool addTrackInstrument(const juce::String& trackId, const juce::String& pluginName,
                             LoadCallback onLoaded = nullptr);
-    float getTrackPeakLevel(const juce::String& trackName) const;
-    void removeTrackInstrument(const juce::String& trackName);
-    void setTrackMidiEnabled(const juce::String& trackName, bool enabled);
-    void setTrackGain(const juce::String& trackName, float gain);
-    float getTrackGain(const juce::String& trackName) const;
-    void renameTrack(const juce::String& oldName, const juce::String& newName);
+    float getTrackPeakLevel(const juce::String& trackId) const;
+    void removeTrackInstrument(const juce::String& trackId);
+    void setTrackMidiEnabled(const juce::String& trackId, bool enabled);
+    void setTrackGain(const juce::String& trackId, float gain);
+    float getTrackGain(const juce::String& trackId) const;
+    void renameTrack(const juce::String& trackId, const juce::String& newName);
     void clearAllTracks();
 
     // Bus management
-    void createBus(const juce::String& busName);
-    void removeBus(const juce::String& busName);
-    void renameBus(const juce::String& oldName, const juce::String& newName);
-    void setBusGain(const juce::String& busName, float gain);
+    juce::String createBus(const juce::String& busName);  // generates UUID, returns it
+    void createBusWithId(const juce::String& id, const juce::String& busName);  // use given UUID
+    void removeBus(const juce::String& busId);
+    void renameBus(const juce::String& busId, const juce::String& newName);
+    void setBusGain(const juce::String& busId, float gain);
 
     struct EffectInfo { juce::String name; juce::String pluginName; };
 
-    // Effects — unified for tracks and busses
-    bool addEffect(const juce::String& parentName, const juce::String& effectName,
+    // Effects — unified for tracks and busses (parentId is track/bus UUID, or "Output" for master)
+    bool addEffect(const juce::String& parentId, const juce::String& effectName,
                    const juce::String& pluginName, LoadCallback onLoaded = nullptr);
-    void removeEffect(const juce::String& parentName, const juce::String& effectName);
+    void removeEffect(const juce::String& parentId, const juce::String& effectName);
     void clearAllBusses();
 
     // Master output
@@ -59,25 +61,25 @@ public:
     std::vector<EffectInfo> getMasterEffects() const;
 
     // Sends
-    void addSend(const juce::String& trackName, const juce::String& busName, float gain = 1.0f);
-    void setSendGain(const juce::String& trackName, const juce::String& busName, float gain);
+    void addSend(const juce::String& trackId, const juce::String& busId, float gain = 1.0f);
+    void setSendGain(const juce::String& trackId, const juce::String& busId, float gain);
 
-    // Access loaded processors by name
-    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackName) const;
-    juce::AudioProcessor* getTrackEffectProcessor(const juce::String& trackName,
+    // Access loaded processors by ID
+    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId) const;
+    juce::AudioProcessor* getTrackEffectProcessor(const juce::String& trackId,
                                                    const juce::String& effectName) const;
 
     // Query current state
     std::vector<juce::String> getTrackNames() const;
     std::vector<juce::String> getBusNames() const;
-    juce::String getTrackPluginName(const juce::String& trackName) const;
-    bool isTrackMidiEnabled(const juce::String& trackName) const;
-    std::vector<EffectInfo> getTrackEffects(const juce::String& trackName) const;
-    std::vector<EffectInfo> getBusEffects(const juce::String& busName) const;
+    juce::String getTrackPluginName(const juce::String& trackId) const;
+    bool isTrackMidiEnabled(const juce::String& trackId) const;
+    std::vector<EffectInfo> getTrackEffects(const juce::String& trackId) const;
+    std::vector<EffectInfo> getBusEffects(const juce::String& busId) const;
     struct SendInfo { juce::String busName; float gain; float peakLevel; };
-    std::vector<SendInfo> getTrackSends(const juce::String& trackName) const;
-    float getBusGain(const juce::String& busName) const;
-    float getBusPeakLevel(const juce::String& busName) const;
+    std::vector<SendInfo> getTrackSends(const juce::String& trackId) const;
+    float getBusGain(const juce::String& busId) const;
+    float getBusPeakLevel(const juce::String& busId) const;
 
     // Plugin editor windows
     struct PresetCallbacks {
@@ -86,7 +88,7 @@ public:
         std::function<void(const juce::String&)> loadPreset;
         juce::String currentPresetName;
     };
-    void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "",
+    void openPluginEditor(const juce::String& parentId, const juce::String& effectName = "",
                           PresetCallbacks presetCallbacks = {});
     void closeTopPluginEditor();
 

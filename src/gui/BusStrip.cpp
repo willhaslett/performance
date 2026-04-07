@@ -1,13 +1,13 @@
 #include "gui/BusStrip.h"
 #include "api/PerformanceAPI.h"
 
-BusStrip::BusStrip(const juce::String& name, PerformanceAPI& api)
-    : api(api), busName(name) {
+BusStrip::BusStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api)
+    : api(api), busId(id), busName(name) {
 
     addAndMakeVisible(faderMeter);
 
     faderMeter.onGainChanged = [&](float newGain) {
-        api.setBusGain(busName, newGain);
+        api.setBusGain(busId, newGain);
     };
 
     // Start with one empty effect slot
@@ -45,7 +45,7 @@ void BusStrip::rebuildEffectSlots() {
     effectSlots.clear();
 
     for (auto& fx : currentEffects) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busName, PluginSlot::OnBus);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busId, PluginSlot::OnBus);
         slot->setPluginName(fx.pluginName);
         slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
@@ -53,7 +53,7 @@ void BusStrip::rebuildEffectSlots() {
     }
 
     // Always an empty slot for adding new effect
-    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busName, PluginSlot::OnBus);
+    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busId, PluginSlot::OnBus);
     addAndMakeVisible(*slot);
     effectSlots.push_back(std::move(slot));
 
@@ -96,7 +96,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this](int result) {
                 if (result == 1)
-                    api.removeBus(busName);
+                    api.removeBus(busId);
             });
     }
 }
@@ -105,7 +105,7 @@ void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
             if (newName != busName) {
-                api.renameBus(busName, newName);
+                api.renameBus(busId, newName);
                 busName = newName;
                 repaint();
             }

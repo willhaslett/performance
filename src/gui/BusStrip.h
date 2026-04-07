@@ -10,7 +10,7 @@
 
 class BusStrip : public juce::Component {
 public:
-    BusStrip(const juce::String& name, PerformanceAPI& api);
+    BusStrip(const juce::String& id, const juce::String& name, PerformanceAPI& api);
 
     void setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& effects);
     void setPeakLevel(float level);
@@ -25,7 +25,8 @@ public:
 
 private:
     PerformanceAPI& api;
-    juce::String busName;
+    juce::String busId;    // stable UUID from registry
+    juce::String busName;  // display name
 
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;

@@ -21,8 +21,7 @@ public:
     void setActiveSong(const std::string& songId) { activeSongId = songId; }
 
     // Notify that a track or bus was removed (clears from tracking sets)
-    void notifyRemoved(const std::string& name);
-    void notifyRenamed(const std::string& oldName, const std::string& newName);
+    void notifyRemoved(const std::string& id);
 
     // Clear all engine state
     void clear();
@@ -32,9 +31,9 @@ private:
     Registry& registry;
     std::string activeSongId;
 
-    // Track what's currently in the engine to diff against
-    std::set<std::string> engineTrackNames;
-    std::set<std::string> engineBusNames;
+    // Track what's currently in the engine to diff against (by registry UUID)
+    std::set<std::string> engineTrackIds;
+    std::set<std::string> engineBusIds;
     std::set<std::string> engineEffectIds;
     std::set<std::string> engineSendIds;
 };

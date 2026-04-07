@@ -167,7 +167,8 @@ public:
         beginTest("Create track and verify it exists");
         {
             TestAPI t;
-            t->createTrack("Keys");
+            auto trackId = t->createTrack("Keys");
+            expect(trackId.isNotEmpty());
             auto names = t->listTrackNames();
             expectEquals((int)names.size(), 1);
             expectEquals(names[0], juce::String("Keys"));
@@ -176,7 +177,8 @@ public:
         beginTest("Create bus and verify it exists");
         {
             TestAPI t;
-            t->createBus("Reverb");
+            auto busId = t->createBus("Reverb");
+            expect(busId.isNotEmpty());
             auto names = t->listBusNames();
             expectEquals((int)names.size(), 1);
             expectEquals(names[0], juce::String("Reverb"));
@@ -185,8 +187,8 @@ public:
         beginTest("Rename track");
         {
             TestAPI t;
-            t->createTrack("Track 1");
-            t->renameTrack("Track 1", "Piano");
+            auto trackId = t->createTrack("Track 1");
+            t->renameTrack(trackId, "Piano");
             auto names = t->listTrackNames();
             expectEquals((int)names.size(), 1);
             expectEquals(names[0], juce::String("Piano"));
@@ -195,8 +197,8 @@ public:
         beginTest("Rename track — old name is gone");
         {
             TestAPI t;
-            t->createTrack("Old Name");
-            t->renameTrack("Old Name", "New Name");
+            auto id1 = t->createTrack("Old Name");
+            t->renameTrack(id1, "New Name");
             // Creating another track with the old name should work
             t->createTrack("Old Name");
             auto names = t->listTrackNames();
@@ -206,8 +208,8 @@ public:
         beginTest("Rename bus");
         {
             TestAPI t;
-            t->createBus("Bus 1");
-            t->renameBus("Bus 1", "Delay");
+            auto busId = t->createBus("Bus 1");
+            t->renameBus(busId, "Delay");
             auto names = t->listBusNames();
             expectEquals((int)names.size(), 1);
             expectEquals(names[0], juce::String("Delay"));
@@ -216,26 +218,26 @@ public:
         beginTest("Delete track");
         {
             TestAPI t;
-            t->createTrack("To Delete");
+            auto trackId = t->createTrack("To Delete");
             expectEquals((int)t->listTrackNames().size(), 1);
-            t->removeTrack("To Delete");
+            t->removeTrack(trackId);
             expectEquals((int)t->listTrackNames().size(), 0);
         }
 
         beginTest("Delete bus");
         {
             TestAPI t;
-            t->createBus("To Delete");
+            auto busId = t->createBus("To Delete");
             expectEquals((int)t->listBusNames().size(), 1);
-            t->removeBus("To Delete");
+            t->removeBus(busId);
             expectEquals((int)t->listBusNames().size(), 0);
         }
 
         beginTest("Create track after delete — same name reusable");
         {
             TestAPI t;
-            t->createTrack("Reuse");
-            t->removeTrack("Reuse");
+            auto id1 = t->createTrack("Reuse");
+            t->removeTrack(id1);
             t->createTrack("Reuse");
             auto names = t->listTrackNames();
             expectEquals((int)names.size(), 1);
@@ -245,32 +247,32 @@ public:
         beginTest("Add effect to track");
         {
             TestAPI t;
-            t->createTrack("FX Track");
+            auto trackId = t->createTrack("FX Track");
             // DLSMusicDevice is always available on macOS
-            t->addEffect("FX Track", "TestFX", "DLSMusicDevice");
+            t->addEffect(trackId, "TestFX", "DLSMusicDevice");
             // Effect should appear (may be loading async, but the slot exists)
-            auto effects = t->getTrackEffects("FX Track");
+            auto effects = t->getTrackEffects(trackId);
             expectEquals((int)effects.size(), 1);
         }
 
         beginTest("Remove effect from track");
         {
             TestAPI t;
-            t->createTrack("FX Track");
-            t->addEffect("FX Track", "TestFX", "DLSMusicDevice");
-            auto effects = t->getTrackEffects("FX Track");
+            auto trackId = t->createTrack("FX Track");
+            t->addEffect(trackId, "TestFX", "DLSMusicDevice");
+            auto effects = t->getTrackEffects(trackId);
             expect(!effects.empty());
-            t->removeEffect("FX Track", effects[0].effectId);
-            expectEquals((int)t->getTrackEffects("FX Track").size(), 0);
+            t->removeEffect(trackId, effects[0].effectId);
+            expectEquals((int)t->getTrackEffects(trackId).size(), 0);
         }
 
         beginTest("Duplicate effect names get unique IDs");
         {
             TestAPI t;
-            t->createTrack("Dupes");
-            t->addEffect("Dupes", "DLSMusicDevice", "DLSMusicDevice");
-            t->addEffect("Dupes", "DLSMusicDevice", "DLSMusicDevice");
-            auto effects = t->getTrackEffects("Dupes");
+            auto trackId = t->createTrack("Dupes");
+            t->addEffect(trackId, "DLSMusicDevice", "DLSMusicDevice");
+            t->addEffect(trackId, "DLSMusicDevice", "DLSMusicDevice");
+            auto effects = t->getTrackEffects(trackId);
             expectEquals((int)effects.size(), 2);
             // IDs should be different
             expect(effects[0].effectId != effects[1].effectId);
@@ -279,9 +281,9 @@ public:
         beginTest("Set and get track gain");
         {
             TestAPI t;
-            t->createTrack("Gain Test");
-            t->setTrackGain("Gain Test", 0.5f);
-            expectWithinAbsoluteError(t->getTrackGain("Gain Test"), 0.5f, 0.01f);
+            auto trackId = t->createTrack("Gain Test");
+            t->setTrackGain(trackId, 0.5f);
+            expectWithinAbsoluteError(t->getTrackGain(trackId), 0.5f, 0.01f);
         }
 
         beginTest("Set and get master gain");
@@ -294,10 +296,10 @@ public:
         beginTest("Add send from track to bus");
         {
             TestAPI t;
-            t->createTrack("Src");
-            t->createBus("Dest");
-            t->addSend("Src", "Dest", 0.5f);
-            auto sends = t->getTrackSends("Src");
+            auto trackId = t->createTrack("Src");
+            auto busId = t->createBus("Dest");
+            t->addSend(trackId, busId, 0.5f);
+            auto sends = t->getTrackSends(trackId);
             expectEquals((int)sends.size(), 1);
             expectEquals(sends[0].busName, juce::String("Dest"));
         }
@@ -305,11 +307,11 @@ public:
         beginTest("Send survives bus rename");
         {
             TestAPI t;
-            t->createTrack("Src");
-            t->createBus("Old Bus");
-            t->addSend("Src", "Old Bus", 1.0f);
-            t->renameBus("Old Bus", "New Bus");
-            auto sends = t->getTrackSends("Src");
+            auto trackId = t->createTrack("Src");
+            auto busId = t->createBus("Old Bus");
+            t->addSend(trackId, busId, 1.0f);
+            t->renameBus(busId, "New Bus");
+            auto sends = t->getTrackSends(trackId);
             expectEquals((int)sends.size(), 1);
             expectEquals(sends[0].busName, juce::String("New Bus"));
         }
@@ -317,11 +319,11 @@ public:
         beginTest("Send survives track rename");
         {
             TestAPI t;
-            t->createTrack("Old Track");
-            t->createBus("FX Bus");
-            t->addSend("Old Track", "FX Bus", 1.0f);
-            t->renameTrack("Old Track", "New Track");
-            auto sends = t->getTrackSends("New Track");
+            auto trackId = t->createTrack("Old Track");
+            auto busId = t->createBus("FX Bus");
+            t->addSend(trackId, busId, 1.0f);
+            t->renameTrack(trackId, "New Track");
+            auto sends = t->getTrackSends(trackId);
             expectEquals((int)sends.size(), 1);
             expectEquals(sends[0].busName, juce::String("FX Bus"));
         }
@@ -329,8 +331,8 @@ public:
         beginTest("Track gain persists to registry immediately");
         {
             TestAPI t;
-            t->createTrack("Gain Persist");
-            t->setTrackGain("Gain Persist", 0.42f);
+            auto trackId = t->createTrack("Gain Persist");
+            t->setTrackGain(trackId, 0.42f);
             // Read directly from registry to verify
             auto& reg = t.get().getRegistry();
             auto songId = t.get().getCurrentSongId();
@@ -343,8 +345,8 @@ public:
         beginTest("Bus gain persists to registry immediately");
         {
             TestAPI t;
-            t->createBus("Bus Gain");
-            t->setBusGain("Bus Gain", 0.33f);
+            auto busId = t->createBus("Bus Gain");
+            t->setBusGain(busId, 0.33f);
             auto& reg = t.get().getRegistry();
             auto songId = t.get().getCurrentSongId();
             for (auto& bus : reg.bussesForSong(songId)) {
@@ -366,23 +368,26 @@ public:
         {
             TestAPI t;
             auto songA = t->createSong("Song A");
-            t->createTrack("T1");
-            t->setTrackGain("T1", 0.25f);
+            auto trackId = t->createTrack("T1");
+            t->setTrackGain(trackId, 0.25f);
 
             t->createSong("Song B");
             t->createTrack("T2");
 
             // Switch back to Song A — gain should be preserved
             t->loadSongFromRegistry(songA);
-            expectWithinAbsoluteError(t->getTrackGain("T1"), 0.25f, 0.01f);
+            // Need to find the track ID in the restored song
+            auto tracks = t->listTracks();
+            expect(!tracks.empty());
+            expectWithinAbsoluteError(t->getTrackGain(tracks[0].id), 0.25f, 0.01f);
         }
 
         beginTest("MIDI enabled persists to registry immediately");
         {
             TestAPI t;
-            t->createTrack("MIDI Test");
-            expect(t->isTrackMidiEnabled("MIDI Test") == true);
-            t->setTrackMidiEnabled("MIDI Test", false);
+            auto trackId = t->createTrack("MIDI Test");
+            expect(t->isTrackMidiEnabled(trackId) == true);
+            t->setTrackMidiEnabled(trackId, false);
             // Verify in registry
             auto& reg = t.get().getRegistry();
             auto songId = t.get().getCurrentSongId();
@@ -455,83 +460,83 @@ public:
         beginTest("Multiple tracks coexist with independent state");
         {
             TestAPI t;
-            t->createTrack("Keys");
-            t->createTrack("Bass");
-            t->setTrackGain("Keys", 0.8f);
-            t->setTrackGain("Bass", 0.3f);
-            t->setTrackMidiEnabled("Keys", false);
+            auto keysId = t->createTrack("Keys");
+            auto bassId = t->createTrack("Bass");
+            t->setTrackGain(keysId, 0.8f);
+            t->setTrackGain(bassId, 0.3f);
+            t->setTrackMidiEnabled(keysId, false);
 
             expectEquals((int)t->listTrackNames().size(), 2);
-            expectWithinAbsoluteError(t->getTrackGain("Keys"), 0.8f, 0.01f);
-            expectWithinAbsoluteError(t->getTrackGain("Bass"), 0.3f, 0.01f);
-            expect(t->isTrackMidiEnabled("Keys") == false);
-            expect(t->isTrackMidiEnabled("Bass") == true);
+            expectWithinAbsoluteError(t->getTrackGain(keysId), 0.8f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(bassId), 0.3f, 0.01f);
+            expect(t->isTrackMidiEnabled(keysId) == false);
+            expect(t->isTrackMidiEnabled(bassId) == true);
         }
 
         beginTest("Renaming one track doesn't affect another");
         {
             TestAPI t;
-            t->createTrack("Track 1");
-            t->createTrack("Track 2");
-            t->setTrackGain("Track 1", 0.5f);
-            t->setTrackGain("Track 2", 0.9f);
+            auto id1 = t->createTrack("Track 1");
+            auto id2 = t->createTrack("Track 2");
+            t->setTrackGain(id1, 0.5f);
+            t->setTrackGain(id2, 0.9f);
 
-            t->renameTrack("Track 1", "Piano");
+            t->renameTrack(id1, "Piano");
 
             // Piano should have Track 1's gain
-            expectWithinAbsoluteError(t->getTrackGain("Piano"), 0.5f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(id1), 0.5f, 0.01f);
             // Track 2 should be unaffected
-            expectWithinAbsoluteError(t->getTrackGain("Track 2"), 0.9f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(id2), 0.9f, 0.01f);
             expectEquals((int)t->listTrackNames().size(), 2);
         }
 
         beginTest("Deleting one track doesn't affect another");
         {
             TestAPI t;
-            t->createTrack("Keep");
-            t->createTrack("Delete");
-            t->setTrackGain("Keep", 0.7f);
+            auto keepId = t->createTrack("Keep");
+            auto delId = t->createTrack("Delete");
+            t->setTrackGain(keepId, 0.7f);
 
-            t->removeTrack("Delete");
+            t->removeTrack(delId);
 
             expectEquals((int)t->listTrackNames().size(), 1);
             expectEquals(t->listTrackNames()[0], juce::String("Keep"));
-            expectWithinAbsoluteError(t->getTrackGain("Keep"), 0.7f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(keepId), 0.7f, 0.01f);
         }
 
         beginTest("Multiple tracks with effects — independent");
         {
             TestAPI t;
-            t->createTrack("T1");
-            t->createTrack("T2");
-            t->addEffect("T1", "FX1", "DLSMusicDevice");
-            t->addEffect("T2", "FX2", "DLSMusicDevice");
+            auto id1 = t->createTrack("T1");
+            auto id2 = t->createTrack("T2");
+            t->addEffect(id1, "FX1", "DLSMusicDevice");
+            t->addEffect(id2, "FX2", "DLSMusicDevice");
 
-            auto t1fx = t->getTrackEffects("T1");
-            auto t2fx = t->getTrackEffects("T2");
+            auto t1fx = t->getTrackEffects(id1);
+            auto t2fx = t->getTrackEffects(id2);
             expectEquals((int)t1fx.size(), 1);
             expectEquals((int)t2fx.size(), 1);
             expect(t1fx[0].effectId != t2fx[0].effectId);
 
             // Remove effect from T1, T2 should be unaffected
-            t->removeEffect("T1", t1fx[0].effectId);
-            expectEquals((int)t->getTrackEffects("T1").size(), 0);
-            expectEquals((int)t->getTrackEffects("T2").size(), 1);
+            t->removeEffect(id1, t1fx[0].effectId);
+            expectEquals((int)t->getTrackEffects(id1).size(), 0);
+            expectEquals((int)t->getTrackEffects(id2).size(), 1);
         }
 
         beginTest("Sends between tracks and busses — independent");
         {
             TestAPI t;
-            t->createTrack("T1");
-            t->createTrack("T2");
-            t->createBus("Reverb");
-            t->createBus("Delay");
+            auto id1 = t->createTrack("T1");
+            auto id2 = t->createTrack("T2");
+            auto revId = t->createBus("Reverb");
+            auto delId = t->createBus("Delay");
 
-            t->addSend("T1", "Reverb", 0.5f);
-            t->addSend("T2", "Delay", 0.8f);
+            t->addSend(id1, revId, 0.5f);
+            t->addSend(id2, delId, 0.8f);
 
-            auto t1sends = t->getTrackSends("T1");
-            auto t2sends = t->getTrackSends("T2");
+            auto t1sends = t->getTrackSends(id1);
+            auto t2sends = t->getTrackSends(id2);
             expectEquals((int)t1sends.size(), 1);
             expectEquals((int)t2sends.size(), 1);
             expectEquals(t1sends[0].busName, juce::String("Reverb"));
@@ -541,11 +546,11 @@ public:
         beginTest("Track preset save captures correct track");
         {
             TestAPI t;
-            t->createTrack("Source");
-            t->setTrackGain("Source", 0.42f);
-            t->setTrackMidiEnabled("Source", false);
+            auto trackId = t->createTrack("Source");
+            t->setTrackGain(trackId, 0.42f);
+            t->setTrackMidiEnabled(trackId, false);
 
-            t->saveTrackPreset("Source", "TestPreset");
+            t->saveTrackPreset(trackId, "TestPreset");
 
             // Verify file was created
             auto file = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
@@ -565,12 +570,12 @@ public:
         {
             TestAPI t;
             auto songA = t->createSong("Multi A");
-            t->createTrack("A1");
-            t->createTrack("A2");
-            t->createBus("A Bus");
-            t->setTrackGain("A1", 0.1f);
-            t->setTrackGain("A2", 0.2f);
-            t->addSend("A1", "A Bus", 0.5f);
+            auto a1Id = t->createTrack("A1");
+            auto a2Id = t->createTrack("A2");
+            auto aBusId = t->createBus("A Bus");
+            t->setTrackGain(a1Id, 0.1f);
+            t->setTrackGain(a2Id, 0.2f);
+            t->addSend(a1Id, aBusId, 0.5f);
 
             // Switch away and back
             t->createSong("Temp");
@@ -578,25 +583,36 @@ public:
 
             expectEquals((int)t->listTrackNames().size(), 2);
             expectEquals((int)t->listBusNames().size(), 1);
-            expectWithinAbsoluteError(t->getTrackGain("A1"), 0.1f, 0.01f);
-            expectWithinAbsoluteError(t->getTrackGain("A2"), 0.2f, 0.01f);
-            auto sends = t->getTrackSends("A1");
-            expectEquals((int)sends.size(), 1);
+            // After song switch, find track IDs from the restored song
+            auto tracks = t->listTracks();
+            for (auto& tr : tracks) {
+                if (tr.name == "A1")
+                    expectWithinAbsoluteError(t->getTrackGain(tr.id), 0.1f, 0.01f);
+                if (tr.name == "A2")
+                    expectWithinAbsoluteError(t->getTrackGain(tr.id), 0.2f, 0.01f);
+            }
+            // Find sends on A1
+            for (auto& tr : tracks) {
+                if (tr.name == "A1") {
+                    auto sends = t->getTrackSends(tr.id);
+                    expectEquals((int)sends.size(), 1);
+                }
+            }
         }
 
         beginTest("Track preset load changes track name and gain");
         {
             TestAPI t;
-            t->createTrack("Source");
-            t->setTrackGain("Source", 0.42f);
-            t->setTrackMidiEnabled("Source", false);
-            t->saveTrackPreset("Source", "MyPreset");
+            auto srcId = t->createTrack("Source");
+            t->setTrackGain(srcId, 0.42f);
+            t->setTrackMidiEnabled(srcId, false);
+            t->saveTrackPreset(srcId, "MyPreset");
 
-            t->createTrack("Target");
-            t->setTrackGain("Target", 1.0f);
+            auto tgtId = t->createTrack("Target");
+            t->setTrackGain(tgtId, 1.0f);
             expectEquals((int)t->listTrackNames().size(), 2);
 
-            t->loadTrackPreset("Target", "MyPreset");
+            t->loadTrackPreset(tgtId, "MyPreset");
 
             // Target should be renamed to MyPreset
             auto names = t->listTrackNames();
@@ -610,31 +626,29 @@ public:
             expect(foundSource);
 
             // Loaded track should have the preset's gain
-            expectWithinAbsoluteError(t->getTrackGain("MyPreset"), 0.42f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(tgtId), 0.42f, 0.01f);
             // Source should be unaffected
-            expectWithinAbsoluteError(t->getTrackGain("Source"), 0.42f, 0.01f);
+            expectWithinAbsoluteError(t->getTrackGain(srcId), 0.42f, 0.01f);
         }
 
         beginTest("Track preset load doesn't affect other tracks");
         {
             TestAPI t;
-            t->createTrack("Keep");
-            t->setTrackGain("Keep", 0.77f);
-            t->setTrackMidiEnabled("Keep", false);
+            auto keepId = t->createTrack("Keep");
+            t->setTrackGain(keepId, 0.77f);
+            t->setTrackMidiEnabled(keepId, false);
 
-            t->createTrack("Replace");
-            t->setTrackGain("Replace", 0.99f);
+            auto replaceId = t->createTrack("Replace");
+            t->setTrackGain(replaceId, 0.99f);
 
-            t->saveTrackPreset("Replace", "ReplacePreset");
+            t->saveTrackPreset(replaceId, "ReplacePreset");
 
-            // Now save Keep's state, load ReplacePreset onto Keep
-            float keepGainBefore = t->getTrackGain("Keep");
-            t->loadTrackPreset("Keep", "ReplacePreset");
+            // Load ReplacePreset onto Keep
+            t->loadTrackPreset(keepId, "ReplacePreset");
 
             // Replace track should be completely unaffected
-            // (it still exists as "Replace" with its original gain)
-            expectWithinAbsoluteError(t->getTrackGain("Replace"), 0.99f, 0.01f);
-            expect(t->isTrackMidiEnabled("Replace") == true);
+            expectWithinAbsoluteError(t->getTrackGain(replaceId), 0.99f, 0.01f);
+            expect(t->isTrackMidiEnabled(replaceId) == true);
         }
 
         beginTest("Registry state consistent after multiple operations");
@@ -643,13 +657,13 @@ public:
             auto& reg = t.get().getRegistry();
             auto songId = t.get().getCurrentSongId();
 
-            t->createTrack("T1");
-            t->createTrack("T2");
-            t->createBus("B1");
-            t->setTrackGain("T1", 0.5f);
-            t->setBusGain("B1", 0.7f);
-            t->addSend("T1", "B1", 0.3f);
-            t->renameTrack("T2", "Bass");
+            auto t1Id = t->createTrack("T1");
+            auto t2Id = t->createTrack("T2");
+            auto b1Id = t->createBus("B1");
+            t->setTrackGain(t1Id, 0.5f);
+            t->setBusGain(b1Id, 0.7f);
+            t->addSend(t1Id, b1Id, 0.3f);
+            t->renameTrack(t2Id, "Bass");
 
             // Verify registry matches what the API reports
             auto regTracks = reg.tracksForSong(songId);

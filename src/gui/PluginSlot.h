@@ -10,7 +10,7 @@ public:
     enum Type { Instrument, Effect };
 
     enum ParentKind { OnTrack, OnBus };
-    PluginSlot(Type type, PerformanceAPI& api, const juce::String& parentName,
+    PluginSlot(Type type, PerformanceAPI& api, const juce::String& parentId,
                ParentKind parent = OnTrack);
 
     void setPluginName(const juce::String& name);
@@ -31,7 +31,7 @@ private:
     Type slotType;
     ParentKind parentKind;
     PerformanceAPI& api;
-    juce::String trackOrBusName;
+    juce::String parentId;  // track/bus UUID or "Output"
     juce::String pluginName;
     juce::String effectId;  // internal key for effect lookup (empty for instruments)
     bool hovered = false;

@@ -6,27 +6,20 @@
 EngineSync::EngineSync(AudioEngine& engine, Registry& registry)
     : engine(engine), registry(registry) {}
 
-void EngineSync::notifyRemoved(const std::string& name) {
-    engineTrackNames.erase(name);
-    engineBusNames.erase(name);
+void EngineSync::notifyRemoved(const std::string& id) {
+    engineTrackIds.erase(id);
+    engineBusIds.erase(id);
     // Effect and send IDs are orphaned by CASCADE delete —
     // clear them so they don't block re-creation
     engineEffectIds.clear();
     engineSendIds.clear();
 }
 
-void EngineSync::notifyRenamed(const std::string& oldName, const std::string& newName) {
-    if (engineTrackNames.erase(oldName))
-        engineTrackNames.insert(newName);
-    if (engineBusNames.erase(oldName))
-        engineBusNames.insert(newName);
-}
-
 void EngineSync::clear() {
     engine.clearAllTracks();
     engine.clearAllBusses();
-    engineTrackNames.clear();
-    engineBusNames.clear();
+    engineTrackIds.clear();
+    engineBusIds.clear();
     engineEffectIds.clear();
     engineSendIds.clear();
 }
@@ -37,10 +30,10 @@ void EngineSync::sync(const std::string& songId) {
     // 1. Sync busses (must exist before sends)
     auto regBusses = registry.bussesForSong(songId);
     for (auto& bus : regBusses) {
-        if (engineBusNames.find(bus.name) == engineBusNames.end()) {
-            engine.createBus(juce::String(bus.name));
-            engine.setBusGain(juce::String(bus.name), bus.outputGain);
-            engineBusNames.insert(bus.name);
+        if (engineBusIds.find(bus.id) == engineBusIds.end()) {
+            engine.createBusWithId(juce::String(bus.id), juce::String(bus.name));
+            engine.setBusGain(juce::String(bus.id), bus.outputGain);
+            engineBusIds.insert(bus.id);
         }
 
         // Effects — always sync
@@ -48,7 +41,7 @@ void EngineSync::sync(const std::string& songId) {
             if (engineEffectIds.count(fx.id)) continue;
             auto plugin = registry.findPluginById(fx.pluginId);
             if (plugin) {
-                engine.addEffect(juce::String(bus.name),
+                engine.addEffect(juce::String(bus.id),
                                   juce::String(fx.name),
                                   juce::String(plugin->name));
                 engineEffectIds.insert(fx.id);
@@ -59,9 +52,9 @@ void EngineSync::sync(const std::string& songId) {
     // 2. Sync tracks
     auto regTracks = registry.tracksForSong(songId);
     for (auto& track : regTracks) {
-        if (engineTrackNames.find(track.name) == engineTrackNames.end()) {
-            engine.createTrack(juce::String(track.name));
-            engineTrackNames.insert(track.name);
+        if (engineTrackIds.find(track.id) == engineTrackIds.end()) {
+            engine.createTrackWithId(juce::String(track.id), juce::String(track.name));
+            engineTrackIds.insert(track.id);
 
             // Load instrument if plugin is set
             if (!track.pluginId.empty()) {
@@ -73,17 +66,17 @@ void EngineSync::sync(const std::string& songId) {
                         if (snap) presetName = juce::String(snap->name);
                     }
 
-                    engine.addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
-                        [presetName, trackName = track.name] {
-                            perfLog("[EngineSync] Instrument loaded: %s\n", trackName.c_str());
+                    engine.addTrackInstrument(juce::String(track.id), juce::String(plugin->name),
+                        [presetName, trackId = track.id] {
+                            perfLog("[EngineSync] Instrument loaded: %s\n", trackId.c_str());
                         });
                 }
             }
 
             // Gain and MIDI
-            engine.setTrackGain(juce::String(track.name), track.outputGain);
+            engine.setTrackGain(juce::String(track.id), track.outputGain);
             if (!track.midiEnabled)
-                engine.setTrackMidiEnabled(juce::String(track.name), false);
+                engine.setTrackMidiEnabled(juce::String(track.id), false);
         }
 
         // Effects — always sync, even for existing tracks
@@ -91,7 +84,7 @@ void EngineSync::sync(const std::string& songId) {
             if (engineEffectIds.count(fx.id)) continue;
             auto fxPlugin = registry.findPluginById(fx.pluginId);
             if (fxPlugin) {
-                engine.addEffect(juce::String(track.name),
+                engine.addEffect(juce::String(track.id),
                                   juce::String(fx.name),
                                   juce::String(fxPlugin->name));
                 engineEffectIds.insert(fx.id);
@@ -101,18 +94,14 @@ void EngineSync::sync(const std::string& songId) {
 
     // 3. Sync sends (tracks and busses must exist)
     for (auto& track : regTracks) {
-        if (engineTrackNames.find(track.name) == engineTrackNames.end()) continue;
+        if (engineTrackIds.find(track.id) == engineTrackIds.end()) continue;
 
         for (auto& send : registry.sendsForTrack(track.id)) {
             if (engineSendIds.count(send.id)) continue;
-            for (auto& bus : regBusses) {
-                if (bus.id == send.busId) {
-                    engine.addSend(juce::String(track.name),
-                                    juce::String(bus.name), send.gain);
-                    engineSendIds.insert(send.id);
-                    break;
-                }
-            }
+            // send.busId is the registry bus UUID — same as engine bus UUID
+            engine.addSend(juce::String(track.id),
+                            juce::String(send.busId), send.gain);
+            engineSendIds.insert(send.id);
         }
     }
 }

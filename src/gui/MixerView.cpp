@@ -88,31 +88,33 @@ void MixerView::timerCallback() {
         lastBusses = busses;
         rebuildStrips();
     } else {
+        // Build bus options for sends panels
+        std::vector<SendsPanel::BusOption> busOptions;
+        for (auto& b : lastBusses)
+            busOptions.push_back({ b.id, b.name });
+
         // Update tracks
         for (size_t i = 0; i < trackStrips.size() && i < lastTracks.size(); ++i) {
-            auto& name = lastTracks[i].name;
-            trackStrips[i]->setInstrumentName(api.getTrackPluginName(name));
-            trackStrips[i]->setEffects(api.getTrackEffects(name));
-            trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(name));
-            trackStrips[i]->setGain(api.getTrackGain(name));
-            trackStrips[i]->setPeakLevel(api.getTrackPeakLevel(name));
+            auto& id = lastTracks[i].id;
+            trackStrips[i]->setInstrumentName(api.getTrackPluginName(id));
+            trackStrips[i]->setEffects(api.getTrackEffects(id));
+            trackStrips[i]->setMidiEnabled(api.isTrackMidiEnabled(id));
+            trackStrips[i]->setGain(api.getTrackGain(id));
+            trackStrips[i]->setPeakLevel(api.getTrackPeakLevel(id));
 
             // Sends
             std::vector<SendsPanel::SendInfo> sends;
-            for (auto& s : api.getTrackSends(name))
-                sends.push_back({ s.busName, s.gain, s.peakLevel });
+            for (auto& s : api.getTrackSends(id))
+                sends.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
             trackStrips[i]->setSends(sends);
-
-            std::vector<juce::String> bn;
-            for (auto& b : lastBusses) bn.push_back(b.name);
-            trackStrips[i]->setAvailableBusses(bn);
+            trackStrips[i]->setAvailableBusses(busOptions);
         }
         // Update busses
         for (size_t i = 0; i < busStrips.size() && i < lastBusses.size(); ++i) {
-            auto& name = lastBusses[i].name;
-            busStrips[i]->setEffects(api.getBusEffects(name));
-            busStrips[i]->setGain(api.getBusGain(name));
-            busStrips[i]->setPeakLevel(api.getBusPeakLevel(name));
+            auto& id = lastBusses[i].id;
+            busStrips[i]->setEffects(api.getBusEffects(id));
+            busStrips[i]->setGain(api.getBusGain(id));
+            busStrips[i]->setPeakLevel(api.getBusPeakLevel(id));
         }
     }
 
@@ -134,19 +136,20 @@ void MixerView::rebuildStrips() {
     trackStrips.clear();
     busStrips.clear();
 
-    std::vector<juce::String> busNamesVec;
-    for (auto& b : lastBusses) busNamesVec.push_back(b.name);
+    std::vector<SendsPanel::BusOption> busOptions;
+    for (auto& b : lastBusses)
+        busOptions.push_back({ b.id, b.name });
 
     for (auto& t : lastTracks) {
         auto strip = std::make_unique<TrackStrip>(t.id, t.name, api);
-        strip->setInstrumentName(api.getTrackPluginName(t.name));
-        strip->setEffects(api.getTrackEffects(t.name));
-        strip->setMidiEnabled(api.isTrackMidiEnabled(t.name));
-        strip->setAvailableBusses(busNamesVec);
+        strip->setInstrumentName(api.getTrackPluginName(t.id));
+        strip->setEffects(api.getTrackEffects(t.id));
+        strip->setMidiEnabled(api.isTrackMidiEnabled(t.id));
+        strip->setAvailableBusses(busOptions);
 
         std::vector<SendsPanel::SendInfo> sends;
-        for (auto& s : api.getTrackSends(t.name))
-            sends.push_back({ s.busName, s.gain, s.peakLevel });
+        for (auto& s : api.getTrackSends(t.id))
+            sends.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
         strip->setSends(sends);
 
         stripContainer.addAndMakeVisible(*strip);
@@ -154,8 +157,8 @@ void MixerView::rebuildStrips() {
     }
 
     for (auto& b : lastBusses) {
-        auto strip = std::make_unique<BusStrip>(b.name, api);
-        strip->setEffects(api.getBusEffects(b.name));
+        auto strip = std::make_unique<BusStrip>(b.id, b.name, api);
+        strip->setEffects(api.getBusEffects(b.id));
         stripContainer.addAndMakeVisible(*strip);
         busStrips.push_back(std::move(strip));
     }

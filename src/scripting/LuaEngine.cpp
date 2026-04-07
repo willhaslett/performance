@@ -43,74 +43,94 @@ void LuaEngine::registerAPI() {
         api.createSong(juce::String(name));
     });
 
+    // Name-to-ID resolution helpers for Lua convenience
+    // Lua users pass display names; these resolve to UUIDs for the API.
+    auto resolveTrackId = [this](const std::string& name) -> juce::String {
+        auto id = api.findTrackIdByName(juce::String(name));
+        return id.empty() ? juce::String(name) : juce::String(id);
+    };
+    auto resolveBusId = [this](const std::string& name) -> juce::String {
+        auto id = api.findBusIdByName(juce::String(name));
+        return id.empty() ? juce::String(name) : juce::String(id);
+    };
+    // Resolve parent (track or bus) by name
+    auto resolveParentId = [this](const std::string& name) -> juce::String {
+        if (name == "Output") return "Output";
+        auto id = api.findTrackIdByName(juce::String(name));
+        if (!id.empty()) return juce::String(id);
+        id = api.findBusIdByName(juce::String(name));
+        if (!id.empty()) return juce::String(id);
+        return juce::String(name);
+    };
+
     // Track management
-    lua.set_function("createTrack", [this](const std::string& name) {
-        api.createTrack(juce::String(name));
+    lua.set_function("createTrack", [this](const std::string& name) -> std::string {
+        return api.createTrack(juce::String(name)).toStdString();
     });
-    lua.set_function("removeTrack", [this](const std::string& name) {
-        api.removeTrack(juce::String(name));
+    lua.set_function("removeTrack", [this, resolveTrackId](const std::string& name) {
+        api.removeTrack(resolveTrackId(name));
     });
-    lua.set_function("addInstrument", [this](const std::string& track, const std::string& plugin,
+    lua.set_function("addInstrument", [this, resolveTrackId](const std::string& track, const std::string& plugin,
                                               sol::optional<std::string> preset) {
-        api.addInstrument(juce::String(track), juce::String(plugin),
+        api.addInstrument(resolveTrackId(track), juce::String(plugin),
                           juce::String(preset.value_or("")));
     });
-    lua.set_function("addTrackEffect", [this](const std::string& parent, const std::string& effect,
+    lua.set_function("addTrackEffect", [this, resolveParentId](const std::string& parent, const std::string& effect,
                                                const std::string& plugin) {
-        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
+        api.addEffect(resolveParentId(parent), juce::String(effect), juce::String(plugin));
     });
-    lua.set_function("addEffect", [this](const std::string& parent, const std::string& effect,
+    lua.set_function("addEffect", [this, resolveParentId](const std::string& parent, const std::string& effect,
                                           const std::string& plugin) {
-        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
+        api.addEffect(resolveParentId(parent), juce::String(effect), juce::String(plugin));
     });
-    lua.set_function("setTrackMidiEnabled", [this](const std::string& track, bool enabled) {
-        api.setTrackMidiEnabled(juce::String(track), enabled);
+    lua.set_function("setTrackMidiEnabled", [this, resolveTrackId](const std::string& track, bool enabled) {
+        api.setTrackMidiEnabled(resolveTrackId(track), enabled);
     });
-    lua.set_function("setTrackGain", [this](const std::string& track, float gain) {
-        api.setTrackGain(juce::String(track), gain);
+    lua.set_function("setTrackGain", [this, resolveTrackId](const std::string& track, float gain) {
+        api.setTrackGain(resolveTrackId(track), gain);
     });
 
     // Bus management
-    lua.set_function("createBus", [this](const std::string& name) {
-        api.createBus(juce::String(name));
+    lua.set_function("createBus", [this](const std::string& name) -> std::string {
+        return api.createBus(juce::String(name)).toStdString();
     });
-    lua.set_function("removeBus", [this](const std::string& name) {
-        api.removeBus(juce::String(name));
+    lua.set_function("removeBus", [this, resolveBusId](const std::string& name) {
+        api.removeBus(resolveBusId(name));
     });
-    lua.set_function("addBusEffect", [this](const std::string& parent, const std::string& effect,
+    lua.set_function("addBusEffect", [this, resolveParentId](const std::string& parent, const std::string& effect,
                                              const std::string& plugin) {
-        api.addEffect(juce::String(parent), juce::String(effect), juce::String(plugin));
+        api.addEffect(resolveParentId(parent), juce::String(effect), juce::String(plugin));
     });
-    lua.set_function("removeEffect", [this](const std::string& parent, const std::string& effect) {
-        api.removeEffect(juce::String(parent), juce::String(effect));
+    lua.set_function("removeEffect", [this, resolveParentId](const std::string& parent, const std::string& effect) {
+        api.removeEffect(resolveParentId(parent), juce::String(effect));
     });
-    lua.set_function("setBusGain", [this](const std::string& bus, float gain) {
-        api.setBusGain(juce::String(bus), gain);
+    lua.set_function("setBusGain", [this, resolveBusId](const std::string& bus, float gain) {
+        api.setBusGain(resolveBusId(bus), gain);
     });
 
     // Sends
-    lua.set_function("addSend", [this](const std::string& track, const std::string& bus,
+    lua.set_function("addSend", [this, resolveTrackId, resolveBusId](const std::string& track, const std::string& bus,
                                         sol::optional<float> gain) {
-        api.addSend(juce::String(track), juce::String(bus), gain.value_or(1.0f));
+        api.addSend(resolveTrackId(track), resolveBusId(bus), gain.value_or(1.0f));
     });
-    lua.set_function("setSendGain", [this](const std::string& track, const std::string& bus, float gain) {
-        api.setSendGain(juce::String(track), juce::String(bus), gain);
+    lua.set_function("setSendGain", [this, resolveTrackId, resolveBusId](const std::string& track, const std::string& bus, float gain) {
+        api.setSendGain(resolveTrackId(track), resolveBusId(bus), gain);
     });
 
     // Parameters
-    lua.set_function("setParam", [this](const std::string& track, const std::string& param, float value) {
-        api.setParam(juce::String(track), juce::String(param), value);
+    lua.set_function("setParam", [this, resolveTrackId](const std::string& track, const std::string& param, float value) {
+        api.setParam(resolveTrackId(track), juce::String(param), value);
     });
-    lua.set_function("setEffectParam", [this](const std::string& track, const std::string& effect,
+    lua.set_function("setEffectParam", [this, resolveParentId](const std::string& parent, const std::string& effect,
                                                const std::string& param, float value) {
-        api.setEffectParam(juce::String(track), juce::String(effect), juce::String(param), value);
+        api.setEffectParam(resolveParentId(parent), juce::String(effect), juce::String(param), value);
     });
-    lua.set_function("getParam", [this](const std::string& track, const std::string& param) -> float {
-        return api.getParam(juce::String(track), juce::String(param));
+    lua.set_function("getParam", [this, resolveTrackId](const std::string& track, const std::string& param) -> float {
+        return api.getParam(resolveTrackId(track), juce::String(param));
     });
-    lua.set_function("getEffectParam", [this](const std::string& track, const std::string& effect,
+    lua.set_function("getEffectParam", [this, resolveParentId](const std::string& parent, const std::string& effect,
                                                const std::string& param) -> float {
-        return api.getEffectParam(juce::String(track), juce::String(effect), juce::String(param));
+        return api.getEffectParam(resolveParentId(parent), juce::String(effect), juce::String(param));
     });
 
     // MIDI control binding
@@ -195,16 +215,16 @@ void LuaEngine::registerAPI() {
     });
 
     // Track gain query (needed by automation helpers)
-    lua.set_function("getTrackGain", [this](const std::string& track) -> float {
-        return api.getTrackGain(juce::String(track));
+    lua.set_function("getTrackGain", [this, resolveTrackId](const std::string& track) -> float {
+        return api.getTrackGain(resolveTrackId(track));
     });
 
     // Presets (plugin state)
-    lua.set_function("savePreset", [this](const std::string& track, const std::string& name) {
-        api.savePreset(juce::String(track), juce::String(name));
+    lua.set_function("savePreset", [this, resolveTrackId](const std::string& track, const std::string& name) {
+        api.savePreset(resolveTrackId(track), juce::String(name));
     });
-    lua.set_function("loadPreset", [this](const std::string& track, const std::string& name) {
-        api.loadPreset(juce::String(track), juce::String(name));
+    lua.set_function("loadPreset", [this, resolveTrackId](const std::string& track, const std::string& name) {
+        api.loadPreset(resolveTrackId(track), juce::String(name));
     });
     lua.set_function("listPresets", [this](const std::string& plugin) -> sol::table {
         auto names = api.listPresets(juce::String(plugin));
@@ -215,8 +235,8 @@ void LuaEngine::registerAPI() {
     });
 
     // Plugin UI
-    lua.set_function("openEditor", [this](const std::string& track, sol::optional<std::string> effect) {
-        api.openPluginEditor(juce::String(track), juce::String(effect.value_or("")));
+    lua.set_function("openEditor", [this, resolveParentId](const std::string& parent, sol::optional<std::string> effect) {
+        api.openPluginEditor(resolveParentId(parent), juce::String(effect.value_or("")));
     });
 
     // Query

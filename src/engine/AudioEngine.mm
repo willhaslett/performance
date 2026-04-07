@@ -342,17 +342,25 @@ juce::String AudioEngine::findBusId(const juce::String& name) const {
 
 // --- Track management ---
 
-void AudioEngine::createTrack(const juce::String& trackName) {
+juce::String AudioEngine::createTrack(const juce::String& trackName) {
     Track track;
     track.name = trackName;
     track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
     auto uuid = generateId();
     tracks[uuid] = std::move(track);
     perfLog("[Engine] Created track: %s (id=%s)\n", trackName.toRawUTF8(), uuid.toRawUTF8());
+    return uuid;
 }
 
-void AudioEngine::removeTrack(const juce::String& trackName) {
-    auto trackId = findTrackId(trackName);
+void AudioEngine::createTrackWithId(const juce::String& id, const juce::String& trackName) {
+    Track track;
+    track.name = trackName;
+    track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
+    tracks[id] = std::move(track);
+    perfLog("[Engine] Created track: %s (id=%s)\n", trackName.toRawUTF8(), id.toRawUTF8());
+}
+
+void AudioEngine::removeTrack(const juce::String& trackId) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
 
@@ -367,15 +375,14 @@ void AudioEngine::removeTrack(const juce::String& trackName) {
 
     tracks.erase(it);
     rebuildConnections();
-    perfLog("[Engine] Removed track: %s\n", trackName.toRawUTF8());
+    perfLog("[Engine] Removed track: %s\n", trackId.toRawUTF8());
 }
 
-bool AudioEngine::addTrackInstrument(const juce::String& trackName, const juce::String& pluginName,
+bool AudioEngine::addTrackInstrument(const juce::String& trackId, const juce::String& pluginName,
                                       LoadCallback onLoaded) {
-    auto trackId = findTrackId(trackName);
     auto it = tracks.find(trackId);
     if (it == tracks.end()) {
-        perfLog("[Engine] Track not found: %s\n", trackName.toRawUTF8());
+        perfLog("[Engine] Track not found: %s\n", trackId.toRawUTF8());
         return false;
     }
 
@@ -387,7 +394,7 @@ bool AudioEngine::addTrackInstrument(const juce::String& trackName, const juce::
 
     it->second.instrumentPluginName = pluginName;
     perfLog("[Engine] Loading instrument: %s -> track \"%s\"\n",
-            desc.name.toRawUTF8(), trackName.toRawUTF8());
+            desc.name.toRawUTF8(), trackId.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
@@ -423,15 +430,8 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
     perfLog("[Engine] Loading effect: %s as \"%s\" -> \"%s\"\n",
             desc.name.toRawUTF8(), effectName.toRawUTF8(), parentName.toRawUTF8());
 
-    // Resolve display name to stable UUID before the async call
-    juce::String parentId;
-    if (parentName == "Output")
-        parentId = "Output";
-    else {
-        parentId = findTrackId(parentName);
-        if (parentId.isEmpty())
-            parentId = findBusId(parentName);
-    }
+    // parentName is already a stable UUID (or "Output")
+    juce::String parentId = parentName;
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
@@ -481,62 +481,58 @@ void AudioEngine::removeEffectFromList(std::vector<EffectNode>& effects, const j
     }
 }
 
-bool AudioEngine::addEffect(const juce::String& parentName, const juce::String& effectName,
+bool AudioEngine::addEffect(const juce::String& parentId, const juce::String& effectName,
                               const juce::String& pluginName, LoadCallback onLoaded) {
-    if (parentName == "Output")
-        return addEffectToList(masterEffects, parentName, effectName, pluginName, onLoaded);
-    auto trackId = findTrackId(parentName);
-    auto tit = tracks.find(trackId);
+    if (parentId == "Output")
+        return addEffectToList(masterEffects, parentId, effectName, pluginName, onLoaded);
+    auto tit = tracks.find(parentId);
     if (tit != tracks.end())
-        return addEffectToList(tit->second.effects, parentName, effectName, pluginName, onLoaded);
-    auto busId = findBusId(parentName);
-    auto bit = busses.find(busId);
+        return addEffectToList(tit->second.effects, parentId, effectName, pluginName, onLoaded);
+    auto bit = busses.find(parentId);
     if (bit != busses.end())
-        return addEffectToList(bit->second.effects, parentName, effectName, pluginName, onLoaded);
-    perfLog("[Engine] Parent not found: %s\n", parentName.toRawUTF8());
+        return addEffectToList(bit->second.effects, parentId, effectName, pluginName, onLoaded);
+    perfLog("[Engine] Parent not found: %s\n", parentId.toRawUTF8());
     return false;
 }
 
-void AudioEngine::removeEffect(const juce::String& parentName, const juce::String& effectName) {
-    if (parentName == "Output") {
-        removeEffectFromList(masterEffects, parentName, effectName);
+void AudioEngine::removeEffect(const juce::String& parentId, const juce::String& effectName) {
+    if (parentId == "Output") {
+        removeEffectFromList(masterEffects, parentId, effectName);
         return;
     }
-    auto trackId = findTrackId(parentName);
-    auto tit = tracks.find(trackId);
+    auto tit = tracks.find(parentId);
     if (tit != tracks.end()) {
-        removeEffectFromList(tit->second.effects, parentName, effectName);
+        removeEffectFromList(tit->second.effects, parentId, effectName);
         return;
     }
-    auto busId = findBusId(parentName);
-    auto bit = busses.find(busId);
+    auto bit = busses.find(parentId);
     if (bit != busses.end())
-        removeEffectFromList(bit->second.effects, parentName, effectName);
+        removeEffectFromList(bit->second.effects, parentId, effectName);
 }
 
-float AudioEngine::getTrackPeakLevel(const juce::String& trackName) const {
-    auto it = tracks.find(findTrackId(trackName));
+float AudioEngine::getTrackPeakLevel(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return 0.0f;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         return proc->getPeakLevel();
     return 0.0f;
 }
 
-void AudioEngine::removeTrackInstrument(const juce::String& trackName) {
-    auto it = tracks.find(findTrackId(trackName));
+void AudioEngine::removeTrackInstrument(const juce::String& trackId) {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
     if (it->second.instrumentNode) {
         graph->removeNode(it->second.instrumentNode->nodeID);
         it->second.instrumentNode = nullptr;
         it->second.instrumentPluginName = "";
         rebuildConnections();
-        perfLog("[Engine] Removed instrument from track \"%s\"\n", trackName.toRawUTF8());
+        perfLog("[Engine] Removed instrument from track \"%s\"\n", trackId.toRawUTF8());
     }
 }
 
 
-void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enabled) {
-    auto it = tracks.find(findTrackId(trackName));
+void AudioEngine::setTrackMidiEnabled(const juce::String& trackId, bool enabled) {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
     if (it->second.midiEnabled == enabled) return;
 
@@ -564,38 +560,37 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackName, bool enable
     }
 
     perfLog("[Engine] MIDI %s for track \"%s\"\n",
-            enabled ? "enabled" : "disabled", trackName.toRawUTF8());
+            enabled ? "enabled" : "disabled", trackId.toRawUTF8());
 }
 
-void AudioEngine::setTrackGain(const juce::String& trackName, float gain) {
-    auto it = tracks.find(findTrackId(trackName));
+void AudioEngine::setTrackGain(const juce::String& trackId, float gain) {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         proc->setGain(gain);
 }
 
-float AudioEngine::getTrackGain(const juce::String& trackName) const {
-    auto it = tracks.find(findTrackId(trackName));
+float AudioEngine::getTrackGain(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return 0.0f;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         return proc->getGain();
     return 0.0f;
 }
 
-void AudioEngine::renameTrack(const juce::String& oldName, const juce::String& newName) {
-    auto trackId = findTrackId(oldName);
+void AudioEngine::renameTrack(const juce::String& trackId, const juce::String& newName) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
+    auto oldName = it->second.name;
     it->second.name = newName;
     perfLog("[Engine] Renamed track \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
 }
 
-void AudioEngine::renameBus(const juce::String& oldName, const juce::String& newName) {
-    auto busId = findBusId(oldName);
+void AudioEngine::renameBus(const juce::String& busId, const juce::String& newName) {
     auto it = busses.find(busId);
     if (it == busses.end()) return;
+    auto oldName = it->second.name;
     it->second.name = newName;
-    // No need to update send references — sends store busId (UUID), not name
     perfLog("[Engine] Renamed bus \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
 }
 
@@ -617,17 +612,25 @@ void AudioEngine::clearAllTracks() {
 
 // --- Bus management ---
 
-void AudioEngine::createBus(const juce::String& busName) {
+juce::String AudioEngine::createBus(const juce::String& busName) {
     Bus bus;
     bus.name = busName;
     bus.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
     auto uuid = generateId();
     busses[uuid] = std::move(bus);
     perfLog("[Engine] Created bus: %s (id=%s)\n", busName.toRawUTF8(), uuid.toRawUTF8());
+    return uuid;
 }
 
-void AudioEngine::removeBus(const juce::String& busName) {
-    auto busId = findBusId(busName);
+void AudioEngine::createBusWithId(const juce::String& id, const juce::String& busName) {
+    Bus bus;
+    bus.name = busName;
+    bus.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
+    busses[id] = std::move(bus);
+    perfLog("[Engine] Created bus: %s (id=%s)\n", busName.toRawUTF8(), id.toRawUTF8());
+}
+
+void AudioEngine::removeBus(const juce::String& busId) {
     auto it = busses.find(busId);
     if (it == busses.end()) return;
 
@@ -638,12 +641,12 @@ void AudioEngine::removeBus(const juce::String& busName) {
 
     busses.erase(it);
     rebuildConnections();
-    perfLog("[Engine] Removed bus: %s\n", busName.toRawUTF8());
+    perfLog("[Engine] Removed bus: %s\n", busId.toRawUTF8());
 }
 
 
-void AudioEngine::setBusGain(const juce::String& busName, float gain) {
-    auto it = busses.find(findBusId(busName));
+void AudioEngine::setBusGain(const juce::String& busId, float gain) {
+    auto it = busses.find(busId);
     if (it == busses.end()) return;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         proc->setGain(gain);
@@ -662,24 +665,23 @@ void AudioEngine::clearAllBusses() {
 
 // --- Sends ---
 
-void AudioEngine::addSend(const juce::String& trackName, const juce::String& busName, float gain) {
-    auto it = tracks.find(findTrackId(trackName));
+void AudioEngine::addSend(const juce::String& trackId, const juce::String& busId, float gain) {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
 
     auto gainNode = graph->addNode(std::make_unique<GainProcessor>());
     if (auto* proc = dynamic_cast<GainProcessor*>(gainNode->getProcessor()))
         proc->setGain(gain);
 
-    it->second.sends.push_back({ findBusId(busName), gainNode });
+    it->second.sends.push_back({ busId, gainNode });
     rebuildConnections();
     perfLog("[Engine] Added send: track \"%s\" -> bus \"%s\" (gain %.2f)\n",
-            trackName.toRawUTF8(), busName.toRawUTF8(), gain);
+            trackId.toRawUTF8(), busId.toRawUTF8(), gain);
 }
 
-void AudioEngine::setSendGain(const juce::String& trackName, const juce::String& busName, float gain) {
-    auto it = tracks.find(findTrackId(trackName));
+void AudioEngine::setSendGain(const juce::String& trackId, const juce::String& busId, float gain) {
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
-    auto busId = findBusId(busName);
     for (auto& send : it->second.sends) {
         if (send.busId == busId) {
             if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor()))
@@ -824,37 +826,37 @@ std::vector<juce::String> AudioEngine::getBusNames() const {
     return names;
 }
 
-juce::String AudioEngine::getTrackPluginName(const juce::String& trackName) const {
-    auto it = tracks.find(findTrackId(trackName));
+juce::String AudioEngine::getTrackPluginName(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
     return (it != tracks.end()) ? it->second.instrumentPluginName : juce::String();
 }
 
-bool AudioEngine::isTrackMidiEnabled(const juce::String& trackName) const {
-    auto it = tracks.find(findTrackId(trackName));
+bool AudioEngine::isTrackMidiEnabled(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
     return it != tracks.end() && it->second.midiEnabled;
 }
 
-std::vector<AudioEngine::EffectInfo> AudioEngine::getTrackEffects(const juce::String& trackName) const {
+std::vector<AudioEngine::EffectInfo> AudioEngine::getTrackEffects(const juce::String& trackId) const {
     std::vector<EffectInfo> result;
-    auto it = tracks.find(findTrackId(trackName));
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return result;
     for (auto& fx : it->second.effects)
         result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
     return result;
 }
 
-std::vector<AudioEngine::EffectInfo> AudioEngine::getBusEffects(const juce::String& busName) const {
+std::vector<AudioEngine::EffectInfo> AudioEngine::getBusEffects(const juce::String& busId) const {
     std::vector<EffectInfo> result;
-    auto it = busses.find(findBusId(busName));
+    auto it = busses.find(busId);
     if (it == busses.end()) return result;
     for (auto& fx : it->second.effects)
         result.push_back({ fx.name, fx.node ? fx.node->getProcessor()->getName() : juce::String() });
     return result;
 }
 
-std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String& trackName) const {
+std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String& trackId) const {
     std::vector<SendInfo> result;
-    auto it = tracks.find(findTrackId(trackName));
+    auto it = tracks.find(trackId);
     if (it == tracks.end()) return result;
     for (auto& send : it->second.sends) {
         float gain = 1.0f;
@@ -872,16 +874,16 @@ std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String
     return result;
 }
 
-float AudioEngine::getBusPeakLevel(const juce::String& busName) const {
-    auto it = busses.find(findBusId(busName));
+float AudioEngine::getBusPeakLevel(const juce::String& busId) const {
+    auto it = busses.find(busId);
     if (it == busses.end()) return 0.0f;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         return proc->getPeakLevel();
     return 0.0f;
 }
 
-float AudioEngine::getBusGain(const juce::String& busName) const {
-    auto it = busses.find(findBusId(busName));
+float AudioEngine::getBusGain(const juce::String& busId) const {
+    auto it = busses.find(busId);
     if (it == busses.end()) return 0.0f;
     if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
         return proc->getGain();
@@ -914,30 +916,30 @@ std::vector<AudioEngine::EffectInfo> AudioEngine::getMasterEffects() const {
 
 // --- Processor access ---
 
-juce::AudioProcessor* AudioEngine::getTrackInstrumentProcessor(const juce::String& trackName) const {
-    auto it = tracks.find(findTrackId(trackName));
+juce::AudioProcessor* AudioEngine::getTrackInstrumentProcessor(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
     if (it != tracks.end() && it->second.instrumentNode)
         return it->second.instrumentNode->getProcessor();
     return nullptr;
 }
 
-juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& trackName,
+juce::AudioProcessor* AudioEngine::getTrackEffectProcessor(const juce::String& parentId,
                                                              const juce::String& effectName) const {
     // Check master effects
-    if (trackName == "Output") {
+    if (parentId == "Output") {
         for (auto& fx : masterEffects)
             if (fx.name == effectName && fx.node) return fx.node->getProcessor();
         return nullptr;
     }
     // Check tracks
-    auto tit = tracks.find(findTrackId(trackName));
+    auto tit = tracks.find(parentId);
     if (tit != tracks.end()) {
         for (auto& fx : tit->second.effects)
             if (fx.name == effectName && fx.node) return fx.node->getProcessor();
         return nullptr;
     }
     // Check busses
-    auto bit = busses.find(findBusId(trackName));
+    auto bit = busses.find(parentId);
     if (bit != busses.end()) {
         for (auto& fx : bit->second.effects)
             if (fx.name == effectName && fx.node) return fx.node->getProcessor();
@@ -1085,13 +1087,13 @@ private:
     std::unique_ptr<PresetToolbar> toolbar;
 };
 
-void AudioEngine::openPluginEditor(const juce::String& trackName, const juce::String& effectName,
+void AudioEngine::openPluginEditor(const juce::String& parentId, const juce::String& effectName,
                                     PresetCallbacks presetCallbacks) {
     juce::AudioProcessor* processor = nullptr;
     if (effectName.isEmpty())
-        processor = getTrackInstrumentProcessor(trackName);
+        processor = getTrackInstrumentProcessor(parentId);
     else
-        processor = getTrackEffectProcessor(trackName, effectName);
+        processor = getTrackEffectProcessor(parentId, effectName);
 
     if (!processor || !processor->hasEditor()) return;
 
