@@ -1058,14 +1058,15 @@ public:
         auto* container = new juce::Component();
         container->setSize(editor->getWidth(), editor->getHeight() + toolbarHeight);
 
+        editor->setTopLeftPosition(0, toolbarHeight);
+        container->addAndMakeVisible(editor);
+
         if (hasPresets) {
             toolbar = std::make_unique<PresetToolbar>(std::move(presetCallbacks));
             toolbar->setBounds(0, 0, editor->getWidth(), toolbarHeight);
             container->addAndMakeVisible(toolbar.get());
+            toolbar->toFront(false);
         }
-
-        editor->setTopLeftPosition(0, toolbarHeight);
-        container->addAndMakeVisible(editor);
 
         setContentOwned(container, true);
     }
