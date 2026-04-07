@@ -1042,14 +1042,14 @@ juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackName) c
 std::vector<juce::String> PerformanceAPI::getTrackEffectNames(const juce::String& trackName) const {
     std::vector<juce::String> names;
     for (auto& fx : audioEngine->getTrackEffects(trackName))
-        names.push_back(fx.name);
+        names.push_back(fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name);
     return names;
 }
 
 std::vector<juce::String> PerformanceAPI::getBusEffectNames(const juce::String& busName) const {
     std::vector<juce::String> names;
     for (auto& fx : audioEngine->getBusEffects(busName))
-        names.push_back(fx.name);
+        names.push_back(fx.pluginName.isNotEmpty() ? fx.pluginName : fx.name);
     return names;
 }
 
