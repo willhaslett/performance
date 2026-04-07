@@ -56,15 +56,21 @@ void PluginSlot::showPicker(juce::Point<int> position) {
 
     for (int p = 0; p < (int)plugins.size(); ++p) {
         auto& pname = plugins[p];
-        juce::PopupMenu snapshotMenu;
-        snapshotMenu.addItem(p * 1000 + 1, "Default");
-        auto snapshots = api.listSnapshots(pname);
-        if (!snapshots.empty()) {
-            snapshotMenu.addSeparator();
-            for (int s = 0; s < (int)snapshots.size(); ++s)
-                snapshotMenu.addItem(p * 1000 + 100 + s, snapshots[s]);
+        auto presets = api.listPresets(pname);
+        // Only show submenu if there are user presets beyond Default
+        bool hasUserPresets = false;
+        for (auto& pr : presets)
+            if (pr != "Default") { hasUserPresets = true; break; }
+
+        if (hasUserPresets) {
+            juce::PopupMenu presetMenu;
+            for (int s = 0; s < (int)presets.size(); ++s)
+                presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
+            menu.addSubMenu(pname, presetMenu);
+        } else {
+            // No user presets — click plugin name directly
+            menu.addItem(p * 1000 + 1, pname);
         }
-        menu.addSubMenu(pname, snapshotMenu);
     }
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
@@ -73,20 +79,20 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             if (result == 0) return;
 
             int pluginIdx = result / 1000;
-            int snapshotChoice = result % 1000;
+            int presetChoice = result % 1000;
             if (pluginIdx >= (int)plugins.size()) return;
 
             auto selectedPlugin = plugins[pluginIdx];
-            juce::String snapshotName;
-            if (snapshotChoice >= 100) {
-                auto snapshots = api.listSnapshots(selectedPlugin);
-                int snapIdx = snapshotChoice - 100;
-                if (snapIdx < (int)snapshots.size())
-                    snapshotName = snapshots[snapIdx];
+            juce::String presetName;
+            if (presetChoice >= 100) {
+                auto presets = api.listPresets(selectedPlugin);
+                int presetIdx = presetChoice - 100;
+                if (presetIdx < (int)presets.size())
+                    presetName = presets[presetIdx];
             }
 
             if (slotType == Instrument)
-                api.addInstrument(trackOrBusName, selectedPlugin, snapshotName);
+                api.addInstrument(trackOrBusName, selectedPlugin, presetName);
             else
                 api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
 
@@ -103,15 +109,19 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
     auto plugins = (slotType == Instrument) ? api.listInstrumentPlugins() : api.listEffectPlugins();
     for (int p = 0; p < (int)plugins.size(); ++p) {
         auto& pname = plugins[p];
-        juce::PopupMenu snapshotMenu;
-        snapshotMenu.addItem(p * 1000 + 1, "Default");
-        auto snapshots = api.listSnapshots(pname);
-        if (!snapshots.empty()) {
-            snapshotMenu.addSeparator();
-            for (int s = 0; s < (int)snapshots.size(); ++s)
-                snapshotMenu.addItem(p * 1000 + 100 + s, snapshots[s]);
+        auto presets = api.listPresets(pname);
+        bool hasUserPresets = false;
+        for (auto& pr : presets)
+            if (pr != "Default") { hasUserPresets = true; break; }
+
+        if (hasUserPresets) {
+            juce::PopupMenu presetMenu;
+            for (int s = 0; s < (int)presets.size(); ++s)
+                presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
+            replaceMenu.addSubMenu(pname, presetMenu);
+        } else {
+            replaceMenu.addItem(p * 1000 + 1, pname);
         }
-        replaceMenu.addSubMenu(pname, snapshotMenu);
     }
     menu.addSubMenu("Replace", replaceMenu);
 
@@ -130,20 +140,20 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             }
 
             int pluginIdx = result / 1000;
-            int snapshotChoice = result % 1000;
+            int presetChoice = result % 1000;
             if (pluginIdx >= (int)plugins.size()) return;
 
             auto selectedPlugin = plugins[pluginIdx];
-            juce::String snapshotName;
-            if (snapshotChoice >= 100) {
-                auto snapshots = api.listSnapshots(selectedPlugin);
-                int snapIdx = snapshotChoice - 100;
-                if (snapIdx < (int)snapshots.size())
-                    snapshotName = snapshots[snapIdx];
+            juce::String presetName;
+            if (presetChoice >= 100) {
+                auto presets = api.listPresets(selectedPlugin);
+                int presetIdx = presetChoice - 100;
+                if (presetIdx < (int)presets.size())
+                    presetName = presets[presetIdx];
             }
 
             if (slotType == Instrument)
-                api.addInstrument(trackOrBusName, selectedPlugin, snapshotName);
+                api.addInstrument(trackOrBusName, selectedPlugin, presetName);
             else
                 api.addEffect(trackOrBusName, selectedPlugin, selectedPlugin);
 

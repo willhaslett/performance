@@ -35,7 +35,7 @@ void Registry::createSchema() {
             format_id TEXT UNIQUE NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS snapshots (
+        CREATE TABLE IF NOT EXISTS presets (
             id TEXT PRIMARY KEY,
             plugin_id TEXT NOT NULL REFERENCES plugins(id),
             name TEXT NOT NULL,
@@ -56,7 +56,7 @@ void Registry::createSchema() {
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             name TEXT NOT NULL,
             plugin_id TEXT REFERENCES plugins(id),
-            snapshot_id TEXT REFERENCES snapshots(id),
+            snapshot_id TEXT REFERENCES presets(id),
             output_gain REAL DEFAULT 1.0,
             midi_enabled INTEGER DEFAULT 1,
             position INTEGER DEFAULT 0
@@ -76,7 +76,7 @@ void Registry::createSchema() {
             parent_type TEXT NOT NULL CHECK(parent_type IN ('track', 'bus')),
             name TEXT NOT NULL,
             plugin_id TEXT NOT NULL REFERENCES plugins(id),
-            snapshot_id TEXT REFERENCES snapshots(id),
+            snapshot_id TEXT REFERENCES presets(id),
             position INTEGER DEFAULT 0
         );
 
@@ -109,6 +109,8 @@ void Registry::createSchema() {
     // Migrations for existing databases
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN master_gain REAL DEFAULT 1.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "UPDATE songs SET name = 'Sandbox' WHERE name = 'Default Session'", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE snapshots RENAME TO presets", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "DELETE FROM presets", nullptr, nullptr, nullptr);
 }
 
 std::string Registry::generateId() {
@@ -196,15 +198,15 @@ std::vector<Registry::Plugin> Registry::allPlugins() const {
     return result;
 }
 
-// --- Snapshots ---
+// --- Presets ---
 
-std::string Registry::createSnapshot(const std::string& pluginId, const std::string& name,
+std::string Registry::createPreset(const std::string& pluginId, const std::string& name,
                                       const std::string& statePath) {
-    auto existing = findSnapshot(pluginId, name);
+    auto existing = findPreset(pluginId, name);
     if (existing) return existing->id;
 
     auto id = generateId();
-    auto* stmt = prepare("INSERT INTO snapshots (id, plugin_id, name, state_path) VALUES (?, ?, ?, ?)");
+    auto* stmt = prepare("INSERT INTO presets (id, plugin_id, name, state_path) VALUES (?, ?, ?, ?)");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, pluginId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_TRANSIENT);
@@ -214,14 +216,14 @@ std::string Registry::createSnapshot(const std::string& pluginId, const std::str
     return id;
 }
 
-std::optional<Registry::Snapshot> Registry::findSnapshot(const std::string& pluginId,
+std::optional<Registry::Preset> Registry::findPreset(const std::string& pluginId,
                                                           const std::string& name) const {
-    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM snapshots WHERE plugin_id = ? AND name = ?");
+    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM presets WHERE plugin_id = ? AND name = ?");
     sqlite3_bind_text(stmt, 1, pluginId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, name.c_str(), -1, SQLITE_TRANSIENT);
-    std::optional<Snapshot> result;
+    std::optional<Preset> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-        result = Snapshot{
+        result = Preset{
             (const char*)sqlite3_column_text(stmt, 0),
             (const char*)sqlite3_column_text(stmt, 1),
             (const char*)sqlite3_column_text(stmt, 2),
@@ -232,12 +234,12 @@ std::optional<Registry::Snapshot> Registry::findSnapshot(const std::string& plug
     return result;
 }
 
-std::optional<Registry::Snapshot> Registry::findSnapshotById(const std::string& id) const {
-    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM snapshots WHERE id = ?");
+std::optional<Registry::Preset> Registry::findPresetById(const std::string& id) const {
+    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM presets WHERE id = ?");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
-    std::optional<Snapshot> result;
+    std::optional<Preset> result;
     if (sqlite3_step(stmt) == SQLITE_ROW) {
-        result = Snapshot{
+        result = Preset{
             (const char*)sqlite3_column_text(stmt, 0),
             (const char*)sqlite3_column_text(stmt, 1),
             (const char*)sqlite3_column_text(stmt, 2),
@@ -248,9 +250,9 @@ std::optional<Registry::Snapshot> Registry::findSnapshotById(const std::string& 
     return result;
 }
 
-std::vector<Registry::Snapshot> Registry::snapshotsForPlugin(const std::string& pluginId) const {
-    std::vector<Snapshot> result;
-    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM snapshots WHERE plugin_id = ? ORDER BY name");
+std::vector<Registry::Preset> Registry::presetsForPlugin(const std::string& pluginId) const {
+    std::vector<Preset> result;
+    auto* stmt = prepare("SELECT id, plugin_id, name, state_path FROM presets WHERE plugin_id = ? ORDER BY name");
     sqlite3_bind_text(stmt, 1, pluginId.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         result.push_back({
@@ -350,7 +352,7 @@ float Registry::getMasterGain(const std::string& songId) const {
 // --- Tracks ---
 
 std::string Registry::createTrack(const std::string& songId, const std::string& name,
-                                    const std::string& pluginId, const std::string& snapshotId,
+                                    const std::string& pluginId, const std::string& presetId,
                                     float outputGain, bool midiEnabled) {
     auto id = generateId();
     auto* stmt = prepare(
@@ -360,7 +362,7 @@ std::string Registry::createTrack(const std::string& songId, const std::string& 
     sqlite3_bind_text(stmt, 2, songId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, pluginId.empty() ? nullptr : pluginId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 5, snapshotId.empty() ? nullptr : snapshotId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, presetId.empty() ? nullptr : presetId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 6, outputGain);
     sqlite3_bind_int(stmt, 7, midiEnabled ? 1 : 0);
     sqlite3_bind_text(stmt, 8, songId.c_str(), -1, SQLITE_TRANSIENT);
@@ -382,7 +384,7 @@ std::vector<Registry::Track> Registry::tracksForSong(const std::string& songId) 
         t.songId = (const char*)sqlite3_column_text(stmt, 1);
         t.name = (const char*)sqlite3_column_text(stmt, 2);
         t.pluginId = sqlite3_column_text(stmt, 3) ? (const char*)sqlite3_column_text(stmt, 3) : "";
-        t.snapshotId = sqlite3_column_text(stmt, 4) ? (const char*)sqlite3_column_text(stmt, 4) : "";
+        t.presetId = sqlite3_column_text(stmt, 4) ? (const char*)sqlite3_column_text(stmt, 4) : "";
         t.outputGain = (float)sqlite3_column_double(stmt, 5);
         t.midiEnabled = sqlite3_column_int(stmt, 6) != 0;
         t.position = sqlite3_column_int(stmt, 7);
@@ -405,7 +407,7 @@ void Registry::updateTrack(const Track& track) {
         "output_gain = ?, midi_enabled = ?, position = ? WHERE id = ?");
     sqlite3_bind_text(stmt, 1, track.name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, track.pluginId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, track.snapshotId.empty() ? nullptr : track.snapshotId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, track.presetId.empty() ? nullptr : track.presetId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_double(stmt, 4, track.outputGain);
     sqlite3_bind_int(stmt, 5, track.midiEnabled ? 1 : 0);
     sqlite3_bind_int(stmt, 6, track.position);
@@ -461,7 +463,7 @@ void Registry::deleteBus(const std::string& id) {
 
 std::string Registry::createEffect(const std::string& parentId, const std::string& parentType,
                                      const std::string& name, const std::string& pluginId,
-                                     const std::string& snapshotId) {
+                                     const std::string& presetId) {
     auto id = generateId();
     auto* stmt = prepare(
         "INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, snapshot_id, position) "
@@ -471,7 +473,7 @@ std::string Registry::createEffect(const std::string& parentId, const std::strin
     sqlite3_bind_text(stmt, 3, parentType.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 4, name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 5, pluginId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 6, snapshotId.empty() ? nullptr : snapshotId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, presetId.empty() ? nullptr : presetId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 7, parentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -651,7 +653,7 @@ void Registry::deleteBinding(const std::string& id) {
 // --- Generic CRUD ---
 
 static const std::map<std::string, std::string> typeToTable = {
-    {EntityType::Plugin, "plugins"}, {EntityType::Snapshot, "snapshots"},
+    {EntityType::Plugin, "plugins"}, {EntityType::Preset, "presets"},
     {EntityType::Song, "songs"}, {EntityType::Track, "tracks"},
     {EntityType::Bus, "busses"}, {EntityType::Effect, "effects"},
     {EntityType::Send, "sends"}, {EntityType::Action, "actions"},

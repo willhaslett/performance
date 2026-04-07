@@ -29,7 +29,7 @@ The `perf` command returns "ok" on success or an error message.
 - `createTrack(name)` — create an empty track (shows in mixer)
 - `removeTrack(name)` — remove a track
 - `addInstrument(track, plugin)` — load an AU plugin on a track
-- `addInstrument(track, plugin, snapshot)` — load with a saved snapshot
+- `addInstrument(track, plugin, preset)` — load with a saved preset
 - `removeInstrument(track)` — remove instrument, keep track
 - `addEffect(trackOrBus, effectName, plugin)` — add an effect to a track or bus
 - `removeEffect(trackOrBus, effectName)` — remove an effect from a track or bus
@@ -78,10 +78,10 @@ Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 - `cancel(handle)` — cancel an automation
 - `cancelAll()` — cancel all automations
 
-### Snapshots
-- `saveSnapshot(track, name)` — save current plugin state to library
-- `loadSnapshot(track, name)` — restore saved plugin state
-- `listSnapshots(pluginName)` — list saved snapshots for a plugin
+### Presets
+- `savePreset(track, name)` — save current plugin state to library
+- `loadPreset(track, name)` — restore saved plugin state
+- `listPresets(pluginName)` — list saved presets for a plugin
 
 ### Song Management
 Songs live in the registry (SQLite), not as files on disk. There is always a "Sandbox" which is hidden from the user and cannot be deleted — it's the unnamed workspace.
@@ -104,7 +104,7 @@ To list/delete songs, use the registry CRUD:
 - `registryUpdate(id, {fields})` — update entity fields
 - `registryDelete(id)` — delete entity
 
-Entity types: "song", "track", "bus", "plugin", "snapshot", "effect", "send", "action", "binding"
+Entity types: "song", "track", "bus", "plugin", "preset", "effect", "send", "action", "binding"
 
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor
@@ -137,7 +137,7 @@ The app has a 3-pane layout: sidebar (registry browser), terminal (you), mixer (
 - Track menu: New Instrument Track, New Effects Bus
 - Track strips: instrument slot, effect slots, fader, VU meter, MIDI toggle (power icon)
 - Bus strips: effect slots, fader, VU meter, purple header
-- Click plugin pills to pick plugins (submenu with snapshots)
+- Click plugin pills to pick plugins (submenu with presets)
 - Right-click populated pills: No Plugin / Replace
 - Keyboard: s=sidebar, x=mixer, i=insert mode, Escape=close editor / exit insert
 

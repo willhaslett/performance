@@ -6,7 +6,7 @@
 
 namespace EntityType {
     constexpr const char* Plugin   = "plugin";
-    constexpr const char* Snapshot = "snapshot";
+    constexpr const char* Preset   = "preset";
     constexpr const char* Song     = "song";
     constexpr const char* Track    = "track";
     constexpr const char* Bus      = "bus";

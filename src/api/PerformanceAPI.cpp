@@ -94,17 +94,17 @@ void PerformanceAPI::removeTrack(const juce::String& name) {
 }
 
 void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::String& pluginName,
-                                    const juce::String& snapshotName) {
+                                    const juce::String& presetName) {
     auto plugin = registry->findPluginByName(pluginName.toStdString());
     if (!plugin) {
         perfLog("[API] Plugin not found: %s\n", pluginName.toRawUTF8());
         return;
     }
 
-    std::string snapshotId;
-    if (snapshotName.isNotEmpty()) {
-        auto snap = registry->findSnapshot(plugin->id, snapshotName.toStdString());
-        if (snap) snapshotId = snap->id;
+    std::string presetId;
+    if (presetName.isNotEmpty()) {
+        auto snap = registry->findPreset(plugin->id, presetName.toStdString());
+        if (snap) presetId = snap->id;
     }
 
     if (!currentSongId.empty()) {
@@ -114,14 +114,14 @@ void PerformanceAPI::addInstrument(const juce::String& trackName, const juce::St
             if (t.name == trackName.toStdString()) {
                 // Update existing track with plugin
                 t.pluginId = plugin->id;
-                t.snapshotId = snapshotId;
+                t.presetId = presetId;
                 registry->updateTrack(t);
                 updated = true;
                 break;
             }
         }
         if (!updated)
-            registry->createTrack(currentSongId, trackName.toStdString(), plugin->id, snapshotId);
+            registry->createTrack(currentSongId, trackName.toStdString(), plugin->id, presetId);
 
         // Engine already has the track — just load the instrument
         audioEngine->addTrackInstrument(trackName, pluginName, nullptr);
@@ -137,7 +137,7 @@ void PerformanceAPI::removeInstrument(const juce::String& trackName) {
         for (auto& t : registry->tracksForSong(currentSongId)) {
             if (t.name == trackName.toStdString()) {
                 t.pluginId = "";
-                t.snapshotId = "";
+                t.presetId = "";
                 registry->updateTrack(t);
                 break;
             }
@@ -471,82 +471,52 @@ void PerformanceAPI::unbindAll() {
 
 // --- Presets ---
 
-std::vector<juce::String> PerformanceAPI::listPresets(const juce::String& trackName) {
-    std::vector<juce::String> presets;
-    if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackName)) {
-        for (int i = 0; i < proc->getNumPrograms(); ++i)
-            presets.push_back(proc->getProgramName(i));
-    }
-    return presets;
-}
+// AU program presets removed — plugin state presets are the canonical preset system
 
-void PerformanceAPI::loadPreset(const juce::String& trackName, int index) {
-    // Send MIDI program change — more widely supported than JUCE's setCurrentProgram
-    auto msg = juce::MidiMessage::programChange(1, index);
-    msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
-    audioEngine->injectMidi(msg);
-    perfLog("[API] Sent program change %d for track \"%s\"\n", index, trackName.toRawUTF8());
-}
+// --- Plugin state presets ---
 
-void PerformanceAPI::loadPresetByName(const juce::String& trackName, const juce::String& presetName) {
-    if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackName)) {
-        for (int i = 0; i < proc->getNumPrograms(); ++i) {
-            if (proc->getProgramName(i).containsIgnoreCase(presetName)) {
-                proc->setCurrentProgram(i);
-                perfLog("[API] Loaded preset \"%s\" (%d) on track \"%s\"\n",
-                        proc->getProgramName(i).toRawUTF8(), i, trackName.toRawUTF8());
-                return;
-            }
-        }
-        perfLog("[API] Preset not found: \"%s\" on track \"%s\"\n",
-                presetName.toRawUTF8(), trackName.toRawUTF8());
-    }
-}
-
-// --- Plugin state snapshots ---
-
-static juce::File getSnapshotsDir() {
+static juce::File getPresetsDir() {
     return juce::File::getSpecialLocation(juce::File::userHomeDirectory)
         .getChildFile(".config/performance/snapshots");
 }
 
-void PerformanceAPI::saveSnapshot(const juce::String& trackName, const juce::String& snapshotName) {
+void PerformanceAPI::savePreset(const juce::String& trackName, const juce::String& presetName) {
     auto* proc = audioEngine->getTrackInstrumentProcessor(trackName);
     if (!proc) {
-        perfLog("[API] Cannot save snapshot: no instrument on track \"%s\"\n", trackName.toRawUTF8());
+        perfLog("[API] Cannot save preset: no instrument on track \"%s\"\n", trackName.toRawUTF8());
         return;
     }
 
     juce::MemoryBlock state;
     proc->getStateInformation(state);
 
-    auto dir = getSnapshotsDir().getChildFile(proc->getName());
+    auto dir = getPresetsDir().getChildFile(proc->getName());
     dir.createDirectory();
-    auto file = dir.getChildFile(snapshotName + ".state");
+    auto file = dir.getChildFile(presetName + ".state");
     file.replaceWithData(state.getData(), state.getSize());
 
     // Register in registry
     auto plugin = registry->findPluginByName(proc->getName().toStdString());
     if (plugin) {
-        registry->createSnapshot(plugin->id, snapshotName.toStdString(),
+        registry->createPreset(plugin->id, presetName.toStdString(),
                                   file.getFullPathName().toStdString());
     }
 
-    perfLog("[API] Saved snapshot \"%s\" for %s (%d bytes)\n",
-            snapshotName.toRawUTF8(), proc->getName().toRawUTF8(), (int)state.getSize());
+    perfLog("[API] Saved preset \"%s\" for %s (%d bytes)\n",
+            presetName.toRawUTF8(), proc->getName().toRawUTF8(), (int)state.getSize());
 }
 
-void PerformanceAPI::loadSnapshot(const juce::String& trackName, const juce::String& snapshotName) {
+void PerformanceAPI::loadPreset(const juce::String& trackName, const juce::String& presetName) {
     auto* proc = audioEngine->getTrackInstrumentProcessor(trackName);
     if (!proc) {
-        perfLog("[API] Cannot load snapshot: no instrument on track \"%s\"\n", trackName.toRawUTF8());
+        perfLog("[API] Cannot load preset: no instrument on track \"%s\"\n", trackName.toRawUTF8());
         return;
     }
 
-    auto file = getSnapshotsDir().getChildFile(proc->getName()).getChildFile(snapshotName + ".state");
+    auto file = getPresetsDir().getChildFile(proc->getName()).getChildFile(presetName + ".state");
     if (!file.existsAsFile()) {
-        perfLog("[API] Snapshot not found: \"%s\" for %s\n",
-                snapshotName.toRawUTF8(), proc->getName().toRawUTF8());
+        perfLog("[API] Preset not found: \"%s\" for %s\n",
+                presetName.toRawUTF8(), proc->getName().toRawUTF8());
         return;
     }
 
@@ -554,13 +524,13 @@ void PerformanceAPI::loadSnapshot(const juce::String& trackName, const juce::Str
     file.loadFileAsData(state);
     proc->setStateInformation(state.getData(), (int)state.getSize());
 
-    perfLog("[API] Loaded snapshot \"%s\" for %s\n",
-            snapshotName.toRawUTF8(), proc->getName().toRawUTF8());
+    perfLog("[API] Loaded preset \"%s\" for %s\n",
+            presetName.toRawUTF8(), proc->getName().toRawUTF8());
 }
 
-std::vector<juce::String> PerformanceAPI::listSnapshots(const juce::String& pluginName) {
+std::vector<juce::String> PerformanceAPI::listPresets(const juce::String& pluginName) {
     std::vector<juce::String> names;
-    auto dir = getSnapshotsDir().getChildFile(pluginName);
+    auto dir = getPresetsDir().getChildFile(pluginName);
     if (!dir.isDirectory()) return names;
 
     for (auto& entry : juce::RangedDirectoryIterator(dir, false, "*.state")) {
@@ -852,14 +822,14 @@ void PerformanceAPI::loadInitialState() {
         auto plugin = registry->findPluginByName(trackDef.pluginName.toStdString());
         if (!plugin) continue;
 
-        std::string snapshotId;
-        if (trackDef.snapshotName.isNotEmpty()) {
-            auto snap = registry->findSnapshot(plugin->id, trackDef.snapshotName.toStdString());
-            if (snap) snapshotId = snap->id;
+        std::string presetId;
+        if (trackDef.presetName.isNotEmpty()) {
+            auto snap = registry->findPreset(plugin->id, trackDef.presetName.toStdString());
+            if (snap) presetId = snap->id;
         }
 
         registry->createTrack(currentSongId, trackDef.name.toStdString(),
-                               plugin->id, snapshotId, trackDef.outputGain, trackDef.midiEnabled);
+                               plugin->id, presetId, trackDef.outputGain, trackDef.midiEnabled);
 
         // Track effects
         for (auto& fx : trackDef.effects) {

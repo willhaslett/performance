@@ -81,14 +81,14 @@ void EngineSync::sync(const std::string& songId) {
             if (!track.pluginId.empty()) {
                 auto plugin = registry.findPluginById(track.pluginId);
                 if (plugin) {
-                    juce::String snapshotName;
-                    if (!track.snapshotId.empty()) {
-                        auto snap = registry.findSnapshotById(track.snapshotId);
-                        if (snap) snapshotName = juce::String(snap->name);
+                    juce::String presetName;
+                    if (!track.presetId.empty()) {
+                        auto snap = registry.findPresetById(track.presetId);
+                        if (snap) presetName = juce::String(snap->name);
                     }
 
                     engine.addTrackInstrument(juce::String(track.name), juce::String(plugin->name),
-                        [snapshotName, trackName = track.name] {
+                        [presetName, trackName = track.name] {
                             perfLog("[EngineSync] Instrument loaded: %s\n", trackName.c_str());
                         });
                 }

@@ -9,7 +9,7 @@
 struct TreeNode {
     std::string label;
     std::string id;        // registry entity ID (empty for category nodes)
-    std::string type;      // entity type: "song", "track", "plugin", "snapshot", etc.
+    std::string type;      // entity type: "song", "track", "plugin", "preset", etc.
     bool expanded = false;
     bool isLeaf = false;
     std::vector<TreeNode> children;

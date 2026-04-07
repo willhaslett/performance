@@ -106,7 +106,7 @@ void Sidebar::refreshTree() {
         libraryNode.label = "Library";
         libraryNode.type = "category";
 
-        // Instruments (plugins that are instruments with saved snapshots)
+        // Instruments (plugins that are instruments with saved presets)
         TreeNode instrumentsNode;
         instrumentsNode.label = "Instruments";
         instrumentsNode.type = "category";
@@ -116,21 +116,21 @@ void Sidebar::refreshTree() {
         effectsNode.type = "category";
 
         for (auto& plugin : registry->allPlugins()) {
-            auto snaps = registry->snapshotsForPlugin(plugin.id);
-            if (snaps.empty()) continue;
+            auto presets = registry->presetsForPlugin(plugin.id);
+            if (presets.empty()) continue;
 
             TreeNode pluginNode;
             pluginNode.label = plugin.name;
             pluginNode.type = "plugin";
             pluginNode.id = plugin.id;
 
-            for (auto& snap : snaps) {
-                TreeNode snapLeaf;
-                snapLeaf.label = snap.name;
-                snapLeaf.id = snap.id;
-                snapLeaf.type = "snapshot";
-                snapLeaf.isLeaf = true;
-                pluginNode.children.push_back(snapLeaf);
+            for (auto& preset : presets) {
+                TreeNode presetLeaf;
+                presetLeaf.label = preset.name;
+                presetLeaf.id = preset.id;
+                presetLeaf.type = "preset";
+                presetLeaf.isLeaf = true;
+                pluginNode.children.push_back(presetLeaf);
             }
 
             // Determine if instrument or effect from plugin description

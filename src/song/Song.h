@@ -49,14 +49,14 @@ struct ControlBinding {
 struct EffectDef {
     juce::String name;            // user-assigned name (e.g., "Reverb")
     juce::String pluginName;      // AU plugin name to search for
-    juce::String snapshotName;    // saved plugin state to restore (empty = default)
+    juce::String presetName;    // saved plugin state to restore (empty = default)
 
     juce::var toJson() const {
         auto* obj = new juce::DynamicObject();
         obj->setProperty("name", name);
         obj->setProperty("plugin", pluginName);
-        if (snapshotName.isNotEmpty())
-            obj->setProperty("snapshot", snapshotName);
+        if (presetName.isNotEmpty())
+            obj->setProperty("preset", presetName);
         return juce::var(obj);
     }
 
@@ -64,7 +64,7 @@ struct EffectDef {
         EffectDef e;
         e.name = v.getProperty("name", "").toString();
         e.pluginName = v.getProperty("plugin", "").toString();
-        e.snapshotName = v.getProperty("snapshot", "").toString();
+        e.presetName = v.getProperty("preset", "").toString();
         return e;
     }
 };
@@ -100,7 +100,7 @@ struct MidiEffectDef {
 struct TrackDef {
     juce::String name;
     juce::String pluginName;
-    juce::String snapshotName;    // instrument snapshot
+    juce::String presetName;    // instrument preset
     std::vector<MidiEffectDef> midiEffects;
     std::vector<EffectDef> effects;
     std::vector<SendDef> sends;
@@ -111,8 +111,8 @@ struct TrackDef {
         auto* obj = new juce::DynamicObject();
         obj->setProperty("name", name);
         obj->setProperty("plugin", pluginName);
-        if (snapshotName.isNotEmpty())
-            obj->setProperty("snapshot", snapshotName);
+        if (presetName.isNotEmpty())
+            obj->setProperty("preset", presetName);
 
         juce::Array<juce::var> efx;
         for (auto& e : effects) efx.add(e.toJson());
@@ -132,7 +132,7 @@ struct TrackDef {
         TrackDef t;
         t.name = v.getProperty("name", "").toString();
         t.pluginName = v.getProperty("plugin", "").toString();
-        t.snapshotName = v.getProperty("snapshot", "").toString();
+        t.presetName = v.getProperty("preset", "").toString();
         t.outputGain = (float)v.getProperty("outputGain", 1.0);
         t.midiEnabled = (bool)v.getProperty("midiEnabled", true);
 

@@ -27,7 +27,7 @@ public:
     void removeTrack(const juce::String& name);
     void renameTrack(const juce::String& oldName, const juce::String& newName);
     void addInstrument(const juce::String& trackName, const juce::String& pluginName,
-                       const juce::String& snapshotName = "");
+                       const juce::String& presetName = "");
     void removeInstrument(const juce::String& trackName);
     // Effects — unified for tracks and busses
     void addEffect(const juce::String& parentName, const juce::String& effectName,
@@ -79,16 +79,11 @@ public:
     void cancelAutomation(int handle);
     void cancelAllAutomation();
 
-    // --- Presets ---
-    std::vector<juce::String> listPresets(const juce::String& trackName);
-    void loadPreset(const juce::String& trackName, int index);
-    void loadPresetByName(const juce::String& trackName, const juce::String& presetName);
-
-    // --- Plugin state snapshots ---
-    // Snapshots are stored per plugin: ~/.config/performance/snapshots/<pluginName>/<snapshotName>.state
-    void saveSnapshot(const juce::String& trackName, const juce::String& snapshotName);
-    void loadSnapshot(const juce::String& trackName, const juce::String& snapshotName);
-    std::vector<juce::String> listSnapshots(const juce::String& pluginName);
+    // --- Presets (plugin state) ---
+    // Presets are stored per plugin: ~/.config/performance/snapshots/<pluginName>/<presetName>.state
+    void savePreset(const juce::String& trackName, const juce::String& presetName);
+    void loadPreset(const juce::String& trackName, const juce::String& presetName);
+    std::vector<juce::String> listPresets(const juce::String& pluginName);
 
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& trackName, const juce::String& effectName = "");

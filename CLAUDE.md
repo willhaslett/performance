@@ -4,7 +4,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 ## Core Concepts
 
-- **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and snapshots all persist automatically.
+- **The app is an environment** — it launches and restores its previous state from the registry. No explicit save needed to preserve your work. Tracks, instruments, effects, sends, gains, and presets all persist automatically.
 - **Sandbox** — the permanent scratchpad session. Always exists, always at the top of the sidebar, undeletable. The user can experiment freely without affecting any song. On launch, the app restores the last active session (sandbox or a song).
 - **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from the registry. Songs are managed via the sidebar or `registryList("song")` / `registryDelete(id)`.
 - **Action-based bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
@@ -50,11 +50,11 @@ One direction. One source of truth. The engine never has state that the registry
 - **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.
 - **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots, fader+meter.
 - **OutputStrip** (`src/gui/OutputStrip.h/.cpp`) — dark green header, master effect slots, master fader+meter. Singleton, always present after busses. Master GainProcessor in audio graph.
-- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with snapshot submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
+- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker with preset submenu, right-click context menu (No Plugin / Replace). Works for both tracks and busses.
 - **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
 - **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
 - **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
-- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user snapshots), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
+- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user presets), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
 - **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
 - **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
 - Modal keyboard: s=sidebar, x=mixer, i=focus chat input, Esc=unfocus/close editor. Focus-driven (no explicit insert mode).
@@ -79,7 +79,7 @@ Instrument switching is MIDI routing only — no graph rebuild, no pops.
 
 ### Registry Schema
 
-Entities: `plugins`, `snapshots`, `songs` (with `initial_state` and `score` JSON columns), `tracks`, `busses`, `effects`, `sends`, `actions` (with `label` display name), `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
+Entities: `plugins`, `presets`, `songs` (with `initial_state` and `score` JSON columns), `tracks`, `busses`, `effects`, `sends`, `actions` (with `label` display name), `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
 
 Actions are performance verbs only — things you'd bind to MIDI controls: `setActiveTrack`, `enableTrack`, `disableTrack`, `fadeOut`, `fadeIn`, `crossfade`. Utility functions (log, openEditor, loadSong) are API calls, not registered actions.
 
@@ -88,12 +88,12 @@ Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(t
 ### Song Model
 
 A song consists of:
-- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin snapshots, bindings. Saved explicitly by the user. What the song looks like when loaded fresh.
+- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin presets, bindings. Saved explicitly by the user. What the song looks like when loaded fresh.
 - **Score** — an ordered list of registered action references (action ID + args) representing the intended sequence of state changes during performance.
 
 State at any point = initial state + replay of score actions 1..N.
 
-There are no stored waypoints or intermediate state snapshots. Any intermediate state is computed by replaying the score from initial state. This guarantees consistency — if the score produces wrong state, you discover it during development (replay), not during performance.
+There are no stored waypoints or intermediate state presets. Any intermediate state is computed by replaying the score from initial state. This guarantees consistency — if the score produces wrong state, you discover it during development (replay), not during performance.
 
 **Score uses:**
 - "Go to step N" for development — replays from initial state to work on any section
@@ -103,13 +103,13 @@ There are no stored waypoints or intermediate state snapshots. Any intermediate 
 **Persist timer** writes current engine state to the live registry tables for session restore (pick up where you left off on relaunch). The song's initial state is stored separately in the `initial_state` JSON column on the songs table — the persist timer never touches it.
 
 **Operations:**
-- `saveInitialState()` — captures current state (tracks, busses, effects, sends, gains, bindings, plugin snapshots) as the song's initial state
+- `saveInitialState()` — captures current state (tracks, busses, effects, sends, gains, bindings, plugin presets) as the song's initial state
 - `loadInitialState()` — restores the saved initial state, clearing live state and rebuilding the engine
 - `saveScore(json)` / `getScore()` — persist and retrieve the action score
 
-### Plugin State Snapshots
+### Plugin State Presets
 
-Stored per plugin in `~/.config/performance/snapshots/<pluginName>/<snapshotName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in the registry. Independent of songs — any song/session can use any snapshot.
+Stored per plugin in `~/.config/performance/presets/<pluginName>/<presetName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in the registry. Independent of songs — any song/session can use any preset.
 
 ### IPC
 
@@ -133,13 +133,13 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Native chat UI with Claude API integration (tool use for Lua execution)
 - IPC socket (`/tmp/performance.sock`) for live Lua execution via `bin/perf`
 - Lua song scripts with automation library (`lua_lib/automation.lua`)
-- Plugin state snapshots (save/restore, persisted in registry + disk)
+- Plugin state presets (save/restore, persisted in registry + disk)
 - GUI: 3-pane layout (sidebar, terminal, mixer), toolbar, resizable sidebar
 - Mixer: TrackStrip, BusStrip, OutputStrip — content-driven height, horizontal scroll. Right-click header to delete, double-click to rename.
 - Reusable components: PluginSlot (pill with picker/context menu), FaderMeter (dB-scaled fader + VU pair), InlineEditor (text overlay for rename)
-- Plugin picker: instrument/effect filtered, submenu with snapshot selection, right-click for No Plugin / Replace
+- Plugin picker: instrument/effect filtered, submenu with preset selection, right-click for No Plugin / Replace
 - Theme system (Theme.h) — all colors, dimensions, fonts centralized
-- Sidebar: Songs (flat), Library (instruments/effects with user snapshots), Actions (performance verbs with labels)
+- Sidebar: Songs (flat), Library (instruments/effects with user presets), Actions (performance verbs with labels)
 - Instrument switching via MIDI routing (no graph rebuild, no pops)
 - Automation engine with easing functions (linear, easein, easeout, cosine, scurve)
 - Global keyboard shortcuts via NSEvent monitor (modal: normal/insert)

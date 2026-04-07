@@ -51,9 +51,9 @@ void LuaEngine::registerAPI() {
         api.removeTrack(juce::String(name));
     });
     lua.set_function("addInstrument", [this](const std::string& track, const std::string& plugin,
-                                              sol::optional<std::string> snapshot) {
+                                              sol::optional<std::string> preset) {
         api.addInstrument(juce::String(track), juce::String(plugin),
-                          juce::String(snapshot.value_or("")));
+                          juce::String(preset.value_or("")));
     });
     lua.set_function("addTrackEffect", [this](const std::string& parent, const std::string& effect,
                                                const std::string& plugin) {
@@ -199,31 +199,15 @@ void LuaEngine::registerAPI() {
         return api.getTrackGain(juce::String(track));
     });
 
-    // Presets
-    lua.set_function("listPresets", [this](const std::string& track) -> sol::table {
-        auto presets = api.listPresets(juce::String(track));
-        sol::table result = lua.create_table();
-        for (size_t i = 0; i < presets.size(); ++i)
-            result[i + 1] = presets[i].toStdString();
-        return result;
+    // Presets (plugin state)
+    lua.set_function("savePreset", [this](const std::string& track, const std::string& name) {
+        api.savePreset(juce::String(track), juce::String(name));
     });
-    lua.set_function("loadPreset", [this](const std::string& track, sol::object arg) {
-        if (arg.is<int>()) {
-            api.loadPreset(juce::String(track), arg.as<int>());
-        } else if (arg.is<std::string>()) {
-            api.loadPresetByName(juce::String(track), juce::String(arg.as<std::string>()));
-        }
+    lua.set_function("loadPreset", [this](const std::string& track, const std::string& name) {
+        api.loadPreset(juce::String(track), juce::String(name));
     });
-
-    // Plugin state snapshots
-    lua.set_function("saveSnapshot", [this](const std::string& track, const std::string& name) {
-        api.saveSnapshot(juce::String(track), juce::String(name));
-    });
-    lua.set_function("loadSnapshot", [this](const std::string& track, const std::string& name) {
-        api.loadSnapshot(juce::String(track), juce::String(name));
-    });
-    lua.set_function("listSnapshots", [this](const std::string& plugin) -> sol::table {
-        auto names = api.listSnapshots(juce::String(plugin));
+    lua.set_function("listPresets", [this](const std::string& plugin) -> sol::table {
+        auto names = api.listPresets(juce::String(plugin));
         sol::table result = lua.create_table();
         for (size_t i = 0; i < names.size(); ++i)
             result[i + 1] = names[i].toStdString();

@@ -48,18 +48,18 @@ public:
     std::optional<Plugin> findPluginById(const std::string& id) const;
     std::vector<Plugin> allPlugins() const;
 
-    // --- Snapshots ---
-    struct Snapshot {
+    // --- Presets ---
+    struct Preset {
         std::string id;
         std::string pluginId;
         std::string name;
         std::string statePath;
     };
-    std::string createSnapshot(const std::string& pluginId, const std::string& name,
+    std::string createPreset(const std::string& pluginId, const std::string& name,
                                 const std::string& statePath);
-    std::optional<Snapshot> findSnapshot(const std::string& pluginId, const std::string& name) const;
-    std::optional<Snapshot> findSnapshotById(const std::string& id) const;
-    std::vector<Snapshot> snapshotsForPlugin(const std::string& pluginId) const;
+    std::optional<Preset> findPreset(const std::string& pluginId, const std::string& name) const;
+    std::optional<Preset> findPresetById(const std::string& id) const;
+    std::vector<Preset> presetsForPlugin(const std::string& pluginId) const;
 
     // --- Songs ---
     struct Song {
@@ -80,13 +80,13 @@ public:
         std::string songId;
         std::string name;
         std::string pluginId;
-        std::string snapshotId;  // may be empty
+        std::string presetId;  // may be empty
         float outputGain = 1.0f;
         bool midiEnabled = true;
         int position = 0;
     };
     std::string createTrack(const std::string& songId, const std::string& name,
-                             const std::string& pluginId, const std::string& snapshotId = "",
+                             const std::string& pluginId, const std::string& presetId = "",
                              float outputGain = 1.0f, bool midiEnabled = true);
     std::vector<Track> tracksForSong(const std::string& songId) const;
     void deleteTrack(const std::string& id);
@@ -112,12 +112,12 @@ public:
         std::string parentType;  // "track" or "bus"
         std::string name;
         std::string pluginId;
-        std::string snapshotId;
+        std::string presetId;
         int position = 0;
     };
     std::string createEffect(const std::string& parentId, const std::string& parentType,
                               const std::string& name, const std::string& pluginId,
-                              const std::string& snapshotId = "");
+                              const std::string& presetId = "");
     std::vector<Effect> effectsForParent(const std::string& parentId) const;
 
     // --- Sends ---
