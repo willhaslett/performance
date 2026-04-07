@@ -62,25 +62,16 @@ void PerformanceAPI::shutdown() {
 // --- Track management ---
 
 juce::String PerformanceAPI::createTrack(const juce::String& name) {
-    if (!currentSongId.empty()) {
-        auto id = registry->createTrack(currentSongId, name.toStdString(), "");
-        return juce::String(id);
-    } else {
-        return audioEngine->createTrack(name);
-    }
+    auto id = registry->createTrack(currentSongId, name.toStdString(), "");
+    return juce::String(id);
 }
 
 void PerformanceAPI::renameTrack(const juce::String& trackId, const juce::String& newName) {
-    audioEngine->renameTrack(trackId, newName);
-    if (!currentSongId.empty())
-        registry->update(trackId.toStdString(), {{"name", newName.toStdString()}});
+    registry->update(trackId.toStdString(), {{"name", newName.toStdString()}});
 }
 
 void PerformanceAPI::removeTrack(const juce::String& trackId) {
-    audioEngine->removeTrack(trackId);
-    if (!currentSongId.empty()) {
-        registry->remove(trackId.toStdString());  // CASCADE deletes effects, sends, etc.
-    }
+    registry->remove(trackId.toStdString());
 }
 
 void PerformanceAPI::addInstrument(const juce::String& trackId, const juce::String& pluginName,
@@ -97,18 +88,10 @@ void PerformanceAPI::addInstrument(const juce::String& trackId, const juce::Stri
         if (snap) presetId = snap->id;
     }
 
-    perfLog("[API] addInstrument: trackId=%s plugin=%s pluginDbId=%s\n",
-            trackId.toRawUTF8(), pluginName.toRawUTF8(), plugin->id.c_str());
     registry->update(trackId.toStdString(), {
         {"plugin_id", plugin->id},
         {"preset_id", presetId}
     });
-    // Verify the write
-    auto verify = registry->get(trackId.toStdString());
-    if (verify)
-        perfLog("[API] addInstrument verify: plugin_id=%s\n", verify->get("plugin_id").c_str());
-    else
-        perfLog("[API] addInstrument verify: ENTITY NOT FOUND\n");
     // Engine updated via Updated event — EngineSync detects plugin change and loads
 }
 
@@ -121,52 +104,34 @@ void PerformanceAPI::removeInstrument(const juce::String& trackId) {
 
 void PerformanceAPI::addEffect(const juce::String& parentId, const juce::String& effectName,
                                 const juce::String& pluginName) {
-    // Generate a unique effect key to avoid collisions with duplicate plugins
-    auto uniqueName = effectName;
-    auto existingEffects = audioEngine->getTrackEffects(parentId);
-    if (existingEffects.empty())
-        existingEffects = audioEngine->getBusEffects(parentId);
-    int suffix = 2;
-    while (true) {
-        bool collision = false;
-        for (auto& fx : existingEffects)
-            if (fx.id == uniqueName) { collision = true; break; }
-        if (!collision) break;
-        uniqueName = effectName + " " + juce::String(suffix++);
-    }
-
-    // Master output — direct to engine, no registry entity
-    if (parentId == "Output") {
-        audioEngine->addEffect(parentId, uniqueName, pluginName);
+    auto plugin = registry->findPluginByName(pluginName.toStdString());
+    if (!plugin) {
+        perfLog("[API] Effect plugin not found: %s\n", pluginName.toRawUTF8());
         return;
     }
 
-    if (!currentSongId.empty()) {
-        auto plugin = registry->findPluginByName(pluginName.toStdString());
-        if (plugin) {
-            // Determine parent type from registry entity
-            auto entity = registry->get(parentId.toStdString());
-            if (entity) {
-                registry->createEffect(parentId.toStdString(), entity->type,
-                                       uniqueName.toStdString(), plugin->id);
-            }
-        }
+    // Determine parent type — song (master output), track, or bus
+    std::string parentType;
+    if (parentId.toStdString() == currentSongId) {
+        parentType = EntityType::Song;
     } else {
-        audioEngine->addEffect(parentId, uniqueName, pluginName);
+        auto entity = registry->get(parentId.toStdString());
+        if (!entity) return;
+        parentType = entity->type;
     }
+
+    auto effectId = registry->createEffect(parentId.toStdString(), parentType,
+                                            effectName.toStdString(), plugin->id);
+    perfLog("[API] Created effect %s (parent=%s, type=%s, plugin=%s)\n",
+            effectId.c_str(), parentId.toRawUTF8(), parentType.c_str(), pluginName.toRawUTF8());
+    // EngineSync handles engine creation via Created event
 }
 
 void PerformanceAPI::removeEffect(const juce::String& parentId, const juce::String& effectName) {
-    audioEngine->removeEffect(parentId, effectName);
-
-    if (parentId == "Output") return;  // no registry entity for master output
-
-    if (!currentSongId.empty()) {
-        for (auto& fx : registry->effectsForParent(parentId.toStdString())) {
-            if (fx.id == effectName.toStdString()) {
-                registry->remove(fx.id);
-                return;
-            }
+    for (auto& fx : registry->effectsForParent(parentId.toStdString())) {
+        if (fx.id == effectName.toStdString()) {
+            registry->remove(fx.id);  // EngineSync handles engine removal via Deleted event
+            return;
         }
     }
 }
@@ -197,8 +162,12 @@ void PerformanceAPI::setTrackGain(const juce::String& trackId, float gain) {
     // Engine update handled by EngineSync via registry event
 }
 
-float PerformanceAPI::getTrackGain(const juce::String& trackId) {
-    return audioEngine->getTrackGain(trackId);
+float PerformanceAPI::getTrackGain(const juce::String& trackId) const {
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId))
+            if (t.id == trackId.toStdString()) return t.outputGain;
+    }
+    return 1.0f;
 }
 
 float PerformanceAPI::getTrackPeakLevel(const juce::String& trackId) {
@@ -208,37 +177,34 @@ float PerformanceAPI::getTrackPeakLevel(const juce::String& trackId) {
 // --- Bus management ---
 
 juce::String PerformanceAPI::createBus(const juce::String& name) {
-    if (!currentSongId.empty()) {
-        auto id = registry->createBus(currentSongId, name.toStdString());
-        return juce::String(id);
-    } else {
-        return audioEngine->createBus(name);
-    }
+    auto id = registry->createBus(currentSongId, name.toStdString());
+    return juce::String(id);
 }
 
 void PerformanceAPI::renameBus(const juce::String& busId, const juce::String& newName) {
-    audioEngine->renameBus(busId, newName);
-    if (!currentSongId.empty())
-        registry->update(busId.toStdString(), {{"name", newName.toStdString()}});
+    registry->update(busId.toStdString(), {{"name", newName.toStdString()}});
 }
 
 void PerformanceAPI::removeBus(const juce::String& busId) {
-    audioEngine->removeBus(busId);
-    if (!currentSongId.empty()) {
-        registry->remove(busId.toStdString());  // CASCADE deletes effects
-    }
+    registry->remove(busId.toStdString());  // CASCADE deletes effects, EngineSync handles engine
 }
 
 
 // --- Master output ---
+
+juce::String PerformanceAPI::getMasterOutputId() const {
+    return juce::String(currentSongId);
+}
 
 void PerformanceAPI::setMasterGain(float gain) {
     if (!currentSongId.empty())
         registry->setMasterGain(currentSongId, gain);
 }
 
-float PerformanceAPI::getMasterGain() {
-    return audioEngine->getMasterGain();
+float PerformanceAPI::getMasterGain() const {
+    if (!currentSongId.empty())
+        return registry->getMasterGain(currentSongId);
+    return 1.0f;
 }
 
 float PerformanceAPI::getMasterPeakLevel() {
@@ -247,8 +213,13 @@ float PerformanceAPI::getMasterPeakLevel() {
 
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getMasterEffects() {
     std::vector<EffectSlotInfo> result;
-    for (auto& fx : audioEngine->getMasterEffects())
-        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
+    if (!currentSongId.empty()) {
+        for (auto& fx : registry->effectsForParent(currentSongId)) {
+            auto plugin = registry->findPluginById(fx.pluginId);
+            juce::String pluginName = plugin ? juce::String(plugin->name) : juce::String(fx.name);
+            result.push_back({ juce::String(fx.id), pluginName });
+        }
+    }
     return result;
 }
 
@@ -260,11 +231,8 @@ void PerformanceAPI::setBusGain(const juce::String& busId, float gain) {
 // --- Sends ---
 
 void PerformanceAPI::addSend(const juce::String& trackId, const juce::String& busId, float gain) {
-    if (!currentSongId.empty()) {
-        registry->createSend(trackId.toStdString(), busId.toStdString(), gain);
-    } else {
-        audioEngine->addSend(trackId, busId, gain);
-    }
+    registry->createSend(trackId.toStdString(), busId.toStdString(), gain);
+    // EngineSync handles engine creation via Created event
 }
 
 void PerformanceAPI::setSendGain(const juce::String& trackId, const juce::String& busId, float gain) {
@@ -481,6 +449,52 @@ void PerformanceAPI::loadPreset(const juce::String& trackId, const juce::String&
             presetName.toRawUTF8(), proc->getName().toRawUTF8());
 }
 
+void PerformanceAPI::saveEffectPreset(const juce::String& parentId, const juce::String& effectId,
+                                       const juce::String& presetName) {
+    auto engineParentId = (parentId.toStdString() == currentSongId) ? juce::String("Output") : parentId;
+    auto* proc = audioEngine->getEffectProcessor(engineParentId, effectId);
+    if (!proc) {
+        perfLog("[API] Cannot save effect preset: no processor\n");
+        return;
+    }
+
+    juce::MemoryBlock state;
+    proc->getStateInformation(state);
+
+    auto dir = getPresetsDir().getChildFile(proc->getName());
+    dir.createDirectory();
+    auto file = dir.getChildFile(presetName + ".state");
+    file.replaceWithData(state.getData(), state.getSize());
+
+    auto plugin = registry->findPluginByName(proc->getName().toStdString());
+    if (plugin)
+        registry->createPreset(plugin->id, presetName.toStdString(),
+                               file.getFullPathName().toStdString());
+
+    perfLog("[API] Saved effect preset \"%s\" for %s\n",
+            presetName.toRawUTF8(), proc->getName().toRawUTF8());
+}
+
+void PerformanceAPI::loadEffectPreset(const juce::String& parentId, const juce::String& effectId,
+                                       const juce::String& presetName) {
+    auto engineParentId = (parentId.toStdString() == currentSongId) ? juce::String("Output") : parentId;
+    auto* proc = audioEngine->getEffectProcessor(engineParentId, effectId);
+    if (!proc) {
+        perfLog("[API] Cannot load effect preset: no processor\n");
+        return;
+    }
+
+    auto file = getPresetsDir().getChildFile(proc->getName()).getChildFile(presetName + ".state");
+    if (!file.existsAsFile()) return;
+
+    juce::MemoryBlock state;
+    file.loadFileAsData(state);
+    proc->setStateInformation(state.getData(), (int)state.getSize());
+
+    perfLog("[API] Loaded effect preset \"%s\" for %s\n",
+            presetName.toRawUTF8(), proc->getName().toRawUTF8());
+}
+
 std::vector<juce::String> PerformanceAPI::listPresets(const juce::String& pluginName) {
     std::vector<juce::String> names;
     auto dir = getPresetsDir().getChildFile(pluginName);
@@ -503,24 +517,23 @@ static juce::File getTrackPresetsDir() {
 void PerformanceAPI::saveTrackPreset(const juce::String& trackId, const juce::String& presetName) {
     auto* body = new juce::DynamicObject();
 
-    // Instrument
-    auto pluginName = audioEngine->getTrackPluginName(trackId);
+    // Instrument — from registry
+    auto pluginName = getTrackPluginName(trackId);
     body->setProperty("plugin", pluginName);
 
-    // Instrument state (base64)
+    // Instrument state (base64) — processor is only in engine
     if (auto* proc = audioEngine->getTrackInstrumentProcessor(trackId)) {
         juce::MemoryBlock state;
         proc->getStateInformation(state);
         body->setProperty("pluginState", state.toBase64Encoding());
     }
 
-    // Effects
+    // Effects — from registry + engine processors for state
     juce::Array<juce::var> effectsArr;
-    for (auto& fx : audioEngine->getTrackEffects(trackId)) {
+    for (auto& fx : getTrackEffects(trackId)) {
         auto* fxObj = new juce::DynamicObject();
         fxObj->setProperty("plugin", fx.pluginName);
-        // Effect state
-        if (auto* proc = audioEngine->getEffectProcessor(trackId, fx.id)) {
+        if (auto* proc = audioEngine->getEffectProcessor(trackId, fx.effectId)) {
             juce::MemoryBlock state;
             proc->getStateInformation(state);
             fxObj->setProperty("state", state.toBase64Encoding());
@@ -529,9 +542,9 @@ void PerformanceAPI::saveTrackPreset(const juce::String& trackId, const juce::St
     }
     body->setProperty("effects", effectsArr);
 
-    // Sends
+    // Sends — from registry
     juce::Array<juce::var> sendsArr;
-    for (auto& send : audioEngine->getTrackSends(trackId)) {
+    for (auto& send : getTrackSends(trackId)) {
         auto* sendObj = new juce::DynamicObject();
         sendObj->setProperty("bus", send.busName);
         sendObj->setProperty("gain", send.gain);
@@ -539,9 +552,9 @@ void PerformanceAPI::saveTrackPreset(const juce::String& trackId, const juce::St
     }
     body->setProperty("sends", sendsArr);
 
-    // Gain and MIDI
-    body->setProperty("gain", audioEngine->getTrackGain(trackId));
-    body->setProperty("midiEnabled", audioEngine->isTrackMidiEnabled(trackId));
+    // Gain and MIDI — from registry
+    body->setProperty("gain", getTrackGain(trackId));
+    body->setProperty("midiEnabled", isTrackMidiEnabled(trackId));
 
     auto dir = getTrackPresetsDir();
     dir.createDirectory();
@@ -582,8 +595,8 @@ void PerformanceAPI::loadTrackPreset(const juce::String& trackId, const juce::St
 
     // Load effects
     if (auto* effectsArr = json.getProperty("effects", juce::var()).getArray()) {
-        for (auto& fx : audioEngine->getTrackEffects(trackId))
-            removeEffect(trackId, fx.id);
+        for (auto& fx : getTrackEffects(trackId))
+            removeEffect(trackId, fx.effectId);
 
         for (auto& fxVar : *effectsArr) {
             auto fxPlugin = fxVar.getProperty("plugin", "").toString();
@@ -651,27 +664,44 @@ void PerformanceAPI::openPluginEditor(const juce::String& parentId, const juce::
             }
         }
     } else {
-        // Effect — the effectName is the slot ID, look up in engine (processor name)
-        // Effects don't have a separate pluginId in the registry effect table — use engine
-        pluginName = effectName;  // display the slot ID for now
+        // Effect — look up plugin name from registry
+        for (auto& fx : registry->effectsForParent(parentId.toStdString())) {
+            if (fx.id == effectName.toStdString()) {
+                auto plugin = registry->findPluginById(fx.pluginId);
+                if (plugin) pluginName = juce::String(plugin->name);
+                break;
+            }
+        }
     }
 
-    // Build preset callbacks for instruments
+    // Build preset callbacks for instruments and effects
     AudioEngine::PresetCallbacks callbacks;
-    if (effectName.isEmpty() && pluginName.isNotEmpty()) {
+    if (pluginName.isNotEmpty()) {
         callbacks.listPresets = [this, pluginName]() {
             return listPresets(pluginName);
         };
-        callbacks.savePreset = [this, parentId](const juce::String& name) {
-            savePreset(parentId, name);
+        // Save/load use parentId for instruments, but for effects we need
+        // the engine's effect processor — use parentId + effectName
+        callbacks.savePreset = [this, parentId, effectName, pluginName](const juce::String& name) {
+            // For effects, save via the effect processor; for instruments, via the track
+            if (effectName.isEmpty())
+                savePreset(parentId, name);
+            else
+                saveEffectPreset(parentId, effectName, name);
         };
-        callbacks.loadPreset = [this, parentId](const juce::String& name) {
-            loadPreset(parentId, name);
+        callbacks.loadPreset = [this, parentId, effectName, pluginName](const juce::String& name) {
+            if (effectName.isEmpty())
+                loadPreset(parentId, name);
+            else
+                loadEffectPreset(parentId, effectName, name);
         };
     }
 
+    // Map songId → "Output" for engine (master effects)
+    auto engineParentId = (parentId.toStdString() == currentSongId) ? juce::String("Output") : parentId;
+
     auto title = pluginName.isNotEmpty() ? pluginName : "Plugin";
-    audioEngine->openPluginEditor(parentId, effectName, title, std::move(callbacks));
+    audioEngine->openPluginEditor(engineParentId, effectName, title, std::move(callbacks));
 }
 
 void PerformanceAPI::closeTopPluginEditor() {
@@ -786,18 +816,18 @@ SongDef PerformanceAPI::getCurrentSongDef() const {
     if (song.name.isEmpty())
         song.name = songRuntime->getSongName();
 
-    // Use registry tracks/busses to get IDs for engine queries
+    // All state from registry (SSOT)
     for (auto& regTrack : listTracks()) {
         TrackDef t;
         t.name = regTrack.name;
-        t.pluginName = audioEngine->getTrackPluginName(regTrack.id);
-        t.outputGain = audioEngine->getTrackGain(regTrack.id);
-        t.midiEnabled = audioEngine->isTrackMidiEnabled(regTrack.id);
+        t.pluginName = getTrackPluginName(regTrack.id);
+        t.outputGain = getTrackGain(regTrack.id);
+        t.midiEnabled = isTrackMidiEnabled(regTrack.id);
 
-        for (auto& fx : audioEngine->getTrackEffects(regTrack.id))
-            t.effects.push_back({ fx.id, fx.pluginName, {} });
+        for (auto& fx : getTrackEffects(regTrack.id))
+            t.effects.push_back({ fx.effectId, fx.pluginName, {} });
 
-        for (auto& send : audioEngine->getTrackSends(regTrack.id))
+        for (auto& send : getTrackSends(regTrack.id))
             t.sends.push_back({ send.busName, send.gain });
 
         song.tracks.push_back(std::move(t));
@@ -806,10 +836,10 @@ SongDef PerformanceAPI::getCurrentSongDef() const {
     for (auto& regBus : listBusses()) {
         BusDef b;
         b.name = regBus.name;
-        b.outputGain = audioEngine->getBusGain(regBus.id);
+        b.outputGain = getBusGain(regBus.id);
 
-        for (auto& fx : audioEngine->getBusEffects(regBus.id))
-            b.effects.push_back({ fx.id, fx.pluginName, {} });
+        for (auto& fx : getBusEffects(regBus.id))
+            b.effects.push_back({ fx.effectId, fx.pluginName, {} });
 
         song.busses.push_back(std::move(b));
     }
@@ -1129,25 +1159,43 @@ std::vector<juce::String> PerformanceAPI::listBusNames() const {
 }
 
 juce::String PerformanceAPI::getTrackPluginName(const juce::String& trackId) const {
-    return audioEngine->getTrackPluginName(trackId);
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId)) {
+            if (t.id == trackId.toStdString() && !t.pluginId.empty()) {
+                auto plugin = registry->findPluginById(t.pluginId);
+                if (plugin) return juce::String(plugin->name);
+            }
+        }
+    }
+    return {};
 }
 
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getTrackEffects(const juce::String& trackId) const {
     std::vector<EffectSlotInfo> result;
-    for (auto& fx : audioEngine->getTrackEffects(trackId))
-        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
+    for (auto& fx : registry->effectsForParent(trackId.toStdString())) {
+        auto plugin = registry->findPluginById(fx.pluginId);
+        juce::String pluginName = plugin ? juce::String(plugin->name) : juce::String(fx.name);
+        result.push_back({ juce::String(fx.id), pluginName });
+    }
     return result;
 }
 
 std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getBusEffects(const juce::String& busId) const {
     std::vector<EffectSlotInfo> result;
-    for (auto& fx : audioEngine->getBusEffects(busId))
-        result.push_back({ fx.id, fx.pluginName.isNotEmpty() ? fx.pluginName : fx.id });
+    for (auto& fx : registry->effectsForParent(busId.toStdString())) {
+        auto plugin = registry->findPluginById(fx.pluginId);
+        juce::String pluginName = plugin ? juce::String(plugin->name) : juce::String(fx.name);
+        result.push_back({ juce::String(fx.id), pluginName });
+    }
     return result;
 }
 
-float PerformanceAPI::getBusGain(const juce::String& busId) {
-    return audioEngine->getBusGain(busId);
+float PerformanceAPI::getBusGain(const juce::String& busId) const {
+    if (!currentSongId.empty()) {
+        for (auto& b : registry->bussesForSong(currentSongId))
+            if (b.id == busId.toStdString()) return b.outputGain;
+    }
+    return 1.0f;
 }
 
 float PerformanceAPI::getBusPeakLevel(const juce::String& busId) {
@@ -1156,16 +1204,24 @@ float PerformanceAPI::getBusPeakLevel(const juce::String& busId) {
 
 std::vector<PerformanceAPI::TrackSendInfo> PerformanceAPI::getTrackSends(const juce::String& trackId) const {
     std::vector<TrackSendInfo> result;
-    for (auto& send : audioEngine->getTrackSends(trackId)) {
-        // Find bus ID from engine send info (resolve bus name back to ID)
-        auto busIdStr = findBusIdByName(send.busName);
-        result.push_back({ send.busName, juce::String(busIdStr), send.gain, send.peakLevel });
+    for (auto& send : registry->sendsForTrack(trackId.toStdString())) {
+        // Look up bus name from registry
+        juce::String busName;
+        for (auto& b : registry->bussesForSong(currentSongId)) {
+            if (b.id == send.busId) { busName = juce::String(b.name); break; }
+        }
+        float peakLevel = audioEngine->getBusPeakLevel(juce::String(send.busId));
+        result.push_back({ busName, juce::String(send.busId), send.gain, peakLevel });
     }
     return result;
 }
 
 bool PerformanceAPI::isTrackMidiEnabled(const juce::String& trackId) const {
-    return audioEngine->isTrackMidiEnabled(trackId);
+    if (!currentSongId.empty()) {
+        for (auto& t : registry->tracksForSong(currentSongId))
+            if (t.id == trackId.toStdString()) return t.midiEnabled;
+    }
+    return true;  // default
 }
 
 void PerformanceAPI::log(const juce::String& message) {

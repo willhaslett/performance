@@ -426,14 +426,13 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
     }
 
     effects.push_back({ effectId, pluginName, nullptr });
-    auto effectIndex = effects.size() - 1;
     perfLog("[Engine] Loading effect: %s -> \"%s\"\n",
             desc.name.toRawUTF8(), parentId.toRawUTF8());
 
     formatManager.createPluginInstanceAsync(
         desc, graph->getSampleRate(), graph->getBlockSize(),
-        [this, parentId, effectIndex, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
-                                                       const juce::String& error) {
+        [this, parentId, effectId, desc, onLoaded](std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                    const juce::String& error) {
             if (!instance) {
                 perfLog("[Engine] FAILED to load: %s\n", error.toRawUTF8());
                 return;
@@ -449,14 +448,21 @@ bool AudioEngine::addEffectToList(std::vector<EffectNode>& effects, const juce::
                     if (bit != busses.end()) efx = &bit->second.effects;
                 }
             }
-            if (!efx || effectIndex >= efx->size()) return;
-            auto loadedName = instance->getName();
-            (*efx)[effectIndex].node = graph->addNode(std::move(instance));
-            (*efx)[effectIndex].pluginName = loadedName;
-            rebuildConnections();
-            perfLog("[Engine] Loaded effect: %s in \"%s\"\n",
-                    loadedName.toRawUTF8(), parentId.toRawUTF8());
-            if (onLoaded) onLoaded();
+            if (!efx) return;
+            // Find by ID instead of index — safe against vector modifications
+            for (auto& node : *efx) {
+                if (node.id == effectId) {
+                    auto loadedName = instance->getName();
+                    node.node = graph->addNode(std::move(instance));
+                    node.pluginName = loadedName;
+                    rebuildConnections();
+                    perfLog("[Engine] Loaded effect: %s in \"%s\"\n",
+                            loadedName.toRawUTF8(), parentId.toRawUTF8());
+                    if (onLoaded) onLoaded();
+                    return;
+                }
+            }
+            perfLog("[Engine] Effect slot gone before load completed: %s\n", effectId.toRawUTF8());
         });
 
     return true;

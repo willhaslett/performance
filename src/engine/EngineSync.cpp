@@ -41,6 +41,10 @@ void EngineSync::loadSong(const std::string& songId) {
         for (auto& send : registry.sendsForTrack(track.id))
             onSendCreated(send.id);
 
+    // Master effects (parent = songId)
+    for (auto& fx : registry.effectsForParent(songId))
+        onEffectCreated(fx.id);
+
     engine.setMasterGain(registry.getMasterGain(songId));
 }
 
@@ -79,12 +83,12 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
 }
 
 void EngineSync::onEffectCreated(const std::string& effectId) {
-    auto searchParents = [&](const std::string& parentId) {
+    auto searchParents = [&](const std::string& parentId, const juce::String& engineParentId) {
         for (auto& fx : registry.effectsForParent(parentId)) {
             if (fx.id == effectId) {
                 auto plugin = registry.findPluginById(fx.pluginId);
                 if (plugin) {
-                    engine.addEffect(juce::String(parentId),
+                    engine.addEffect(engineParentId,
                                       juce::String(fx.id),
                                       juce::String(plugin->name));
                 }
@@ -94,10 +98,13 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
         return false;
     };
 
+    // Master effects (parent = songId → engine "Output")
+    if (searchParents(activeSongId, "Output")) return;
+
     for (auto& bus : registry.bussesForSong(activeSongId))
-        if (searchParents(bus.id)) return;
+        if (searchParents(bus.id, juce::String(bus.id))) return;
     for (auto& track : registry.tracksForSong(activeSongId))
-        if (searchParents(track.id)) return;
+        if (searchParents(track.id, juce::String(track.id))) return;
 }
 
 void EngineSync::onSendCreated(const std::string& sendId) {
@@ -124,8 +131,6 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
 
                 // Detect instrument change
                 auto currentPlugin = engine.getTrackPluginName(id);
-                perfLog("[EngineSync] Track updated: %s, pluginId=%s, currentPlugin=%s\n",
-                        t.name.c_str(), t.pluginId.c_str(), currentPlugin.toRawUTF8());
                 if (!t.pluginId.empty()) {
                     auto plugin = registry.findPluginById(t.pluginId);
                     if (plugin && juce::String(plugin->name) != currentPlugin) {
@@ -175,7 +180,8 @@ void EngineSync::onEntityDeleted(const std::string& entityType, const std::strin
     else if (entityType == EntityType::Bus)
         engine.removeBus(id);
     else if (entityType == EntityType::Effect) {
-        // Try all parents
+        // Try all parents including master output
+        engine.removeEffect(juce::String("Output"), id);
         for (auto& t : registry.tracksForSong(activeSongId))
             engine.removeEffect(juce::String(t.id), id);
         for (auto& b : registry.bussesForSong(activeSongId))

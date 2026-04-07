@@ -36,4 +36,5 @@ private:
 
     void rebuildEffectSlots();
     std::vector<PerformanceAPI::EffectSlotInfo> currentEffects;
+    bool pendingEffectOpen = false;
 };

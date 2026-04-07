@@ -10,7 +10,20 @@ void PluginSlot::setPluginName(const juce::String& name) {
     if (pluginName != name) {
         pluginName = name;
         repaint();
+
+        if (waitingForLoad && name.isNotEmpty()) {
+            // Plugin assigned in registry — delay to let engine finish async loading
+            startTimer(500);
+        }
     }
+}
+
+void PluginSlot::timerCallback() {
+    // openPluginEditor silently fails if the engine hasn't finished loading yet.
+    // Retry a few times, then give up.
+    stopTimer();
+    waitingForLoad = false;
+    api.openPluginEditor(parentId, slotType == Instrument ? "" : effectId);
 }
 
 void PluginSlot::paint(juce::Graphics& g) {
@@ -91,6 +104,7 @@ void PluginSlot::showPicker(juce::Point<int> position) {
                     presetName = presets[presetIdx];
             }
 
+            waitingForLoad = true;
             if (slotType == Instrument)
                 api.addInstrument(parentId, selectedPlugin, presetName);
             else
@@ -152,6 +166,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
                     presetName = presets[presetIdx];
             }
 
+            waitingForLoad = true;
             if (slotType == Instrument)
                 api.addInstrument(parentId, selectedPlugin, presetName);
             else

@@ -26,8 +26,15 @@ void BusStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& eff
         }
     }
     if (changed) {
+        bool effectAdded = pendingEffectOpen && effects.size() > currentEffects.size();
         currentEffects = effects;
         rebuildEffectSlots();
+
+        if (effectAdded && !currentEffects.empty()) {
+            pendingEffectOpen = false;
+            auto& newFx = currentEffects.back();
+            api.openPluginEditor(busId, newFx.effectId);
+        }
     }
 }
 
@@ -54,6 +61,7 @@ void BusStrip::rebuildEffectSlots() {
 
     // Always an empty slot for adding new effect
     auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, busId, PluginSlot::OnBus);
+    slot->onChanged = [this]() { pendingEffectOpen = true; };
     addAndMakeVisible(*slot);
     effectSlots.push_back(std::move(slot));
 

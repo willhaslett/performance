@@ -5,7 +5,7 @@
 
 class PerformanceAPI;
 
-class PluginSlot : public juce::Component {
+class PluginSlot : public juce::Component, private juce::Timer {
 public:
     enum Type { Instrument, Effect };
 
@@ -31,11 +31,13 @@ private:
     Type slotType;
     ParentKind parentKind;
     PerformanceAPI& api;
-    juce::String parentId;  // track/bus UUID or "Output"
+    juce::String parentId;  // track/bus/song UUID
     juce::String pluginName;
     juce::String effectId;  // internal key for effect lookup (empty for instruments)
     bool hovered = false;
+    bool waitingForLoad = false;
 
+    void timerCallback() override;
     void showPicker(juce::Point<int> position);
     void showContextMenu(juce::Point<int> position);
 };

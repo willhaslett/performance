@@ -73,7 +73,7 @@ void Registry::createSchema() {
         CREATE TABLE IF NOT EXISTS effects (
             id TEXT PRIMARY KEY,
             parent_id TEXT NOT NULL,
-            parent_type TEXT NOT NULL CHECK(parent_type IN ('track', 'bus')),
+            parent_type TEXT NOT NULL CHECK(parent_type IN ('track', 'bus', 'song')),
             name TEXT NOT NULL,
             plugin_id TEXT NOT NULL REFERENCES plugins(id),
             preset_id TEXT REFERENCES presets(id),
@@ -848,7 +848,10 @@ std::vector<Entity> Registry::list(const std::string& type,
 
 void Registry::update(const std::string& id, const std::map<std::string, std::string>& fields) {
     auto type = typeForId(db, id);
-    if (type.empty()) return;
+    if (type.empty()) {
+        perfLog("[Registry] update: typeForId returned empty for id=%s\n", id.c_str());
+        return;
+    }
 
     auto table = tableForType(type);
     std::string sql = "UPDATE " + table + " SET ";
@@ -865,9 +868,12 @@ void Registry::update(const std::string& id, const std::map<std::string, std::st
     values.push_back(id);
 
     auto* stmt = prepare(sql);
-    for (int i = 0; i < (int)values.size(); ++i)
-        sqlite3_bind_text(stmt, i + 1, values[i].c_str(), -1, SQLITE_TRANSIENT);
-
+    for (int i = 0; i < (int)values.size(); ++i) {
+        if (values[i].empty())
+            sqlite3_bind_null(stmt, i + 1);
+        else
+            sqlite3_bind_text(stmt, i + 1, values[i].c_str(), -1, SQLITE_TRANSIENT);
+    }
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     eventBus.emit({ RegistryEvent::Updated, type, id });

@@ -55,7 +55,7 @@ void LuaEngine::registerAPI() {
     };
     // Resolve parent (track or bus) by name
     auto resolveParentId = [this](const std::string& name) -> juce::String {
-        if (name == "Output") return "Output";
+        if (name == "Output") return api.getMasterOutputId();
         auto id = api.findTrackIdByName(juce::String(name));
         if (!id.empty()) return juce::String(id);
         id = api.findBusIdByName(juce::String(name));

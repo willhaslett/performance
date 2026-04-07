@@ -29,13 +29,13 @@ public:
     void addInstrument(const juce::String& trackId, const juce::String& pluginName,
                        const juce::String& presetName = "");
     void removeInstrument(const juce::String& trackId);
-    // Effects — unified for tracks and busses (parentId is UUID or "Output")
+    // Effects — unified for tracks, busses, and master output (parentId is always a UUID)
     void addEffect(const juce::String& parentId, const juce::String& effectName,
                    const juce::String& pluginName);
     void removeEffect(const juce::String& parentId, const juce::String& effectName);
     void setTrackMidiEnabled(const juce::String& trackId, bool enabled);
     void setTrackGain(const juce::String& trackId, float gain);
-    float getTrackGain(const juce::String& trackId);
+    float getTrackGain(const juce::String& trackId) const;
     float getTrackPeakLevel(const juce::String& trackId);
 
     // --- Bus management ---
@@ -45,8 +45,9 @@ public:
     void setBusGain(const juce::String& busId, float gain);
 
     // --- Master output ---
+    juce::String getMasterOutputId() const;  // returns currentSongId (master effects parent)
     void setMasterGain(float gain);
-    float getMasterGain();
+    float getMasterGain() const;
     float getMasterPeakLevel();
 
     // --- Sends ---
@@ -81,6 +82,10 @@ public:
     // --- Presets (plugin state) ---
     void savePreset(const juce::String& trackId, const juce::String& presetName);
     void loadPreset(const juce::String& trackId, const juce::String& presetName);
+    void saveEffectPreset(const juce::String& parentId, const juce::String& effectId,
+                          const juce::String& presetName);
+    void loadEffectPreset(const juce::String& parentId, const juce::String& effectId,
+                          const juce::String& presetName);
     std::vector<juce::String> listPresets(const juce::String& pluginName);
 
     // --- Track presets ---
@@ -151,7 +156,7 @@ public:
         float peakLevel;
     };
     std::vector<TrackSendInfo> getTrackSends(const juce::String& trackId) const;
-    float getBusGain(const juce::String& busId);
+    float getBusGain(const juce::String& busId) const;
     float getBusPeakLevel(const juce::String& busId);
     void log(const juce::String& message);
 

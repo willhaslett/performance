@@ -36,8 +36,15 @@ void TrackStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& e
         }
     }
     if (changed) {
+        bool effectAdded = pendingEffectOpen && effects.size() > currentEffects.size();
         currentEffects = effects;
         rebuildEffectSlots();
+
+        if (effectAdded && !currentEffects.empty()) {
+            pendingEffectOpen = false;
+            auto& newFx = currentEffects.back();
+            api.openPluginEditor(trackId, newFx.effectId);
+        }
     }
 }
 
@@ -84,6 +91,7 @@ void TrackStrip::rebuildEffectSlots() {
 
     if (instrumentSlot.hasPlugin()) {
         auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, trackId);
+        slot->onChanged = [this]() { pendingEffectOpen = true; };
         addAndMakeVisible(*slot);
         effectSlots.push_back(std::move(slot));
     }

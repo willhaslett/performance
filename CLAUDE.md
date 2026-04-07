@@ -196,13 +196,18 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Persist timer eliminated — registry is always current
 - GUI holds UUIDs from registry via `listTracks()`/`listBusses()`
 - Lua resolves names→IDs at entry point via `findTrackIdByName`/`findBusIdByName`
-- 41-test suite covering registry, API lifecycle, multi-track isolation, songs
+- Master output is a registry entity (effects parent = songId, parent_type = "song")
+- All API state reads come from registry (engine only for peak levels, processors, plugin scan)
+- Auto-open plugin editor on instantiation (instruments via PluginSlot timer, effects via strip detection)
+- Effect plugin preset save/load toolbar
+- 43-test suite covering registry, API lifecycle, multi-track isolation, songs
 
 **TODOs:**
-- Master output needs a registry entity (effects, gain)
 - Auto-create Default preset on first plugin instantiation
 - Plugin state restore needs proper callback (not 500ms timer)
+- AUPitch: preset state restore via setStateInformation doesn't take effect (only known plugin with this issue — may need AU-specific preset handling)
 - Test suite expansion: continuous value paths, preset lifecycle
+- Split PerformanceAPI into StateAPI (registry-only, the interface for all state) and EngineAPI (processor access, peak levels, plugin UI — explicitly separate, cautioned against casual use)
 - Live audio tracks (input from audio device, same track model)
 - Undo/redo via registry history table
 - MIDI device hot-plug

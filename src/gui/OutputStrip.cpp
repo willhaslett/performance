@@ -23,8 +23,15 @@ void OutputStrip::setEffects(const std::vector<PerformanceAPI::EffectSlotInfo>& 
         }
     }
     if (changed) {
+        bool effectAdded = pendingEffectOpen && effects.size() > currentEffects.size();
         currentEffects = effects;
         rebuildEffectSlots();
+
+        if (effectAdded && !currentEffects.empty()) {
+            pendingEffectOpen = false;
+            auto& newFx = currentEffects.back();
+            api.openPluginEditor(api.getMasterOutputId(), newFx.effectId);
+        }
     }
 }
 
@@ -48,8 +55,9 @@ void OutputStrip::rebuildEffectSlots() {
         removeChildComponent(slot.get());
     effectSlots.clear();
 
+    auto masterOutputId = api.getMasterOutputId();
     for (auto& fx : currentEffects) {
-        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, "Output", PluginSlot::OnBus);
+        auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, masterOutputId, PluginSlot::OnBus);
         slot->setPluginName(fx.pluginName);
         slot->setEffectId(fx.effectId);
         addAndMakeVisible(*slot);
@@ -57,7 +65,8 @@ void OutputStrip::rebuildEffectSlots() {
     }
 
     // Always an empty slot for adding new effect
-    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, "Output", PluginSlot::OnBus);
+    auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, api, masterOutputId, PluginSlot::OnBus);
+    slot->onChanged = [this]() { pendingEffectOpen = true; };
     addAndMakeVisible(*slot);
     effectSlots.push_back(std::move(slot));
 
