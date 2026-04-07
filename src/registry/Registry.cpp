@@ -56,7 +56,7 @@ void Registry::createSchema() {
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             name TEXT NOT NULL,
             plugin_id TEXT REFERENCES plugins(id),
-            snapshot_id TEXT REFERENCES presets(id),
+            preset_id TEXT REFERENCES presets(id),
             output_gain REAL DEFAULT 1.0,
             midi_enabled INTEGER DEFAULT 1,
             position INTEGER DEFAULT 0
@@ -76,7 +76,7 @@ void Registry::createSchema() {
             parent_type TEXT NOT NULL CHECK(parent_type IN ('track', 'bus')),
             name TEXT NOT NULL,
             plugin_id TEXT NOT NULL REFERENCES plugins(id),
-            snapshot_id TEXT REFERENCES presets(id),
+            preset_id TEXT REFERENCES presets(id),
             position INTEGER DEFAULT 0
         );
 
@@ -111,6 +111,8 @@ void Registry::createSchema() {
     sqlite3_exec(db, "UPDATE songs SET name = 'Sandbox' WHERE name = 'Default Session'", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE snapshots RENAME TO presets", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "DELETE FROM presets", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE tracks RENAME COLUMN snapshot_id TO preset_id", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE effects RENAME COLUMN snapshot_id TO preset_id", nullptr, nullptr, nullptr);
 }
 
 std::string Registry::generateId() {
@@ -356,7 +358,7 @@ std::string Registry::createTrack(const std::string& songId, const std::string& 
                                     float outputGain, bool midiEnabled) {
     auto id = generateId();
     auto* stmt = prepare(
-        "INSERT INTO tracks (id, song_id, name, plugin_id, snapshot_id, output_gain, midi_enabled, position) "
+        "INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM tracks WHERE song_id = ?))");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, songId.c_str(), -1, SQLITE_TRANSIENT);
@@ -375,7 +377,7 @@ std::string Registry::createTrack(const std::string& songId, const std::string& 
 std::vector<Registry::Track> Registry::tracksForSong(const std::string& songId) const {
     std::vector<Track> result;
     auto* stmt = prepare(
-        "SELECT id, song_id, name, plugin_id, snapshot_id, output_gain, midi_enabled, position "
+        "SELECT id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position "
         "FROM tracks WHERE song_id = ? ORDER BY position");
     sqlite3_bind_text(stmt, 1, songId.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
@@ -403,7 +405,7 @@ void Registry::deleteTrack(const std::string& id) {
 
 void Registry::updateTrack(const Track& track) {
     auto* stmt = prepare(
-        "UPDATE tracks SET name = ?, plugin_id = ?, snapshot_id = ?, "
+        "UPDATE tracks SET name = ?, plugin_id = ?, preset_id = ?, "
         "output_gain = ?, midi_enabled = ?, position = ? WHERE id = ?");
     sqlite3_bind_text(stmt, 1, track.name.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, track.pluginId.c_str(), -1, SQLITE_TRANSIENT);
@@ -466,7 +468,7 @@ std::string Registry::createEffect(const std::string& parentId, const std::strin
                                      const std::string& presetId) {
     auto id = generateId();
     auto* stmt = prepare(
-        "INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, snapshot_id, position) "
+        "INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position) "
         "VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(position), -1) + 1 FROM effects WHERE parent_id = ?))");
     sqlite3_bind_text(stmt, 1, id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, parentId.c_str(), -1, SQLITE_TRANSIENT);
@@ -484,7 +486,7 @@ std::string Registry::createEffect(const std::string& parentId, const std::strin
 std::vector<Registry::Effect> Registry::effectsForParent(const std::string& parentId) const {
     std::vector<Effect> result;
     auto* stmt = prepare(
-        "SELECT id, parent_id, parent_type, name, plugin_id, snapshot_id, position "
+        "SELECT id, parent_id, parent_type, name, plugin_id, preset_id, position "
         "FROM effects WHERE parent_id = ? ORDER BY position");
     sqlite3_bind_text(stmt, 1, parentId.c_str(), -1, SQLITE_TRANSIENT);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
