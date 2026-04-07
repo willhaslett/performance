@@ -339,6 +339,7 @@ void Registry::setMasterGain(const std::string& songId, float gain) {
     sqlite3_bind_text(stmt, 2, songId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, EntityType::Song, songId });
 }
 
 float Registry::getMasterGain(const std::string& songId) const {
@@ -424,6 +425,7 @@ void Registry::setTrackGain(const std::string& trackId, float gain) {
     sqlite3_bind_text(stmt, 2, trackId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, EntityType::Track, trackId });
 }
 
 void Registry::setTrackMidiEnabled(const std::string& trackId, bool enabled) {
@@ -432,6 +434,7 @@ void Registry::setTrackMidiEnabled(const std::string& trackId, bool enabled) {
     sqlite3_bind_text(stmt, 2, trackId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, EntityType::Track, trackId });
 }
 
 // --- Busses ---
@@ -483,6 +486,7 @@ void Registry::setBusGain(const std::string& busId, float gain) {
     sqlite3_bind_text(stmt, 2, busId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, EntityType::Bus, busId });
 }
 
 // --- Effects ---
@@ -566,6 +570,7 @@ void Registry::setSendGain(const std::string& sendId, float gain) {
     sqlite3_bind_text(stmt, 2, sendId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
+    eventBus.emit({ RegistryEvent::Updated, EntityType::Send, sendId });
 }
 
 // --- Actions ---

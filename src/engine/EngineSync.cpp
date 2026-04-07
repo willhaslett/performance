@@ -4,7 +4,58 @@
 #include "registry/Registry.h"
 
 EngineSync::EngineSync(AudioEngine& engine, Registry& registry)
-    : engine(engine), registry(registry) {}
+    : engine(engine), registry(registry) {
+    subscriptionId = registry.events().subscribe([this](const RegistryEvent& event) {
+        onRegistryEvent(event);
+    });
+}
+
+EngineSync::~EngineSync() {
+    if (subscriptionId >= 0)
+        registry.events().unsubscribe(subscriptionId);
+}
+
+void EngineSync::onRegistryEvent(const RegistryEvent& event) {
+    if (event.action != RegistryEvent::Updated) return;
+    if (activeSongId.empty()) return;
+
+    auto id = juce::String(event.entityId);
+
+    if (event.entityType == EntityType::Track) {
+        // Read updated track from registry, apply continuous values to engine
+        for (auto& t : registry.tracksForSong(activeSongId)) {
+            if (t.id == event.entityId) {
+                engine.setTrackGain(id, t.outputGain);
+                engine.setTrackMidiEnabled(id, t.midiEnabled);
+                return;
+            }
+        }
+    }
+    else if (event.entityType == EntityType::Bus) {
+        for (auto& b : registry.bussesForSong(activeSongId)) {
+            if (b.id == event.entityId) {
+                engine.setBusGain(id, b.outputGain);
+                return;
+            }
+        }
+    }
+    else if (event.entityType == EntityType::Send) {
+        // Find the send and update its gain in the engine
+        for (auto& t : registry.tracksForSong(activeSongId)) {
+            for (auto& s : registry.sendsForTrack(t.id)) {
+                if (s.id == event.entityId) {
+                    engine.setSendGain(juce::String(t.id), juce::String(s.busId), s.gain);
+                    return;
+                }
+            }
+        }
+    }
+    else if (event.entityType == EntityType::Song) {
+        if (event.entityId == activeSongId) {
+            engine.setMasterGain(registry.getMasterGain(activeSongId));
+        }
+    }
+}
 
 void EngineSync::notifyRemoved(const std::string& id) {
     engineTrackIds.erase(id);
@@ -104,6 +155,9 @@ void EngineSync::sync(const std::string& songId) {
             engineSendIds.insert(send.id);
         }
     }
+
+    // 4. Master gain
+    engine.setMasterGain(registry.getMasterGain(songId));
 }
 
 // persistState removed — continuous values are now written to registry

@@ -33,17 +33,18 @@ AudioEngine (audio graph — a pure view of the registry)
 
 **PerformanceAPI is the sole gateway.** Nothing reads or writes the registry or engine directly. All consumers (GUI, Lua, Claude, MIDI bindings) go through the API. The API writes to the registry first, then does a targeted engine update. If you're adding a new feature that mutates state, it goes through the API.
 
-**Two update paths, both through the API:**
+**Single update path — registry events drive the engine:**
+- **All mutations**: API writes to registry. Registry emits event. EngineSync subscribes and applies the change to the engine. The API never calls the engine directly for state changes.
 - **Structural changes** (create/remove/rename tracks, load plugins, add effects/sends): API writes to registry, then calls `engineSync->sync()` to diff and apply.
-- **Continuous values** (gain, send levels, MIDI enabled): API writes to registry, then does a targeted engine update (e.g., `audioEngine->setTrackGain(id, value)`). No full sync. SQLite writes are ~10-50μs, well within MIDI/UI rates.
+- **Continuous values** (gain, send levels, MIDI enabled): API writes to registry. Registry emits `Updated` event. EngineSync's event handler reads the updated entity and sets the value on the engine. Synchronous, same call stack, zero latency.
 
-**The engine only reads, never owns state.** The engine's atomic values (gain on GainProcessor) are set by the API after writing to the registry. The audio thread reads them. Peak levels are the only thing the engine produces that isn't in the registry — they're transient measurements, not state.
+**The engine is a pure view.** It never owns state. Peak levels are the only thing the engine produces — they're transient measurements, not state.
 
 **Rules for new code:**
-- NEVER call audioEngine methods directly from GUI or Lua. Go through PerformanceAPI.
+- NEVER call audioEngine methods from PerformanceAPI, GUI, or Lua. The only code that calls the engine is EngineSync.
 - NEVER use names as keys or identity. Use UUIDs from the registry.
-- NEVER store state in the engine that isn't in the registry. If you need new state, add it to the registry first.
-- NEVER add a timer to sync state between engine and registry. The registry is always current because writes go there first.
+- NEVER store state in the engine that isn't in the registry.
+- When adding a new settable value: add a registry method, emit an event, handle in EngineSync.
 
 ### Components
 

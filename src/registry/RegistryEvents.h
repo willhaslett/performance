@@ -43,9 +43,17 @@ public:
     }
 
     void emit(const RegistryEvent& event) {
-        std::lock_guard<std::mutex> lock(mutex);
-        for (auto& entry : listeners)
-            entry.listener(event);
+        // Copy listeners under lock, call outside to avoid deadlock
+        // if a listener triggers another registry operation
+        std::vector<Listener> snapshot;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            snapshot.reserve(listeners.size());
+            for (auto& entry : listeners)
+                snapshot.push_back(entry.listener);
+        }
+        for (auto& fn : snapshot)
+            fn(event);
     }
 
 private:

@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_events/juce_events.h>
+#include "registry/RegistryEvents.h"
 #include <string>
 #include <set>
 
@@ -13,6 +14,7 @@ class Registry;
 class EngineSync {
 public:
     EngineSync(AudioEngine& engine, Registry& registry);
+    ~EngineSync();
 
     // Sync engine state to match the given song in the registry
     void sync(const std::string& songId);
@@ -27,9 +29,12 @@ public:
     void clear();
 
 private:
+    void onRegistryEvent(const RegistryEvent& event);
+
     AudioEngine& engine;
     Registry& registry;
     std::string activeSongId;
+    int subscriptionId = -1;
 
     // Track what's currently in the engine to diff against (by registry UUID)
     std::set<std::string> engineTrackIds;

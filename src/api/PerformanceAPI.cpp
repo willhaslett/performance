@@ -181,7 +181,7 @@ void PerformanceAPI::removeEffect(const juce::String& parentId, const juce::Stri
 void PerformanceAPI::setTrackMidiEnabled(const juce::String& trackId, bool enabled) {
     if (!currentSongId.empty())
         registry->setTrackMidiEnabled(trackId.toStdString(), enabled);
-    audioEngine->setTrackMidiEnabled(trackId, enabled);
+    // Engine update handled by EngineSync via registry event
 }
 
 std::string PerformanceAPI::findTrackIdByName(const juce::String& trackName) const {
@@ -199,10 +199,9 @@ std::string PerformanceAPI::findBusIdByName(const juce::String& busName) const {
 }
 
 void PerformanceAPI::setTrackGain(const juce::String& trackId, float gain) {
-    // Registry first (SSOT), then targeted engine update
     if (!currentSongId.empty())
         registry->setTrackGain(trackId.toStdString(), gain);
-    audioEngine->setTrackGain(trackId, gain);
+    // Engine update handled by EngineSync via registry event
 }
 
 float PerformanceAPI::getTrackGain(const juce::String& trackId) {
@@ -245,7 +244,6 @@ void PerformanceAPI::removeBus(const juce::String& busId) {
 void PerformanceAPI::setMasterGain(float gain) {
     if (!currentSongId.empty())
         registry->setMasterGain(currentSongId, gain);
-    audioEngine->setMasterGain(gain);
 }
 
 float PerformanceAPI::getMasterGain() {
@@ -266,7 +264,6 @@ std::vector<PerformanceAPI::EffectSlotInfo> PerformanceAPI::getMasterEffects() {
 void PerformanceAPI::setBusGain(const juce::String& busId, float gain) {
     if (!currentSongId.empty())
         registry->setBusGain(busId.toStdString(), gain);
-    audioEngine->setBusGain(busId, gain);
 }
 
 // --- Sends ---
@@ -289,7 +286,6 @@ void PerformanceAPI::setSendGain(const juce::String& trackId, const juce::String
             }
         }
     }
-    audioEngine->setSendGain(trackId, busId, gain);
 }
 
 // --- Parameters ---
@@ -712,9 +708,7 @@ void PerformanceAPI::loadSongFromRegistry(const std::string& songId) {
     // Let EngineSync build the engine from registry
     engineSync->sync(currentSongId);
 
-    // Restore master gain
-    float masterGain = registry->getMasterGain(currentSongId);
-    audioEngine->setMasterGain(masterGain);
+    // Master gain restored by sync() above
 
     // Load bindings
     for (auto& binding : registry->bindingsForSong(songId)) {
@@ -776,9 +770,7 @@ bool PerformanceAPI::restoreSession() {
                 action->name.c_str());
     }
 
-    // Restore master gain
-    float masterGain = registry->getMasterGain(currentSongId);
-    audioEngine->setMasterGain(masterGain);
+    // Master gain restored by sync() above
 
     perfLog("[API] Session restored: %s (%d tracks, %d bindings)\n",
             song.name.c_str(),
