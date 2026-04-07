@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
 #include "api/PerformanceAPI.h"
+#include "api/StateAPI.h"
 #include "registry/Registry.h"
 #include "engine/Log.h"
 
@@ -735,6 +736,469 @@ public:
 };
 
 static MultiTrackTests multiTrackTests;
+
+// ============================================================================
+// StateAPI tests (in-memory state store — no engine, no SQLite)
+// ============================================================================
+
+class StateAPITests : public juce::UnitTest {
+public:
+    StateAPITests() : UnitTest("StateAPI", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Create song and set current");
+        {
+            StateAPI s;
+            auto id = s.createSong("Test");
+            expect(!id.empty());
+            s.setCurrentSong(id);
+            auto* song = s.currentSong();
+            expect(song != nullptr);
+            expectEquals(song->name, std::string("Test"));
+        }
+
+        beginTest("Create and list tracks");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto t1 = s.createTrack("Keys");
+            auto t2 = s.createTrack("Bass");
+            auto tracks = s.listTracks();
+            expectEquals((int)tracks.size(), 2);
+            expectEquals(tracks[0].name, std::string("Keys"));
+            expectEquals(tracks[1].name, std::string("Bass"));
+            expect(t1 != t2);
+        }
+
+        beginTest("Rename track");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createTrack("Old");
+            s.renameTrack(id, "New");
+            expectEquals(s.listTracks()[0].name, std::string("New"));
+        }
+
+        beginTest("Remove track");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createTrack("Del");
+            s.createTrack("Keep");
+            s.removeTrack(id);
+            auto tracks = s.listTracks();
+            expectEquals((int)tracks.size(), 1);
+            expectEquals(tracks[0].name, std::string("Keep"));
+        }
+
+        beginTest("Track gain");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createTrack("T");
+            expectWithinAbsoluteError(s.getTrackGain(id), 1.0f, 0.001f);
+            s.setTrackGain(id, 0.42f);
+            expectWithinAbsoluteError(s.getTrackGain(id), 0.42f, 0.001f);
+        }
+
+        beginTest("Track MIDI enabled");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createTrack("T");
+            expect(s.isTrackMidiEnabled(id) == true);
+            s.setTrackMidiEnabled(id, false);
+            expect(s.isTrackMidiEnabled(id) == false);
+        }
+
+        beginTest("Track plugin assignment");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto pluginId = s.registerPlugin("DLS", "Apple", "au", true);
+            auto trackId = s.createTrack("T");
+            s.setTrackPlugin(trackId, pluginId);
+            expectEquals(s.getTrackPluginName(trackId), std::string("DLS"));
+            s.clearTrackPlugin(trackId);
+            expect(s.getTrackPluginName(trackId).empty());
+        }
+
+        beginTest("Track instrument load status");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createTrack("T");
+            auto* track = s.findTrack(id);
+            expect(track->instrumentLoadStatus == LoadStatus::None);
+            s.setTrackInstrumentLoadStatus(id, LoadStatus::Pending);
+            expect(track->instrumentLoadStatus == LoadStatus::Pending);
+            s.setTrackInstrumentLoadStatus(id, LoadStatus::Loaded);
+            expect(track->instrumentLoadStatus == LoadStatus::Loaded);
+        }
+
+        beginTest("Create and list busses");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto b1 = s.createBus("Reverb");
+            auto b2 = s.createBus("Delay");
+            auto busses = s.listBusses();
+            expectEquals((int)busses.size(), 2);
+            expect(b1 != b2);
+        }
+
+        beginTest("Bus gain");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createBus("B");
+            s.setBusGain(id, 0.33f);
+            expectWithinAbsoluteError(s.getBusGain(id), 0.33f, 0.001f);
+        }
+
+        beginTest("Rename and remove bus");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createBus("Old");
+            s.renameBus(id, "New");
+            expectEquals(s.listBusses()[0].name, std::string("New"));
+            s.removeBus(id);
+            expect(s.listBusses().empty());
+        }
+
+        beginTest("Master gain");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            expectWithinAbsoluteError(s.getMasterGain(), 1.0f, 0.001f);
+            s.setMasterGain(0.75f);
+            expectWithinAbsoluteError(s.getMasterGain(), 0.75f, 0.001f);
+        }
+
+        beginTest("Add effect to track");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto pluginId = s.registerPlugin("Raum", "NI", "fx", false);
+            auto trackId = s.createTrack("T");
+            auto fxId = s.addEffect(trackId, "Raum", pluginId);
+            expect(!fxId.empty());
+            auto effects = s.getTrackEffects(trackId);
+            expectEquals((int)effects.size(), 1);
+            expectEquals(effects[0].pluginName, std::string("Raum"));
+        }
+
+        beginTest("Add effect to bus");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto pluginId = s.registerPlugin("Delay", "NI", "fx", false);
+            auto busId = s.createBus("FX");
+            auto fxId = s.addEffect(busId, "Delay", pluginId);
+            auto effects = s.getBusEffects(busId);
+            expectEquals((int)effects.size(), 1);
+        }
+
+        beginTest("Add master effect");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto pluginId = s.registerPlugin("Limiter", "Apple", "fx", false);
+            auto fxId = s.addEffect(songId, "Limiter", pluginId);
+            auto effects = s.getMasterEffects();
+            expectEquals((int)effects.size(), 1);
+            expectEquals(effects[0].pluginName, std::string("Limiter"));
+        }
+
+        beginTest("Remove effect");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto pluginId = s.registerPlugin("FX", "M", "fx", false);
+            auto trackId = s.createTrack("T");
+            auto fx1 = s.addEffect(trackId, "FX", pluginId);
+            auto fx2 = s.addEffect(trackId, "FX", pluginId);
+            expectEquals((int)s.getTrackEffects(trackId).size(), 2);
+            s.removeEffect(fx1);
+            auto remaining = s.getTrackEffects(trackId);
+            expectEquals((int)remaining.size(), 1);
+            expectEquals(remaining[0].effectId, fx2);
+        }
+
+        beginTest("Effect load status");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto pluginId = s.registerPlugin("FX", "M", "fx", false);
+            auto trackId = s.createTrack("T");
+            auto fxId = s.addEffect(trackId, "FX", pluginId);
+            auto* fx = s.findEffect(fxId);
+            expect(fx->loadStatus == LoadStatus::None);
+            s.setEffectLoadStatus(fxId, LoadStatus::Loaded);
+            expect(fx->loadStatus == LoadStatus::Loaded);
+        }
+
+        beginTest("Add and query sends");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto busId = s.createBus("Reverb");
+            auto sendId = s.addSend(trackId, busId, 0.5f);
+            expect(!sendId.empty());
+            auto sends = s.getTrackSends(trackId);
+            expectEquals((int)sends.size(), 1);
+            expectEquals(sends[0].busName, std::string("Reverb"));
+            expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
+        }
+
+        beginTest("Send gain update");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto busId = s.createBus("B");
+            auto sendId = s.addSend(trackId, busId, 1.0f);
+            s.setSendGain(sendId, 0.3f);
+            auto sends = s.getTrackSends(trackId);
+            expectWithinAbsoluteError(sends[0].gain, 0.3f, 0.001f);
+        }
+
+        beginTest("Remove send");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto b1 = s.createBus("B1");
+            auto b2 = s.createBus("B2");
+            auto s1 = s.addSend(trackId, b1);
+            auto s2 = s.addSend(trackId, b2);
+            s.removeSend(s1);
+            auto sends = s.getTrackSends(trackId);
+            expectEquals((int)sends.size(), 1);
+            expectEquals(sends[0].busId, b2);
+        }
+
+        beginTest("Send survives bus rename");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto busId = s.createBus("Old");
+            s.addSend(trackId, busId);
+            s.renameBus(busId, "New");
+            auto sends = s.getTrackSends(trackId);
+            expectEquals(sends[0].busName, std::string("New"));
+        }
+
+        beginTest("Multiple tracks independent state");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("Keys");
+            auto t2 = s.createTrack("Bass");
+            s.setTrackGain(t1, 0.8f);
+            s.setTrackGain(t2, 0.3f);
+            s.setTrackMidiEnabled(t1, false);
+
+            expectWithinAbsoluteError(s.getTrackGain(t1), 0.8f, 0.01f);
+            expectWithinAbsoluteError(s.getTrackGain(t2), 0.3f, 0.01f);
+            expect(s.isTrackMidiEnabled(t1) == false);
+            expect(s.isTrackMidiEnabled(t2) == true);
+        }
+
+        beginTest("Delete song cascades");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            s.createTrack("T");
+            s.createBus("B");
+            expectEquals((int)s.listTracks().size(), 1);
+            s.deleteSong(songId);
+            expect(s.currentSong() == nullptr);
+            expect(s.listTracks().empty());
+        }
+
+        beginTest("Switch songs preserves state");
+        {
+            StateAPI s;
+            auto a = s.createSong("A");
+            s.setCurrentSong(a);
+            s.createTrack("A Track");
+            s.setTrackGain(s.listTracks()[0].id, 0.25f);
+
+            auto b = s.createSong("B");
+            s.setCurrentSong(b);
+            s.createTrack("B Track");
+            expectEquals((int)s.listTracks().size(), 1);
+            expectEquals(s.listTracks()[0].name, std::string("B Track"));
+
+            // Switch back
+            s.setCurrentSong(a);
+            expectEquals((int)s.listTracks().size(), 1);
+            expectEquals(s.listTracks()[0].name, std::string("A Track"));
+            expectWithinAbsoluteError(s.getTrackGain(s.listTracks()[0].id), 0.25f, 0.01f);
+        }
+
+        beginTest("Plugin catalog");
+        {
+            StateAPI s;
+            auto id1 = s.registerPlugin("Synth", "Mfg", "au", true);
+            auto id2 = s.registerPlugin("Delay", "Mfg", "au", false);
+            // Duplicate registration returns same ID
+            auto id1dup = s.registerPlugin("Synth", "Mfg", "au", true);
+            expectEquals(id1, id1dup);
+            expectEquals((int)s.allPlugins().size(), 2);
+            expect(s.findPluginByName("Synth")->isInstrument == true);
+            expect(s.findPluginByName("Delay")->isInstrument == false);
+            expect(s.findPluginById(id1) != nullptr);
+        }
+
+        beginTest("Preset catalog");
+        {
+            StateAPI s;
+            auto pluginId = s.registerPlugin("Synth", "Mfg", "au", true);
+            auto presetId = s.createPreset(pluginId, "Warm", "/tmp/warm.state");
+            expect(!presetId.empty());
+            auto* preset = s.findPreset(pluginId, "Warm");
+            expect(preset != nullptr);
+            expectEquals(preset->name, std::string("Warm"));
+            auto presets = s.presetsForPlugin(pluginId);
+            expectEquals((int)presets.size(), 1);
+        }
+
+        beginTest("Action catalog");
+        {
+            StateAPI s;
+            auto id = s.registerAction("fadeOut", "Fade out", "[{\"name\":\"track\"}]");
+            expect(!id.empty());
+            expect(s.findActionByName("fadeOut") != nullptr);
+            expect(s.findActionById(id) != nullptr);
+            expectEquals((int)s.allActions().size(), 1);
+        }
+
+        beginTest("Bindings");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto actionId = s.registerAction("test", "Test");
+            auto bindId = s.addBinding("cc", 1, 42, actionId, "[\"arg\"]", "Test binding");
+            expect(!bindId.empty());
+            auto bindings = s.bindingsForCurrentSong();
+            expectEquals((int)bindings.size(), 1);
+            expectEquals(bindings[0].controlType, std::string("cc"));
+            expectEquals(bindings[0].number, 42);
+            s.removeBinding(bindId);
+            expect(s.bindingsForCurrentSong().empty());
+        }
+
+        beginTest("Config key-value store");
+        {
+            StateAPI s;
+            s.setConfig("key1", "value1");
+            expectEquals(s.getConfig("key1"), std::string("value1"));
+            expectEquals(s.getConfig("missing", "default"), std::string("default"));
+        }
+
+        beginTest("Name resolution");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("Keys");
+            auto b1 = s.createBus("Reverb");
+            expectEquals(s.findTrackIdByName("Keys"), t1);
+            expectEquals(s.findBusIdByName("Reverb"), b1);
+            expect(s.findTrackIdByName("Missing").empty());
+        }
+
+        beginTest("Selection");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("T1");
+            auto t2 = s.createTrack("T2");
+            auto b1 = s.createBus("B1");
+
+            s.selectTrack(t1);
+            expectEquals((int)s.selectedTrackIds().size(), 1);
+            expectEquals(s.selectedTrackIds()[0], t1);
+
+            // Add to selection
+            s.selectTrack(t2, true);
+            expectEquals((int)s.selectedTrackIds().size(), 2);
+
+            // Select bus clears tracks (no addToSelection)
+            s.selectBus(b1);
+            expect(s.selectedTrackIds().empty());
+            expectEquals((int)s.selectedBusIds().size(), 1);
+
+            // Clear all
+            s.clearSelection();
+            expect(s.selectedTrackIds().empty());
+            expect(s.selectedBusIds().empty());
+        }
+
+        beginTest("Dirty tracking");
+        {
+            StateAPI s;
+            expect(!s.isDirty());
+            s.createSong("S");
+            expect(s.isDirty());
+            s.clearDirty();
+            expect(!s.isDirty());
+            s.setCurrentSong(s.allSongs()[0].id);
+            s.createTrack("T");
+            expect(s.isDirty());
+        }
+
+        beginTest("Events fire on mutations");
+        {
+            StateAPI s;
+            std::vector<StateEvent> received;
+            s.events().subscribe([&](const StateEvent& e) { received.push_back(e); });
+
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto trackId = s.createTrack("T");
+            s.setTrackGain(trackId, 0.5f);
+            s.removeTrack(trackId);
+
+            // Expect: Song Created, Config Updated (setCurrentSong), Track Created, Track Updated, Track Deleted
+            expect(received.size() >= 5);
+
+            // Check first event is Song Created
+            expect(received[0].action == StateEvent::Created);
+            expect(received[0].entity == StateEvent::Song);
+
+            // Find Track Created
+            bool foundTrackCreated = false;
+            bool foundTrackDeleted = false;
+            for (auto& e : received) {
+                if (e.entity == StateEvent::Track && e.action == StateEvent::Created)
+                    foundTrackCreated = true;
+                if (e.entity == StateEvent::Track && e.action == StateEvent::Deleted)
+                    foundTrackDeleted = true;
+            }
+            expect(foundTrackCreated);
+            expect(foundTrackDeleted);
+        }
+
+        beginTest("Master output ID is song ID");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            expectEquals(s.getMasterOutputId(), songId);
+        }
+    }
+};
+
+static StateAPITests stateAPITests;
 
 // ============================================================================
 // Test runner — main()
