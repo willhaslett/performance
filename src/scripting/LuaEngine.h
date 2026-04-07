@@ -4,10 +4,14 @@
 #include <vector>
 
 class PerformanceAPI;
+class StateAPI;
+class EngineAPI;
+class PerformanceCoordinator;
 
 class LuaEngine {
 public:
-    LuaEngine(PerformanceAPI& api);
+    LuaEngine(StateAPI& state, EngineAPI& engine, PerformanceCoordinator& coordinator);
+    LuaEngine(PerformanceAPI& api);  // legacy
 
     // Execute a Lua string, return result or error
     std::string executeString(const std::string& code);
@@ -25,9 +29,13 @@ public:
     static std::string getSongsDirectory();
 
 private:
-    PerformanceAPI& api;
+    PerformanceAPI* legacyApi = nullptr;  // legacy mode
+    StateAPI* statePtr = nullptr;
+    EngineAPI* enginePtr = nullptr;
+    PerformanceCoordinator* coordPtr = nullptr;
     sol::state lua;
 
-    void registerAPI();
+    void registerAPI();       // legacy
+    void registerNewAPI();    // new StateAPI+EngineAPI+Coordinator
     void loadLibraries();
 };
