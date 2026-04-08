@@ -28,14 +28,15 @@ The `perf` command returns "ok" on success or an error message.
 All functions accept display names. Names are resolved to UUIDs internally.
 
 ### Tracks
-- `createTrack(name)` — create an empty track, returns UUID
+- `createTrack(name)` — create an instrument track, returns UUID
 - `removeTrack(name)` — remove a track
 - `addInstrument(track, plugin)` — load an AU plugin on a track
 - `addInstrument(track, plugin, preset)` — load with a saved preset
 - `addEffect(parent, effectName, plugin)` — add an effect to a track, bus, or "Output"
 - `addTrackEffect(track, effectName, plugin)` — alias for addEffect
 - `removeEffect(parent, effectId)` — remove an effect by ID
-- `setTrackMidiEnabled(track, enabled)` — enable/disable MIDI input
+- `setTrackMidiEnabled(track, enabled)` — enable/disable MIDI note routing (instrument tracks)
+- `setTrackAudioEnabled(track, enabled)` — enable/disable audio output (all track types). Disabled tracks receive no MIDI and produce no audio.
 - `setTrackGain(track, gain)` — set output gain (linear, 1.0 = unity)
 - `getTrackGain(track)` — get current gain
 
@@ -141,13 +142,17 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - Songs have initial state (checkpoint) and score (ordered action list)
 
 ## GUI
-The app has a 3-pane layout: sidebar (songs/library/actions), chat (you), mixer (tracks + busses).
-- Track menu: New Instrument Track, New Effects Bus
-- Track strips: instrument slot, effect slots, fader, VU meter, MIDI toggle
-- Bus strips: effect slots, fader, VU meter
+The app has a flexible layout: sidebar (songs/library/actions/devices/panes), dual content panes (left: device editor or debug, right: chat or logs), and bottom mixer.
+- Track menu: New Virtual Instrument Track, New Audio Input Track, New Effects Bus
+- Track strips: instrument slot (or input selector for audio input tracks), effect slots, sends, fader, stereo VU meters (IEC-scale), power icon (toggles audioEnabled)
+- Bus strips: effect slots, fader, stereo VU meters
+- Output strip: master effects, fader, stereo VU meters
 - Click plugin pills to pick plugins (submenu with presets)
 - Right-click populated pills: No Plugin / Replace
+- Sidebar Devices section: Audio (click to switch device), MIDI (click to edit mappings)
+- Sidebar Panes section: Debug, Logs, Chat — switch content panes
 - Keyboard: Cmd+1=sidebar, Cmd+X=mixer, Cmd+S=save, Escape=close editor. All shortcuts use modifier keys — no conflict with text input.
+- App log: /tmp/performance.log (UTC timestamps, tail -f friendly)
 
 ## Guidelines
 - When Will asks for a change, execute it immediately with `perf`. Don't just describe what you'd do.
@@ -158,11 +163,7 @@ The app has a 3-pane layout: sidebar (songs/library/actions), chat (you), mixer 
 - Will is playing while you work. Minimize disruption — avoid removing tracks that are sounding unless asked.
 - The app log is at /tmp/performance.log if you need to debug.
 
-## MPK mini 3 Controller
-- Pads (CC mode): bottom row CC 16-19 (pads 1-4), top row CC 20-23 (pads 5-8), channel 10
-- Keys: channel 1
-
 ## Testing without hardware
 ```bash
-uvx --from python-rtmidi python3 tools/send_notes.py
+bin/midi-test        # sends notes via virtual MIDI port
 ```

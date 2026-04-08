@@ -101,17 +101,19 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 
 All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
-- **MainLayout** — root container: toolbar + sidebar + split panes + mixer
-- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for peak levels)
-- **TrackStrip** — instrument slot, effect slots, sends panel, fader+meter. Track preset callbacks from coordinator.
-- **BusStrip** — effect slots, fader+meter
-- **OutputStrip** — master effect slots, master fader+meter
+- **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (Device Editor or Debug) and right pane (Chat or Logs) switchable via sidebar.
+- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels)
+- **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Track preset callbacks from coordinator.
+- **BusStrip** — effect slots, fader+stereo meters
+- **OutputStrip** — master effect slots, master fader+stereo meters
+- **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio + MIDI subsections, Debug). Audio device click switches device immediately.
+- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio + MIDI subsections), Panes (Debug, Logs, Chat).
 - **DeviceEditorPane** — MIDI device control mapping editor with learn mode. Shown when a MIDI device is selected in sidebar.
-- **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel. Activated when "Debug" is selected in sidebar.
-- **FaderMeter**, **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
+- **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
+- **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Color-coded by subsystem. Auto-scrolls.
+- **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
 
 ### Audio Graph
 
@@ -133,9 +135,15 @@ Master output:
   masterGain → [masterFx1 → masterFx2 →] → audioOutput
 ```
 
-Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. `InputMeter` callback provides per-channel peak levels for the debug pane.
+Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. If device goes null (mid-transition), processing stops cleanly and recovers on next notification. `InputMeter` callback provides per-channel peak levels for the debug pane.
 
-Audio device selection persists via `config["audio_device"]` — restored on startup after `loadInto`.
+Audio device selection persists via `config["audio_device"]` — restored on startup after `loadInto`. Clicking the same device in the sidebar is a no-op.
+
+MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents wasted synthesis across multiple instrument tracks. `midiEnabled` and `audioEnabled` are both required for MIDI connection in `rebuildConnections`.
+
+### Logging
+
+`perfLog()` writes to stderr and `/tmp/performance.log` (unbuffered, ISO 8601 UTC timestamps). Subsystems prefix: `[Engine]`, `[EngineSync]`, `[Coordinator]`, `[MIDI]`, `[Persistence]`, `[Sidebar]`, `[IPC]`. Tail with `tail -f /tmp/performance.log`. In-app LogPane provides selectable/searchable view.
 
 ### Plugin State Presets
 
@@ -173,7 +181,6 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 **Feature backlog (near-term):**
 - Song development canvas — the "mapping window" becomes a performance design/management view. Bindings, score steps, song state overview.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
-- MIDI Learn / device management — ad hoc learn/mapping + persisted device maps.
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
 
 **Feature backlog (longer-term):**
