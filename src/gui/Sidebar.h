@@ -44,4 +44,5 @@ private:
     std::string lastHighlightedId;
     std::string selectedDeviceId;
     int lastMidiDeviceCount = -1;
+    juce::String lastAudioDeviceName;
 };

@@ -22,7 +22,7 @@ Sidebar::Sidebar() {
         } else if (type == "unregistered_device" && onDeviceSelected) {
             selectedDeviceId = id;
             onDeviceSelected("", id);  // id is the port name for unregistered devices
-        } else if (type == "audio_device" && onAudioDeviceSelected) {
+        } else if ((type == "audio_device" || type == "audio_device_active") && onAudioDeviceSelected) {
             selectedDeviceId = id;
             onAudioDeviceSelected(label);
         } else if (type == "debug") {
@@ -84,7 +84,7 @@ void Sidebar::resized() {
 
 void Sidebar::timerCallback() {
     if (!state) return;
-    // Highlight: prefer selected device/debug, fall back to active song
+    // Highlight: prefer selected device/pane, fall back to active song
     std::string highlightId = selectedDeviceId;
     if (highlightId.empty()) {
         auto song = state->currentSong();
@@ -101,6 +101,17 @@ void Sidebar::timerCallback() {
     if (count != lastMidiDeviceCount) {
         lastMidiDeviceCount = count;
         refreshTree();
+    }
+
+    // Poll for audio device changes
+    if (engineAPI) {
+        juce::String currentAudio;
+        if (auto* dev = engineAPI->getDeviceManager().getCurrentAudioDevice())
+            currentAudio = dev->getName();
+        if (currentAudio != lastAudioDeviceName) {
+            lastAudioDeviceName = currentAudio;
+            refreshTree();
+        }
     }
 }
 
@@ -229,10 +240,10 @@ void Sidebar::refreshTree() {
                 auto deviceNames = type->getDeviceNames();
                 for (auto& name : deviceNames) {
                     TreeNode audioLeaf;
+                    bool isActive = (name == currentDeviceName);
                     audioLeaf.label = name.toStdString();
-                    // Use a prefixed id so it won't collide with MIDI device ids
                     audioLeaf.id = "audio:" + name.toStdString();
-                    audioLeaf.type = "audio_device";
+                    audioLeaf.type = isActive ? "audio_device_active" : "audio_device";
                     audioLeaf.isLeaf = true;
                     audioNode.children.push_back(audioLeaf);
                 }

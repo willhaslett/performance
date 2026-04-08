@@ -51,6 +51,8 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     if (!savedDevice.empty()) {
         auto& dm = audioEngine->getDeviceManager();
         auto setup = dm.getAudioDeviceSetup();
+        perfLog("[Coordinator] Audio device config: saved='%s', current='%s'\n",
+                savedDevice.c_str(), setup.outputDeviceName.toRawUTF8());
         if (setup.outputDeviceName != juce::String(savedDevice)) {
             setup.outputDeviceName = juce::String(savedDevice);
             setup.inputDeviceName = juce::String(savedDevice);
