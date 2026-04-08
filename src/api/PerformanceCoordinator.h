@@ -1,6 +1,8 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <juce_audio_devices/juce_audio_devices.h>
+#include "state/StateEvents.h"
+#include "state/StateModel.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -82,4 +84,8 @@ private:
     void populatePluginCatalog();
     void registerBuiltinActions();
     void restoreBindings();
+    void onStateEvent(const StateEvent& event);
+    void ensureDefaultPreset(const std::string& parentId, const std::string& effectId,
+                             const std::string& pluginId, PresetKind kind);
+    int stateSubscriptionId = -1;
 };

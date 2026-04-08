@@ -62,6 +62,11 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     midiEngine->initialise();
     perfLog("[Coordinator] MIDIEngine initialised\n");
 
+    // Subscribe to state events for auto-creating Default presets
+    stateSubscriptionId = stateAPI->events().subscribe([this](const StateEvent& event) {
+        onStateEvent(event);
+    });
+
     // Auto-save every 30 seconds if dirty
     startTimer(30000);
 }
@@ -76,6 +81,8 @@ void PerformanceCoordinator::timerCallback() {
 
 void PerformanceCoordinator::shutdown() {
     stopTimer();
+    if (stateAPI && stateSubscriptionId >= 0)
+        stateAPI->events().unsubscribe(stateSubscriptionId);
     if (stateAPI && persistence && stateAPI->isDirty())
         persistence->saveFrom(*stateAPI);
     songRuntime.reset();
@@ -476,6 +483,65 @@ void PerformanceCoordinator::log(const juce::String& message) {
 }
 
 // --- Internal ---
+
+// --- State event handler: auto-create Default preset ---
+
+void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
+    // Watch for Track or Effect Updated events — LoadStatus may have changed to Loaded
+    if (event.action != StateEvent::Updated) return;
+
+    if (event.entity == StateEvent::Track) {
+        auto* track = stateAPI->findTrack(event.entityId);
+        if (!track || track->instrumentLoadStatus != LoadStatus::Loaded) return;
+        if (track->pluginId.empty()) return;
+        ensureDefaultPreset(track->id, "", track->pluginId, PresetKind::Instrument);
+    }
+    else if (event.entity == StateEvent::Effect) {
+        auto* fx = stateAPI->findEffect(event.entityId);
+        if (!fx || fx->loadStatus != LoadStatus::Loaded) return;
+        if (fx->pluginId.empty()) return;
+        ensureDefaultPreset(event.parentId, fx->id, fx->pluginId, PresetKind::Effect);
+    }
+}
+
+void PerformanceCoordinator::ensureDefaultPreset(const std::string& parentId,
+                                                   const std::string& effectId,
+                                                   const std::string& pluginId,
+                                                   PresetKind kind) {
+    // Already has a Default preset?
+    if (stateAPI->findPreset(pluginId, "Default")) return;
+
+    auto* plugin = stateAPI->findPluginById(pluginId);
+    if (!plugin) return;
+
+    // Get the processor and capture its initial state
+    juce::AudioProcessor* proc = nullptr;
+    auto engParent = (parentId == stateAPI->getMasterOutputId())
+                         ? juce::String("Output") : juce::String(parentId);
+    if (effectId.empty())
+        proc = audioEngine->getTrackInstrumentProcessor(juce::String(parentId));
+    else
+        proc = audioEngine->getEffectProcessor(engParent, juce::String(effectId));
+    if (!proc) return;
+
+    juce::MemoryBlock state;
+    proc->getStateInformation(state);
+    if (state.getSize() == 0) return;
+
+    // Save to disk
+    auto dir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                   .getChildFile(".config/performance/snapshots")
+                   .getChildFile(juce::String(plugin->name));
+    dir.createDirectory();
+    auto file = dir.getChildFile("Default.state");
+    file.replaceWithData(state.getData(), state.getSize());
+
+    // Register in state
+    stateAPI->createPreset(pluginId, "Default", file.getFullPathName().toStdString(), kind);
+
+    perfLog("[Coordinator] Created Default preset for %s (%d bytes)\n",
+            plugin->name.c_str(), (int)state.getSize());
+}
 
 void PerformanceCoordinator::populatePluginCatalog() {
     int count = 0;
