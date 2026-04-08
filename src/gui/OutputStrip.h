@@ -17,6 +17,7 @@ public:
 
     void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setPeakLevel(float level);
+    void setPeakLevelStereo(float left, float right);
     void setGain(float gain);
 
     int getMinimumHeight() const;

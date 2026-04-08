@@ -619,6 +619,14 @@ float AudioEngine::getTrackPeakLevel(const juce::String& trackId) const {
     return 0.0f;
 }
 
+std::pair<float, float> AudioEngine::getTrackPeakLevelStereo(const juce::String& trackId) const {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return { 0.0f, 0.0f };
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return { proc->getPeakL(), proc->getPeakR() };
+    return { 0.0f, 0.0f };
+}
+
 void AudioEngine::removeTrackInstrument(const juce::String& trackId) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
@@ -1090,6 +1098,14 @@ float AudioEngine::getBusPeakLevel(const juce::String& busId) const {
     return 0.0f;
 }
 
+std::pair<float, float> AudioEngine::getBusPeakLevelStereo(const juce::String& busId) const {
+    auto it = busses.find(busId);
+    if (it == busses.end()) return { 0.0f, 0.0f };
+    if (auto* proc = dynamic_cast<GainProcessor*>(it->second.outputGainNode->getProcessor()))
+        return { proc->getPeakL(), proc->getPeakR() };
+    return { 0.0f, 0.0f };
+}
+
 float AudioEngine::getBusGain(const juce::String& busId) const {
     auto it = busses.find(busId);
     if (it == busses.end()) return 0.0f;
@@ -1113,6 +1129,12 @@ float AudioEngine::getMasterPeakLevel() const {
     if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
         return proc->getPeakLevel();
     return 0.0f;
+}
+
+std::pair<float, float> AudioEngine::getMasterPeakLevelStereo() const {
+    if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
+        return { proc->getPeakL(), proc->getPeakR() };
+    return { 0.0f, 0.0f };
 }
 
 std::vector<AudioEngine::EffectInfo> AudioEngine::getMasterEffects() const {

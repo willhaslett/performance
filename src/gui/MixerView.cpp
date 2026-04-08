@@ -126,7 +126,7 @@ void MixerView::timerCallback() {
             trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(id.toStdString()));
             trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(id.toStdString()));
             trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
-            trackStrips[i]->setPeakLevel(engine.getTrackPeakLevel(id));
+            { auto [l, r] = engine.getTrackPeakLevelStereo(id); trackStrips[i]->setPeakLevelStereo(l, r); }
 
             // Sends
             auto stateSends = state.getTrackSends(id.toStdString());
@@ -147,7 +147,7 @@ void MixerView::timerCallback() {
             busStrips[i]->setEffects(effects);
 
             busStrips[i]->setGain(state.getBusGain(id.toStdString()));
-            busStrips[i]->setPeakLevel(engine.getBusPeakLevel(id));
+            { auto [l, r] = engine.getBusPeakLevelStereo(id); busStrips[i]->setPeakLevelStereo(l, r); }
         }
     }
 
@@ -158,7 +158,7 @@ void MixerView::timerCallback() {
         masterEffects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
     outputStrip.setEffects(masterEffects);
     outputStrip.setGain(state.getMasterGain());
-    outputStrip.setPeakLevel(engine.getMasterPeakLevel());
+    { auto [l, r] = engine.getMasterPeakLevelStereo(); outputStrip.setPeakLevelStereo(l, r); }
 
     // If desired height changed, trigger parent re-layout
     int h = getDesiredHeight();

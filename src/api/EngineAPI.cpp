@@ -31,6 +31,18 @@ float EngineAPI::getMasterPeakLevel() {
     return engine.getMasterPeakLevel();
 }
 
+std::pair<float, float> EngineAPI::getTrackPeakLevelStereo(const juce::String& trackId) {
+    return engine.getTrackPeakLevelStereo(trackId);
+}
+
+std::pair<float, float> EngineAPI::getBusPeakLevelStereo(const juce::String& busId) {
+    return engine.getBusPeakLevelStereo(busId);
+}
+
+std::pair<float, float> EngineAPI::getMasterPeakLevelStereo() {
+    return engine.getMasterPeakLevelStereo();
+}
+
 // --- Plugin UI ---
 
 void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::String& effectId) {

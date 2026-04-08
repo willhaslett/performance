@@ -9,6 +9,7 @@ public:
 
     void setGain(float gain);
     void setPeakLevel(float level);
+    void setPeakLevelStereo(float left, float right);
 
     // Called when user drags the fader
     std::function<void(float newGain)> onGainChanged;
@@ -20,7 +21,8 @@ public:
 
 private:
     float gainValue = 1.0f;
-    float peakLevel = 0.0f;
+    float peakL = 0.0f;
+    float peakR = 0.0f;
     bool dragging = false;
     float dragStartGain = 0.0f;
     int dragStartY = 0;
@@ -29,8 +31,10 @@ private:
     static constexpr float dbMax = 6.0f;
     static constexpr float dbRange = dbMax - dbMin;
     static constexpr int faderWidth = 8;
-    static constexpr int meterWidth = 6;
-    static constexpr int gap = 10;
+    static constexpr int meterBarWidth = 4;
+    static constexpr int meterGap = 1;
+    static constexpr int meterWidth = meterBarWidth * 2 + meterGap;  // L + gap + R
+    static constexpr int gap = 8;
 
     juce::Rectangle<int> getFaderArea() const;
     juce::Rectangle<int> getMeterArea() const;

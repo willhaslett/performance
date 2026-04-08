@@ -11,18 +11,23 @@ public:
 
     void setGain(float g) { gain.store(g, std::memory_order_relaxed); }
     float getGain() const { return gain.load(std::memory_order_relaxed); }
-    float getPeakLevel() const { return peakLevel.load(std::memory_order_relaxed); }
+    float getPeakLevel() const { return std::max(peakL.load(std::memory_order_relaxed),
+                                                    peakR.load(std::memory_order_relaxed)); }
+    float getPeakL() const { return peakL.load(std::memory_order_relaxed); }
+    float getPeakR() const { return peakR.load(std::memory_order_relaxed); }
 
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
         buffer.applyGain(gain.load(std::memory_order_relaxed));
-        float mag = buffer.getMagnitude(0, buffer.getNumSamples());
-        if (mag < 1e-5f) mag = 0.0f;  // noise floor gate
-        // Peak hold with exponential decay (~20dB/sec at 44.1kHz/512 block)
-        float prev = peakLevel.load(std::memory_order_relaxed);
-        float decayed = prev * decayCoeff;
-        peakLevel.store(std::max(mag, decayed), std::memory_order_relaxed);
+        int n = buffer.getNumSamples();
+        for (int ch = 0; ch < std::min(buffer.getNumChannels(), 2); ++ch) {
+            float mag = buffer.getMagnitude(ch, 0, n);
+            if (mag < 1e-5f) mag = 0.0f;
+            auto& peak = (ch == 0) ? peakL : peakR;
+            float decayed = peak.load(std::memory_order_relaxed) * decayCoeff;
+            peak.store(std::max(mag, decayed), std::memory_order_relaxed);
+        }
     }
 
     const juce::String getName() const override { return "Gain"; }
@@ -41,6 +46,7 @@ public:
 
 private:
     std::atomic<float> gain { 1.0f };
-    std::atomic<float> peakLevel { 0.0f };
-    static constexpr float decayCoeff = 0.93f;  // ~20dB/sec decay at typical block rates
+    std::atomic<float> peakL { 0.0f };
+    std::atomic<float> peakR { 0.0f };
+    static constexpr float decayCoeff = 0.93f;
 };

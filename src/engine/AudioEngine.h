@@ -36,6 +36,7 @@ public:
     bool addTrackInstrument(const juce::String& trackId, const juce::String& pluginName,
                             LoadCallback onLoaded = nullptr) override;
     float getTrackPeakLevel(const juce::String& trackId) const;
+    std::pair<float, float> getTrackPeakLevelStereo(const juce::String& trackId) const;
     void removeTrackInstrument(const juce::String& trackId) override;
     void setTrackMidiEnabled(const juce::String& trackId, bool enabled) override;
     void setTrackAudioEnabled(const juce::String& trackId, bool enabled) override;
@@ -64,6 +65,7 @@ public:
     void setMasterGain(float gain) override;
     float getMasterGain() const;
     float getMasterPeakLevel() const;
+    std::pair<float, float> getMasterPeakLevelStereo() const;
     std::vector<EffectInfo> getMasterEffects() const;
 
     // Sends
@@ -88,6 +90,7 @@ public:
     std::vector<SendInfo> getTrackSends(const juce::String& trackId) const;
     float getBusGain(const juce::String& busId) const;
     float getBusPeakLevel(const juce::String& busId) const;
+    std::pair<float, float> getBusPeakLevelStereo(const juce::String& busId) const;
 
     // Plugin editor windows
     struct PresetCallbacks {

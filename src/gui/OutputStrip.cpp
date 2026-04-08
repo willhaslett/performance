@@ -42,6 +42,10 @@ void OutputStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
 
+void OutputStrip::setPeakLevelStereo(float left, float right) {
+    faderMeter.setPeakLevelStereo(left, right);
+}
+
 void OutputStrip::setGain(float gain) {
     faderMeter.setGain(gain);
 }

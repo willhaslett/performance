@@ -25,6 +25,7 @@ public:
     void setMidiEnabled(bool enabled);
     void setAudioEnabled(bool enabled);
     void setPeakLevel(float level);
+    void setPeakLevelStereo(float left, float right);
     void setGain(float gain);
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
     void setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions);

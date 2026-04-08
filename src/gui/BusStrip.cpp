@@ -44,6 +44,10 @@ void BusStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
 
+void BusStrip::setPeakLevelStereo(float left, float right) {
+    faderMeter.setPeakLevelStereo(left, right);
+}
+
 void BusStrip::setGain(float gain) {
     faderMeter.setGain(gain);
 }

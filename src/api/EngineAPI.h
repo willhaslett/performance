@@ -20,6 +20,9 @@ public:
     float getTrackPeakLevel(const juce::String& trackId);
     float getBusPeakLevel(const juce::String& busId);
     float getMasterPeakLevel();
+    std::pair<float, float> getTrackPeakLevelStereo(const juce::String& trackId);
+    std::pair<float, float> getBusPeakLevelStereo(const juce::String& busId);
+    std::pair<float, float> getMasterPeakLevelStereo();
 
     // --- Plugin UI ---
     void openPluginEditor(const juce::String& parentId, const juce::String& effectId = "");

@@ -86,6 +86,10 @@ void TrackStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
 
+void TrackStrip::setPeakLevelStereo(float left, float right) {
+    faderMeter.setPeakLevelStereo(left, right);
+}
+
 void TrackStrip::setGain(float gain) {
     faderMeter.setGain(gain);
 }

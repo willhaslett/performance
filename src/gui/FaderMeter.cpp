@@ -11,7 +11,14 @@ void FaderMeter::setGain(float gain) {
 }
 
 void FaderMeter::setPeakLevel(float level) {
-    peakLevel = level;
+    peakL = level;
+    peakR = level;
+    repaint();
+}
+
+void FaderMeter::setPeakLevelStereo(float left, float right) {
+    peakL = left;
+    peakR = right;
     repaint();
 }
 
@@ -30,6 +37,30 @@ float FaderMeter::gainToNormalized(float gain) const {
     db = std::max(db, dbMin);
     db = std::min(db, dbMax);
     return (db - dbMin) / dbRange;
+}
+
+static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area, float level,
+                          float dbMin, float dbMax, float dbRange) {
+    // Background
+    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.fillRoundedRectangle(area.toFloat(), 1.5f);
+
+    if (level > 0.0001f) {
+        float db = 20.0f * std::log10(level);
+        db = std::max(db, dbMin);
+        db = std::min(db, dbMax);
+        float meterNorm = (db - dbMin) / dbRange;
+        int meterHeight = (int)(area.getHeight() * meterNorm);
+        auto fillArea = area.withTop(area.getBottom() - meterHeight);
+
+        if (db > 0.0f)
+            g.setColour(juce::Colour(0xffcc4444));
+        else if (db > -6.0f)
+            g.setColour(juce::Colour(0xffccaa44));
+        else
+            g.setColour(Theme::color(Theme::Color::midiActive));
+        g.fillRoundedRectangle(fillArea.toFloat(), 1.5f);
+    }
 }
 
 void FaderMeter::paint(juce::Graphics& g) {
@@ -59,27 +90,13 @@ void FaderMeter::paint(juce::Graphics& g) {
     g.drawLine((float)(faderArea.getX() - 3), (float)zeroY,
                (float)(faderArea.getRight() + 3), (float)zeroY, 1.0f);
 
-    // Meter background
-    g.setColour(Theme::color(Theme::Color::bgSlot));
-    g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
+    // Stereo meters: L on left, R on right
+    auto leftBar = meterArea.removeFromLeft(meterBarWidth);
+    meterArea.removeFromLeft(meterGap);
+    auto rightBar = meterArea.removeFromLeft(meterBarWidth);
 
-    // Meter fill
-    if (peakLevel > 0.0001f) {
-        float db = 20.0f * std::log10(peakLevel);
-        db = std::max(db, dbMin);
-        db = std::min(db, dbMax);
-        float meterNorm = (db - dbMin) / dbRange;
-        int meterHeight = (int)(meterArea.getHeight() * meterNorm);
-        auto fillArea = meterArea.withTop(meterArea.getBottom() - meterHeight);
-
-        if (db > 0.0f)
-            g.setColour(juce::Colour(0xffcc4444));
-        else if (db > -6.0f)
-            g.setColour(juce::Colour(0xffccaa44));
-        else
-            g.setColour(Theme::color(Theme::Color::midiActive));
-        g.fillRoundedRectangle(fillArea.toFloat(), 2.0f);
-    }
+    drawMeterBar(g, leftBar, peakL, dbMin, dbMax, dbRange);
+    drawMeterBar(g, rightBar, peakR, dbMin, dbMax, dbRange);
 }
 
 void FaderMeter::mouseDown(const juce::MouseEvent& event) {
