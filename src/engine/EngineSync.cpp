@@ -132,7 +132,10 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
 
 void EngineSync::onEffectCreated(const std::string& effectId) {
     auto* fx = stateAPI.findEffect(effectId);
-    if (!fx) return;
+    if (!fx) {
+        perfLog("[EngineSync] onEffectCreated: effect not found: %s\n", effectId.c_str());
+        return;
+    }
 
     auto* plugin = stateAPI.findPluginById(fx->pluginId);
     if (!plugin) return;
@@ -154,8 +157,12 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
             for (auto& bfx : b.effects)
                 if (bfx.id == effectId) { engineParentId = juce::String(b.id); stateParentId = b.id; break; }
 
-    if (engineParentId.isEmpty()) return;
+    if (engineParentId.isEmpty()) {
+        perfLog("[EngineSync] onEffectCreated: no parent found for effect %s\n", effectId.c_str());
+        return;
+    }
 
+    perfLog("[EngineSync] Loading effect %s on %s\n", plugin->name.c_str(), engineParentId.toRawUTF8());
     auto presetId = fx->presetId;
     stateAPI.setEffectLoadStatus(effectId, LoadStatus::Pending);
     engine.addEffect(engineParentId, juce::String(fx->id), juce::String(plugin->name),

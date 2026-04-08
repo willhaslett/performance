@@ -9,12 +9,12 @@ OutputStrip::OutputStrip(StateAPI& state, EngineAPI& engine)
     faderMeter.onGainChanged = [&](float newGain) {
         state.setMasterGain(newGain);
     };
-
-    rebuildEffectSlots();
+    // Don't rebuild slots in constructor — getMasterOutputId() may be empty.
+    // First rebuild happens when MixerView calls setEffects() after session restore.
 }
 
 void OutputStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
-    bool changed = (effects.size() != currentEffects.size());
+    bool changed = effectSlots.empty() || (effects.size() != currentEffects.size());
     if (!changed) {
         for (size_t i = 0; i < effects.size(); ++i) {
             if (effects[i].effectId != currentEffects[i].effectId ||
