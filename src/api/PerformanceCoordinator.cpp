@@ -83,7 +83,9 @@ void PerformanceCoordinator::shutdown() {
     stopTimer();
     if (stateAPI && stateSubscriptionId >= 0)
         stateAPI->events().unsubscribe(stateSubscriptionId);
-    if (stateAPI && persistence && stateAPI->isDirty())
+    // Flush to disk — auto-save timer keeps processor state recent (every 30s)
+    // Skip captureProcessorState() here to avoid blocking quit on heavy plugins
+    if (stateAPI && persistence)
         persistence->saveFrom(*stateAPI);
     songRuntime.reset();
     midiEngine.reset();

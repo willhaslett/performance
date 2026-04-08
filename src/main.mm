@@ -206,8 +206,10 @@ public:
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Restore session (creates Sandbox if first run, restores bindings)
-        coordinator->restoreSession();
+        // Restore session — deferred so the window paints first
+        juce::MessageManager::callAsync([this] {
+            coordinator->restoreSession();
+        });
     }
 
     void shutdown() override {
