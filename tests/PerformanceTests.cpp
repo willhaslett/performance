@@ -291,6 +291,23 @@ public:
             expectEquals(s.getTrackSends(trackId)[0].busName, std::string("New"));
         }
 
+        beginTest("setSendGainByBus");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto b1 = s.createBus("B1");
+            auto b2 = s.createBus("B2");
+            s.addSend(trackId, b1, 1.0f);
+            s.addSend(trackId, b2, 1.0f);
+            s.setSendGainByBus(trackId, b1, 0.3f);
+            auto sends = s.getTrackSends(trackId);
+            for (auto& send : sends) {
+                if (send.busId == b1) expectWithinAbsoluteError(send.gain, 0.3f, 0.001f);
+                if (send.busId == b2) expectWithinAbsoluteError(send.gain, 1.0f, 0.001f);
+            }
+        }
+
         beginTest("Multiple tracks independent state");
         {
             StateAPI s;
@@ -632,6 +649,140 @@ public:
             p.loadInto(state);
             expect(state.allSongs().empty());
             expect(!state.isDirty());
+        }
+
+        beginTest("Processor state round-trip");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto pluginId = original.registerPlugin("Synth", "Apple", "au", true);
+            auto fxPluginId = original.registerPlugin("FX", "Apple", "fx", false);
+            auto songId = original.createSong("S");
+            original.setCurrentSong(songId);
+            auto trackId = original.createTrack("T");
+            original.setTrackPlugin(trackId, pluginId);
+            auto fxId = original.addEffect(trackId, "FX", fxPluginId);
+
+            // Simulate captured processor state
+            auto* track = original.findTrack(trackId);
+            track->processorState = "dGVzdCBibG9i";  // base64 of "test blob"
+            track->processorStateHash = "abc123hash";
+
+            auto* fx = const_cast<EffectState*>(original.findEffect(fxId));
+            fx->processorState = "ZWZmZWN0IGJsb2I=";  // base64 of "effect blob"
+            fx->processorStateHash = "def456hash";
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedTrack = loaded.findTrack(loaded.listTracks()[0].id);
+            expect(loadedTrack != nullptr);
+            expectEquals(loadedTrack->processorState, std::string("dGVzdCBibG9i"));
+            expectEquals(loadedTrack->processorStateHash, std::string("abc123hash"));
+
+            auto loadedEffects = loaded.getTrackEffects(loadedTrack->id);
+            expectEquals((int)loadedEffects.size(), 1);
+            auto* loadedFx = loaded.findEffect(loadedEffects[0].effectId);
+            expect(loadedFx != nullptr);
+            expectEquals(loadedFx->processorState, std::string("ZWZmZWN0IGJsb2I="));
+            expectEquals(loadedFx->processorStateHash, std::string("def456hash"));
+        }
+
+        beginTest("isInstrument and PresetKind round-trip");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto instId = original.registerPlugin("Synth", "Mfg", "au", true);
+            auto fxId = original.registerPlugin("Delay", "Mfg", "fx", false);
+            original.createPreset(instId, "Warm", "/tmp/warm.state", PresetKind::Instrument);
+            original.createPreset(fxId, "Long", "/tmp/long.state", PresetKind::Effect);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            expect(loaded.findPluginByName("Synth")->isInstrument == true);
+            expect(loaded.findPluginByName("Delay")->isInstrument == false);
+
+            auto* warmPreset = loaded.findPreset(
+                loaded.findPluginByName("Synth")->id, "Warm");
+            expect(warmPreset != nullptr);
+            expect(warmPreset->kind == PresetKind::Instrument);
+
+            auto* longPreset = loaded.findPreset(
+                loaded.findPluginByName("Delay")->id, "Long");
+            expect(longPreset != nullptr);
+            expect(longPreset->kind == PresetKind::Effect);
+        }
+
+        beginTest("Score steps round-trip");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto actionId = original.registerAction("fadeOut", "Fade out");
+            auto songId = original.createSong("S");
+            original.setCurrentSong(songId);
+            auto* song = original.findSong(songId);
+            song->score.push_back({ actionId, "[\"Keys\"]", "Fade keys" });
+            song->score.push_back({ actionId, "[\"Bass\"]", "Fade bass" });
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.currentSong();
+            expect(loadedSong != nullptr);
+            expectEquals((int)loadedSong->score.size(), 2);
+            expectEquals(loadedSong->score[0].description, std::string("Fade keys"));
+            expectEquals(loadedSong->score[1].description, std::string("Fade bass"));
+        }
+
+        beginTest("Global bindings round-trip");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto actionId = original.registerAction("masterVol", "Master Volume");
+            original.addGlobalBinding("cc", 1, 7, actionId, "[]", "Vol fader");
+            original.createSong("S");  // need a song for save
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto globals = loaded.globalBindings();
+            expectEquals((int)globals.size(), 1);
+            expectEquals(globals[0].number, 7);
+            expectEquals(globals[0].description, std::string("Vol fader"));
+            expect(globals[0].songId.empty());
+        }
+
+        beginTest("Selection state does not persist");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("S");
+            original.setCurrentSong(songId);
+            auto trackId = original.createTrack("T");
+            original.selectTrack(trackId);
+            expectEquals((int)original.selectedTrackIds().size(), 1);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            loaded.setCurrentSong(loaded.allSongs()[0].id);
+            expect(loaded.selectedTrackIds().empty());
         }
     }
 };
