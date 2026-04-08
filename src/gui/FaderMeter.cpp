@@ -23,14 +23,14 @@ void FaderMeter::setPeakLevelStereo(float left, float right) {
 }
 
 juce::Rectangle<int> FaderMeter::getFaderArea() const {
-    return getLocalBounds()
-        .withTrimmedRight(meterWidth + labelWidth + gap + labelPad)
-        .withSizeKeepingCentre(faderWidth, getHeight());
+    auto area = getLocalBounds().withTrimmedTop(topMargin);
+    return area.withTrimmedRight(meterWidth + labelWidth + gap + labelPad)
+               .withSizeKeepingCentre(faderWidth, area.getHeight());
 }
 
 juce::Rectangle<int> FaderMeter::getMeterArea() const {
-    auto area = getLocalBounds();
-    area.removeFromRight(labelWidth + labelPad);  // labels + padding
+    auto area = getLocalBounds().withTrimmedTop(topMargin);
+    area.removeFromRight(labelWidth + labelPad);
     return area.removeFromRight(meterWidth);
 }
 
@@ -116,7 +116,7 @@ void FaderMeter::paint(juce::Graphics& g) {
 
     // --- 1. Grid lines first (painted under everything) ---
     {
-        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain));
+        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
 
         struct Tick { float db; const char* label; };
         constexpr Tick ticks[] = {
@@ -125,20 +125,18 @@ void FaderMeter::paint(juce::Graphics& g) {
         };
 
         int labelX = getWidth() - labelWidth;
-        float gridX1 = (float)(faderArea.getX() - 2);  // left edge of fader handle
+        float gridX1 = (float)(faderArea.getX() - 2);
         float gridX2 = (float)(labelX - labelPad);
 
         for (auto& tick : ticks) {
             float norm = dbToNormalized(tick.db);
             float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
 
-            // Grid line spanning fader through meters to labels
             g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.35f));
             g.drawLine(gridX1, y, gridX2, y, 0.5f);
 
-            // Label
-            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(tick.db == 0 ? 1.0f : 0.7f));
-            g.drawText(tick.label, labelX, (int)(y - 5), labelWidth, 10,
+            g.setColour(Theme::color(Theme::Color::textSecondary).withAlpha(tick.db == 0 ? 1.0f : 0.75f));
+            g.drawText(tick.label, labelX, (int)(y - 6), labelWidth, 12,
                        juce::Justification::centredLeft, false);
         }
     }
