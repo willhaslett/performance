@@ -75,19 +75,6 @@ void ChatView::resized() {
     layoutBubbles();
 }
 
-void ChatView::focusInput() {
-    inputField.grabKeyboardFocus();
-    repaint();
-}
-
-void ChatView::unfocusInput() {
-    inputField.giveAwayKeyboardFocus();
-}
-
-bool ChatView::isInputFocused() const {
-    return inputField.hasKeyboardFocus(false);
-}
-
 void ChatView::sendCurrentInput() {
     auto text = inputField.getText().trim();
     if (text.isEmpty() || client.isBusy()) return;

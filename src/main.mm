@@ -184,6 +184,9 @@ public:
         menuBar = std::make_unique<AppMenuBar>(*coordinator, *luaEngine, *layout);
         juce::MenuBarModel::setMacMainMenu(menuBar.get());
 
+        // Wire save
+        layout->onSave = [this]() { coordinator->save(); };
+
         // Wire sidebar song loading
         layout->getSidebar().onLoadSong = [this](const std::string& songId) {
             coordinator->loadSong(songId);

@@ -126,12 +126,15 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
+    if (key == KeyBindings::save) {
+        if (onSave) onSave();
+        return true;
+    }
+
     if (key == KeyBindings::closeEditor) {
         engine.closeTopPluginEditor();
         return true;
     }
-
-    // Cmd+S handled by menu bar (save)
 
     return false;
 }

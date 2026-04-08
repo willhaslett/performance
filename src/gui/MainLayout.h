@@ -23,6 +23,8 @@ public:
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
 
+    std::function<void()> onSave;
+
 private:
     StateAPI& state;
     EngineAPI& engine;
