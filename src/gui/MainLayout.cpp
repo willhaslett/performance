@@ -1,4 +1,5 @@
 #include "gui/MainLayout.h"
+#include "gui/KeyBindings.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 
@@ -110,21 +111,7 @@ void MainLayout::mouseUp(const juce::MouseEvent& event) {
 }
 
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
-    // If any text editor has keyboard focus, only handle Escape
-    auto* focused = juce::Component::getCurrentlyFocusedComponent();
-    bool textFieldFocused = (focused != nullptr && dynamic_cast<juce::TextEditor*>(focused) != nullptr);
-
-    if (textFieldFocused) {
-        if (key == juce::KeyPress::escapeKey) {
-            focused->giveAwayKeyboardFocus();
-            return true;
-        }
-        return false;  // let the TextEditor handle all other keys
-    }
-
-    auto c = key.getTextCharacter();
-
-    if (c == 's') {
+    if (key == KeyBindings::toggleSidebar) {
         sidebarOpen = !sidebarOpen;
         sidebar.setVisible(sidebarOpen);
         resized();
@@ -132,17 +119,19 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
-    if (c == 'x') {
+    if (key == KeyBindings::toggleMixer) {
         mixerVisible = !mixerVisible;
         mixerView.setVisible(mixerVisible);
         resized();
         return true;
     }
 
-    if (key == juce::KeyPress::escapeKey) {
+    if (key == KeyBindings::closeEditor) {
         engine.closeTopPluginEditor();
         return true;
     }
+
+    // Cmd+S handled by menu bar (save)
 
     return false;
 }

@@ -3,6 +3,7 @@
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "gui/MainLayout.h"
+#include "gui/KeyBindings.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
 #include "engine/Log.h"
@@ -137,10 +138,10 @@ public:
             state.createBus(name.toStdString());
         }
         else if (menuItemID == CommandIDs::toggleSidebar) {
-            layout.handleGlobalKey(juce::KeyPress('s', {}, 's'));
+            layout.handleGlobalKey(KeyBindings::toggleSidebar);
         }
         else if (menuItemID == CommandIDs::toggleMixer) {
-            layout.handleGlobalKey(juce::KeyPress('x', {}, 'x'));
+            layout.handleGlobalKey(KeyBindings::toggleMixer);
         }
         else if (menuItemID >= 100) {
             auto& songs = state.allSongs();
