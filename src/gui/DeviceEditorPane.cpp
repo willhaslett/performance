@@ -204,6 +204,10 @@ void DeviceEditorPane::cancelLearn() {
     learnButton.setButtonText("Learn mappings");
     statusLabel.setText("", juce::dontSendNotification);
 
+    // Dismiss InlineEditor via cancel (not commit) if it's showing
+    if (getIndexOfChildComponent(&inlineEditor) >= 0)
+        inlineEditor.cancel();
+
     // Discard any pending uncommitted local-only entry
     if (pendingLearnControlIndex >= 0) {
         if (pendingLearnControlIndex < (int)controls.size())
@@ -295,6 +299,14 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
                 if (pendingLearnControlIndex < (int)controls.size())
                     controls.erase(controls.begin() + pendingLearnControlIndex);
                 pendingLearnControlIndex = -1;
+                repaint();
+            }
+            // Escape during editor also exits learn mode
+            if (isLearning) {
+                isLearning = false;
+                coordinator.cancelMidiLearn();
+                learnButton.setButtonText("Learn mappings");
+                statusLabel.setText("", juce::dontSendNotification);
                 repaint();
             }
         };
