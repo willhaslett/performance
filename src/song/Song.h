@@ -1,17 +1,20 @@
 #pragma once
 #include <juce_core/juce_core.h>
 #include <functional>
+#include <string>
 #include <unordered_map>
 
 // Identifies a MIDI control event
 struct MIDIControl {
     enum Type { CC, Note, PitchBend, Pressure };
     Type type;
-    int channel = 0;  // 0 = any channel
-    int number = 0;   // CC number or note number
+    int channel = 0;       // 0 = any channel
+    int number = 0;        // CC number or note number
+    std::string deviceId;  // empty = any device
 
     bool operator==(const MIDIControl& other) const {
-        return type == other.type && channel == other.channel && number == other.number;
+        return type == other.type && channel == other.channel
+            && number == other.number && deviceId == other.deviceId;
     }
 
     juce::String toString() const {
@@ -29,7 +32,11 @@ struct MIDIControl {
 
 struct MIDIControlHash {
     size_t operator()(const MIDIControl& c) const {
-        return std::hash<int>()(c.type) ^ (std::hash<int>()(c.channel) << 4) ^ (std::hash<int>()(c.number) << 8);
+        auto h = std::hash<int>()(c.type) ^ (std::hash<int>()(c.channel) << 4)
+               ^ (std::hash<int>()(c.number) << 8);
+        if (!c.deviceId.empty())
+            h ^= std::hash<std::string>()(c.deviceId) << 16;
+        return h;
     }
 };
 

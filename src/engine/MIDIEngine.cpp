@@ -1,16 +1,25 @@
 #include "engine/MIDIEngine.h"
 #include "engine/AudioEngine.h"
 #include "engine/Log.h"
+#include "api/StateAPI.h"
 #include "song/SongRuntime.h"
 
-MIDIEngine::MIDIEngine(juce::AudioDeviceManager& dm, AudioEngine& ae)
-    : deviceManager(dm), audioEngine(ae) {}
+MIDIEngine::MIDIEngine(juce::AudioDeviceManager& dm, AudioEngine& ae, StateAPI& state)
+    : deviceManager(dm), audioEngine(ae), stateAPI(state) {}
 
 MIDIEngine::~MIDIEngine() {
     shutdown();
 }
 
+void MIDIEngine::refreshDeviceMapping() {
+    portToDeviceId.clear();
+    for (auto& device : stateAPI.allDevices())
+        portToDeviceId[juce::String(device.midiPortName)] = device.id;
+}
+
 void MIDIEngine::initialise() {
+    refreshDeviceMapping();
+
     auto devices = juce::MidiInput::getAvailableDevices();
 
     perfLog("[MIDI] MIDI inputs:\n");
@@ -36,19 +45,27 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
     // Always forward to audio graph (for note playback)
     audioEngine.injectMidi(message);
 
+    // Resolve device ID from source port (cached, O(1))
+    std::string deviceId;
+    if (source) {
+        auto it = portToDeviceId.find(source->getName());
+        if (it != portToDeviceId.end())
+            deviceId = it->second;
+    }
+
     // Dispatch control events to song runtime
     if (songRuntime) {
         auto ch = message.getChannel();
         if (message.isNoteOn())
-            songRuntime->handleNoteOn(ch, message.getNoteNumber(), message.getVelocity());
+            songRuntime->handleNoteOn(deviceId, ch, message.getNoteNumber(), message.getVelocity());
         else if (message.isNoteOff())
-            songRuntime->handleNoteOff(ch, message.getNoteNumber());
+            songRuntime->handleNoteOff(deviceId, ch, message.getNoteNumber());
         else if (message.isController())
-            songRuntime->handleControl(ch, message.getControllerNumber(), message.getControllerValue());
+            songRuntime->handleControl(deviceId, ch, message.getControllerNumber(), message.getControllerValue());
         else if (message.isPitchWheel())
-            songRuntime->handlePitchBend(ch, message.getPitchWheelValue());
+            songRuntime->handlePitchBend(deviceId, ch, message.getPitchWheelValue());
         else if (message.isChannelPressure())
-            songRuntime->handlePressure(ch, message.getChannelPressureValue());
+            songRuntime->handlePressure(deviceId, ch, message.getChannelPressureValue());
     }
 
     // Monitor mode: log everything to stderr

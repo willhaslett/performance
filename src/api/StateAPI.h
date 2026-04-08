@@ -62,13 +62,15 @@ public:
     void setSendGain(const std::string& sendId, float gain);
     void setSendGainByBus(const std::string& trackId, const std::string& busId, float gain);
 
-    // --- Bindings (songId empty = global, otherwise song-scoped) ---
+    // --- Bindings (songId empty = global, deviceId empty = any device) ---
     std::string addBinding(const std::string& songId, const std::string& controlType,
                            int channel, int number, const std::string& actionId,
-                           const std::string& args = "[]", const std::string& description = "");
+                           const std::string& args = "[]", const std::string& description = "",
+                           const std::string& deviceId = "");
     std::string addGlobalBinding(const std::string& controlType, int channel, int number,
                                   const std::string& actionId, const std::string& args = "[]",
-                                  const std::string& description = "");
+                                  const std::string& description = "",
+                                  const std::string& deviceId = "");
     void removeBinding(const std::string& id);
     std::vector<BindingState> bindingsForSong(const std::string& songId) const;
     std::vector<BindingState> globalBindings() const;
@@ -78,6 +80,22 @@ public:
     std::vector<BindingState> scoreSteps() const;  // sorted by scorePosition
     void setBindingAsScoreStep(const std::string& bindingId, int position);
     void clearScoreStep(const std::string& bindingId);
+
+    // --- Devices ---
+    std::string registerDevice(const std::string& name, const std::string& midiPortName);
+    void removeDevice(const std::string& id);
+    DeviceState* findDevice(const std::string& id);
+    const DeviceState* findDevice(const std::string& id) const;
+    DeviceState* findDeviceByPortName(const std::string& portName);
+    const std::vector<DeviceState>& allDevices() const;
+    std::string addDeviceControl(const std::string& deviceId, const std::string& name,
+                                 const std::string& controlType, int channel, int number,
+                                 const std::string& group = "");
+
+    // Song-device association
+    void addDeviceToSong(const std::string& songId, const std::string& deviceId);
+    void removeDeviceFromSong(const std::string& songId, const std::string& deviceId);
+    std::vector<std::string> devicesForSong(const std::string& songId) const;
 
     // --- Catalog: Plugins ---
     std::string registerPlugin(const std::string& name, const std::string& manufacturer,

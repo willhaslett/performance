@@ -21,40 +21,58 @@ void SongRuntime::clearBindings() {
 }
 
 void SongRuntime::dispatchControl(const MIDIControl& control, float value) {
+    // Exact match (device + channel + number)
     auto it = controlMap.find(control);
-    if (it != controlMap.end()) {
+    if (it != controlMap.end())
         for (auto& handler : it->second)
             handler(value);
+
+    // Wildcard: any device (if device was specified)
+    if (!control.deviceId.empty()) {
+        MIDIControl anyDevice = control;
+        anyDevice.deviceId.clear();
+        auto ait = controlMap.find(anyDevice);
+        if (ait != controlMap.end())
+            for (auto& handler : ait->second)
+                handler(value);
     }
 
-    // Also check wildcard (channel 0 = any)
+    // Wildcard: any channel (channel 0)
     if (control.channel != 0) {
-        MIDIControl wildcard = control;
-        wildcard.channel = 0;
-        auto wit = controlMap.find(wildcard);
-        if (wit != controlMap.end()) {
+        MIDIControl anyCh = control;
+        anyCh.channel = 0;
+        auto wit = controlMap.find(anyCh);
+        if (wit != controlMap.end())
             for (auto& handler : wit->second)
                 handler(value);
+
+        // Both wildcards: any device + any channel
+        if (!control.deviceId.empty()) {
+            anyCh.deviceId.clear();
+            auto bwit = controlMap.find(anyCh);
+            if (bwit != controlMap.end())
+                for (auto& handler : bwit->second)
+                    handler(value);
         }
     }
 }
 
-void SongRuntime::handleControl(int channel, int ccNumber, int value) {
-    dispatchControl({ MIDIControl::CC, channel, ccNumber }, value / 127.0f);
+void SongRuntime::handleControl(const std::string& deviceId, int channel, int ccNumber, int value) {
+    dispatchControl({ MIDIControl::CC, channel, ccNumber, deviceId }, value / 127.0f);
 }
 
-void SongRuntime::handleNoteOn(int channel, int noteNumber, int velocity) {
-    dispatchControl({ MIDIControl::Note, channel, noteNumber }, velocity / 127.0f);
+void SongRuntime::handleNoteOn(const std::string& deviceId, int channel, int noteNumber, int velocity) {
+    dispatchControl({ MIDIControl::Note, channel, noteNumber, deviceId }, velocity / 127.0f);
 }
 
-void SongRuntime::handleNoteOff(int channel, int noteNumber) {
-    dispatchControl({ MIDIControl::Note, channel, noteNumber }, 0.0f);
+void SongRuntime::handleNoteOff(const std::string& deviceId, int channel, int noteNumber) {
+    dispatchControl({ MIDIControl::Note, channel, noteNumber, deviceId }, 0.0f);
 }
 
-void SongRuntime::handlePitchBend(int channel, int value) {
-    dispatchControl({ MIDIControl::PitchBend, channel, 0 }, value / 16383.0f);
+void SongRuntime::handlePitchBend(const std::string& deviceId, int channel, int value) {
+    dispatchControl({ MIDIControl::PitchBend, channel, 0, deviceId }, value / 16383.0f);
 }
 
-void SongRuntime::handlePressure(int channel, int value) {
-    dispatchControl({ MIDIControl::Pressure, channel, 0 }, value / 127.0f);
+void SongRuntime::handlePressure(const std::string& deviceId, int channel, int value) {
+    dispatchControl({ MIDIControl::Pressure, channel, 0, deviceId }, value / 127.0f);
 }

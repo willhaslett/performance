@@ -6,12 +6,12 @@
 // MIDI control dispatch — routes MIDI controls to bound action handlers.
 class SongRuntime {
 public:
-    // Called by MIDIEngine for control events
-    void handleControl(int channel, int ccNumber, int value);
-    void handleNoteOn(int channel, int noteNumber, int velocity);
-    void handleNoteOff(int channel, int noteNumber);
-    void handlePitchBend(int channel, int value);
-    void handlePressure(int channel, int value);
+    // Called by MIDIEngine for control events (deviceId empty = unknown device)
+    void handleControl(const std::string& deviceId, int channel, int ccNumber, int value);
+    void handleNoteOn(const std::string& deviceId, int channel, int noteNumber, int velocity);
+    void handleNoteOff(const std::string& deviceId, int channel, int noteNumber);
+    void handlePitchBend(const std::string& deviceId, int channel, int value);
+    void handlePressure(const std::string& deviceId, int channel, int value);
 
     // Binding management
     void addBinding(const MIDIControl& control, ControlHandler handler,
@@ -25,4 +25,5 @@ private:
     std::unordered_map<MIDIControl, std::vector<ControlHandler>, MIDIControlHash> controlMap;
 
     void dispatchControl(const MIDIControl& control, float value);
+    // includes <string> via Song.h
 };

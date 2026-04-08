@@ -437,12 +437,14 @@ void StateAPI::setSendGain(const std::string& sendId, float gain) {
 
 std::string StateAPI::addBinding(const std::string& songId, const std::string& controlType,
                                   int channel, int number, const std::string& actionId,
-                                  const std::string& args, const std::string& description) {
+                                  const std::string& args, const std::string& description,
+                                  const std::string& deviceId) {
     auto* song = findSong(songId);
     if (!song) return {};
     BindingState binding;
     binding.id = generateId();
     binding.songId = songId;
+    binding.deviceId = deviceId;
     binding.controlType = controlType;
     binding.channel = channel;
     binding.number = number;
@@ -457,10 +459,12 @@ std::string StateAPI::addBinding(const std::string& songId, const std::string& c
 
 std::string StateAPI::addGlobalBinding(const std::string& controlType, int channel, int number,
                                         const std::string& actionId, const std::string& args,
-                                        const std::string& description) {
+                                        const std::string& description,
+                                        const std::string& deviceId) {
     BindingState binding;
     binding.id = generateId();
     // songId left empty = global
+    binding.deviceId = deviceId;
     binding.controlType = controlType;
     binding.channel = channel;
     binding.number = number;
@@ -529,6 +533,83 @@ std::vector<BindingState> StateAPI::effectiveBindings() const {
 }
 
 // --- Catalog: Plugins ---
+
+// --- Devices ---
+
+std::string StateAPI::registerDevice(const std::string& name, const std::string& midiPortName) {
+    for (auto& d : state.devices)
+        if (d.midiPortName == midiPortName) return d.id;
+    DeviceState device;
+    device.id = generateId();
+    device.name = name;
+    device.midiPortName = midiPortName;
+    state.devices.push_back(std::move(device));
+    markDirty();
+    return state.devices.back().id;
+}
+
+void StateAPI::removeDevice(const std::string& id) {
+    state.devices.erase(
+        std::remove_if(state.devices.begin(), state.devices.end(),
+                       [&](auto& d) { return d.id == id; }),
+        state.devices.end());
+    markDirty();
+}
+
+DeviceState* StateAPI::findDevice(const std::string& id) {
+    for (auto& d : state.devices)
+        if (d.id == id) return &d;
+    return nullptr;
+}
+
+const DeviceState* StateAPI::findDevice(const std::string& id) const {
+    for (auto& d : state.devices)
+        if (d.id == id) return &d;
+    return nullptr;
+}
+
+DeviceState* StateAPI::findDeviceByPortName(const std::string& portName) {
+    for (auto& d : state.devices)
+        if (d.midiPortName == portName) return &d;
+    return nullptr;
+}
+
+const std::vector<DeviceState>& StateAPI::allDevices() const {
+    return state.devices;
+}
+
+std::string StateAPI::addDeviceControl(const std::string& deviceId, const std::string& name,
+                                        const std::string& controlType, int channel, int number,
+                                        const std::string& group) {
+    auto* device = findDevice(deviceId);
+    if (!device) return {};
+    device->controls.push_back({ name, controlType, channel, number, group });
+    markDirty();
+    return deviceId;
+}
+
+void StateAPI::addDeviceToSong(const std::string& songId, const std::string& deviceId) {
+    auto* song = findSong(songId);
+    if (!song) return;
+    for (auto& id : song->deviceIds)
+        if (id == deviceId) return;  // already added
+    song->deviceIds.push_back(deviceId);
+    markDirty();
+}
+
+void StateAPI::removeDeviceFromSong(const std::string& songId, const std::string& deviceId) {
+    auto* song = findSong(songId);
+    if (!song) return;
+    song->deviceIds.erase(
+        std::remove(song->deviceIds.begin(), song->deviceIds.end(), deviceId),
+        song->deviceIds.end());
+    markDirty();
+}
+
+std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) const {
+    auto* song = findSong(songId);
+    return song ? song->deviceIds : std::vector<std::string>{};
+}
 
 // --- Score ---
 

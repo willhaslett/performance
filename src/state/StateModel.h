@@ -33,6 +33,23 @@ struct ActionInfo {
     std::string paramSchema;  // JSON
 };
 
+// --- Devices (registered physical controllers) ---
+
+struct ControlDef {
+    std::string name;         // "Fader 1", "Pad 3", "Sustain Pedal"
+    std::string controlType;  // "cc", "note", "pitchbend", "pressure"
+    int channel = 0;
+    int number = 0;
+    std::string group;        // "Faders", "Pads", "Transport" (for UI grouping)
+};
+
+struct DeviceState {
+    std::string id;
+    std::string name;           // "KeyLab 88 MkII"
+    std::string midiPortName;   // JUCE MidiInput identifier for port matching
+    std::vector<ControlDef> controls;
+};
+
 // --- Session state (per-song, mutable at runtime) ---
 
 enum class LoadStatus { None, Pending, Loaded, Failed };
@@ -79,7 +96,8 @@ struct BusState {
 
 struct BindingState {
     std::string id;
-    std::string songId;  // empty = global binding
+    std::string songId;    // empty = global binding
+    std::string deviceId;  // empty = any device
     std::string controlType;
     int channel = 0;
     int number = 0;
@@ -98,6 +116,7 @@ struct SongState {
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;
     std::vector<BindingState> bindings;      // song-scoped bindings (includes score steps)
+    std::vector<std::string> deviceIds;    // which devices this song uses
     std::string initialState;                 // JSON snapshot
 
     // Selection state (observable, not persisted)
@@ -112,6 +131,7 @@ struct AppState {
     std::vector<PluginInfo> plugins;
     std::vector<PresetInfo> presets;
     std::vector<ActionInfo> actions;
+    std::vector<DeviceState> devices;           // catalog of registered controllers
     std::vector<BindingState> globalBindings;  // song_id empty = applies everywhere
     std::map<std::string, std::string> config;
 };

@@ -31,6 +31,7 @@ private:
     void readPresets(AppState& out);
     void readActions(AppState& out);
     void readSongs(AppState& out);
+    void readDevices(AppState& out);
     void readConfig(AppState& out);
 
     // Save helpers

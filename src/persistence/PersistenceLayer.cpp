@@ -141,7 +141,32 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE effects ADD COLUMN processor_state_hash TEXT", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE bindings ADD COLUMN is_score_step INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE bindings ADD COLUMN score_position INTEGER DEFAULT -1", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE bindings ADD COLUMN device_id TEXT", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "DROP TABLE IF EXISTS score_steps", nullptr, nullptr, nullptr);
+
+    // Device tables
+    exec(R"(
+        CREATE TABLE IF NOT EXISTS devices (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            midi_port_name TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS device_controls (
+            id TEXT PRIMARY KEY,
+            device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            control_type TEXT NOT NULL,
+            channel INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            group_name TEXT,
+            position INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS song_devices (
+            song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+            device_id TEXT NOT NULL REFERENCES devices(id),
+            PRIMARY KEY (song_id, device_id)
+        );
+    )");
 }
 
 // ============================================================================
@@ -159,6 +184,7 @@ void PersistenceLayer::loadInto(StateAPI& state) {
     readPlugins(loaded);
     readPresets(loaded);
     readActions(loaded);
+    readDevices(loaded);
     readSongs(loaded);
     readConfig(loaded);
 
@@ -294,15 +320,22 @@ void PersistenceLayer::readSongs(AppState& out) {
         }
         sqlite3_finalize(mfx);
 
+        // Song-device associations
+        auto* sd = prepare("SELECT device_id FROM song_devices WHERE song_id = ?");
+        sqlite3_bind_text(sd, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(sd) == SQLITE_ROW)
+            song.deviceIds.push_back(col_str(sd, 0));
+        sqlite3_finalize(sd);
+
         // Song-scoped bindings (includes score steps via isScoreStep flag)
-        auto* bi = prepare("SELECT id, control_type, channel, number, action_id, args, description, is_score_step, score_position FROM bindings WHERE song_id = ?");
+        auto* bi = prepare("SELECT id, device_id, control_type, channel, number, action_id, args, description, is_score_step, score_position FROM bindings WHERE song_id = ?");
         sqlite3_bind_text(bi, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(bi) == SQLITE_ROW) {
             song.bindings.push_back({
-                col_str(bi, 0), song.id, col_str(bi, 1),
-                sqlite3_column_int(bi, 2), sqlite3_column_int(bi, 3),
-                col_str(bi, 4), col_str(bi, 5), col_str(bi, 6),
-                sqlite3_column_int(bi, 7) != 0, sqlite3_column_int(bi, 8)
+                col_str(bi, 0), song.id, col_str(bi, 1), col_str(bi, 2),
+                sqlite3_column_int(bi, 3), sqlite3_column_int(bi, 4),
+                col_str(bi, 5), col_str(bi, 6), col_str(bi, 7),
+                sqlite3_column_int(bi, 8) != 0, sqlite3_column_int(bi, 9)
             });
         }
         sqlite3_finalize(bi);
@@ -312,16 +345,41 @@ void PersistenceLayer::readSongs(AppState& out) {
     sqlite3_finalize(songStmt);
 
     // Global bindings
-    auto* gb = prepare("SELECT id, control_type, channel, number, action_id, args, description, is_score_step, score_position FROM bindings WHERE song_id IS NULL");
+    auto* gb = prepare("SELECT id, device_id, control_type, channel, number, action_id, args, description, is_score_step, score_position FROM bindings WHERE song_id IS NULL");
     while (sqlite3_step(gb) == SQLITE_ROW) {
         out.globalBindings.push_back({
-            col_str(gb, 0), "", col_str(gb, 1),
-            sqlite3_column_int(gb, 2), sqlite3_column_int(gb, 3),
-            col_str(gb, 4), col_str(gb, 5), col_str(gb, 6),
-            sqlite3_column_int(gb, 7) != 0, sqlite3_column_int(gb, 8)
+            col_str(gb, 0), "", col_str(gb, 1), col_str(gb, 2),
+            sqlite3_column_int(gb, 3), sqlite3_column_int(gb, 4),
+            col_str(gb, 5), col_str(gb, 6), col_str(gb, 7),
+            sqlite3_column_int(gb, 8) != 0, sqlite3_column_int(gb, 9)
         });
     }
     sqlite3_finalize(gb);
+}
+
+void PersistenceLayer::readDevices(AppState& out) {
+    auto* ds = prepare("SELECT id, name, midi_port_name FROM devices");
+    while (sqlite3_step(ds) == SQLITE_ROW) {
+        DeviceState device;
+        device.id = col_str(ds, 0);
+        device.name = col_str(ds, 1);
+        device.midiPortName = col_str(ds, 2);
+
+        // Controls for this device
+        auto* cs = prepare("SELECT name, control_type, channel, number, group_name FROM device_controls WHERE device_id = ? ORDER BY position");
+        sqlite3_bind_text(cs, 1, device.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(cs) == SQLITE_ROW) {
+            device.controls.push_back({
+                col_str(cs, 0), col_str(cs, 1),
+                sqlite3_column_int(cs, 2), sqlite3_column_int(cs, 3),
+                col_str(cs, 4)
+            });
+        }
+        sqlite3_finalize(cs);
+
+        out.devices.push_back(std::move(device));
+    }
+    sqlite3_finalize(ds);
 }
 
 void PersistenceLayer::readConfig(AppState& out) {
@@ -387,10 +445,41 @@ void PersistenceLayer::saveActions(const StateAPI& state) {
 }
 
 void PersistenceLayer::saveSongs(const StateAPI& state) {
-    // Delete all existing data — effects have no FK cascade (polymorphic parent_id)
+    // Delete all existing data
     exec("DELETE FROM effects");
     exec("DELETE FROM sends");
+    exec("DELETE FROM song_devices");
     exec("DELETE FROM songs");  // CASCADE clears tracks, busses, bindings
+    exec("DELETE FROM device_controls");
+    exec("DELETE FROM devices");
+
+    // Write devices
+    for (auto& device : state.appState().devices) {
+        auto* ds = prepare("INSERT INTO devices (id, name, midi_port_name) VALUES (?, ?, ?)");
+        sqlite3_bind_text(ds, 1, device.id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ds, 2, device.name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(ds, 3, device.midiPortName.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(ds);
+        sqlite3_finalize(ds);
+
+        for (int i = 0; i < (int)device.controls.size(); ++i) {
+            auto& ctrl = device.controls[i];
+            auto ctrlId = StateAPI::generateId();
+            auto* cs = prepare("INSERT INTO device_controls (id, device_id, name, control_type, channel, number, group_name, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            sqlite3_bind_text(cs, 1, ctrlId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(cs, 2, device.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(cs, 3, ctrl.name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(cs, 4, ctrl.controlType.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(cs, 5, ctrl.channel);
+            sqlite3_bind_int(cs, 6, ctrl.number);
+            if (!ctrl.group.empty())
+                sqlite3_bind_text(cs, 7, ctrl.group.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(cs, 7);
+            sqlite3_bind_int(cs, 8, i);
+            sqlite3_step(cs);
+            sqlite3_finalize(cs);
+        }
+    }
     // Delete global bindings separately (not cascaded)
     exec("DELETE FROM bindings WHERE song_id IS NULL");
 
@@ -438,6 +527,15 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_step(fs);
                 sqlite3_finalize(fs);
             }
+        }
+
+        // Song-device associations
+        for (auto& devId : song.deviceIds) {
+            auto* sd = prepare("INSERT INTO song_devices (song_id, device_id) VALUES (?, ?)");
+            sqlite3_bind_text(sd, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(sd, 2, devId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_step(sd);
+            sqlite3_finalize(sd);
         }
 
         // Tracks (after busses, since sends reference bus IDs)
@@ -520,21 +618,24 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
         // Song-scoped bindings (score steps stored as bindings with isScoreStep flag)
         for (auto& bind : song.bindings) {
-            auto* bs = prepare("INSERT INTO bindings (id, song_id, control_type, channel, number, action_id, args, description, is_score_step, score_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            auto* bs = prepare("INSERT INTO bindings (id, song_id, device_id, control_type, channel, number, action_id, args, description, is_score_step, score_position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(bs, 1, bind.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(bs, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(bs, 3, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(bs, 4, bind.channel);
-            sqlite3_bind_int(bs, 5, bind.number);
-            sqlite3_bind_text(bs, 6, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+            if (!bind.deviceId.empty())
+                sqlite3_bind_text(bs, 3, bind.deviceId.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(bs, 3);
+            sqlite3_bind_text(bs, 4, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(bs, 5, bind.channel);
+            sqlite3_bind_int(bs, 6, bind.number);
+            sqlite3_bind_text(bs, 7, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
             if (!bind.args.empty())
-                sqlite3_bind_text(bs, 7, bind.args.c_str(), -1, SQLITE_TRANSIENT);
-            else sqlite3_bind_null(bs, 7);
-            if (!bind.description.empty())
-                sqlite3_bind_text(bs, 8, bind.description.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(bs, 8, bind.args.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(bs, 8);
-            sqlite3_bind_int(bs, 9, bind.isScoreStep ? 1 : 0);
-            sqlite3_bind_int(bs, 10, bind.scorePosition);
+            if (!bind.description.empty())
+                sqlite3_bind_text(bs, 9, bind.description.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(bs, 9);
+            sqlite3_bind_int(bs, 10, bind.isScoreStep ? 1 : 0);
+            sqlite3_bind_int(bs, 11, bind.scorePosition);
             sqlite3_step(bs);
             sqlite3_finalize(bs);
         }
@@ -542,20 +643,23 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
     // Global bindings
     for (auto& bind : state.appState().globalBindings) {
-        auto* bs = prepare("INSERT INTO bindings (id, song_id, control_type, channel, number, action_id, args, description, is_score_step, score_position) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)");
+        auto* bs = prepare("INSERT INTO bindings (id, song_id, device_id, control_type, channel, number, action_id, args, description, is_score_step, score_position) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(bs, 1, bind.id.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(bs, 2, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(bs, 3, bind.channel);
-        sqlite3_bind_int(bs, 4, bind.number);
-        sqlite3_bind_text(bs, 5, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+        if (!bind.deviceId.empty())
+            sqlite3_bind_text(bs, 2, bind.deviceId.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(bs, 2);
+        sqlite3_bind_text(bs, 3, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(bs, 4, bind.channel);
+        sqlite3_bind_int(bs, 5, bind.number);
+        sqlite3_bind_text(bs, 6, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
         if (!bind.args.empty())
-            sqlite3_bind_text(bs, 6, bind.args.c_str(), -1, SQLITE_TRANSIENT);
-        else sqlite3_bind_null(bs, 6);
-        if (!bind.description.empty())
-            sqlite3_bind_text(bs, 7, bind.description.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(bs, 7, bind.args.c_str(), -1, SQLITE_TRANSIENT);
         else sqlite3_bind_null(bs, 7);
-        sqlite3_bind_int(bs, 8, bind.isScoreStep ? 1 : 0);
-        sqlite3_bind_int(bs, 9, bind.scorePosition);
+        if (!bind.description.empty())
+            sqlite3_bind_text(bs, 8, bind.description.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(bs, 8);
+        sqlite3_bind_int(bs, 9, bind.isScoreStep ? 1 : 0);
+        sqlite3_bind_int(bs, 10, bind.scorePosition);
         sqlite3_step(bs);
         sqlite3_finalize(bs);
     }

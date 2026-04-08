@@ -473,6 +473,102 @@ public:
             expect(s.selectedBusIds().empty());
         }
 
+        beginTest("Device registration and controls");
+        {
+            StateAPI s;
+            auto devId = s.registerDevice("KeyLab 88", "Arturia KeyLab 88 mkII");
+            expect(!devId.empty());
+            // Deduplicate by port name
+            auto devId2 = s.registerDevice("KeyLab 88", "Arturia KeyLab 88 mkII");
+            expectEquals(devId, devId2);
+            expectEquals((int)s.allDevices().size(), 1);
+
+            s.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
+            s.addDeviceControl(devId, "Pad 1", "note", 10, 36, "Pads");
+
+            auto* dev = s.findDevice(devId);
+            expect(dev != nullptr);
+            expectEquals((int)dev->controls.size(), 2);
+            expectEquals(dev->controls[0].name, std::string("Fader 1"));
+            expectEquals(dev->controls[1].group, std::string("Pads"));
+        }
+
+        beginTest("Device-aware bindings");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto actionId = s.registerAction("test", "Test");
+            auto devId = s.registerDevice("KeyLab", "keylab-port");
+
+            // Binding with device
+            auto b1 = s.addBinding(songId, "cc", 1, 7, actionId, "[]", "KeyLab vol", devId);
+            // Binding without device (any)
+            auto b2 = s.addBinding(songId, "cc", 1, 10, actionId, "[]", "Any device");
+
+            auto bindings = s.bindingsForSong(songId);
+            expectEquals((int)bindings.size(), 2);
+
+            bool foundDevice = false, foundAny = false;
+            for (auto& b : bindings) {
+                if (b.id == b1) { expectEquals(b.deviceId, devId); foundDevice = true; }
+                if (b.id == b2) { expect(b.deviceId.empty()); foundAny = true; }
+            }
+            expect(foundDevice);
+            expect(foundAny);
+        }
+
+        beginTest("Song-device association");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto dev1 = s.registerDevice("KeyLab", "keylab-port");
+            auto dev2 = s.registerDevice("MPK", "mpk-port");
+
+            s.addDeviceToSong(songId, dev1);
+            s.addDeviceToSong(songId, dev2);
+            auto devices = s.devicesForSong(songId);
+            expectEquals((int)devices.size(), 2);
+
+            s.removeDeviceFromSong(songId, dev1);
+            devices = s.devicesForSong(songId);
+            expectEquals((int)devices.size(), 1);
+            expectEquals(devices[0], dev2);
+        }
+
+        beginTest("Device persistence round-trip");
+        {
+            TempDB db;
+            StateAPI original;
+            auto devId = original.registerDevice("KeyLab 88", "keylab-port");
+            original.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
+            auto songId = original.createSong("S");
+            original.setCurrentSong(songId);
+            original.addDeviceToSong(songId, devId);
+            auto actionId = original.registerAction("test", "Test");
+            original.addBinding(songId, "cc", 1, 73, actionId, "[]", "Vol", devId);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            expectEquals((int)loaded.allDevices().size(), 1);
+            auto* dev = loaded.findDeviceByPortName("keylab-port");
+            expect(dev != nullptr);
+            expectEquals(dev->name, std::string("KeyLab 88"));
+            expectEquals((int)dev->controls.size(), 1);
+
+            loaded.setCurrentSong(loaded.allSongs()[0].id);
+            auto devices = loaded.devicesForSong(loaded.allSongs()[0].id);
+            expectEquals((int)devices.size(), 1);
+
+            auto bindings = loaded.bindingsForSong(loaded.allSongs()[0].id);
+            expectEquals((int)bindings.size(), 1);
+            expect(!bindings[0].deviceId.empty());
+        }
+
         beginTest("Dirty tracking");
         {
             StateAPI s;

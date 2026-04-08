@@ -56,7 +56,7 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     songRuntime = std::make_unique<SongRuntime>();
 
     midiEngine = std::make_unique<MIDIEngine>(
-        audioEngine->getDeviceManager(), *audioEngine);
+        audioEngine->getDeviceManager(), *audioEngine, *stateAPI);
     midiEngine->setSongRuntime(songRuntime.get());
     midiEngine->setMonitorMode(true);
     midiEngine->initialise();
@@ -599,7 +599,7 @@ void PerformanceCoordinator::restoreBindings() {
         auto actionNameStr = action->name;
         auto argsStr = binding.args;
         MIDIControl control = { parseControlType(juce::String(binding.controlType)),
-                                binding.channel, binding.number };
+                                binding.channel, binding.number, binding.deviceId };
 
         songRuntime->addBinding(control, [this, actionNameStr, argsStr](float value) {
             auto args = juce::JSON::parse(juce::String(argsStr));
