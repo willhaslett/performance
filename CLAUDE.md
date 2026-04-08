@@ -146,21 +146,24 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## TODOs
 
-**Immediate (debt cleanup):**
-1. ~~Delete legacy code~~ Done.
-2. ~~Remove dual-mode~~ Done.
-3. ~~Remove SongDef/TrackDef/BusDef~~ Done. Song.h now just MIDIControl + ControlHandler. SongRuntime is pure MIDI dispatch, no AudioEngine dependency.
-4. juce_String.cpp:327 assertion on startup — non-fatal, likely from JUCE internals (plugin cache XML). Low priority.
-5. ~~Add auto-save timer~~ Done. 30-second dirty check, flushes to SQLite.
-6. ~~Add integration tests~~ Done. 12 tests covering coordinator→state→engine path.
+**Next up:**
+- Plugin state restore on session load — instruments load but preset state (binary blob) isn't restored. EngineSync should call setStateInformation after async load completes, using the preset referenced in TrackState/EffectState. LoadStatus field designed for this.
+- Verify IPC/perf tool works end-to-end with new system (IPCServer → LuaEngine → StateAPI)
+- Delete `src/registry/` directory if still present. Check if RegistryTree.h/.cpp is still used by Sidebar or dead.
+- Track preset state restore uses 500ms timer hack — should use LoadStatus callback
+- No error handling on failed plugin loads (user sees nothing)
 
-**Backlog:**
+**Feature backlog:**
+- Global bindings from GUI — "MIDI Learn" mode (move a control → bind)
+- Score authoring — model exists (ScoreStep) but no UI or Lua API to build/replay
 - Auto-create Default preset on first plugin instantiation
 - AUPitch: preset state restore doesn't take effect (AU-specific issue)
-- LoadStatus integration: EngineSync updates TrackState/EffectState, GUI observes for auto-open
 - Live audio tracks (input from audio device, same track model)
 - Undo/redo via state history
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
 - Fader/knob drag: value stops changing at screen edge
+
+**Low priority:**
+- juce_String.cpp:327 assertion on startup — non-fatal, likely JUCE internals

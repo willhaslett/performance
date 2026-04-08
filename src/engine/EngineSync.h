@@ -28,6 +28,10 @@ private:
     void onEntityUpdated(const std::string& entityType, const std::string& entityId);
     void onEntityDeleted(const std::string& entityType, const std::string& entityId);
 
+    // Restore plugin state from preset file after async load
+    void restorePresetState(const std::string& parentId, const std::string& effectId,
+                            const std::string& presetId);
+
     AudioEngine& engine;
     StateAPI& stateAPI;
     std::string activeSongId;

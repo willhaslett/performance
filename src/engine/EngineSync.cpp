@@ -2,6 +2,7 @@
 #include "engine/AudioEngine.h"
 #include "engine/Log.h"
 #include "api/StateAPI.h"
+#include <juce_core/juce_core.h>
 
 EngineSync::EngineSync(AudioEngine& engine, StateAPI& stateAPI)
     : engine(engine), stateAPI(stateAPI) {
@@ -117,9 +118,13 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
         if (plugin) {
+            stateAPI.setTrackInstrumentLoadStatus(track->id, LoadStatus::Pending);
+            auto presetId = track->presetId;
             engine.addTrackInstrument(juce::String(track->id), juce::String(plugin->name),
-                [id = track->id] {
+                [this, id = track->id, presetId] {
                     perfLog("[EngineSync] Instrument loaded: %s\n", id.c_str());
+                    stateAPI.setTrackInstrumentLoadStatus(id, LoadStatus::Loaded);
+                    restorePresetState(id, "", presetId);
                 });
         }
     }
@@ -137,20 +142,55 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     if (!song) return;
 
     juce::String engineParentId;
+    std::string stateParentId;  // for preset restore
     for (auto& mfx : song->masterEffects)
-        if (mfx.id == effectId) { engineParentId = "Output"; break; }
+        if (mfx.id == effectId) { engineParentId = "Output"; stateParentId = song->id; break; }
     if (engineParentId.isEmpty())
         for (auto& t : song->tracks)
             for (auto& tfx : t.effects)
-                if (tfx.id == effectId) { engineParentId = juce::String(t.id); break; }
+                if (tfx.id == effectId) { engineParentId = juce::String(t.id); stateParentId = t.id; break; }
     if (engineParentId.isEmpty())
         for (auto& b : song->busses)
             for (auto& bfx : b.effects)
-                if (bfx.id == effectId) { engineParentId = juce::String(b.id); break; }
+                if (bfx.id == effectId) { engineParentId = juce::String(b.id); stateParentId = b.id; break; }
 
     if (engineParentId.isEmpty()) return;
 
-    engine.addEffect(engineParentId, juce::String(fx->id), juce::String(plugin->name));
+    auto presetId = fx->presetId;
+    stateAPI.setEffectLoadStatus(effectId, LoadStatus::Pending);
+    engine.addEffect(engineParentId, juce::String(fx->id), juce::String(plugin->name),
+        [this, stateParentId, effectId, presetId] {
+            stateAPI.setEffectLoadStatus(effectId, LoadStatus::Loaded);
+            restorePresetState(stateParentId, effectId, presetId);
+        });
+}
+
+void EngineSync::restorePresetState(const std::string& parentId, const std::string& effectId,
+                                     const std::string& presetId) {
+    if (presetId.empty()) return;
+
+    auto* preset = stateAPI.findPresetById(presetId);
+    if (!preset || preset->statePath.empty()) return;
+
+    auto file = juce::File(juce::String(preset->statePath));
+    if (!file.existsAsFile()) return;
+
+    juce::MemoryBlock state;
+    file.loadFileAsData(state);
+
+    // Get the processor from the engine
+    juce::AudioProcessor* proc = nullptr;
+    auto engParentId = (parentId == activeSongId) ? juce::String("Output") : juce::String(parentId);
+    if (effectId.empty())
+        proc = engine.getTrackInstrumentProcessor(juce::String(parentId));
+    else
+        proc = engine.getEffectProcessor(engParentId, juce::String(effectId));
+
+    if (proc) {
+        proc->setStateInformation(state.getData(), (int)state.getSize());
+        perfLog("[EngineSync] Restored preset state: %s (%d bytes)\n",
+                preset->name.c_str(), (int)state.getSize());
+    }
 }
 
 void EngineSync::onSendCreated(const std::string& sendId) {
@@ -177,16 +217,21 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         engine.setTrackMidiEnabled(id, t->midiEnabled);
         engine.renameTrack(id, juce::String(t->name));
 
-        // Detect instrument change
+        // Detect instrument change (skip if currently loading to avoid re-trigger loop)
+        if (t->instrumentLoadStatus == LoadStatus::Pending) return;
         auto currentPlugin = engine.getTrackPluginName(id);
         if (!t->pluginId.empty()) {
             auto* plugin = stateAPI.findPluginById(t->pluginId);
             if (plugin && juce::String(plugin->name) != currentPlugin) {
                 if (currentPlugin.isNotEmpty())
                     engine.removeTrackInstrument(id);
+                stateAPI.setTrackInstrumentLoadStatus(t->id, LoadStatus::Pending);
+                auto presetId = t->presetId;
                 engine.addTrackInstrument(id, juce::String(plugin->name),
-                    [trackId = t->id] {
+                    [this, trackId = t->id, presetId] {
                         perfLog("[EngineSync] Instrument loaded: %s\n", trackId.c_str());
+                        stateAPI.setTrackInstrumentLoadStatus(trackId, LoadStatus::Loaded);
+                        restorePresetState(trackId, "", presetId);
                     });
             }
         } else if (currentPlugin.isNotEmpty()) {
