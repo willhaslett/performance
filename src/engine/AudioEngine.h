@@ -190,8 +190,13 @@ private:
         std::atomic<float> peaks[32] {};
         std::atomic<int> numChannels { 0 };
         void audioDeviceIOCallbackWithContext(const float* const* inputData, int numInputChannels,
-                                              float* const*, int, int numSamples,
+                                              float* const* outputData, int numOutputChannels,
+                                              int numSamples,
                                               const juce::AudioIODeviceCallbackContext&) override {
+            // Zero output — JUCE sums all callback outputs, stale data causes feedback
+            for (int ch = 0; ch < numOutputChannels; ++ch)
+                if (outputData && outputData[ch])
+                    juce::FloatVectorOperations::clear(outputData[ch], numSamples);
             int nc = std::min(numInputChannels, 32);
             numChannels.store(nc, std::memory_order_relaxed);
             for (int ch = 0; ch < nc; ++ch) {
