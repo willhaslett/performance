@@ -722,6 +722,7 @@ float AudioEngine::getTrackGain(const juce::String& trackId) const {
 void AudioEngine::renameTrack(const juce::String& trackId, const juce::String& newName) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
+    if (it->second.name == newName) return;
     auto oldName = it->second.name;
     it->second.name = newName;
     perfLog("[Engine] Renamed track \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
@@ -730,6 +731,7 @@ void AudioEngine::renameTrack(const juce::String& trackId, const juce::String& n
 void AudioEngine::renameBus(const juce::String& busId, const juce::String& newName) {
     auto it = busses.find(busId);
     if (it == busses.end()) return;
+    if (it->second.name == newName) return;
     auto oldName = it->second.name;
     it->second.name = newName;
     perfLog("[Engine] Renamed bus \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
