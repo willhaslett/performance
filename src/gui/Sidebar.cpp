@@ -11,18 +11,17 @@ Sidebar::Sidebar() {
         if (!state) return;
         perfLog("[Sidebar] Clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
 
-        if (type == "song" && onLoadSong)
+        if (type == "song" && onLoadSong) {
+            selectedDeviceId.clear();
             onLoadSong(id);
-    });
-
-    tree.setOnNodeDoubleClick([this](const std::string& type, const std::string& id, const std::string& label) {
-        if (!state) return;
-        perfLog("[Sidebar] Double-clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
-
-        if (type == "device" && onDeviceSelected)
+        }
+        else if (type == "device" && onDeviceSelected) {
+            selectedDeviceId = id;
             onDeviceSelected(id, "");
-        else if (type == "unregistered_device" && onDeviceSelected)
+        } else if (type == "unregistered_device" && onDeviceSelected) {
+            selectedDeviceId = id;
             onDeviceSelected("", id);  // id is the port name for unregistered devices
+        }
     });
 }
 
@@ -67,11 +66,15 @@ void Sidebar::resized() {
 
 void Sidebar::timerCallback() {
     if (!state) return;
-    auto song = state->currentSong();
-    std::string currentId = song ? song->id : "";
-    if (currentId != lastHighlightedId) {
-        lastHighlightedId = currentId;
-        tree.setHighlightedId(currentId);
+    // Highlight: prefer selected device, fall back to active song
+    std::string highlightId = selectedDeviceId;
+    if (highlightId.empty()) {
+        auto song = state->currentSong();
+        highlightId = song ? song->id : "";
+    }
+    if (highlightId != lastHighlightedId) {
+        lastHighlightedId = highlightId;
+        tree.setHighlightedId(highlightId);
     }
 
     // Poll for MIDI device changes
@@ -200,7 +203,7 @@ void Sidebar::refreshTree() {
 
             TreeNode deviceLeaf;
             if (device) {
-                deviceLeaf.label = device->name + " \xe2\x9c\x93";  // checkmark
+                deviceLeaf.label = device->name;
                 deviceLeaf.id = device->id;
                 deviceLeaf.type = "device";
             } else {

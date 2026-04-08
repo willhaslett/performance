@@ -25,6 +25,11 @@ public:
     void startLearn(const std::string& deviceId, LearnCallback callback);
     void cancelLearn();
 
+    // MIDI event monitoring: receive formatted events from a specific device
+    using MonitorCallback = std::function<void(const std::string& description)>;
+    void setDeviceMonitor(const std::string& deviceId, MonitorCallback callback);
+    void clearDeviceMonitor();
+
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
     void refreshDeviceMapping();  // call after registering new devices
@@ -40,4 +45,6 @@ private:
     bool monitorMode = false;
     LearnCallback learnCallback;
     std::string learnDeviceId;
+    MonitorCallback deviceMonitorCallback;
+    std::string monitorDeviceId;
 };

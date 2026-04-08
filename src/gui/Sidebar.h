@@ -31,5 +31,6 @@ private:
     int subscriptionId = -1;
     bool needsRefresh = false;
     std::string lastHighlightedId;
+    std::string selectedDeviceId;
     int lastMidiDeviceCount = -1;
 };

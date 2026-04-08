@@ -52,6 +52,16 @@ void MIDIEngine::cancelLearn() {
     perfLog("[MIDI] Learn mode cancelled\n");
 }
 
+void MIDIEngine::setDeviceMonitor(const std::string& deviceId, MonitorCallback callback) {
+    monitorDeviceId = deviceId;
+    deviceMonitorCallback = std::move(callback);
+}
+
+void MIDIEngine::clearDeviceMonitor() {
+    deviceMonitorCallback = nullptr;
+    monitorDeviceId.clear();
+}
+
 void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
                                             const juce::MidiMessage& message) {
     // Always forward to audio graph (for note playback)
@@ -59,14 +69,28 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
 
     // Resolve device ID from source port (cached, O(1))
     std::string deviceId;
+    juce::String sourcePortName;
     if (source) {
-        auto it = portToDeviceId.find(source->getName());
+        sourcePortName = source->getName();
+        auto it = portToDeviceId.find(sourcePortName);
         if (it != portToDeviceId.end())
             deviceId = it->second;
     }
 
     // MIDI Learn: intercept before normal dispatch (single-shot)
-    if (learnCallback && (learnDeviceId.empty() || learnDeviceId == deviceId)) {
+    // Match by device ID, or fall back to matching by port name for freshly registered devices
+    bool learnMatch = false;
+    if (learnCallback) {
+        if (learnDeviceId.empty() || learnDeviceId == deviceId) {
+            learnMatch = true;
+        } else if (!learnDeviceId.empty() && sourcePortName.isNotEmpty()) {
+            // Try matching by port name — the device may have been registered with this port name
+            auto* device = stateAPI.findDevice(learnDeviceId);
+            if (device && device->midiPortName == sourcePortName.toStdString())
+                learnMatch = true;
+        }
+    }
+    if (learnMatch) {
         std::string controlType;
         int ch = message.getChannel();
         int num = 0;
@@ -105,6 +129,43 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
             songRuntime->handlePitchBend(deviceId, ch, message.getPitchWheelValue());
         else if (message.isChannelPressure())
             songRuntime->handlePressure(deviceId, ch, message.getChannelPressureValue());
+    }
+
+    // Device monitor callback: send formatted event descriptions to listener
+    if (deviceMonitorCallback) {
+        bool monitorMatch = (monitorDeviceId == deviceId);
+        if (!monitorMatch && !monitorDeviceId.empty() && sourcePortName.isNotEmpty()) {
+            auto* device = stateAPI.findDevice(monitorDeviceId);
+            if (device && device->midiPortName == sourcePortName.toStdString())
+                monitorMatch = true;
+        }
+        if (monitorMatch) {
+            std::string desc;
+            auto ch = message.getChannel();
+            if (message.isController()) {
+                desc = "CC " + std::to_string(message.getControllerNumber())
+                     + " ch" + std::to_string(ch)
+                     + " = " + std::to_string(message.getControllerValue());
+            } else if (message.isNoteOn()) {
+                desc = "Note "
+                     + juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3).toStdString()
+                     + " ch" + std::to_string(ch);
+            } else if (message.isNoteOff()) {
+                desc = "NoteOff "
+                     + juce::MidiMessage::getMidiNoteName(message.getNoteNumber(), true, true, 3).toStdString()
+                     + " ch" + std::to_string(ch);
+            } else if (message.isPitchWheel()) {
+                desc = "Pitch " + std::to_string(message.getPitchWheelValue())
+                     + " ch" + std::to_string(ch);
+            } else if (message.isChannelPressure()) {
+                desc = "Pressure " + std::to_string(message.getChannelPressureValue())
+                     + " ch" + std::to_string(ch);
+            }
+            if (!desc.empty()) {
+                auto cb = deviceMonitorCallback;
+                juce::MessageManager::callAsync([cb, desc] { cb(desc); });
+            }
+        }
     }
 
     // Monitor mode: log everything to stderr

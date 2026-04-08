@@ -43,6 +43,12 @@ private:
     juce::Label statusLabel;
     bool isLearning = false;
 
+    // MIDI event log (last 2 events shown in header)
+    juce::Label midiEventLabel;
+    std::string lastEvent1;
+    std::string lastEvent2;
+    void onMidiEvent(const std::string& description);
+
     // Inline editing
     InlineEditor inlineEditor;
 

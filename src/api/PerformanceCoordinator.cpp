@@ -507,6 +507,15 @@ void PerformanceCoordinator::cancelMidiLearn() {
     if (midiEngine) midiEngine->cancelLearn();
 }
 
+void PerformanceCoordinator::setMidiDeviceMonitor(const std::string& deviceId,
+    std::function<void(const std::string& description)> callback) {
+    if (midiEngine) midiEngine->setDeviceMonitor(deviceId, std::move(callback));
+}
+
+void PerformanceCoordinator::clearMidiDeviceMonitor() {
+    if (midiEngine) midiEngine->clearDeviceMonitor();
+}
+
 void PerformanceCoordinator::log(const juce::String& message) {
     perfLog("[Coordinator] %s\n", message.toRawUTF8());
 }

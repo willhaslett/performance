@@ -73,6 +73,9 @@ public:
     void startMidiLearn(const std::string& deviceId,
                         std::function<void(const std::string& controlType, int channel, int number)> callback);
     void cancelMidiLearn();
+    void setMidiDeviceMonitor(const std::string& deviceId,
+                              std::function<void(const std::string& description)> callback);
+    void clearMidiDeviceMonitor();
 
     // --- Logging ---
     void log(const juce::String& message);

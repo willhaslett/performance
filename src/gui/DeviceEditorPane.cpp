@@ -34,10 +34,16 @@ DeviceEditorPane::DeviceEditorPane(StateAPI& state, PerformanceCoordinator& coor
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(statusLabel);
 
+    midiEventLabel.setFont(Theme::font(Theme::fontSizeXs));
+    midiEventLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
+    midiEventLabel.setJustificationType(juce::Justification::centred);
+    addChildComponent(midiEventLabel);
+
     setWantsKeyboardFocus(true);
 }
 
 DeviceEditorPane::~DeviceEditorPane() {
+    coordinator.clearMidiDeviceMonitor();
     if (stateSubscriptionId >= 0)
         state.events().unsubscribe(stateSubscriptionId);
 }
@@ -52,11 +58,18 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
     // Cancel any active learn
     if (isLearning) cancelLearn();
 
+    // Clear monitor for previous device
+    coordinator.clearMidiDeviceMonitor();
+    lastEvent1.clear();
+    lastEvent2.clear();
+    midiEventLabel.setText("", juce::dontSendNotification);
+
     if (!deviceId.empty()) {
         currentDeviceId = deviceId;
     } else if (!portName.empty()) {
         // Auto-register the device using portName as both name and port
         currentDeviceId = state.registerDevice(portName, portName);
+        coordinator.refreshMidiDevices();
         perfLog("[DeviceEditor] Auto-registered device '%s' -> %s\n",
                 portName.c_str(), currentDeviceId.c_str());
     } else {
@@ -65,6 +78,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
         portNameLabel.setVisible(false);
         learnButton.setVisible(false);
         statusLabel.setVisible(false);
+        midiEventLabel.setVisible(false);
         controls.clear();
         repaint();
         return;
@@ -81,11 +95,19 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
 
     refreshControls();
 
+    // Set up MIDI monitor for this device
+    // The MIDIEngine callback is already dispatched to the message thread
+    coordinator.setMidiDeviceMonitor(currentDeviceId,
+        [this](const std::string& desc) {
+            onMidiEvent(desc);
+        });
+
     // Show header and controls
     deviceNameLabel.setVisible(true);
     portNameLabel.setVisible(true);
     learnButton.setVisible(true);
     statusLabel.setVisible(true);
+    midiEventLabel.setVisible(true);
 
     auto* device = state.findDevice(currentDeviceId);
     if (device) {
@@ -116,6 +138,15 @@ void DeviceEditorPane::refreshControls() {
     }
 
     repaint();
+}
+
+void DeviceEditorPane::onMidiEvent(const std::string& description) {
+    lastEvent2 = lastEvent1;
+    lastEvent1 = description;
+    std::string display = lastEvent1;
+    if (!lastEvent2.empty())
+        display += " | " + lastEvent2;
+    midiEventLabel.setText(juce::String(display), juce::dontSendNotification);
 }
 
 void DeviceEditorPane::startLearn() {
@@ -152,20 +183,42 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
     learnButton.setButtonText("Learn");
     statusLabel.setText("", juce::dontSendNotification);
 
-    // Add the control with empty name (user will rename via inline editor)
-    state.addDeviceControl(currentDeviceId, "", type, channel, number);
-    refreshControls();
+    // Check if this control (same type+channel+number) already exists
+    int existingIndex = -1;
+    for (int i = 0; i < (int)controls.size(); ++i) {
+        if (controls[i].controlType == type &&
+            controls[i].channel == channel &&
+            controls[i].number == number) {
+            existingIndex = i;
+            break;
+        }
+    }
 
-    // Open inline editor on the new row's name field
-    int newRowIndex = (int)controls.size() - 1;
-    if (newRowIndex >= 0) {
-        auto nameBounds = getNameCellBounds(newRowIndex);
-        inlineEditor.onCommit = [this, newRowIndex](const juce::String& newText) {
-            state.renameDeviceControl(currentDeviceId, newRowIndex, newText.toStdString());
+    int editRowIndex;
+    std::string editInitialText;
+
+    if (existingIndex >= 0) {
+        // Select existing row and open rename
+        editRowIndex = existingIndex;
+        editInitialText = controls[existingIndex].name;
+    } else {
+        // Add new control with default name
+        std::string defaultName = "Control " + std::to_string(controls.size() + 1);
+        state.addDeviceControl(currentDeviceId, defaultName, type, channel, number);
+        refreshControls();
+        editRowIndex = (int)controls.size() - 1;
+        editInitialText = defaultName;
+    }
+
+    // Open inline editor on the row's name field
+    if (editRowIndex >= 0) {
+        auto nameBounds = getNameCellBounds(editRowIndex);
+        inlineEditor.onCommit = [this, editRowIndex](const juce::String& newText) {
+            state.renameDeviceControl(currentDeviceId, editRowIndex, newText.toStdString());
             refreshControls();
         };
         inlineEditor.onCancel = nullptr;
-        inlineEditor.show(*this, nameBounds, "");
+        inlineEditor.show(*this, nameBounds, juce::String(editInitialText));
     }
 }
 
@@ -217,7 +270,6 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
     g.drawText("Type",  180, colY, 80,  columnHeaderHeight, juce::Justification::centredLeft);
     g.drawText("Ch",    268, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
     g.drawText("#",     316, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("Group", 364, colY, 100, columnHeaderHeight, juce::Justification::centredLeft);
 
     // Control rows
     if (controls.empty()) {
@@ -258,10 +310,6 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
             g.drawText(juce::String(ctrl.number), 316, rowBounds.getY(), 40, rowHeight,
                        juce::Justification::centredLeft);
 
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-            g.drawText(juce::String(ctrl.group), 364, rowBounds.getY(), 100, rowHeight,
-                       juce::Justification::centredLeft);
-
             // Delete button (x) — only show on hover
             if (i == hoveredRow) {
                 auto delBounds = getDeleteButtonBounds(i);
@@ -283,14 +331,18 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
 void DeviceEditorPane::resized() {
     if (currentDeviceId.empty()) return;
 
-    // Header labels
-    deviceNameLabel.setBounds(12, 8, getWidth() - 24, 24);
-    portNameLabel.setBounds(12, 32, getWidth() - 24, 18);
+    // Header row 1: device name (left) + learn button (right)
+    int learnW = 70;
+    int learnH = 24;
+    learnButton.setBounds(getWidth() - learnW - 12, 10, learnW, learnH);
+    deviceNameLabel.setBounds(12, 8, getWidth() - learnW - 36, 24);
 
-    // Bottom bar
-    int bottomY = getHeight() - bottomBarHeight;
-    learnButton.setBounds(12, bottomY + 6, 80, 28);
-    statusLabel.setBounds(100, bottomY + 6, getWidth() - 112, 28);
+    // Header row 2: port name (left), MIDI event log (centered across full width)
+    portNameLabel.setBounds(12, 34, 200, 18);
+    midiEventLabel.setBounds(0, 34, getWidth(), 18);
+
+    // Status label (learn feedback) in bottom bar
+    statusLabel.setBounds(12, getHeight() - bottomBarHeight + 6, getWidth() - 24, 28);
 }
 
 void DeviceEditorPane::mouseUp(const juce::MouseEvent& event) {
