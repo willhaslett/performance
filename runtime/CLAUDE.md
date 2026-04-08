@@ -25,21 +25,22 @@ The `perf` command returns "ok" on success or an error message.
 
 ## Available API
 
+All functions accept display names. Names are resolved to UUIDs internally.
+
 ### Tracks
-- `createTrack(name)` — create an empty track (shows in mixer)
+- `createTrack(name)` — create an empty track, returns UUID
 - `removeTrack(name)` — remove a track
 - `addInstrument(track, plugin)` — load an AU plugin on a track
 - `addInstrument(track, plugin, preset)` — load with a saved preset
-- `removeInstrument(track)` — remove instrument, keep track
-- `addEffect(trackOrBus, effectName, plugin)` — add an effect to a track or bus
-- `removeEffect(trackOrBus, effectName)` — remove an effect from a track or bus
+- `addEffect(parent, effectName, plugin)` — add an effect to a track, bus, or "Output"
 - `addTrackEffect(track, effectName, plugin)` — alias for addEffect
+- `removeEffect(parent, effectId)` — remove an effect by ID
 - `setTrackMidiEnabled(track, enabled)` — enable/disable MIDI input
 - `setTrackGain(track, gain)` — set output gain (linear, 1.0 = unity)
 - `getTrackGain(track)` — get current gain
 
 ### Busses
-- `createBus(name)` — create a bus
+- `createBus(name)` — create a bus, returns UUID
 - `removeBus(name)` — remove a bus
 - `addBusEffect(bus, effectName, plugin)` — alias for addEffect
 - `setBusGain(bus, gain)` — set bus output gain
@@ -50,17 +51,17 @@ The `perf` command returns "ok" on success or an error message.
 
 ### Parameters
 - `setParam(track, paramName, value)` — set instrument parameter
-- `setEffectParam(track, effect, paramName, value)` — set effect parameter
+- `setEffectParam(parent, effect, paramName, value)` — set effect parameter
 - `getParam(track, paramName)` — get parameter value
-- `getEffectParam(track, effect, paramName)` — get effect parameter value
+- `getEffectParam(parent, effect, paramName)` — get effect parameter value
 
 ### MIDI Bindings (action-based)
-Bindings reference named actions with arguments. No inline Lua functions.
-- `bind(type, channel, number, actionName, args, description)` — bind MIDI control to an action
+Bindings reference named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active, survive song deletion).
+
+- `bind(type, channel, number, actionName, args, description)` — bind MIDI control to an action for current song
   - type: "cc", "note", "pitchbend", "pressure"
   - actionName: registered action (see Actions below)
   - args: Lua table of arguments, e.g. `{"Keys"}` or `{"Keys", 3.0, "cosine"}`
-- `unbind(type, channel, number)` — remove binding
 
 ### Available Actions (for bindings)
 - `setActiveTrack(trackName)` — enable MIDI on one track, disable all others
@@ -84,27 +85,17 @@ Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 - `listPresets(pluginName)` — list saved presets for a plugin
 
 ### Song Management
-Songs live in the registry (SQLite), not as files on disk. There is always a "Sandbox" which is hidden from the user and cannot be deleted — it's the unnamed workspace.
+Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 
 - `song(name)` — create/set the active song
 - `saveInitialState()` — capture current state as the song's checkpoint
 - `loadInitialState()` — restore the saved checkpoint
-- `saveScore(json)` — save the action score (ordered list of actions)
-- `getScore()` — get the current score
-- `replayScore(upToStep)` — load initial state + replay actions 1..N
 
-To list/delete songs, use the registry CRUD:
-- `registryList("song")` — list all songs (returns table with id, name fields)
-- `registryDelete(id)` — delete a song by ID (Sandbox is protected)
-
-### Registry (generic CRUD)
-- `registryCreate(type, {fields})` — create any entity
-- `registryGet(id)` — get entity by UUID
-- `registryList(type, {filters})` — list entities of a type
-- `registryUpdate(id, {fields})` — update entity fields
-- `registryDelete(id)` — delete entity
-
-Entity types: "song", "track", "bus", "plugin", "preset", "effect", "send", "action", "binding"
+### Query
+- `registryList("song")` — list all songs (returns table with id, name)
+- `registryList("track")` — list tracks in current song
+- `registryList("bus")` — list busses in current song
+- `registryDelete(id)` — delete entity by UUID
 
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor
@@ -126,20 +117,20 @@ Entity types: "song", "track", "bus", "plugin", "preset", "effect", "send", "act
 - **Battery 4** — Native Instruments drum sampler
 
 ## Architecture notes
-- The registry (SQLite) is the single source of truth
-- The engine syncs from the registry — createTrack writes to registry, engine follows
-- Session state persists automatically — pick up where you left off on relaunch
-- Songs have an initial state (saved checkpoint) and a score (action sequence)
+- In-memory state store (StateAPI) is the SSOT at runtime
+- Engine syncs from state events — createTrack writes to state, engine follows
+- SQLite is the persistence layer — loaded on startup, saved on quit/explicit save
 - Bindings use entity UUIDs internally — rename-safe
+- Songs have initial state (checkpoint) and score (ordered action list)
 
 ## GUI
-The app has a 3-pane layout: sidebar (registry browser), terminal (you), mixer (tracks + busses).
+The app has a 3-pane layout: sidebar (songs/library/actions), chat (you), mixer (tracks + busses).
 - Track menu: New Instrument Track, New Effects Bus
-- Track strips: instrument slot, effect slots, fader, VU meter, MIDI toggle (power icon)
-- Bus strips: effect slots, fader, VU meter, purple header
+- Track strips: instrument slot, effect slots, fader, VU meter, MIDI toggle
+- Bus strips: effect slots, fader, VU meter
 - Click plugin pills to pick plugins (submenu with presets)
 - Right-click populated pills: No Plugin / Replace
-- Keyboard: s=sidebar, x=mixer, i=insert mode, Escape=close editor / exit insert
+- Keyboard: s=sidebar, x=mixer, i=focus chat, Escape=close editor
 
 ## Guidelines
 - When Will asks for a change, execute it immediately with `perf`. Don't just describe what you'd do.
@@ -155,7 +146,6 @@ The app has a 3-pane layout: sidebar (registry browser), terminal (you), mixer (
 - Keys: channel 1
 
 ## Testing without hardware
-Use the Python MIDI test tool to send notes via IAC Driver:
 ```bash
 uvx --from python-rtmidi python3 tools/send_notes.py
 ```
