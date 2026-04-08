@@ -228,6 +228,7 @@ void LuaEngine::registerAPI() {
     lua.set_function("unloadSong", [this]() {
         juce::MessageManager::callAsync([this] { unloadSong(); });
     });
+    lua.set_function("save", [&coord]() { coord.save(); });
     lua.set_function("saveInitialState", [&coord]() { coord.saveInitialState(); });
     lua.set_function("loadInitialState", [&coord]() { coord.loadInitialState(); });
 

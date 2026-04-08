@@ -387,8 +387,10 @@ void PersistenceLayer::saveActions(const StateAPI& state) {
 }
 
 void PersistenceLayer::saveSongs(const StateAPI& state) {
-    // Delete all existing songs (CASCADE clears tracks/busses/effects/sends/bindings)
-    exec("DELETE FROM songs");
+    // Delete all existing data — effects have no FK cascade (polymorphic parent_id)
+    exec("DELETE FROM effects");
+    exec("DELETE FROM sends");
+    exec("DELETE FROM songs");  // CASCADE clears tracks, busses, bindings
     // Delete global bindings separately (not cascaded)
     exec("DELETE FROM bindings WHERE song_id IS NULL");
 
@@ -439,7 +441,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         }
 
         // Tracks (after busses, since sends reference bus IDs)
+        perfLog("[Persistence] Saving %d tracks for song %s\n", (int)song.tracks.size(), song.name.c_str());
         for (auto& t : song.tracks) {
+            perfLog("[Persistence]   Track %s: %d effects\n", t.name.c_str(), (int)t.effects.size());
             auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(ts, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
