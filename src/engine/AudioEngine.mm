@@ -859,7 +859,7 @@ void AudioEngine::rebuildConnections() {
                     track.name.toRawUTF8(), proc->getName().toRawUTF8(),
                     prevNumOut, track.midiEnabled ? "on" : "off");
 
-            if (track.midiEnabled && track.audioEnabled) {
+            if (track.midiEnabled) {
                 graph->addConnection({
                     { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
                     { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
