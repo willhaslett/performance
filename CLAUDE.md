@@ -147,6 +147,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 ## TODOs
 
 **Known functional issues:**
+- Device Learn: new mappings persist immediately on capture instead of waiting for name commit. Escape/Stop Learning doesn't prevent persistence. Root cause: JUCE TextEditor focusLost fires commit before cancel can intercept. Workaround: delete unwanted mappings via right-click → Delete.
 - Slow startup/quit with heavy plugins (Kontakt, Mobius) — getStateInformation blocks UI thread. Needs background thread optimization.
 - AUShelfFilter crashes on instantiation — plugin-specific, not our bug.
 - AUPitch: preset state restore doesn't take effect — AU-specific issue.
