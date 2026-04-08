@@ -86,6 +86,23 @@ void LuaEngine::registerAPI() {
             result[i + 1] = names[i].toStdString();
         return result;
     });
+    lua.set_function("listAudioDevices", [this, &engine]() -> sol::table {
+        auto& dm = engine.getDeviceManager();
+        sol::table result = lua.create_table();
+        if (auto* type = dm.getCurrentDeviceTypeObject()) {
+            auto devices = type->getDeviceNames();
+            for (int i = 0; i < devices.size(); ++i)
+                result[i + 1] = devices[i].toStdString();
+        }
+        return result;
+    });
+    lua.set_function("setAudioDevice", [&engine](const std::string& name) {
+        auto& dm = engine.getDeviceManager();
+        auto setup = dm.getAudioDeviceSetup();
+        setup.outputDeviceName = juce::String(name);
+        setup.inputDeviceName = juce::String(name);
+        dm.setAudioDeviceSetup(setup, true);
+    });
     lua.set_function("removeTrack", [&state, resolveTrackId](const std::string& name) {
         state.removeTrack(resolveTrackId(name));
     });
