@@ -32,11 +32,16 @@ void AudioEngine::initialise() {
 
     setupGraph();
 
+    deviceManager.addChangeListener(this);
+    deviceManager.addAudioCallback(&inputMeter);
+
     if (!loadPluginCache())
         scanForPlugins();
 }
 
 void AudioEngine::shutdown() {
+    deviceManager.removeChangeListener(this);
+    deviceManager.removeAudioCallback(&inputMeter);
     editorWindows.clear();
     deviceManager.removeAudioCallback(player.get());
     player->setProcessor(nullptr);
@@ -83,6 +88,73 @@ void AudioEngine::setupGraph() {
 
     player->setProcessor(graph.get());
     deviceManager.addAudioCallback(player.get());
+}
+
+void AudioEngine::rebuildGraph() {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (!device) return;
+
+    perfLog("[Engine] Rebuilding graph for device: %s\n", device->getName().toRawUTF8());
+
+    // Stop audio processing
+    deviceManager.removeAudioCallback(player.get());
+    player->setProcessor(nullptr);
+
+    // Remove old IO nodes and master gain (track/bus nodes remain)
+    graph->removeNode(midiInputNodeId);
+    graph->removeNode(audioOutputNodeId);
+    graph->removeNode(audioInputNodeId);
+    if (masterGainNode) graph->removeNode(masterGainNode->nodeID);
+
+    // Reconfigure graph for new device
+    int numInputs = device->getActiveInputChannels().countNumberOfSetBits();
+    perfLog("[Engine] Audio inputs: %d active channels\n", numInputs);
+    if (numInputs == 0) numInputs = 2;
+
+    graph->setPlayConfigDetails(
+        numInputs, 2,
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+    graph->prepareToPlay(
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+
+    // Recreate IO nodes
+    auto midiInputNode = graph->addNode(
+        std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::midiInputNode));
+    midiInputNodeId = midiInputNode->nodeID;
+
+    auto audioOutputNode = graph->addNode(
+        std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
+    audioOutputNodeId = audioOutputNode->nodeID;
+
+    auto audioInputNode = graph->addNode(
+        std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
+    audioInputNodeId = audioInputNode->nodeID;
+
+    masterGainNode = graph->addNode(std::make_unique<GainProcessor>());
+
+    // Restart audio processing
+    player->setProcessor(graph.get());
+    deviceManager.addAudioCallback(player.get());
+
+    // Rewire all connections with new IO nodes
+    rebuildConnections();
+
+    perfLog("[Engine] Graph rebuilt: %d inputs, sr=%.0f, buf=%d\n",
+            numInputs, device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+}
+
+void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source) {
+    if (source == &deviceManager) {
+        auto* device = deviceManager.getCurrentAudioDevice();
+        if (device)
+            perfLog("[Engine] Audio device changed: %s\n", device->getName().toRawUTF8());
+        rebuildGraph();
+    }
 }
 
 // --- Plugin scanning ---
@@ -980,6 +1052,14 @@ std::vector<juce::String> AudioEngine::getInputChannelNames() const {
             names.push_back(name);
     }
     return names;
+}
+
+std::vector<float> AudioEngine::getInputPeakLevels() const {
+    std::vector<float> levels;
+    int nc = inputMeter.numChannels.load(std::memory_order_relaxed);
+    for (int i = 0; i < nc; ++i)
+        levels.push_back(inputMeter.peaks[i].load(std::memory_order_relaxed));
+    return levels;
 }
 
 std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String& trackId) const {

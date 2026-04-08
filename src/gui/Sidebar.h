@@ -5,6 +5,7 @@
 #include "gui/Theme.h"
 
 class StateAPI;
+class EngineAPI;
 
 class Sidebar : public juce::Component, private juce::Timer {
 public:
@@ -12,12 +13,19 @@ public:
     ~Sidebar() override;
 
     void setStateAPI(StateAPI* s);
+    void setEngineAPI(EngineAPI* e);
 
     // Callback for song loading (coordinator-level operation)
     std::function<void(const std::string& songId)> onLoadSong;
 
-    // Callback for device selection (deviceId set if registered, portName set if unregistered)
+    // Callback for MIDI device selection (deviceId set if registered, portName set if unregistered)
     std::function<void(const std::string& deviceId, const std::string& portName)> onDeviceSelected;
+
+    // Callback for audio device selection
+    std::function<void(const std::string& deviceName)> onAudioDeviceSelected;
+
+    // Callback for debug pane selection
+    std::function<void()> onDebugSelected;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -27,6 +35,7 @@ private:
     void refreshTree();
 
     StateAPI* state = nullptr;
+    EngineAPI* engineAPI = nullptr;
     RegistryTree tree;
     int subscriptionId = -1;
     bool needsRefresh = false;

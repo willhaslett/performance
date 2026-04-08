@@ -1464,6 +1464,91 @@ public:
 static EngineSyncTests engineSyncTests;
 
 // ============================================================================
+// Audio device config tests
+// ============================================================================
+
+class AudioDeviceConfigTests : public juce::UnitTest {
+public:
+    AudioDeviceConfigTests() : UnitTest("AudioDeviceConfig", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Audio device name persists via config key");
+        {
+            StateAPI state;
+            state.setConfig("audio_device", "Scarlett 2i2 USB");
+            expectEquals(state.getConfig("audio_device"), std::string("Scarlett 2i2 USB"));
+        }
+
+        beginTest("Audio device config round-trips through persistence");
+        {
+            TempDB db;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.state().setConfig("audio_device", "Scarlett 2i2 USB");
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                // Config should be restored from DB
+                expectEquals(coord.state().getConfig("audio_device"),
+                             std::string("Scarlett 2i2 USB"));
+                coord.shutdown();
+            }
+        }
+
+        beginTest("EngineSync forwards audioEnabled to engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T1");
+            state.setCurrentSong("");
+
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+
+            mock.clear();
+            state.setTrackAudioEnabled(trackId, false);
+
+            auto* call = mock.findCall("setTrackAudioEnabled");
+            expect(call != nullptr);
+            if (call) expect(call->boolArg == false);
+        }
+
+        beginTest("audioEnabled persists through save/load cycle");
+        {
+            TempDB db;
+            std::string trackId;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("S");
+                trackId = coord.state().createTrack("T1");
+                coord.state().setTrackAudioEnabled(trackId, false);
+                expect(coord.state().isTrackAudioEnabled(trackId) == false);
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.restoreSession();
+                expect(coord.state().isTrackAudioEnabled(trackId) == false);
+                coord.shutdown();
+            }
+        }
+    }
+};
+
+static AudioDeviceConfigTests audioDeviceConfigTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

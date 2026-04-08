@@ -4,6 +4,7 @@
 #include "gui/MixerView.h"
 #include "gui/ChatView.h"
 #include "gui/DeviceEditorPane.h"
+#include "gui/DebugPane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
@@ -26,6 +27,10 @@ public:
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
     DeviceEditorPane& getDeviceEditor() { return deviceEditor; }
+    DebugPane& getDebugPane() { return debugPane; }
+
+    void showDeviceEditor();
+    void showDebugPane();
 
     std::function<void()> onSave;
 
@@ -36,6 +41,7 @@ private:
     Sidebar sidebar;
     ChatView chatView;
     DeviceEditorPane deviceEditor;
+    DebugPane debugPane;
     PaneContainer paneContainer;
     MixerView mixerView;
 

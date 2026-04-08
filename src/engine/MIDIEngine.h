@@ -31,6 +31,14 @@ public:
     void setDeviceMonitor(const std::string& deviceId, MonitorCallback callback);
     void clearDeviceMonitor();
 
+    // Global monitor: fires for ALL devices (for debug pane)
+    using GlobalMonitorCallback = std::function<void(const std::string& deviceName,
+                                                      const std::string& description,
+                                                      const std::string& type, int channel,
+                                                      int number, int value)>;
+    void setGlobalMonitor(GlobalMonitorCallback callback);
+    void clearGlobalMonitor();
+
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
     void refreshDeviceMapping();  // call after registering new devices
@@ -48,4 +56,5 @@ private:
     std::string learnDeviceId;
     MonitorCallback deviceMonitorCallback;
     std::string monitorDeviceId;
+    GlobalMonitorCallback globalMonitorCallback;
 };

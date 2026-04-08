@@ -1,5 +1,6 @@
 #include "gui/Sidebar.h"
 #include "api/StateAPI.h"
+#include "api/EngineAPI.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
 
@@ -21,6 +22,12 @@ Sidebar::Sidebar() {
         } else if (type == "unregistered_device" && onDeviceSelected) {
             selectedDeviceId = id;
             onDeviceSelected("", id);  // id is the port name for unregistered devices
+        } else if (type == "audio_device" && onAudioDeviceSelected) {
+            selectedDeviceId = id;
+            onAudioDeviceSelected(label);
+        } else if (type == "debug") {
+            selectedDeviceId = id;
+            if (onDebugSelected) onDebugSelected();
         }
     });
 }
@@ -28,6 +35,11 @@ Sidebar::Sidebar() {
 Sidebar::~Sidebar() {
     if (state && subscriptionId >= 0)
         state->events().unsubscribe(subscriptionId);
+}
+
+void Sidebar::setEngineAPI(EngineAPI* e) {
+    engineAPI = e;
+    refreshTree();
 }
 
 void Sidebar::setStateAPI(StateAPI* s) {
@@ -66,7 +78,7 @@ void Sidebar::resized() {
 
 void Sidebar::timerCallback() {
     if (!state) return;
-    // Highlight: prefer selected device, fall back to active song
+    // Highlight: prefer selected device/debug, fall back to active song
     std::string highlightId = selectedDeviceId;
     if (highlightId.empty()) {
         auto song = state->currentSong();
@@ -190,29 +202,75 @@ void Sidebar::refreshTree() {
         roots.push_back(actionsNode);
     }
 
-    // Devices — connected MIDI inputs, registered or not
+    // Devices — Audio and MIDI subsections
     {
         TreeNode devicesNode;
         devicesNode.label = "Devices";
         devicesNode.type = "category";
 
-        auto midiDevices = juce::MidiInput::getAvailableDevices();
-        for (auto& midi : midiDevices) {
-            auto portName = midi.name.toStdString();
-            auto* device = state->findDeviceByPortName(portName);
+        // Audio devices
+        if (engineAPI) {
+            TreeNode audioNode;
+            audioNode.label = "Audio";
+            audioNode.type = "category";
 
-            TreeNode deviceLeaf;
-            if (device) {
-                deviceLeaf.label = device->name;
-                deviceLeaf.id = device->id;
-                deviceLeaf.type = "device";
-            } else {
-                deviceLeaf.label = portName;
-                deviceLeaf.id = portName;  // port name as id for unregistered
-                deviceLeaf.type = "unregistered_device";
+            auto& dm = engineAPI->getDeviceManager();
+            juce::String currentDeviceName;
+            if (auto* device = dm.getCurrentAudioDevice())
+                currentDeviceName = device->getName();
+
+            if (auto* type = dm.getCurrentDeviceTypeObject()) {
+                auto deviceNames = type->getDeviceNames();
+                for (auto& name : deviceNames) {
+                    TreeNode audioLeaf;
+                    audioLeaf.label = name.toStdString();
+                    // Use a prefixed id so it won't collide with MIDI device ids
+                    audioLeaf.id = "audio:" + name.toStdString();
+                    audioLeaf.type = "audio_device";
+                    audioLeaf.isLeaf = true;
+                    audioNode.children.push_back(audioLeaf);
+                }
             }
-            deviceLeaf.isLeaf = true;
-            devicesNode.children.push_back(deviceLeaf);
+
+            devicesNode.children.push_back(audioNode);
+        }
+
+        // MIDI devices
+        {
+            TreeNode midiNode;
+            midiNode.label = "MIDI";
+            midiNode.type = "category";
+
+            auto midiDevices = juce::MidiInput::getAvailableDevices();
+            for (auto& midi : midiDevices) {
+                auto portName = midi.name.toStdString();
+                auto* device = state->findDeviceByPortName(portName);
+
+                TreeNode deviceLeaf;
+                if (device) {
+                    deviceLeaf.label = device->name;
+                    deviceLeaf.id = device->id;
+                    deviceLeaf.type = "device";
+                } else {
+                    deviceLeaf.label = portName;
+                    deviceLeaf.id = portName;
+                    deviceLeaf.type = "unregistered_device";
+                }
+                deviceLeaf.isLeaf = true;
+                midiNode.children.push_back(deviceLeaf);
+            }
+
+            devicesNode.children.push_back(midiNode);
+        }
+
+        // Debug
+        {
+            TreeNode debugLeaf;
+            debugLeaf.label = "Debug";
+            debugLeaf.id = "debug";
+            debugLeaf.type = "debug";
+            debugLeaf.isLeaf = true;
+            devicesNode.children.push_back(debugLeaf);
         }
 
         roots.push_back(devicesNode);

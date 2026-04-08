@@ -10,7 +10,8 @@
 
 class GainProcessor;
 
-class AudioEngine : public AudioEngineInterface {
+class AudioEngine : public AudioEngineInterface,
+                     private juce::ChangeListener {
 public:
     AudioEngine();
     ~AudioEngine();
@@ -82,6 +83,7 @@ public:
     std::vector<EffectInfo> getTrackEffects(const juce::String& trackId) const;
     std::vector<EffectInfo> getBusEffects(const juce::String& busId) const;
     std::vector<juce::String> getInputChannelNames() const override;
+    std::vector<float> getInputPeakLevels() const;
     struct SendInfo { juce::String busName; float gain; float peakLevel; };
     std::vector<SendInfo> getTrackSends(const juce::String& trackId) const;
     float getBusGain(const juce::String& busId) const;
@@ -182,7 +184,37 @@ private:
     };
     std::vector<ComponentInfo> componentIndex;
 
+    // Input level metering (fixed max channels, atomics not moveable)
+    static constexpr int maxInputChannels = 32;
+    struct InputMeter : public juce::AudioIODeviceCallback {
+        std::atomic<float> peaks[32] {};
+        std::atomic<int> numChannels { 0 };
+        void audioDeviceIOCallbackWithContext(const float* const* inputData, int numInputChannels,
+                                              float* const*, int, int numSamples,
+                                              const juce::AudioIODeviceCallbackContext&) override {
+            int nc = std::min(numInputChannels, 32);
+            numChannels.store(nc, std::memory_order_relaxed);
+            for (int ch = 0; ch < nc; ++ch) {
+                float peak = 0.0f;
+                if (inputData && inputData[ch]) {
+                    for (int i = 0; i < numSamples; ++i)
+                        peak = std::max(peak, std::abs(inputData[ch][i]));
+                }
+                peaks[ch].store(peak, std::memory_order_relaxed);
+            }
+        }
+        void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
+            if (device)
+                numChannels.store(device->getActiveInputChannels().countNumberOfSetBits(),
+                                   std::memory_order_relaxed);
+        }
+        void audioDeviceStopped() override {}
+    };
+    InputMeter inputMeter;
+
     void setupGraph();
+    void rebuildGraph();
     void rebuildConnections();
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     juce::PluginDescription findPluginDescription(const juce::String& pluginName);
 };

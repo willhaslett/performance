@@ -62,6 +62,14 @@ void MIDIEngine::clearDeviceMonitor() {
     monitorDeviceId.clear();
 }
 
+void MIDIEngine::setGlobalMonitor(GlobalMonitorCallback callback) {
+    globalMonitorCallback = std::move(callback);
+}
+
+void MIDIEngine::clearGlobalMonitor() {
+    globalMonitorCallback = nullptr;
+}
+
 void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
                                             const juce::MidiMessage& message) {
     // Always forward to audio graph (for note playback)
@@ -181,6 +189,48 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
                     cb(desc, evType, evCh, evNum);
                 });
             }
+        }
+    }
+
+    // Global monitor: fire for all devices (debug pane)
+    if (globalMonitorCallback) {
+        std::string devName = sourcePortName.isNotEmpty() ? sourcePortName.toStdString() : "unknown";
+        std::string desc;
+        std::string evType;
+        int ch = message.getChannel();
+        int num = 0;
+        int val = 0;
+
+        if (message.isController()) {
+            evType = "CC";
+            num = message.getControllerNumber();
+            val = message.getControllerValue();
+            desc = "CC " + std::to_string(num) + " = " + std::to_string(val);
+        } else if (message.isNoteOn()) {
+            evType = "NoteOn";
+            num = message.getNoteNumber();
+            val = message.getVelocity();
+            desc = "Note " + juce::MidiMessage::getMidiNoteName(num, true, true, 3).toStdString()
+                 + " vel=" + std::to_string(val);
+        } else if (message.isNoteOff()) {
+            evType = "NoteOff";
+            num = message.getNoteNumber();
+            desc = "Note " + juce::MidiMessage::getMidiNoteName(num, true, true, 3).toStdString() + " off";
+        } else if (message.isPitchWheel()) {
+            evType = "Pitch";
+            val = message.getPitchWheelValue();
+            desc = "Pitch " + std::to_string(val);
+        } else if (message.isChannelPressure()) {
+            evType = "Pressure";
+            val = message.getChannelPressureValue();
+            desc = "Pressure " + std::to_string(val);
+        }
+
+        if (!desc.empty()) {
+            auto cb = globalMonitorCallback;
+            juce::MessageManager::callAsync([cb, devName, desc, evType, ch, num, val] {
+                cb(devName, desc, evType, ch, num, val);
+            });
         }
     }
 

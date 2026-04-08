@@ -46,6 +46,23 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // EngineSync reacts to creation events, building the engine graph
     persistence->loadInto(*stateAPI);
 
+    // Restore saved audio device (must be after loadInto so config is available)
+    auto savedDevice = stateAPI->getConfig("audio_device");
+    if (!savedDevice.empty()) {
+        auto& dm = audioEngine->getDeviceManager();
+        auto setup = dm.getAudioDeviceSetup();
+        if (setup.outputDeviceName != juce::String(savedDevice)) {
+            setup.outputDeviceName = juce::String(savedDevice);
+            setup.inputDeviceName = juce::String(savedDevice);
+            auto err = dm.setAudioDeviceSetup(setup, true);
+            if (err.isEmpty())
+                perfLog("[Coordinator] Restored audio device: %s\n", savedDevice.c_str());
+            else
+                perfLog("[Coordinator] Failed to restore audio device '%s': %s\n",
+                        savedDevice.c_str(), err.toRawUTF8());
+        }
+    }
+
     // Then populate from engine scan — deduplicates by name, keeps DB IDs
     populatePluginCatalog();
 
@@ -515,6 +532,16 @@ void PerformanceCoordinator::setMidiDeviceMonitor(const std::string& deviceId,
 
 void PerformanceCoordinator::clearMidiDeviceMonitor() {
     if (midiEngine) midiEngine->clearDeviceMonitor();
+}
+
+void PerformanceCoordinator::setGlobalMidiMonitor(
+    std::function<void(const std::string& deviceName, const std::string& description,
+                       const std::string& type, int channel, int number, int value)> callback) {
+    if (midiEngine) midiEngine->setGlobalMonitor(std::move(callback));
+}
+
+void PerformanceCoordinator::clearGlobalMidiMonitor() {
+    if (midiEngine) midiEngine->clearGlobalMonitor();
 }
 
 void PerformanceCoordinator::log(const juce::String& message) {

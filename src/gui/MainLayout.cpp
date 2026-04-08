@@ -8,12 +8,15 @@
 MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
     : state(state), engine(engine), chatView(lua),
-      deviceEditor(state, coordinator), mixerView(state, engine) {
+      deviceEditor(state, coordinator), debugPane(coordinator, engine),
+      mixerView(state, engine) {
     sidebar.setStateAPI(&state);
+    sidebar.setEngineAPI(&engine);
     addAndMakeVisible(sidebar);
     // Pane container: device editor left (60%), chat right (40%)
     paneContainer.addPane(&deviceEditor, 0.6f);
     paneContainer.addPane(&chatView, 0.4f);
+    addChildComponent(debugPane);  // hidden until selected
     addAndMakeVisible(paneContainer);
     addAndMakeVisible(mixerView);
 
@@ -100,8 +103,11 @@ void MainLayout::resized() {
         mixerView.setBounds(area.removeFromBottom(mh));
     }
 
-    // Pane container fills remaining
-    paneContainer.setBounds(area);
+    // Pane container or debug pane fills remaining
+    if (debugPane.isVisible())
+        debugPane.setBounds(area);
+    else
+        paneContainer.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
@@ -141,4 +147,18 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     }
 
     return false;
+}
+
+void MainLayout::showDeviceEditor() {
+    debugPane.deactivate();
+    debugPane.setVisible(false);
+    paneContainer.setVisible(true);
+    resized();
+}
+
+void MainLayout::showDebugPane() {
+    paneContainer.setVisible(false);
+    debugPane.setVisible(true);
+    debugPane.activate();
+    resized();
 }

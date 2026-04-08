@@ -78,6 +78,13 @@ public:
                                                  const std::string& type, int channel, int number)> callback);
     void clearMidiDeviceMonitor();
 
+    // Global MIDI monitor (for debug pane — fires for all devices)
+    void setGlobalMidiMonitor(std::function<void(const std::string& deviceName,
+                                                  const std::string& description,
+                                                  const std::string& type, int channel,
+                                                  int number, int value)> callback);
+    void clearGlobalMidiMonitor();
+
     // --- Logging ---
     void log(const juce::String& message);
 

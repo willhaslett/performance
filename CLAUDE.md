@@ -59,6 +59,8 @@ AppState
 ```
 
 Key model features:
+- Two track source types: `TrackSourceType::Instrument` (MIDI→plugin→audio) and `TrackSourceType::AudioInput` (physical input→effects→output, mono→stereo upmix)
+- `midiEnabled` (MIDI note routing, instrument tracks) and `audioEnabled` (audio signal pass-through, all tracks) are distinct properties
 - Effects/sends nested inside parent (no flat table lookup)
 - `LoadStatus` on TrackState and EffectState (None/Pending/Loaded/Failed)
 - `isInstrument` on PluginInfo (GUI builds plugin menus from state)
@@ -89,7 +91,7 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 
 - **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods.
 - **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All methods accept UUIDs. Pure view of state.
-- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime.
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
 - **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Takes StateAPI+EngineAPI+Coordinator.
 - **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket `/tmp/performance.sock`. `bin/perf` shell command.
@@ -106,22 +108,34 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **OutputStrip** — master effect slots, master fader+meter
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI only. Songs, Library (instruments/effects with presets), Actions.
+- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio + MIDI subsections, Debug). Audio device click switches device immediately.
+- **DeviceEditorPane** — MIDI device control mapping editor with learn mode. Shown when a MIDI device is selected in sidebar.
+- **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel. Activated when "Debug" is selected in sidebar.
 - **FaderMeter**, **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
 
 ### Audio Graph
 
 ```
-Per track:
+Per instrument track:
   midiInput → instrument → [fx1 → fx2 →] ┬─ outputGain → masterGain
                                            ├─ sendGain1  → Bus1
                                            └─ sendGain2  → Bus2
+Per audio input track:
+  audioInput[ch] → [fx1 → fx2 →] ┬─ outputGain → masterGain
+                                   ├─ sendGain1  → Bus1
+                                   └─ sendGain2  → Bus2
+  (mono inputs: channel duplicated to stereo at first node)
+
 Per bus:
   (summed sends) → [busFx1 → busFx2 →] busOutputGain → masterGain
 
 Master output:
   masterGain → [masterFx1 → masterFx2 →] → audioOutput
 ```
+
+Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. `InputMeter` callback provides per-channel peak levels for the debug pane.
+
+Audio device selection persists via `config["audio_device"]` — restored on startup after `loadInto`.
 
 ### Plugin State Presets
 
@@ -139,10 +153,12 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## Test Suite
 
-49 tests:
+76 tests:
 - StateAPI tests (34): full in-memory state store coverage
 - Persistence round-trip tests (3): save→load fidelity, multi-song, empty DB
 - Integration tests (12): full coordinator→state→EngineSync→engine path
+- EngineSync tests (23): mock engine verifying state→engine event dispatch (includes audio input tracks, audioEnabled, instrument changes, song switching)
+- Audio device config tests (4): device name persistence, config round-trip, audioEnabled persistence
 
 ## TODOs
 
@@ -161,8 +177,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
 
 **Feature backlog (longer-term):**
-- Live audio tracks (input from audio device, same track model)
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
-- Audio device configuration (buffer size, sample rate)
+- Audio device configuration UI (buffer size, sample rate — device switching already works)
 - Fader/knob drag: value stops changing at screen edge

@@ -231,6 +231,10 @@ std::vector<juce::String> EngineAPI::getInputChannelNames() const {
     return engine.getInputChannelNames();
 }
 
+std::vector<float> EngineAPI::getInputPeakLevels() const {
+    return engine.getInputPeakLevels();
+}
+
 juce::AudioDeviceManager& EngineAPI::getDeviceManager() {
     return engine.getDeviceManager();
 }

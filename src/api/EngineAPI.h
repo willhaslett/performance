@@ -53,6 +53,7 @@ public:
 
     // --- Audio inputs ---
     std::vector<juce::String> getInputChannelNames() const;
+    std::vector<float> getInputPeakLevels() const;
 
     // --- Device ---
     juce::AudioDeviceManager& getDeviceManager();

@@ -96,12 +96,16 @@ void LuaEngine::registerAPI() {
         }
         return result;
     });
-    lua.set_function("setAudioDevice", [&engine](const std::string& name) {
-        auto& dm = engine.getDeviceManager();
-        auto setup = dm.getAudioDeviceSetup();
-        setup.outputDeviceName = juce::String(name);
-        setup.inputDeviceName = juce::String(name);
-        dm.setAudioDeviceSetup(setup, true);
+    lua.set_function("setAudioDevice", [&engine, &state](const std::string& name) {
+        auto deviceName = juce::String(name);
+        state.setConfig("audio_device", name);
+        juce::MessageManager::callAsync([&engine, deviceName]() {
+            auto& dm = engine.getDeviceManager();
+            auto setup = dm.getAudioDeviceSetup();
+            setup.outputDeviceName = deviceName;
+            setup.inputDeviceName = deviceName;
+            dm.setAudioDeviceSetup(setup, true);
+        });
     });
     lua.set_function("removeTrack", [&state, resolveTrackId](const std::string& name) {
         state.removeTrack(resolveTrackId(name));

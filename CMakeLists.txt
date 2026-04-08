@@ -56,6 +56,7 @@ target_sources(Performance PRIVATE
     src/gui/RegistryTree.cpp
     src/gui/Sidebar.cpp
     src/gui/DeviceEditorPane.cpp
+    src/gui/DebugPane.cpp
     src/gui/ChatView.cpp
     src/api/ClaudeClient.cpp
     src/scripting/LuaEngine.cpp

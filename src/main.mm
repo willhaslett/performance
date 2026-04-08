@@ -201,7 +201,24 @@ public:
 
         // Wire sidebar device selection
         layout->getSidebar().onDeviceSelected = [layout](const std::string& deviceId, const std::string& portName) {
+            layout->showDeviceEditor();
             layout->getDeviceEditor().setDevice(deviceId, portName);
+        };
+
+        // Wire sidebar audio device selection
+        layout->getSidebar().onAudioDeviceSelected = [this, layout](const std::string& deviceName) {
+            auto& dm = coordinator->engine().getDeviceManager();
+            auto setup = dm.getAudioDeviceSetup();
+            auto jName = juce::String(deviceName);
+            setup.outputDeviceName = jName;
+            setup.inputDeviceName = jName;
+            coordinator->state().setConfig("audio_device", deviceName);
+            dm.setAudioDeviceSetup(setup, true);
+        };
+
+        // Wire sidebar debug pane selection
+        layout->getSidebar().onDebugSelected = [layout]() {
+            layout->showDebugPane();
         };
 
         // Wire track preset callbacks — MixerView applies these to each new TrackStrip
