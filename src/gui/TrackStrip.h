@@ -6,6 +6,7 @@
 #include "gui/SendsPanel.h"
 #include "gui/InlineEditor.h"
 #include "gui/SaveAsDialog.h"
+#include "state/StateModel.h"
 #include <vector>
 #include <memory>
 
@@ -27,6 +28,9 @@ public:
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
     void setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions);
 
+    void setSourceType(TrackSourceType type);
+    void setInputChannels(int start, int count, const std::vector<juce::String>& availableInputs);
+
     // Callbacks for coordinator-level operations (track presets)
     std::function<void(const juce::String& trackId, const juce::String& presetName)> onSaveTrackPreset;
     std::function<void(const juce::String& trackId, const juce::String& presetName)> onLoadTrackPreset;
@@ -45,6 +49,9 @@ private:
     juce::String trackId;    // stable UUID from registry
     juce::String trackName;  // display name
     bool midiEnabled = true;
+
+    TrackSourceType sourceType = TrackSourceType::Instrument;
+    juce::ComboBox inputSelector;  // shown for audio input tracks, hidden for instrument
 
     PluginSlot instrumentSlot;
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;

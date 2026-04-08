@@ -11,12 +11,26 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     addAndMakeVisible(instrumentSlot);
     addAndMakeVisible(faderMeter);
     addChildComponent(sendsPanel);  // hidden until busses exist
+    addChildComponent(inputSelector);  // hidden until setSourceType(AudioInput)
 
     faderMeter.onGainChanged = [&](float newGain) {
         state.setTrackGain(trackId.toStdString(), newGain);
     };
 
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
+
+    inputSelector.onChange = [this]() {
+        int selectedIdx = inputSelector.getSelectedId();
+        if (selectedIdx <= 0) return;
+        // IDs are encoded as: mono input N -> id = N+1, stereo pair starting at N -> id = 1000+N+1
+        if (selectedIdx >= 1000) {
+            int start = selectedIdx - 1001;
+            this->state.setTrackInputChannels(trackId.toStdString(), start, 2);
+        } else {
+            int start = selectedIdx - 1;
+            this->state.setTrackInputChannels(trackId.toStdString(), start, 1);
+        }
+    };
 }
 
 void TrackStrip::setInstrumentName(const juce::String& name) {
@@ -69,6 +83,47 @@ void TrackStrip::setSends(const std::vector<SendsPanel::SendInfo>& sends) {
     sendsPanel.setSends(sends);
 }
 
+void TrackStrip::setSourceType(TrackSourceType type) {
+    if (sourceType == type) return;
+    sourceType = type;
+    if (type == TrackSourceType::AudioInput) {
+        instrumentSlot.setVisible(false);
+        inputSelector.setVisible(true);
+    } else {
+        instrumentSlot.setVisible(true);
+        inputSelector.setVisible(false);
+    }
+    resized();
+    repaint();
+}
+
+void TrackStrip::setInputChannels(int start, int count, const std::vector<juce::String>& availableInputs) {
+    inputSelector.clear(juce::dontSendNotification);
+
+    int numInputs = (int)availableInputs.size();
+    // Add mono inputs
+    for (int i = 0; i < numInputs; ++i) {
+        juce::String label = availableInputs[i].isEmpty()
+            ? "Input " + juce::String(i + 1)
+            : availableInputs[i];
+        inputSelector.addItem(label, i + 1);  // id = i+1
+    }
+
+    // Add stereo pairs
+    for (int i = 0; i + 1 < numInputs; i += 2) {
+        juce::String label = "Input " + juce::String(i + 1) + "-" + juce::String(i + 2) + " (Stereo)";
+        inputSelector.addItem(label, 1000 + i + 1);  // id = 1000+i+1
+    }
+
+    // Select current input
+    if (start >= 0) {
+        if (count == 2)
+            inputSelector.setSelectedId(1000 + start + 1, juce::dontSendNotification);
+        else if (count == 1)
+            inputSelector.setSelectedId(start + 1, juce::dontSendNotification);
+    }
+}
+
 void TrackStrip::setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions) {
     sendsPanel.setAvailableBusses(busOptions);
     bool shouldShow = !busOptions.empty();
@@ -114,24 +169,44 @@ void TrackStrip::paint(juce::Graphics& g) {
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
+
+    bool isAudioInput = (sourceType == TrackSourceType::AudioInput);
+    constexpr uint32_t bgHeaderAudioInput = 0xff8a6a2a;  // amber/orange
+
+    if (isAudioInput)
+        g.setColour(Theme::color(bgHeaderAudioInput));
+    else
+        g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
     g.fillRect(headerBounds);
 
-    // Power icon
     midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                           headerBounds.getCentreY() - 7, 14, 14);
-    auto iconColor = midiEnabled ? Theme::color(Theme::Color::midiActive)
-                                  : Theme::color(Theme::Color::textDim);
-    g.setColour(iconColor);
-    juce::Path powerIcon;
-    auto iconArea = midiDotBounds.reduced(1).toFloat();
-    powerIcon.addCentredArc(iconArea.getCentreX(), iconArea.getCentreY(),
-                             iconArea.getWidth() * 0.4f, iconArea.getHeight() * 0.4f,
-                             0.0f, juce::MathConstants<float>::pi * 0.3f,
-                             juce::MathConstants<float>::pi * 1.7f, true);
-    g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
-    g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
-               iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
+
+    if (isAudioInput) {
+        // Show M (mono) or S (stereo) badge instead of power icon
+        int chCount = 0;
+        int selId = inputSelector.getSelectedId();
+        if (selId >= 1000) chCount = 2;
+        else if (selId > 0) chCount = 1;
+
+        g.setColour(Theme::color(Theme::Color::textWhite));
+        g.setFont(Theme::font(Theme::fontSizeSm).boldened());
+        g.drawText(chCount == 2 ? "S" : "M", midiDotBounds, juce::Justification::centred);
+    } else {
+        // Power icon for instrument tracks
+        auto iconColor = midiEnabled ? Theme::color(Theme::Color::midiActive)
+                                      : Theme::color(Theme::Color::textDim);
+        g.setColour(iconColor);
+        juce::Path powerIcon;
+        auto iconArea = midiDotBounds.reduced(1).toFloat();
+        powerIcon.addCentredArc(iconArea.getCentreX(), iconArea.getCentreY(),
+                                 iconArea.getWidth() * 0.4f, iconArea.getHeight() * 0.4f,
+                                 0.0f, juce::MathConstants<float>::pi * 0.3f,
+                                 juce::MathConstants<float>::pi * 1.7f, true);
+        g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
+        g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
+                   iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
+    }
 
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
@@ -190,6 +265,7 @@ void TrackStrip::resized() {
     int y = slotArea.getY();
 
     instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
+    inputSelector.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
     y += Theme::slotHeight + Theme::slotGap;
 
     for (auto& slot : effectSlots) {
@@ -211,11 +287,14 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    auto midiHitArea = midiDotBounds.expanded(6);
-    if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
-        midiEnabled = !midiEnabled;
-        state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
-        repaint();
+    // MIDI toggle only for instrument tracks
+    if (sourceType == TrackSourceType::Instrument) {
+        auto midiHitArea = midiDotBounds.expanded(6);
+        if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+            midiEnabled = !midiEnabled;
+            state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
+            repaint();
+        }
     }
 }
 

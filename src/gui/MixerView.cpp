@@ -106,7 +106,15 @@ void MixerView::timerCallback() {
         // Update tracks
         for (size_t i = 0; i < trackStrips.size() && i < lastTracks.size(); ++i) {
             auto& id = lastTracks[i].id;
-            trackStrips[i]->setInstrumentName(juce::String(state.getTrackPluginName(id.toStdString())));
+
+            auto* trackState = state.findTrack(id.toStdString());
+            if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
+                auto inputNames = engine.getInputChannelNames();
+                trackStrips[i]->setInputChannels(trackState->inputChannelStart,
+                                                  trackState->inputChannelCount, inputNames);
+            } else {
+                trackStrips[i]->setInstrumentName(juce::String(state.getTrackPluginName(id.toStdString())));
+            }
 
             // Convert StateAPI::EffectSlotInfo to TrackStrip::EffectSlotInfo
             auto stateEffects = state.getTrackEffects(id.toStdString());
@@ -170,7 +178,16 @@ void MixerView::rebuildStrips() {
 
     for (auto& t : lastTracks) {
         auto strip = std::make_unique<TrackStrip>(t.id, t.name, state, engine);
-        strip->setInstrumentName(juce::String(state.getTrackPluginName(t.id.toStdString())));
+
+        auto* trackState = state.findTrack(t.id.toStdString());
+        if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
+            strip->setSourceType(TrackSourceType::AudioInput);
+            auto inputNames = engine.getInputChannelNames();
+            strip->setInputChannels(trackState->inputChannelStart,
+                                     trackState->inputChannelCount, inputNames);
+        } else {
+            strip->setInstrumentName(juce::String(state.getTrackPluginName(t.id.toStdString())));
+        }
 
         auto stateEffects = state.getTrackEffects(t.id.toStdString());
         std::vector<TrackStrip::EffectSlotInfo> effects;
