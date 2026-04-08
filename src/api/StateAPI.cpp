@@ -373,23 +373,10 @@ std::string StateAPI::addEffect(const std::string& parentId, const std::string& 
 void StateAPI::removeEffect(const std::string& effectId) {
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
-    if (!list) {
-        // Debug: check why not found
-        auto* song = currentSong();
-        if (!song) {
-            perfLog("[StateAPI] removeEffect: no current song!\n");
-        } else {
-            perfLog("[StateAPI] removeEffect: effect %s not found in song %s (%d tracks)\n",
-                    effectId.c_str(), song->id.c_str(), (int)song->tracks.size());
-        }
-        return;
-    }
-    auto sizeBefore = list->size();
+    if (!list) return;
     list->erase(std::remove_if(list->begin(), list->end(),
                                [&](auto& fx) { return fx.id == effectId; }),
                 list->end());
-    perfLog("[StateAPI] removeEffect: %s removed (%d → %d)\n",
-            effectId.c_str(), (int)sizeBefore, (int)list->size());
     markDirty();
     eventBus.emit({ StateEvent::Deleted, StateEvent::Effect, effectId, parentId });
 }

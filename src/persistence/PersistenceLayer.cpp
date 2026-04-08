@@ -441,9 +441,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         }
 
         // Tracks (after busses, since sends reference bus IDs)
-        perfLog("[Persistence] Saving %d tracks for song %s\n", (int)song.tracks.size(), song.name.c_str());
         for (auto& t : song.tracks) {
-            perfLog("[Persistence]   Track %s: %d effects\n", t.name.c_str(), (int)t.effects.size());
             auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(ts, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
