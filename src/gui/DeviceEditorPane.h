@@ -45,7 +45,8 @@ private:
     bool isLearning = false;
 
     // MIDI event log (last 2 events shown in header)
-    juce::Label midiEventLabel;
+    juce::Label midiLabelPrefix;  // "Incoming MIDI:" in gray
+    juce::Label midiEventLabel;   // event data in bright green
     std::string lastEvent1;
     std::string lastEvent2;
     void onMidiEvent(const std::string& description,
@@ -63,6 +64,7 @@ private:
     void refreshControls();
     void startLearn();
     void cancelLearn();
+    void armLearnCapture();
     void onLearnCapture(const std::string& type, int channel, int number);
 
     void mouseUp(const juce::MouseEvent& event) override;

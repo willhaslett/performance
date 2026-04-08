@@ -17,7 +17,7 @@ DeviceEditorPane::DeviceEditorPane(StateAPI& state, PerformanceCoordinator& coor
     portNameLabel.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(portNameLabel);
 
-    learnButton.setButtonText("Learn");
+    learnButton.setButtonText("Learn mappings");
     learnButton.setColour(juce::TextButton::buttonColourId, Theme::color(Theme::Color::accent));
     learnButton.setColour(juce::TextButton::textColourOnId, Theme::color(Theme::Color::textWhite));
     learnButton.setColour(juce::TextButton::textColourOffId, Theme::color(Theme::Color::textWhite));
@@ -34,10 +34,16 @@ DeviceEditorPane::DeviceEditorPane(StateAPI& state, PerformanceCoordinator& coor
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     addChildComponent(statusLabel);
 
+    midiLabelPrefix.setFont(Theme::font(Theme::fontSizeXs));
+    midiLabelPrefix.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
+    midiLabelPrefix.setJustificationType(juce::Justification::centredRight);
+    midiLabelPrefix.setText("Incoming MIDI:", juce::dontSendNotification);
+    addChildComponent(midiLabelPrefix);
+
     midiEventLabel.setFont(Theme::font(Theme::fontSizeXs));
     midiEventLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::midiActive));
-    midiEventLabel.setJustificationType(juce::Justification::centred);
-    midiEventLabel.setText("Incoming MIDI: \xe2\x80\x94", juce::dontSendNotification);
+    midiEventLabel.setJustificationType(juce::Justification::centredLeft);
+    midiEventLabel.setText(" \xe2\x80\x94", juce::dontSendNotification);
     addChildComponent(midiEventLabel);
 
     setWantsKeyboardFocus(true);
@@ -64,7 +70,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
     coordinator.clearMidiDeviceMonitor();
     lastEvent1.clear();
     lastEvent2.clear();
-    midiEventLabel.setText("Incoming MIDI: \xe2\x80\x94", juce::dontSendNotification);
+    midiEventLabel.setText(" \xe2\x80\x94", juce::dontSendNotification);
 
     if (!deviceId.empty()) {
         currentDeviceId = deviceId;
@@ -81,6 +87,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
         portNameLabel.setVisible(false);
         learnButton.setVisible(false);
         statusLabel.setVisible(false);
+        midiLabelPrefix.setVisible(false);
         midiEventLabel.setVisible(false);
         controls.clear();
         repaint();
@@ -112,6 +119,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
     portNameLabel.setVisible(true);
     learnButton.setVisible(true);
     statusLabel.setVisible(true);
+    midiLabelPrefix.setVisible(true);
     midiEventLabel.setVisible(true);
 
     auto* device = state.findDevice(currentDeviceId);
@@ -149,7 +157,7 @@ void DeviceEditorPane::onMidiEvent(const std::string& description,
                                     const std::string& type, int channel, int number) {
     lastEvent2 = lastEvent1;
     lastEvent1 = description;
-    std::string display = "Incoming MIDI: " + lastEvent1;
+    std::string display = " " + lastEvent1;
     if (!lastEvent2.empty())
         display += " | " + lastEvent2;
     midiEventLabel.setText(juce::String(display), juce::dontSendNotification);
@@ -165,18 +173,7 @@ void DeviceEditorPane::onMidiEvent(const std::string& description,
     }
 }
 
-void DeviceEditorPane::startLearn() {
-    if (currentDeviceId.empty()) return;
-
-    isLearning = true;
-    learnButton.setButtonText("Cancel");
-
-    auto* device = state.findDevice(currentDeviceId);
-    std::string deviceName = device ? device->name : "device";
-    statusLabel.setText("Move a control on " + juce::String(deviceName) + "...",
-                        juce::dontSendNotification);
-    repaint();
-
+void DeviceEditorPane::armLearnCapture() {
     coordinator.startMidiLearn(currentDeviceId,
         [this](const std::string& type, int channel, int number) {
             juce::MessageManager::callAsync([this, type, channel, number] {
@@ -185,19 +182,40 @@ void DeviceEditorPane::startLearn() {
         });
 }
 
+void DeviceEditorPane::startLearn() {
+    if (currentDeviceId.empty()) return;
+
+    isLearning = true;
+    learnButton.setButtonText("Stop learning");
+
+    auto* device = state.findDevice(currentDeviceId);
+    std::string deviceName = device ? device->name : "device";
+    statusLabel.setText("Move a control on " + juce::String(deviceName) + "...",
+                        juce::dontSendNotification);
+    repaint();
+
+    armLearnCapture();
+}
+
 void DeviceEditorPane::cancelLearn() {
     if (!isLearning) return;
     isLearning = false;
     coordinator.cancelMidiLearn();
-    learnButton.setButtonText("Learn");
+    learnButton.setButtonText("Learn mappings");
     statusLabel.setText("", juce::dontSendNotification);
+
+    // Cancel any pending new entry
+    if (pendingLearnControlIndex >= 0) {
+        state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+        pendingLearnControlIndex = -1;
+        refreshControls();
+    }
+
     repaint();
 }
 
 void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int number) {
-    isLearning = false;
-    learnButton.setButtonText("Learn");
-    statusLabel.setText("", juce::dontSendNotification);
+    if (!isLearning) return;  // might have been cancelled between capture and callback
 
     // Check if this control (same type+channel+number) already exists
     int existingIndex = -1;
@@ -207,6 +225,23 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
             controls[i].number == number) {
             existingIndex = i;
             break;
+        }
+    }
+
+    // Cancel any previous pending entry that wasn't committed
+    if (pendingLearnControlIndex >= 0) {
+        state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+        pendingLearnControlIndex = -1;
+        refreshControls();
+        // Recalculate existingIndex since indices may have shifted
+        existingIndex = -1;
+        for (int i = 0; i < (int)controls.size(); ++i) {
+            if (controls[i].controlType == type &&
+                controls[i].channel == channel &&
+                controls[i].number == number) {
+                existingIndex = i;
+                break;
+            }
         }
     }
 
@@ -245,6 +280,9 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
         };
         inlineEditor.show(*this, nameBounds, juce::String(editInitialText));
     }
+
+    // Re-arm for next capture (learn mode stays active)
+    armLearnCapture();
 }
 
 juce::Rectangle<int> DeviceEditorPane::getControlListArea() const {
@@ -366,14 +404,17 @@ void DeviceEditorPane::resized() {
     if (currentDeviceId.empty()) return;
 
     // Header row 1: device name (left) + learn button (right)
-    int learnW = 70;
+    int learnW = 120;
     int learnH = 24;
     learnButton.setBounds(getWidth() - learnW - 12, 10, learnW, learnH);
     deviceNameLabel.setBounds(12, 8, getWidth() - learnW - 36, 24);
 
-    // Header row 2: port name (left), MIDI event log (centered across full width)
+    // Header row 2: port name (left), MIDI event display (centered pair)
     portNameLabel.setBounds(12, 34, 200, 18);
-    midiEventLabel.setBounds(0, 34, getWidth(), 18);
+    int prefixW = 90;
+    int centerX = getWidth() / 2;
+    midiLabelPrefix.setBounds(centerX - prefixW, 34, prefixW, 18);
+    midiEventLabel.setBounds(centerX, 34, getWidth() / 2, 18);
 
     // Status label (learn feedback) in bottom bar
     statusLabel.setBounds(12, getHeight() - bottomBarHeight + 6, getWidth() - 24, 28);
@@ -447,18 +488,8 @@ void DeviceEditorPane::mouseDoubleClick(const juce::MouseEvent& event) {
 
 bool DeviceEditorPane::keyPressed(const juce::KeyPress& key) {
     if (key == juce::KeyPress::escapeKey) {
-        if (pendingLearnControlIndex >= 0) {
-            // Cancel the pending learn entry
-            state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
-            pendingLearnControlIndex = -1;
-            // Dismiss the inline editor if visible
-            if (inlineEditor.getParentComponent())
-                inlineEditor.getParentComponent()->removeChildComponent(&inlineEditor);
-            refreshControls();
-            return true;
-        }
         if (isLearning) {
-            cancelLearn();
+            cancelLearn();  // also cleans up pendingLearnControlIndex
             return true;
         }
     }
