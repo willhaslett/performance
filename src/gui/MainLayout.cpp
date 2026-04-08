@@ -110,10 +110,13 @@ void MainLayout::mouseUp(const juce::MouseEvent& event) {
 }
 
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
-    // If chat input has focus, only handle Escape (to unfocus)
-    if (chatView.isInputFocused()) {
+    // If any text editor has keyboard focus, only handle Escape
+    auto* focused = juce::Component::getCurrentlyFocusedComponent();
+    bool textFieldFocused = (focused != nullptr && dynamic_cast<juce::TextEditor*>(focused) != nullptr);
+
+    if (textFieldFocused) {
         if (key == juce::KeyPress::escapeKey) {
-            chatView.unfocusInput();
+            focused->giveAwayKeyboardFocus();
             return true;
         }
         return false;  // let the TextEditor handle all other keys
