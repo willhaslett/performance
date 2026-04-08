@@ -494,6 +494,10 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     }
 }
 
+void PerformanceCoordinator::refreshMidiDevices() {
+    if (midiEngine) midiEngine->refreshDeviceMapping();
+}
+
 void PerformanceCoordinator::log(const juce::String& message) {
     perfLog("[Coordinator] %s\n", message.toRawUTF8());
 }

@@ -21,9 +21,9 @@ public:
 
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
+    void refreshDeviceMapping();  // call after registering new devices
 
 private:
-    void refreshDeviceMapping();
 
     juce::AudioDeviceManager& deviceManager;
     AudioEngine& audioEngine;

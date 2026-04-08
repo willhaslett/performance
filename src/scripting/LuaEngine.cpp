@@ -232,6 +232,43 @@ void LuaEngine::registerAPI() {
     lua.set_function("saveInitialState", [&coord]() { coord.saveInitialState(); });
     lua.set_function("loadInitialState", [&coord]() { coord.loadInitialState(); });
 
+    // Devices
+    lua.set_function("registerDevice", [&state, &coord](const std::string& name, const std::string& portName) -> std::string {
+        auto id = state.registerDevice(name, portName);
+        coord.refreshMidiDevices();
+        return id;
+    });
+    lua.set_function("addDeviceControl", [&state](const std::string& deviceId, const std::string& name,
+                                                    const std::string& controlType, int channel, int number,
+                                                    sol::optional<std::string> group) {
+        state.addDeviceControl(deviceId, name, controlType, channel, number, group.value_or(""));
+    });
+    lua.set_function("addDeviceToSong", [&state](const std::string& songId, const std::string& deviceId) {
+        state.addDeviceToSong(songId, deviceId);
+    });
+    lua.set_function("listDevices", [this, &state]() -> sol::table {
+        sol::table result = lua.create_table();
+        for (auto& d : state.allDevices()) {
+            sol::table row = lua.create_table();
+            row["id"] = d.id;
+            row["name"] = d.name;
+            row["port"] = d.midiPortName;
+            result.add(row);
+        }
+        return result;
+    });
+    lua.set_function("listMidiInputs", [this, &engine]() -> sol::table {
+        auto devices = juce::MidiInput::getAvailableDevices();
+        sol::table result = lua.create_table();
+        for (auto& d : devices) {
+            sol::table row = lua.create_table();
+            row["name"] = d.name.toStdString();
+            row["id"] = d.identifier.toStdString();
+            result.add(row);
+        }
+        return result;
+    });
+
     // MIDI bindings
     lua.set_function("bind", [this, &state](const std::string& type, int channel, int number,
                                              const std::string& actionName,

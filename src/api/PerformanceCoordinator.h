@@ -68,6 +68,9 @@ public:
     // --- Action dispatch (for MIDI bindings) ---
     void executeAction(const std::string& actionName, const juce::var& args, float value);
 
+    // --- MIDI devices ---
+    void refreshMidiDevices();
+
     // --- Logging ---
     void log(const juce::String& message);
 
