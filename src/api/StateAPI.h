@@ -74,6 +74,11 @@ public:
     std::vector<BindingState> globalBindings() const;
     std::vector<BindingState> effectiveBindings() const;  // global + current song (song wins on conflict)
 
+    // Score — ordered subset of song bindings where isScoreStep == true
+    std::vector<BindingState> scoreSteps() const;  // sorted by scorePosition
+    void setBindingAsScoreStep(const std::string& bindingId, int position);
+    void clearScoreStep(const std::string& bindingId);
+
     // --- Catalog: Plugins ---
     std::string registerPlugin(const std::string& name, const std::string& manufacturer,
                                const std::string& formatId, bool isInstrument = false);

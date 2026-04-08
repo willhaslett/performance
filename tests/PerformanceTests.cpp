@@ -722,7 +722,7 @@ public:
             expect(longPreset->kind == PresetKind::Effect);
         }
 
-        beginTest("Score steps round-trip");
+        beginTest("Score steps as bindings round-trip");
         {
             TempDB db;
 
@@ -730,20 +730,31 @@ public:
             auto actionId = original.registerAction("fadeOut", "Fade out");
             auto songId = original.createSong("S");
             original.setCurrentSong(songId);
-            auto* song = original.findSong(songId);
-            song->score.push_back({ actionId, "[\"Keys\"]", "Fade keys" });
-            song->score.push_back({ actionId, "[\"Bass\"]", "Fade bass" });
+
+            // Create bindings, mark some as score steps
+            auto b1 = original.addBinding(songId, "cc", 10, 1, actionId, "[\"Keys\"]", "Fade keys");
+            auto b2 = original.addBinding(songId, "cc", 10, 2, actionId, "[\"Bass\"]", "Fade bass");
+            auto b3 = original.addBinding(songId, "cc", 1, 5, actionId, "[]", "Utility toggle");
+            original.setBindingAsScoreStep(b1, 0);
+            original.setBindingAsScoreStep(b2, 1);
+            // b3 is NOT a score step
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
             StateAPI loaded;
             { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
 
-            auto* loadedSong = loaded.currentSong();
-            expect(loadedSong != nullptr);
-            expectEquals((int)loadedSong->score.size(), 2);
-            expectEquals(loadedSong->score[0].description, std::string("Fade keys"));
-            expectEquals(loadedSong->score[1].description, std::string("Fade bass"));
+            // All 3 bindings should be there
+            auto bindings = loaded.bindingsForSong(loaded.currentSong()->id);
+            expectEquals((int)bindings.size(), 3);
+
+            // Score should have 2 steps in order
+            auto score = loaded.scoreSteps();
+            expectEquals((int)score.size(), 2);
+            expectEquals(score[0].description, std::string("Fade keys"));
+            expectEquals(score[1].description, std::string("Fade bass"));
+            expect(score[0].scorePosition == 0);
+            expect(score[1].scorePosition == 1);
         }
 
         beginTest("Global bindings round-trip");

@@ -264,14 +264,25 @@ void PerformanceCoordinator::loadInitialState() {
 
 // --- Score ---
 
-void PerformanceCoordinator::saveScore(const std::vector<std::string>& stepDescriptions) {
-    // TODO
-    perfLog("[Coordinator] saveScore not yet implemented for new system\n");
-}
-
 void PerformanceCoordinator::replayScore(int upToStep) {
-    // TODO
-    perfLog("[Coordinator] replayScore not yet implemented for new system\n");
+    auto steps = stateAPI->scoreSteps();
+    if (steps.empty()) {
+        perfLog("[Coordinator] No score steps to replay\n");
+        return;
+    }
+
+    // TODO: load initial state first, then replay
+    int count = (upToStep < 0) ? (int)steps.size() : std::min(upToStep, (int)steps.size());
+    perfLog("[Coordinator] Replaying score: %d of %d steps\n", count, (int)steps.size());
+
+    for (int i = 0; i < count; ++i) {
+        auto& step = steps[i];
+        auto* action = stateAPI->findActionById(step.actionId);
+        if (!action) continue;
+        auto args = juce::JSON::parse(juce::String(step.args));
+        executeAction(action->name, args, 1.0f);
+        perfLog("[Coordinator] Score step %d: %s\n", i + 1, step.description.c_str());
+    }
 }
 
 // --- Track presets ---

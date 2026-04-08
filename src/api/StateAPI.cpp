@@ -529,6 +529,47 @@ std::vector<BindingState> StateAPI::effectiveBindings() const {
 
 // --- Catalog: Plugins ---
 
+// --- Score ---
+
+std::vector<BindingState> StateAPI::scoreSteps() const {
+    auto* song = currentSong();
+    if (!song) return {};
+    std::vector<BindingState> result;
+    for (auto& b : song->bindings)
+        if (b.isScoreStep) result.push_back(b);
+    std::sort(result.begin(), result.end(),
+              [](auto& a, auto& b) { return a.scorePosition < b.scorePosition; });
+    return result;
+}
+
+void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position) {
+    auto* song = currentSong();
+    if (!song) return;
+    for (auto& b : song->bindings) {
+        if (b.id == bindingId) {
+            b.isScoreStep = true;
+            b.scorePosition = position;
+            markDirty();
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, song->id });
+            return;
+        }
+    }
+}
+
+void StateAPI::clearScoreStep(const std::string& bindingId) {
+    auto* song = currentSong();
+    if (!song) return;
+    for (auto& b : song->bindings) {
+        if (b.id == bindingId) {
+            b.isScoreStep = false;
+            b.scorePosition = -1;
+            markDirty();
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, song->id });
+            return;
+        }
+    }
+}
+
 // --- Selection ---
 
 void StateAPI::selectTrack(const std::string& trackId, bool addToSelection) {

@@ -22,8 +22,7 @@ DELETE FROM presets;
 DELETE FROM songs;
 DELETE FROM config;
 SQL
-    # Handle new schema tables (may not exist in old DB)
-    sqlite3 "$db" "DELETE FROM score_steps;" 2>/dev/null
+    # score_steps table removed — score is now part of bindings
 }
 
 reset_db "$STATE_DB"

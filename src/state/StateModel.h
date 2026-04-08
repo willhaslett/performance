@@ -86,12 +86,8 @@ struct BindingState {
     std::string actionId;
     std::string args;  // JSON
     std::string description;
-};
-
-struct ScoreStep {
-    std::string actionId;
-    std::string args;         // JSON
-    std::string description;
+    bool isScoreStep = false;
+    int scorePosition = -1;  // order within score (-1 = not a score step)
 };
 
 struct SongState {
@@ -101,9 +97,8 @@ struct SongState {
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;
-    std::vector<BindingState> bindings;      // song-scoped bindings
+    std::vector<BindingState> bindings;      // song-scoped bindings (includes score steps)
     std::string initialState;                 // JSON snapshot
-    std::vector<ScoreStep> score;
 
     // Selection state (observable, not persisted)
     std::vector<std::string> selectedTrackIds;

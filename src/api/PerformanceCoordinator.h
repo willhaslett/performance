@@ -47,7 +47,8 @@ public:
     void loadInitialState();
 
     // --- Score ---
-    void saveScore(const std::vector<std::string>& stepDescriptions);
+    // Score steps are song bindings with isScoreStep=true.
+    // Replay executes score-step actions in order from initial state.
     void replayScore(int upToStep = -1);
 
     // --- Track presets (cross-cutting: state + engine) ---
