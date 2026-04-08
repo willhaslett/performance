@@ -204,11 +204,11 @@ void DeviceEditorPane::cancelLearn() {
     learnButton.setButtonText("Learn mappings");
     statusLabel.setText("", juce::dontSendNotification);
 
-    // Cancel any pending new entry
+    // Discard any pending uncommitted local-only entry
     if (pendingLearnControlIndex >= 0) {
-        state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+        if (pendingLearnControlIndex < (int)controls.size())
+            controls.erase(controls.begin() + pendingLearnControlIndex);
         pendingLearnControlIndex = -1;
-        refreshControls();
     }
 
     repaint();
@@ -228,12 +228,11 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
         }
     }
 
-    // Cancel any previous pending entry that wasn't committed
+    // Discard any previous uncommitted pending entry (local-only row)
     if (pendingLearnControlIndex >= 0) {
-        state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+        controls.erase(controls.begin() + pendingLearnControlIndex);
         pendingLearnControlIndex = -1;
-        refreshControls();
-        // Recalculate existingIndex since indices may have shifted
+        // Recalculate existingIndex since local indices may have shifted
         existingIndex = -1;
         for (int i = 0; i < (int)controls.size(); ++i) {
             if (controls[i].controlType == type &&
@@ -249,33 +248,54 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
     std::string editInitialText;
 
     if (existingIndex >= 0) {
-        // Select existing row and open rename
+        // Already mapped — select for rename
         editRowIndex = existingIndex;
         editInitialText = controls[existingIndex].name;
         pendingLearnControlIndex = -1;
     } else {
-        // Add new control with default name
+        // New control — add to local UI only, NOT persisted yet
         std::string defaultName = "Control " + std::to_string(controls.size() + 1);
-        state.addDeviceControl(currentDeviceId, defaultName, type, channel, number);
-        refreshControls();
+        ControlRow newRow;
+        newRow.name = defaultName;
+        newRow.controlType = type;
+        newRow.channel = channel;
+        newRow.number = number;
+        controls.push_back(newRow);
         editRowIndex = (int)controls.size() - 1;
         editInitialText = defaultName;
         pendingLearnControlIndex = editRowIndex;
     }
 
+    repaint();
+
     // Open inline editor on the row's name field
     if (editRowIndex >= 0) {
         auto nameBounds = getNameCellBounds(editRowIndex);
-        inlineEditor.onCommit = [this, editRowIndex](const juce::String& newText) {
-            pendingLearnControlIndex = -1;
-            state.renameDeviceControl(currentDeviceId, editRowIndex, newText.toStdString());
-            refreshControls();
+
+        auto capturedType = type;
+        auto capturedCh = channel;
+        auto capturedNum = number;
+
+        inlineEditor.onCommit = [this, editRowIndex, capturedType, capturedCh, capturedNum](const juce::String& newText) {
+            if (pendingLearnControlIndex == editRowIndex) {
+                // Commit: persist the new control to state
+                state.addDeviceControl(currentDeviceId, newText.toStdString(),
+                                       capturedType, capturedCh, capturedNum);
+                pendingLearnControlIndex = -1;
+                refreshControls();
+            } else {
+                // Renaming existing control
+                state.renameDeviceControl(currentDeviceId, editRowIndex, newText.toStdString());
+                refreshControls();
+            }
         };
         inlineEditor.onCancel = [this]() {
             if (pendingLearnControlIndex >= 0) {
-                state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+                // Discard the uncommitted local-only row
+                if (pendingLearnControlIndex < (int)controls.size())
+                    controls.erase(controls.begin() + pendingLearnControlIndex);
                 pendingLearnControlIndex = -1;
-                refreshControls();
+                repaint();
             }
         };
         inlineEditor.show(*this, nameBounds, juce::String(editInitialText));
