@@ -22,6 +22,7 @@ public:
     virtual void removeTrackInstrument(const juce::String& trackId) = 0;
     virtual void setTrackGain(const juce::String& trackId, float gain) = 0;
     virtual void setTrackMidiEnabled(const juce::String& trackId, bool enabled) = 0;
+    virtual void setTrackAudioEnabled(const juce::String& trackId, bool enabled) = 0;
     virtual void setTrackInputChannels(const juce::String& trackId, int start, int count) = 0;
     virtual void renameTrack(const juce::String& trackId, const juce::String& newName) = 0;
     virtual void clearAllTracks() = 0;

@@ -567,6 +567,9 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackId, bool enabled)
 
     it->second.midiEnabled = enabled;
 
+    // Audio input tracks don't use midiEnabled — audioEnabled controls them
+    if (it->second.sourceType == TrackSourceType::AudioInput) return;
+
     // If instrument hasn't loaded yet, the flag is stored and
     // rebuildConnections will use it when the instrument loads.
     if (!it->second.instrumentNode) return;
@@ -589,6 +592,16 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackId, bool enabled)
     }
 
     perfLog("[Engine] MIDI %s for track \"%s\"\n",
+            enabled ? "enabled" : "disabled", trackId.toRawUTF8());
+}
+
+void AudioEngine::setTrackAudioEnabled(const juce::String& trackId, bool enabled) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    if (it->second.audioEnabled == enabled) return;
+    it->second.audioEnabled = enabled;
+    rebuildConnections();
+    perfLog("[Engine] Audio %s for track \"%s\"\n",
             enabled ? "enabled" : "disabled", trackId.toRawUTF8());
 }
 
@@ -744,7 +757,7 @@ void AudioEngine::rebuildConnections() {
         int prevNumOut = 2;
         bool hasSource = false;
 
-        if (track.sourceType == TrackSourceType::AudioInput && track.inputChannelStart >= 0) {
+        if (track.sourceType == TrackSourceType::AudioInput && track.inputChannelStart >= 0 && track.audioEnabled) {
             // Audio input track: wire from audio input node
             auto firstDestNodeId = track.outputGainNode->nodeID;
             if (!track.effects.empty() && track.effects[0].node)
@@ -815,9 +828,11 @@ void AudioEngine::rebuildConnections() {
                 for (int ch = 0; ch < prevNumOut; ++ch)
                     graph->addConnection({ { prevNodeId, ch }, { track.outputGainNode->nodeID, ch } });
             }
-            // outputGainNode -> master gain
-            for (int ch = 0; ch < 2; ++ch)
-                graph->addConnection({ { track.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+            // outputGainNode -> master gain (only if audio enabled)
+            if (track.audioEnabled) {
+                for (int ch = 0; ch < 2; ++ch)
+                    graph->addConnection({ { track.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+            }
         }
 
         // For sends, use the last node before outputGain (effects chain end or source)

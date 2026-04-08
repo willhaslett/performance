@@ -37,6 +37,7 @@ public:
     float getTrackPeakLevel(const juce::String& trackId) const;
     void removeTrackInstrument(const juce::String& trackId) override;
     void setTrackMidiEnabled(const juce::String& trackId, bool enabled) override;
+    void setTrackAudioEnabled(const juce::String& trackId, bool enabled) override;
     void setTrackInputChannels(const juce::String& trackId, int start, int count) override;
     void setTrackGain(const juce::String& trackId, float gain) override;
     float getTrackGain(const juce::String& trackId) const;
@@ -133,6 +134,7 @@ private:
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
         bool midiEnabled = true;
+        bool audioEnabled = true;
         TrackSourceType sourceType = TrackSourceType::Instrument;
         int inputChannelStart = -1;
         int inputChannelCount = 0;

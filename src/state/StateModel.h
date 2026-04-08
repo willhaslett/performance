@@ -79,7 +79,8 @@ struct TrackState {
     std::string pluginId;
     std::string presetId;
     float outputGain = 1.0f;
-    bool midiEnabled = true;
+    bool midiEnabled = true;   // receives MIDI notes (instrument tracks)
+    bool audioEnabled = true;  // passes audio signal (all tracks)
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
     std::string processorState;

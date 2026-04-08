@@ -35,6 +35,8 @@ public:
     float getTrackGain(const std::string& id) const;
     void setTrackMidiEnabled(const std::string& id, bool enabled);
     bool isTrackMidiEnabled(const std::string& id) const;
+    void setTrackAudioEnabled(const std::string& id, bool enabled);
+    bool isTrackAudioEnabled(const std::string& id) const;
     void setTrackPlugin(const std::string& id, const std::string& pluginId,
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);

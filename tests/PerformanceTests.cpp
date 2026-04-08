@@ -1168,6 +1168,9 @@ public:
     void setTrackMidiEnabled(const juce::String& id, bool enabled) override {
         calls.push_back({"setTrackMidiEnabled", id.toStdString(), "", "", 0, enabled});
     }
+    void setTrackAudioEnabled(const juce::String& id, bool enabled) override {
+        calls.push_back({"setTrackAudioEnabled", id.toStdString(), "", "", 0, enabled});
+    }
     void setTrackInputChannels(const juce::String& id, int start, int count) override {
         calls.push_back({"setTrackInputChannels", id.toStdString()});
     }

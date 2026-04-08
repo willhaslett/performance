@@ -75,6 +75,13 @@ void TrackStrip::setMidiEnabled(bool enabled) {
     }
 }
 
+void TrackStrip::setAudioEnabled(bool enabled) {
+    if (audioEnabled != enabled) {
+        audioEnabled = enabled;
+        repaint();
+    }
+}
+
 void TrackStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
@@ -184,19 +191,19 @@ void TrackStrip::paint(juce::Graphics& g) {
     constexpr uint32_t bgHeaderAudioInput = 0xff8a6a2a;  // amber/orange
 
     if (isAudioInput)
-        g.setColour(midiEnabled ? juce::Colour(bgHeaderAudioInput)
-                                : Theme::color(Theme::Color::bgHeaderOff));
+        g.setColour(audioEnabled ? juce::Colour(bgHeaderAudioInput)
+                                 : Theme::color(Theme::Color::bgHeaderOff));
     else
-        g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
+        g.setColour(Theme::color(audioEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
     g.fillRect(headerBounds);
 
     midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                           headerBounds.getCentreY() - 7, 14, 14);
 
     {
-        // Power icon for all track types (controls active/mute)
-        auto iconColor = midiEnabled ? Theme::color(Theme::Color::midiActive)
-                                      : Theme::color(Theme::Color::textDim);
+        // Power icon for all track types (controls audioEnabled)
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::midiActive)
+                                       : Theme::color(Theme::Color::textDim);
         g.setColour(iconColor);
         juce::Path powerIcon;
         auto iconArea = midiDotBounds.reduced(1).toFloat();
@@ -288,11 +295,11 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // Power toggle — MIDI enable for instruments, signal enable for audio inputs
-    auto midiHitArea = midiDotBounds.expanded(6);
-    if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
-        midiEnabled = !midiEnabled;
-        state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
+    // Power icon toggles audioEnabled (all track types)
+    auto powerHitArea = midiDotBounds.expanded(6);
+    if (powerHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        audioEnabled = !audioEnabled;
+        state.setTrackAudioEnabled(trackId.toStdString(), audioEnabled);
         repaint();
     }
 }

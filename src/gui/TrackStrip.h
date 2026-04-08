@@ -23,6 +23,7 @@ public:
     void setInstrumentName(const juce::String& name);
     void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setMidiEnabled(bool enabled);
+    void setAudioEnabled(bool enabled);
     void setPeakLevel(float level);
     void setGain(float gain);
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
@@ -49,6 +50,7 @@ private:
     juce::String trackId;    // stable UUID from registry
     juce::String trackName;  // display name
     bool midiEnabled = true;
+    bool audioEnabled = true;
 
     TrackSourceType sourceType = TrackSourceType::Instrument;
     juce::ComboBox inputSelector;  // shown for audio input tracks, hidden for instrument

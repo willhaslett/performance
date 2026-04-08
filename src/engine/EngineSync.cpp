@@ -246,10 +246,10 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         auto* t = stateAPI.findTrack(entityId);
         if (!t) return;
         engine.setTrackGain(id, t->outputGain);
+        engine.setTrackAudioEnabled(id, t->audioEnabled);
         engine.renameTrack(id, juce::String(t->name));
 
         if (t->sourceType == TrackSourceType::AudioInput) {
-            // Update input channel routing if changed
             engine.setTrackInputChannels(id, t->inputChannelStart, t->inputChannelCount);
             return;
         }

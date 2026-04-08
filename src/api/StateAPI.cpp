@@ -270,6 +270,19 @@ bool StateAPI::isTrackMidiEnabled(const std::string& id) const {
     return track ? track->midiEnabled : true;
 }
 
+void StateAPI::setTrackAudioEnabled(const std::string& id, bool enabled) {
+    auto* track = findTrack(id);
+    if (!track) return;
+    track->audioEnabled = enabled;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
+    auto* track = findTrack(id);
+    return track ? track->audioEnabled : true;
+}
+
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
     auto* track = findTrack(id);

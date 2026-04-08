@@ -124,6 +124,7 @@ void MixerView::timerCallback() {
             trackStrips[i]->setEffects(effects);
 
             trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(id.toStdString()));
+            trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(id.toStdString()));
             trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
             trackStrips[i]->setPeakLevel(engine.getTrackPeakLevel(id));
 
@@ -196,6 +197,7 @@ void MixerView::rebuildStrips() {
         strip->setEffects(effects);
 
         strip->setMidiEnabled(state.isTrackMidiEnabled(t.id.toStdString()));
+        strip->setAudioEnabled(state.isTrackAudioEnabled(t.id.toStdString()));
         strip->setAvailableBusses(busOptions);
 
         auto stateSends = state.getTrackSends(t.id.toStdString());
