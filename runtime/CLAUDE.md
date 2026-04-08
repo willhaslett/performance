@@ -130,7 +130,7 @@ The app has a 3-pane layout: sidebar (songs/library/actions), chat (you), mixer 
 - Bus strips: effect slots, fader, VU meter
 - Click plugin pills to pick plugins (submenu with presets)
 - Right-click populated pills: No Plugin / Replace
-- Keyboard: s=sidebar, x=mixer, i=focus chat, Escape=close editor
+- Keyboard: s=sidebar, x=mixer, Escape=close editor/unfocus text. Shortcuts disabled when any text field has focus.
 
 ## Guidelines
 - When Will asks for a change, execute it immediately with `perf`. Don't just describe what you'd do.

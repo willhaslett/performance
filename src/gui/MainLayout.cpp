@@ -124,11 +124,6 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
 
     auto c = key.getTextCharacter();
 
-    if (c == 'i') {
-        chatView.focusInput();
-        return true;
-    }
-
     if (c == 's') {
         sidebarOpen = !sidebarOpen;
         sidebar.setVisible(sidebarOpen);
