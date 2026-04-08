@@ -1,10 +1,10 @@
 #include "engine/EngineSync.h"
-#include "engine/AudioEngine.h"
+#include "engine/AudioEngineInterface.h"
 #include "engine/Log.h"
 #include "api/StateAPI.h"
 #include <juce_core/juce_core.h>
 
-EngineSync::EngineSync(AudioEngine& engine, StateAPI& stateAPI)
+EngineSync::EngineSync(AudioEngineInterface& engine, StateAPI& stateAPI)
     : engine(engine), stateAPI(stateAPI) {
     subscriptionId = stateAPI.events().subscribe([this](const StateEvent& event) {
         onStateEvent(event);

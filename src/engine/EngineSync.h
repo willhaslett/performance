@@ -3,14 +3,14 @@
 #include "state/StateEvents.h"
 #include <string>
 
-class AudioEngine;
+class AudioEngineInterface;
 class StateAPI;
 
 // Pure event subscriber — keeps the AudioEngine in sync with state.
 // No public methods. Subscribes to StateAPI events and reacts.
 class EngineSync {
 public:
-    EngineSync(AudioEngine& engine, StateAPI& stateAPI);
+    EngineSync(AudioEngineInterface& engine, StateAPI& stateAPI);
     ~EngineSync();
 
 private:
@@ -32,7 +32,7 @@ private:
     void restorePresetState(const std::string& parentId, const std::string& effectId,
                             const std::string& presetId);
 
-    AudioEngine& engine;
+    AudioEngineInterface& engine;
     StateAPI& stateAPI;
     std::string activeSongId;
     int subscriptionId = -1;

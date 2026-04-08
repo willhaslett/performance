@@ -4,6 +4,8 @@
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
 #include "persistence/PersistenceLayer.h"
+#include "engine/AudioEngineInterface.h"
+#include "engine/EngineSync.h"
 #include "engine/Log.h"
 
 // ============================================================================
@@ -942,6 +944,314 @@ public:
 };
 
 static IntegrationTests integrationTests;
+
+// ============================================================================
+// Mock AudioEngine for EngineSync tests
+// ============================================================================
+
+class MockAudioEngine : public AudioEngineInterface {
+public:
+    struct Call {
+        std::string method;
+        std::string arg1, arg2, arg3;
+        float floatArg = 0;
+        bool boolArg = false;
+    };
+    std::vector<Call> calls;
+    std::map<juce::String, juce::String> trackPlugins;  // trackId → pluginName
+
+    void clear() { calls.clear(); }
+
+    void createTrackWithId(const juce::String& id, const juce::String& name) override {
+        calls.push_back({"createTrackWithId", id.toStdString(), name.toStdString()});
+    }
+    void removeTrack(const juce::String& id) override {
+        calls.push_back({"removeTrack", id.toStdString()});
+    }
+    bool addTrackInstrument(const juce::String& id, const juce::String& plugin, LoadCallback cb) override {
+        calls.push_back({"addTrackInstrument", id.toStdString(), plugin.toStdString()});
+        trackPlugins[id] = plugin;
+        if (cb) cb();  // fire immediately for testing
+        return true;
+    }
+    void removeTrackInstrument(const juce::String& id) override {
+        calls.push_back({"removeTrackInstrument", id.toStdString()});
+        trackPlugins.erase(id);
+    }
+    void setTrackGain(const juce::String& id, float gain) override {
+        calls.push_back({"setTrackGain", id.toStdString(), "", "", gain});
+    }
+    void setTrackMidiEnabled(const juce::String& id, bool enabled) override {
+        calls.push_back({"setTrackMidiEnabled", id.toStdString(), "", "", 0, enabled});
+    }
+    void renameTrack(const juce::String& id, const juce::String& name) override {
+        calls.push_back({"renameTrack", id.toStdString(), name.toStdString()});
+    }
+    void clearAllTracks() override { calls.push_back({"clearAllTracks"}); }
+
+    void createBusWithId(const juce::String& id, const juce::String& name) override {
+        calls.push_back({"createBusWithId", id.toStdString(), name.toStdString()});
+    }
+    void removeBus(const juce::String& id) override {
+        calls.push_back({"removeBus", id.toStdString()});
+    }
+    void setBusGain(const juce::String& id, float gain) override {
+        calls.push_back({"setBusGain", id.toStdString(), "", "", gain});
+    }
+    void renameBus(const juce::String& id, const juce::String& name) override {
+        calls.push_back({"renameBus", id.toStdString(), name.toStdString()});
+    }
+    void clearAllBusses() override { calls.push_back({"clearAllBusses"}); }
+
+    bool addEffect(const juce::String& parent, const juce::String& fxId,
+                   const juce::String& plugin, LoadCallback cb) override {
+        calls.push_back({"addEffect", parent.toStdString(), fxId.toStdString(), plugin.toStdString()});
+        if (cb) cb();
+        return true;
+    }
+    void removeEffect(const juce::String& parent, const juce::String& fxId) override {
+        calls.push_back({"removeEffect", parent.toStdString(), fxId.toStdString()});
+    }
+
+    void addSend(const juce::String& track, const juce::String& bus, float gain) override {
+        calls.push_back({"addSend", track.toStdString(), bus.toStdString(), "", gain});
+    }
+    void setSendGain(const juce::String& track, const juce::String& bus, float gain) override {
+        calls.push_back({"setSendGain", track.toStdString(), bus.toStdString(), "", gain});
+    }
+
+    void setMasterGain(float gain) override {
+        calls.push_back({"setMasterGain", "", "", "", gain});
+    }
+
+    juce::String getTrackPluginName(const juce::String& id) const override {
+        auto it = trackPlugins.find(id);
+        return it != trackPlugins.end() ? it->second : juce::String();
+    }
+    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String&) const override { return nullptr; }
+    juce::AudioProcessor* getEffectProcessor(const juce::String&, const juce::String&) const override { return nullptr; }
+
+    bool hasCall(const std::string& method) const {
+        for (auto& c : calls) if (c.method == method) return true;
+        return false;
+    }
+    int countCalls(const std::string& method) const {
+        int n = 0;
+        for (auto& c : calls) if (c.method == method) n++;
+        return n;
+    }
+    const Call* findCall(const std::string& method, const std::string& arg1 = "") const {
+        for (auto& c : calls)
+            if (c.method == method && (arg1.empty() || c.arg1 == arg1)) return &c;
+        return nullptr;
+    }
+};
+
+// ============================================================================
+// EngineSync tests (state events → engine calls via mock)
+// ============================================================================
+
+class EngineSyncTests : public juce::UnitTest {
+public:
+    EngineSyncTests() : UnitTest("EngineSync", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Song load creates tracks and busses in engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto pluginId = state.registerPlugin("DLS", "Apple", "au", true);
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("Keys");
+            state.setTrackPlugin(trackId, pluginId);
+            state.setTrackGain(trackId, 0.5f);
+            auto busId = state.createBus("Reverb");
+            state.addSend(trackId, busId, 0.3f);
+
+            // Reset current song so EngineSync can trigger loadSong
+            state.setCurrentSong("");
+
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);  // triggers loadSong
+
+            expect(mock.hasCall("clearAllTracks"));
+            expect(mock.hasCall("clearAllBusses"));
+            expect(mock.hasCall("createBusWithId"));
+            expect(mock.hasCall("createTrackWithId"));
+            expect(mock.hasCall("addTrackInstrument"));
+            expect(mock.hasCall("addSend"));
+
+            auto* gainCall = mock.findCall("setTrackGain");
+            expect(gainCall != nullptr);
+            expectWithinAbsoluteError(gainCall->floatArg, 0.5f, 0.01f);
+        }
+
+        beginTest("Track rename event updates engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            state.createTrack("Old");
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            state.renameTrack(state.listTracks()[0].id, "New");
+
+            auto* call = mock.findCall("renameTrack");
+            expect(call != nullptr);
+            expectEquals(call->arg2, std::string("New"));
+        }
+
+        beginTest("Effect creation event adds effect to engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto pluginId = state.registerPlugin("Delay", "NI", "fx", false);
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            state.createTrack("T");
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            auto trackId = state.listTracks()[0].id;
+            state.addEffect(trackId, "MyDelay", pluginId);
+
+            expect(mock.hasCall("addEffect"));
+            auto* call = mock.findCall("addEffect");
+            expectEquals(call->arg3, std::string("Delay"));
+        }
+
+        beginTest("Track deletion event removes track from engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            state.removeTrack(trackId);
+
+            expect(mock.hasCall("removeTrack"));
+        }
+
+        beginTest("Master gain update propagates to engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            state.setMasterGain(0.6f);
+
+            auto* call = mock.findCall("setMasterGain");
+            expect(call != nullptr);
+            expectWithinAbsoluteError(call->floatArg, 0.6f, 0.01f);
+        }
+
+        beginTest("LoadStatus Pending blocks instrument re-trigger");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto pluginId = state.registerPlugin("Synth", "Mfg", "au", true);
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+            state.setTrackPlugin(trackId, pluginId);
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+
+            // At this point, addTrackInstrument was called once during loadSong.
+            // The mock fires callback immediately, setting LoadStatus to Loaded.
+            // Now simulate a Track Updated event (e.g., from gain change).
+            mock.clear();
+            state.setTrackGain(trackId, 0.9f);
+
+            // Should NOT trigger another addTrackInstrument — plugin hasn't changed
+            expectEquals(mock.countCalls("addTrackInstrument"), 0);
+        }
+
+        beginTest("Instrument change triggers load");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto plugin1 = state.registerPlugin("Synth1", "Mfg", "au1", true);
+            auto plugin2 = state.registerPlugin("Synth2", "Mfg", "au2", true);
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+            state.setTrackPlugin(trackId, plugin1);
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            // Change instrument
+            state.setTrackPlugin(trackId, plugin2);
+
+            expect(mock.hasCall("removeTrackInstrument"));
+            auto* call = mock.findCall("addTrackInstrument");
+            expect(call != nullptr);
+            expectEquals(call->arg2, std::string("Synth2"));
+        }
+
+        beginTest("Song switch clears and rebuilds engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto s1 = state.createSong("A");
+            state.setCurrentSong(s1);
+            state.createTrack("A Track");
+
+            auto s2 = state.createSong("B");
+            state.setCurrentSong(s2);
+            state.createTrack("B Track");
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(s1);
+            mock.clear();
+
+            // Switch to song B
+            state.setCurrentSong(s2);
+
+            expect(mock.hasCall("clearAllTracks"));
+            expect(mock.hasCall("clearAllBusses"));
+            auto* call = mock.findCall("createTrackWithId");
+            expect(call != nullptr);
+            expectEquals(call->arg2, std::string("B Track"));
+        }
+    }
+};
+
+static EngineSyncTests engineSyncTests;
 
 // ============================================================================
 // Test runner — main()

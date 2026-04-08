@@ -1,4 +1,5 @@
 #pragma once
+#include "engine/AudioEngineInterface.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -8,7 +9,7 @@
 
 class GainProcessor;
 
-class AudioEngine {
+class AudioEngine : public AudioEngineInterface {
 public:
     AudioEngine();
     ~AudioEngine();
@@ -25,54 +26,53 @@ public:
     void savePluginCache();
 
     // Track management
-    using LoadCallback = std::function<void()>;
     juce::String createTrack(const juce::String& trackName);  // generates UUID, returns it
-    void createTrackWithId(const juce::String& id, const juce::String& trackName);  // use given UUID
-    void removeTrack(const juce::String& trackId);
+    void createTrackWithId(const juce::String& id, const juce::String& trackName) override;
+    void removeTrack(const juce::String& trackId) override;
     bool addTrackInstrument(const juce::String& trackId, const juce::String& pluginName,
-                            LoadCallback onLoaded = nullptr);
+                            LoadCallback onLoaded = nullptr) override;
     float getTrackPeakLevel(const juce::String& trackId) const;
-    void removeTrackInstrument(const juce::String& trackId);
-    void setTrackMidiEnabled(const juce::String& trackId, bool enabled);
-    void setTrackGain(const juce::String& trackId, float gain);
+    void removeTrackInstrument(const juce::String& trackId) override;
+    void setTrackMidiEnabled(const juce::String& trackId, bool enabled) override;
+    void setTrackGain(const juce::String& trackId, float gain) override;
     float getTrackGain(const juce::String& trackId) const;
-    void renameTrack(const juce::String& trackId, const juce::String& newName);
-    void clearAllTracks();
+    void renameTrack(const juce::String& trackId, const juce::String& newName) override;
+    void clearAllTracks() override;
 
     // Bus management
     juce::String createBus(const juce::String& busName);  // generates UUID, returns it
-    void createBusWithId(const juce::String& id, const juce::String& busName);  // use given UUID
-    void removeBus(const juce::String& busId);
-    void renameBus(const juce::String& busId, const juce::String& newName);
-    void setBusGain(const juce::String& busId, float gain);
+    void createBusWithId(const juce::String& id, const juce::String& busName) override;
+    void removeBus(const juce::String& busId) override;
+    void renameBus(const juce::String& busId, const juce::String& newName) override;
+    void setBusGain(const juce::String& busId, float gain) override;
 
     struct EffectInfo { juce::String id; juce::String pluginName; };
 
     // Effects — unified for tracks and busses (parentId is track/bus UUID, or "Output" for master)
     bool addEffect(const juce::String& parentId, const juce::String& effectId,
-                   const juce::String& pluginName, LoadCallback onLoaded = nullptr);
-    void removeEffect(const juce::String& parentId, const juce::String& effectId);
-    void clearAllBusses();
+                   const juce::String& pluginName, LoadCallback onLoaded = nullptr) override;
+    void removeEffect(const juce::String& parentId, const juce::String& effectId) override;
+    void clearAllBusses() override;
 
     // Master output
-    void setMasterGain(float gain);
+    void setMasterGain(float gain) override;
     float getMasterGain() const;
     float getMasterPeakLevel() const;
     std::vector<EffectInfo> getMasterEffects() const;
 
     // Sends
-    void addSend(const juce::String& trackId, const juce::String& busId, float gain = 1.0f);
-    void setSendGain(const juce::String& trackId, const juce::String& busId, float gain);
+    void addSend(const juce::String& trackId, const juce::String& busId, float gain = 1.0f) override;
+    void setSendGain(const juce::String& trackId, const juce::String& busId, float gain) override;
 
     // Access loaded processors by ID
-    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId) const;
+    juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId) const override;
     juce::AudioProcessor* getEffectProcessor(const juce::String& parentId,
-                                              const juce::String& effectId) const;
+                                              const juce::String& effectId) const override;
 
     // Query current state
     std::vector<juce::String> getTrackNames() const;
     std::vector<juce::String> getBusNames() const;
-    juce::String getTrackPluginName(const juce::String& trackId) const;
+    juce::String getTrackPluginName(const juce::String& trackId) const override;
     bool isTrackMidiEnabled(const juce::String& trackId) const;
     std::vector<EffectInfo> getTrackEffects(const juce::String& trackId) const;
     std::vector<EffectInfo> getBusEffects(const juce::String& busId) const;
