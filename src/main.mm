@@ -206,10 +206,8 @@ public:
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Restore session (creates Sandbox if first run)
-        juce::Timer::callAfterDelay(100, [this] {
-            coordinator->restoreSession();
-        });
+        // Restore session (creates Sandbox if first run, restores bindings)
+        coordinator->restoreSession();
     }
 
     void shutdown() override {
