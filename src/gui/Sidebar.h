@@ -24,8 +24,10 @@ public:
     // Callback for audio device selection
     std::function<void(const std::string& deviceName)> onAudioDeviceSelected;
 
-    // Callback for debug pane selection
+    // Callbacks for pane selection
     std::function<void()> onDebugSelected;
+    std::function<void()> onLogsSelected;
+    std::function<void()> onChatSelected;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

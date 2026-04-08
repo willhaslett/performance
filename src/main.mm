@@ -201,7 +201,7 @@ public:
 
         // Wire sidebar device selection
         layout->getSidebar().onDeviceSelected = [layout](const std::string& deviceId, const std::string& portName) {
-            layout->showDeviceEditor();
+            layout->showLeftPane(&layout->deviceEditor);
             layout->getDeviceEditor().setDevice(deviceId, portName);
         };
 
@@ -216,9 +216,15 @@ public:
             dm.setAudioDeviceSetup(setup, true);
         };
 
-        // Wire sidebar debug pane selection
+        // Wire sidebar pane selection
         layout->getSidebar().onDebugSelected = [layout]() {
-            layout->showDebugPane();
+            layout->showLeftPane(&layout->debugPane);
+        };
+        layout->getSidebar().onLogsSelected = [layout]() {
+            layout->showRightPane(&layout->logPane);
+        };
+        layout->getSidebar().onChatSelected = [layout]() {
+            layout->showRightPane(&layout->chatView);
         };
 
         // Wire track preset callbacks — MixerView applies these to each new TrackStrip

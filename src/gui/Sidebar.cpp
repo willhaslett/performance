@@ -28,6 +28,12 @@ Sidebar::Sidebar() {
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
+        } else if (type == "logs") {
+            selectedDeviceId = id;
+            if (onLogsSelected) onLogsSelected();
+        } else if (type == "chat") {
+            selectedDeviceId = id;
+            if (onChatSelected) onChatSelected();
         }
     });
 }
@@ -263,17 +269,29 @@ void Sidebar::refreshTree() {
             devicesNode.children.push_back(midiNode);
         }
 
-        // Debug
-        {
-            TreeNode debugLeaf;
-            debugLeaf.label = "Debug";
-            debugLeaf.id = "debug";
-            debugLeaf.type = "debug";
-            debugLeaf.isLeaf = true;
-            devicesNode.children.push_back(debugLeaf);
-        }
-
         roots.push_back(devicesNode);
+    }
+
+    // Panes
+    {
+        TreeNode panesNode;
+        panesNode.label = "Panes";
+        panesNode.type = "category";
+
+        auto addLeaf = [&](const char* label, const char* id, const char* type) {
+            TreeNode leaf;
+            leaf.label = label;
+            leaf.id = id;
+            leaf.type = type;
+            leaf.isLeaf = true;
+            panesNode.children.push_back(leaf);
+        };
+
+        addLeaf("Debug", "debug", "debug");
+        addLeaf("Logs", "logs", "logs");
+        addLeaf("Chat", "chat", "chat");
+
+        roots.push_back(panesNode);
     }
 
     tree.setRootNodes(std::move(roots));

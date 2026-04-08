@@ -7,16 +7,25 @@
 
 MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
-    : state(state), engine(engine), chatView(lua),
+    : state(state), engine(engine),
       deviceEditor(state, coordinator), debugPane(coordinator, engine),
-      mixerView(state, engine) {
+      chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
     addAndMakeVisible(sidebar);
-    // Pane container: device editor left (60%), chat right (40%)
+
+    // Register all panes with PaneContainer (left slot 60%, right slot 40%)
     paneContainer.addPane(&deviceEditor, 0.6f);
+    paneContainer.addPane(&debugPane, 0.6f);
     paneContainer.addPane(&chatView, 0.4f);
-    addChildComponent(debugPane);  // hidden until selected
+    paneContainer.addPane(&logPane, 0.4f);
+
+    // Default: device editor (left), chat (right)
+    activeLeftPane = &deviceEditor;
+    activeRightPane = &chatView;
+    paneContainer.setPaneVisible(&debugPane, false);
+    paneContainer.setPaneVisible(&logPane, false);
+
     addAndMakeVisible(paneContainer);
     addAndMakeVisible(mixerView);
 
@@ -103,11 +112,8 @@ void MainLayout::resized() {
         mixerView.setBounds(area.removeFromBottom(mh));
     }
 
-    // Pane container or debug pane fills remaining
-    if (debugPane.isVisible())
-        debugPane.setBounds(area);
-    else
-        paneContainer.setBounds(area);
+    // Pane container fills remaining
+    paneContainer.setBounds(area);
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
@@ -149,16 +155,28 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     return false;
 }
 
-void MainLayout::showDeviceEditor() {
-    debugPane.deactivate();
-    debugPane.setVisible(false);
-    paneContainer.setVisible(true);
-    resized();
+void MainLayout::showLeftPane(juce::Component* pane) {
+    if (pane == activeLeftPane) return;
+
+    // Deactivate old left pane
+    if (activeLeftPane == &debugPane) debugPane.deactivate();
+    paneContainer.setPaneVisible(activeLeftPane, false);
+
+    // Activate new left pane
+    activeLeftPane = pane;
+    paneContainer.setPaneVisible(pane, true);
+    if (pane == &debugPane) debugPane.activate();
 }
 
-void MainLayout::showDebugPane() {
-    paneContainer.setVisible(false);
-    debugPane.setVisible(true);
-    debugPane.activate();
-    resized();
+void MainLayout::showRightPane(juce::Component* pane) {
+    if (pane == activeRightPane) return;
+
+    // Deactivate old right pane
+    if (activeRightPane == &logPane) logPane.deactivate();
+    paneContainer.setPaneVisible(activeRightPane, false);
+
+    // Activate new right pane
+    activeRightPane = pane;
+    paneContainer.setPaneVisible(pane, true);
+    if (pane == &logPane) logPane.activate();
 }
