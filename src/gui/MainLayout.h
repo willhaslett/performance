@@ -3,16 +3,19 @@
 #include "gui/Sidebar.h"
 #include "gui/MixerView.h"
 #include "gui/ChatView.h"
+#include "gui/DeviceEditorPane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
 class StateAPI;
 class EngineAPI;
 class LuaEngine;
+class PerformanceCoordinator;
 
 class MainLayout : public juce::Component {
 public:
-    MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua);
+    MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
+               PerformanceCoordinator& coordinator);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -22,6 +25,7 @@ public:
 
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
+    DeviceEditorPane& getDeviceEditor() { return deviceEditor; }
 
     std::function<void()> onSave;
 
@@ -31,17 +35,7 @@ private:
 
     Sidebar sidebar;
     ChatView chatView;
-    // Left pane placeholder for future views (Mapping, etc.)
-    class PlaceholderPane : public juce::Component {
-    public:
-        void paint(juce::Graphics& g) override {
-            g.fillAll(Theme::color(Theme::Color::bgApp));
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSize));
-            g.drawText("Mapping", getLocalBounds(), juce::Justification::centred);
-        }
-    };
-    PlaceholderPane placeholderPane;
+    DeviceEditorPane deviceEditor;
     PaneContainer paneContainer;
     MixerView mixerView;
 

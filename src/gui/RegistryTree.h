@@ -24,17 +24,20 @@ public:
 
     void setRootNodes(std::vector<TreeNode> nodes);
     void setOnNodeClick(NodeClickCallback cb) { onNodeClick = std::move(cb); }
+    void setOnNodeDoubleClick(NodeClickCallback cb) { onNodeDoubleClick = std::move(cb); }
     void setHighlightedId(const std::string& id) { highlightedId = id; repaint(); }
 
     void paint(juce::Graphics& g) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent&) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
 
 private:
     std::vector<TreeNode> roots;
     NodeClickCallback onNodeClick;
+    NodeClickCallback onNodeDoubleClick;
     std::string highlightedId;
     int hoveredRow = -1;
     int scrollOffset = 0;

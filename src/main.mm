@@ -11,11 +11,12 @@
 
 class MainWindow : public juce::DocumentWindow {
 public:
-    MainWindow(StateAPI& state, EngineAPI& engine, LuaEngine& lua)
+    MainWindow(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
+               PerformanceCoordinator& coordinator)
         : DocumentWindow("Performance",
                          juce::Colour(0xff121212),
                          DocumentWindow::allButtons),
-          mainLayout(new MainLayout(state, engine, lua)) {
+          mainLayout(new MainLayout(state, engine, lua, coordinator)) {
         setUsingNativeTitleBar(true);
         setResizable(true, true);
         setContentOwned(mainLayout, false);
@@ -177,7 +178,7 @@ public:
             coordinator->state(), coordinator->engine(), *coordinator);
 
         mainWindow = std::make_unique<MainWindow>(
-            coordinator->state(), coordinator->engine(), *luaEngine);
+            coordinator->state(), coordinator->engine(), *luaEngine, *coordinator);
 
         // Menu bar
         auto* layout = mainWindow->getMainLayout();
@@ -190,6 +191,11 @@ public:
         // Wire sidebar song loading
         layout->getSidebar().onLoadSong = [this](const std::string& songId) {
             coordinator->loadSong(songId);
+        };
+
+        // Wire sidebar device selection
+        layout->getSidebar().onDeviceSelected = [layout](const std::string& deviceId, const std::string& portName) {
+            layout->getDeviceEditor().setDevice(deviceId, portName);
         };
 
         // Wire track preset callbacks — MixerView applies these to each new TrackStrip

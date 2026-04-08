@@ -88,9 +88,12 @@ public:
     const DeviceState* findDevice(const std::string& id) const;
     DeviceState* findDeviceByPortName(const std::string& portName);
     const std::vector<DeviceState>& allDevices() const;
+    void renameDevice(const std::string& id, const std::string& name);
     std::string addDeviceControl(const std::string& deviceId, const std::string& name,
                                  const std::string& controlType, int channel, int number,
                                  const std::string& group = "");
+    void removeDeviceControl(const std::string& deviceId, int index);
+    void renameDeviceControl(const std::string& deviceId, int index, const std::string& name);
 
     // Song-device association
     void addDeviceToSong(const std::string& songId, const std::string& deviceId);

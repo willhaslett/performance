@@ -3,13 +3,16 @@
 #include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
+#include "api/PerformanceCoordinator.h"
 
-MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua)
-    : state(state), engine(engine), chatView(lua), mixerView(state, engine) {
+MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
+                       PerformanceCoordinator& coordinator)
+    : state(state), engine(engine), chatView(lua),
+      deviceEditor(state, coordinator), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     addAndMakeVisible(sidebar);
-    // Pane container: placeholder left (60%), chat right (40%)
-    paneContainer.addPane(&placeholderPane, 0.6f);
+    // Pane container: device editor left (60%), chat right (40%)
+    paneContainer.addPane(&deviceEditor, 0.6f);
     paneContainer.addPane(&chatView, 0.4f);
     addAndMakeVisible(paneContainer);
     addAndMakeVisible(mixerView);

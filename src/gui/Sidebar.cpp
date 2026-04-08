@@ -14,6 +14,16 @@ Sidebar::Sidebar() {
         if (type == "song" && onLoadSong)
             onLoadSong(id);
     });
+
+    tree.setOnNodeDoubleClick([this](const std::string& type, const std::string& id, const std::string& label) {
+        if (!state) return;
+        perfLog("[Sidebar] Double-clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());
+
+        if (type == "device" && onDeviceSelected)
+            onDeviceSelected(id, "");
+        else if (type == "unregistered_device" && onDeviceSelected)
+            onDeviceSelected("", id);  // id is the port name for unregistered devices
+    });
 }
 
 Sidebar::~Sidebar() {
@@ -62,6 +72,14 @@ void Sidebar::timerCallback() {
     if (currentId != lastHighlightedId) {
         lastHighlightedId = currentId;
         tree.setHighlightedId(currentId);
+    }
+
+    // Poll for MIDI device changes
+    auto devices = juce::MidiInput::getAvailableDevices();
+    int count = (int)devices.size();
+    if (count != lastMidiDeviceCount) {
+        lastMidiDeviceCount = count;
+        refreshTree();
     }
 }
 
@@ -167,6 +185,34 @@ void Sidebar::refreshTree() {
             actionsNode.children.push_back(actionLeaf);
         }
         roots.push_back(actionsNode);
+    }
+
+    // Devices — connected MIDI inputs, registered or not
+    {
+        TreeNode devicesNode;
+        devicesNode.label = "Devices";
+        devicesNode.type = "category";
+
+        auto midiDevices = juce::MidiInput::getAvailableDevices();
+        for (auto& midi : midiDevices) {
+            auto portName = midi.name.toStdString();
+            auto* device = state->findDeviceByPortName(portName);
+
+            TreeNode deviceLeaf;
+            if (device) {
+                deviceLeaf.label = device->name + " \xe2\x9c\x93";  // checkmark
+                deviceLeaf.id = device->id;
+                deviceLeaf.type = "device";
+            } else {
+                deviceLeaf.label = portName;
+                deviceLeaf.id = portName;  // port name as id for unregistered
+                deviceLeaf.type = "unregistered_device";
+            }
+            deviceLeaf.isLeaf = true;
+            devicesNode.children.push_back(deviceLeaf);
+        }
+
+        roots.push_back(devicesNode);
     }
 
     tree.setRootNodes(std::move(roots));

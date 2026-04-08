@@ -70,6 +70,9 @@ public:
 
     // --- MIDI devices ---
     void refreshMidiDevices();
+    void startMidiLearn(const std::string& deviceId,
+                        std::function<void(const std::string& controlType, int channel, int number)> callback);
+    void cancelMidiLearn();
 
     // --- Logging ---
     void log(const juce::String& message);

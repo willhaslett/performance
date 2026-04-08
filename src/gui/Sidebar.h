@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <juce_audio_devices/juce_audio_devices.h>
 #include "gui/RegistryTree.h"
 #include "gui/Theme.h"
 
@@ -15,6 +16,9 @@ public:
     // Callback for song loading (coordinator-level operation)
     std::function<void(const std::string& songId)> onLoadSong;
 
+    // Callback for device selection (deviceId set if registered, portName set if unregistered)
+    std::function<void(const std::string& deviceId, const std::string& portName)> onDeviceSelected;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -27,4 +31,5 @@ private:
     int subscriptionId = -1;
     bool needsRefresh = false;
     std::string lastHighlightedId;
+    int lastMidiDeviceCount = -1;
 };

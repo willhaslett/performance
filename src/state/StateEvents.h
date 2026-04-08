@@ -6,7 +6,7 @@
 
 struct StateEvent {
     enum Action { Created, Updated, Deleted };
-    enum Entity { Song, Track, Bus, Effect, Send, Binding, Config, Plugin, Preset, Selection };
+    enum Entity { Song, Track, Bus, Effect, Send, Binding, Config, Plugin, Preset, Selection, Device };
 
     Action action;
     Entity entity;

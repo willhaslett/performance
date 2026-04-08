@@ -498,6 +498,15 @@ void PerformanceCoordinator::refreshMidiDevices() {
     if (midiEngine) midiEngine->refreshDeviceMapping();
 }
 
+void PerformanceCoordinator::startMidiLearn(const std::string& deviceId,
+    std::function<void(const std::string& controlType, int channel, int number)> callback) {
+    if (midiEngine) midiEngine->startLearn(deviceId, std::move(callback));
+}
+
+void PerformanceCoordinator::cancelMidiLearn() {
+    if (midiEngine) midiEngine->cancelLearn();
+}
+
 void PerformanceCoordinator::log(const juce::String& message) {
     perfLog("[Coordinator] %s\n", message.toRawUTF8());
 }

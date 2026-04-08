@@ -545,6 +545,7 @@ std::string StateAPI::registerDevice(const std::string& name, const std::string&
     device.midiPortName = midiPortName;
     state.devices.push_back(std::move(device));
     markDirty();
+    eventBus.emit({ StateEvent::Created, StateEvent::Device, state.devices.back().id, "" });
     return state.devices.back().id;
 }
 
@@ -554,6 +555,15 @@ void StateAPI::removeDevice(const std::string& id) {
                        [&](auto& d) { return d.id == id; }),
         state.devices.end());
     markDirty();
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Device, id, "" });
+}
+
+void StateAPI::renameDevice(const std::string& id, const std::string& name) {
+    auto* device = findDevice(id);
+    if (!device) return;
+    device->name = name;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, id, "" });
 }
 
 DeviceState* StateAPI::findDevice(const std::string& id) {
@@ -585,7 +595,24 @@ std::string StateAPI::addDeviceControl(const std::string& deviceId, const std::s
     if (!device) return {};
     device->controls.push_back({ name, controlType, channel, number, group });
     markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
     return deviceId;
+}
+
+void StateAPI::removeDeviceControl(const std::string& deviceId, int index) {
+    auto* device = findDevice(deviceId);
+    if (!device || index < 0 || index >= (int)device->controls.size()) return;
+    device->controls.erase(device->controls.begin() + index);
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
+}
+
+void StateAPI::renameDeviceControl(const std::string& deviceId, int index, const std::string& name) {
+    auto* device = findDevice(deviceId);
+    if (!device || index < 0 || index >= (int)device->controls.size()) return;
+    device->controls[index].name = name;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
 }
 
 void StateAPI::addDeviceToSong(const std::string& songId, const std::string& deviceId) {

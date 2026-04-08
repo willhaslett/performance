@@ -40,6 +40,18 @@ void MIDIEngine::shutdown() {
     enabledDevices.clear();
 }
 
+void MIDIEngine::startLearn(const std::string& deviceId, LearnCallback callback) {
+    learnDeviceId = deviceId;
+    learnCallback = std::move(callback);
+    perfLog("[MIDI] Learn mode started for device %s\n", deviceId.c_str());
+}
+
+void MIDIEngine::cancelLearn() {
+    learnCallback = nullptr;
+    learnDeviceId.clear();
+    perfLog("[MIDI] Learn mode cancelled\n");
+}
+
 void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
                                             const juce::MidiMessage& message) {
     // Always forward to audio graph (for note playback)
@@ -51,6 +63,33 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
         auto it = portToDeviceId.find(source->getName());
         if (it != portToDeviceId.end())
             deviceId = it->second;
+    }
+
+    // MIDI Learn: intercept before normal dispatch (single-shot)
+    if (learnCallback && (learnDeviceId.empty() || learnDeviceId == deviceId)) {
+        std::string controlType;
+        int ch = message.getChannel();
+        int num = 0;
+
+        if (message.isController()) {
+            controlType = "cc"; num = message.getControllerNumber();
+        } else if (message.isNoteOn()) {
+            controlType = "note"; num = message.getNoteNumber();
+        } else if (message.isPitchWheel()) {
+            controlType = "pitchbend";
+        } else if (message.isChannelPressure()) {
+            controlType = "pressure";
+        }
+
+        if (!controlType.empty()) {
+            auto cb = std::move(learnCallback);
+            learnCallback = nullptr;
+            learnDeviceId.clear();
+            juce::MessageManager::callAsync([cb, controlType, ch, num] {
+                cb(controlType, ch, num);
+            });
+            return;  // don't dispatch during learn
+        }
     }
 
     // Dispatch control events to song runtime

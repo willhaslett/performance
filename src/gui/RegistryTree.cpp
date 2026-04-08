@@ -136,6 +136,19 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
         onNodeClick(clickType, clickId, clickLabel);
 }
 
+void RegistryTree::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (!onNodeDoubleClick) return;
+
+    for (int i = 0; i < (int)visibleRows.size(); ++i) {
+        auto& row = visibleRows[i];
+        auto bounds = juce::Rectangle<int>(0, row.y, getWidth(), rowHeight);
+        if (bounds.contains(event.getPosition())) {
+            onNodeDoubleClick(row.type, row.id, row.label);
+            return;
+        }
+    }
+}
+
 void RegistryTree::mouseMove(const juce::MouseEvent& event) {
     int newHovered = -1;
     for (int i = 0; i < (int)visibleRows.size(); ++i) {

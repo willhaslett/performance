@@ -19,6 +19,12 @@ public:
     void setSongRuntime(SongRuntime* runtime) { songRuntime = runtime; }
     void setMonitorMode(bool enabled) { monitorMode = enabled; }
 
+    // MIDI Learn: capture next event from a specific device
+    using LearnCallback = std::function<void(const std::string& controlType,
+                                              int channel, int number)>;
+    void startLearn(const std::string& deviceId, LearnCallback callback);
+    void cancelLearn();
+
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
     void refreshDeviceMapping();  // call after registering new devices
@@ -32,4 +38,6 @@ private:
     juce::StringArray enabledDevices;
     std::map<juce::String, std::string> portToDeviceId;  // cached at init
     bool monitorMode = false;
+    LearnCallback learnCallback;
+    std::string learnDeviceId;
 };
