@@ -227,6 +227,10 @@ std::vector<juce::String> EngineAPI::listPresets(const juce::String& pluginName)
 
 // --- Device ---
 
+std::vector<juce::String> EngineAPI::getInputChannelNames() const {
+    return engine.getInputChannelNames();
+}
+
 juce::AudioDeviceManager& EngineAPI::getDeviceManager() {
     return engine.getDeviceManager();
 }

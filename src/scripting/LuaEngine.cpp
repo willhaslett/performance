@@ -71,6 +71,21 @@ void LuaEngine::registerAPI() {
     lua.set_function("createTrack", [&state](const std::string& name) -> std::string {
         return state.createTrack(name);
     });
+    lua.set_function("createAudioInputTrack", [&state](const std::string& name,
+                                                          int inputStart, int inputCount) -> std::string {
+        return state.createAudioInputTrack(name, inputStart, inputCount);
+    });
+    lua.set_function("setTrackInputChannels", [&state, resolveTrackId](const std::string& track,
+                                                int start, int count) {
+        state.setTrackInputChannels(resolveTrackId(track), start, count);
+    });
+    lua.set_function("listInputChannels", [this, &engine]() -> sol::table {
+        auto names = engine.getInputChannelNames();
+        sol::table result = lua.create_table();
+        for (size_t i = 0; i < names.size(); ++i)
+            result[i + 1] = names[i].toStdString();
+        return result;
+    });
     lua.set_function("removeTrack", [&state, resolveTrackId](const std::string& name) {
         state.removeTrack(resolveTrackId(name));
     });

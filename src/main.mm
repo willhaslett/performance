@@ -105,7 +105,8 @@ public:
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Track
-            menu.addItem(CommandIDs::newInstrumentTrack, "New Instrument Track");
+            menu.addItem(CommandIDs::newInstrumentTrack, "New Virtual Instrument Track");
+            menu.addItem(9, "New Audio Input Track");
             menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
         }
         else if (index == 2) {  // View
@@ -132,6 +133,11 @@ public:
             auto tracks = state.listTracks();
             auto name = "Track " + juce::String((int)tracks.size() + 1);
             state.createTrack(name.toStdString());
+        }
+        else if (menuItemID == 9) {
+            auto tracks = state.listTracks();
+            auto name = "Audio " + juce::String((int)tracks.size() + 1);
+            state.createAudioInputTrack(name.toStdString(), 0, 2);  // default stereo input 1-2
         }
         else if (menuItemID == CommandIDs::newEffectsBus) {
             auto busses = state.listBusses();

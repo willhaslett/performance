@@ -569,6 +569,79 @@ public:
             expect(!bindings[0].deviceId.empty());
         }
 
+        beginTest("Create audio input track");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createAudioInputTrack("Mic", 0, 1);
+            expect(!id.empty());
+            auto* track = s.findTrack(id);
+            expect(track != nullptr);
+            expect(track->sourceType == TrackSourceType::AudioInput);
+            expect(track->channelMode == ChannelMode::Mono);
+            expectEquals(track->inputChannelStart, 0);
+            expectEquals(track->inputChannelCount, 1);
+            expect(track->midiEnabled == false);
+        }
+
+        beginTest("Audio input track stereo");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createAudioInputTrack("Line In", 0, 2);
+            auto* track = s.findTrack(id);
+            expect(track->channelMode == ChannelMode::Stereo);
+            expectEquals(track->inputChannelCount, 2);
+        }
+
+        beginTest("Set track input channels");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto id = s.createAudioInputTrack("Mic", 0, 1);
+            s.setTrackInputChannels(id, 1, 2);
+            auto* track = s.findTrack(id);
+            expectEquals(track->inputChannelStart, 1);
+            expectEquals(track->inputChannelCount, 2);
+            expect(track->channelMode == ChannelMode::Stereo);
+        }
+
+        beginTest("Audio input track persistence round-trip");
+        {
+            TempDB db;
+            StateAPI original;
+            auto songId = original.createSong("S");
+            original.setCurrentSong(songId);
+            original.createTrack("Synth");
+            original.createAudioInputTrack("Mic", 0, 1);
+            original.createAudioInputTrack("Line In", 0, 2);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            loaded.setCurrentSong(loaded.allSongs()[0].id);
+            auto tracks = loaded.listTracks();
+            expectEquals((int)tracks.size(), 3);
+
+            for (auto& ti : tracks) {
+                auto* t = loaded.findTrack(ti.id);
+                if (t->name == "Synth")
+                    expect(t->sourceType == TrackSourceType::Instrument);
+                if (t->name == "Mic") {
+                    expect(t->sourceType == TrackSourceType::AudioInput);
+                    expect(t->channelMode == ChannelMode::Mono);
+                    expectEquals(t->inputChannelCount, 1);
+                }
+                if (t->name == "Line In") {
+                    expect(t->sourceType == TrackSourceType::AudioInput);
+                    expect(t->channelMode == ChannelMode::Stereo);
+                    expectEquals(t->inputChannelCount, 2);
+                }
+            }
+        }
+
         beginTest("Dirty tracking");
         {
             StateAPI s;
@@ -1072,6 +1145,10 @@ public:
     void createTrackWithId(const juce::String& id, const juce::String& name) override {
         calls.push_back({"createTrackWithId", id.toStdString(), name.toStdString()});
     }
+    void createAudioInputTrackWithId(const juce::String& id, const juce::String& name,
+                                      int start, int count) override {
+        calls.push_back({"createAudioInputTrackWithId", id.toStdString(), name.toStdString(), "", 0, false});
+    }
     void removeTrack(const juce::String& id) override {
         calls.push_back({"removeTrack", id.toStdString()});
     }
@@ -1090,6 +1167,9 @@ public:
     }
     void setTrackMidiEnabled(const juce::String& id, bool enabled) override {
         calls.push_back({"setTrackMidiEnabled", id.toStdString(), "", "", 0, enabled});
+    }
+    void setTrackInputChannels(const juce::String& id, int start, int count) override {
+        calls.push_back({"setTrackInputChannels", id.toStdString()});
     }
     void renameTrack(const juce::String& id, const juce::String& name) override {
         calls.push_back({"renameTrack", id.toStdString(), name.toStdString()});
@@ -1134,6 +1214,9 @@ public:
     juce::String getTrackPluginName(const juce::String& id) const override {
         auto it = trackPlugins.find(id);
         return it != trackPlugins.end() ? it->second : juce::String();
+    }
+    std::vector<juce::String> getInputChannelNames() const override {
+        return { "Input 1", "Input 2" };
     }
     juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String&) const override { return nullptr; }
     juce::AudioProcessor* getEffectProcessor(const juce::String&, const juce::String&) const override { return nullptr; }
@@ -1354,6 +1437,23 @@ public:
             auto* call = mock.findCall("createTrackWithId");
             expect(call != nullptr);
             expectEquals(call->arg2, std::string("B Track"));
+        }
+
+        beginTest("Audio input track creates correct engine call");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            state.createAudioInputTrack("Mic", 0, 1);
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+
+            expect(mock.hasCall("createAudioInputTrackWithId"));
+            expectEquals(mock.countCalls("createTrackWithId"), 0);
         }
     }
 };

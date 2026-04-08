@@ -206,6 +206,25 @@ std::string StateAPI::createTrack(const std::string& name) {
     return song->tracks.back().id;
 }
 
+std::string StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
+                                             int inputChannelCount) {
+    auto* song = currentSong();
+    if (!song) return {};
+    TrackState track;
+    track.id = generateId();
+    track.name = name;
+    track.position = (int)song->tracks.size();
+    track.sourceType = TrackSourceType::AudioInput;
+    track.channelMode = (inputChannelCount == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
+    track.inputChannelStart = inputChannelStart;
+    track.inputChannelCount = inputChannelCount;
+    track.midiEnabled = false;  // audio input tracks don't receive MIDI
+    song->tracks.push_back(std::move(track));
+    markDirty();
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
+    return song->tracks.back().id;
+}
+
 void StateAPI::removeTrack(const std::string& id) {
     auto* song = currentSong();
     if (!song) return;
@@ -263,6 +282,16 @@ void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId
 
 void StateAPI::clearTrackPlugin(const std::string& id) {
     setTrackPlugin(id, "", "");
+}
+
+void StateAPI::setTrackInputChannels(const std::string& id, int start, int count) {
+    auto* track = findTrack(id);
+    if (!track) return;
+    track->inputChannelStart = start;
+    track->inputChannelCount = count;
+    track->channelMode = (count == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 void StateAPI::setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status) {

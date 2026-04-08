@@ -110,6 +110,13 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
     auto* track = stateAPI.findTrack(trackId);
     if (!track) return;
 
+    if (track->sourceType == TrackSourceType::AudioInput) {
+        engine.createAudioInputTrackWithId(juce::String(track->id), juce::String(track->name),
+                                            track->inputChannelStart, track->inputChannelCount);
+        engine.setTrackGain(juce::String(track->id), track->outputGain);
+        return;
+    }
+
     engine.createTrackWithId(juce::String(track->id), juce::String(track->name));
     engine.setTrackGain(juce::String(track->id), track->outputGain);
     if (!track->midiEnabled)
@@ -239,8 +246,15 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         auto* t = stateAPI.findTrack(entityId);
         if (!t) return;
         engine.setTrackGain(id, t->outputGain);
-        engine.setTrackMidiEnabled(id, t->midiEnabled);
         engine.renameTrack(id, juce::String(t->name));
+
+        if (t->sourceType == TrackSourceType::AudioInput) {
+            // Update input channel routing if changed
+            engine.setTrackInputChannels(id, t->inputChannelStart, t->inputChannelCount);
+            return;
+        }
+
+        engine.setTrackMidiEnabled(id, t->midiEnabled);
 
         // Detect instrument change (skip if currently loading to avoid re-trigger loop)
         if (t->instrumentLoadStatus == LoadStatus::Pending) return;

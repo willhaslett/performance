@@ -1,5 +1,6 @@
 #pragma once
 #include "engine/AudioEngineInterface.h"
+#include "state/StateModel.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -28,12 +29,15 @@ public:
     // Track management
     juce::String createTrack(const juce::String& trackName);  // generates UUID, returns it
     void createTrackWithId(const juce::String& id, const juce::String& trackName) override;
+    void createAudioInputTrackWithId(const juce::String& id, const juce::String& name,
+                                      int inputChannelStart, int inputChannelCount) override;
     void removeTrack(const juce::String& trackId) override;
     bool addTrackInstrument(const juce::String& trackId, const juce::String& pluginName,
                             LoadCallback onLoaded = nullptr) override;
     float getTrackPeakLevel(const juce::String& trackId) const;
     void removeTrackInstrument(const juce::String& trackId) override;
     void setTrackMidiEnabled(const juce::String& trackId, bool enabled) override;
+    void setTrackInputChannels(const juce::String& trackId, int start, int count) override;
     void setTrackGain(const juce::String& trackId, float gain) override;
     float getTrackGain(const juce::String& trackId) const;
     void renameTrack(const juce::String& trackId, const juce::String& newName) override;
@@ -76,6 +80,7 @@ public:
     bool isTrackMidiEnabled(const juce::String& trackId) const;
     std::vector<EffectInfo> getTrackEffects(const juce::String& trackId) const;
     std::vector<EffectInfo> getBusEffects(const juce::String& busId) const;
+    std::vector<juce::String> getInputChannelNames() const override;
     struct SendInfo { juce::String busName; float gain; float peakLevel; };
     std::vector<SendInfo> getTrackSends(const juce::String& trackId) const;
     float getBusGain(const juce::String& busId) const;
@@ -111,6 +116,7 @@ private:
     // Graph node IDs
     juce::AudioProcessorGraph::NodeID midiInputNodeId;
     juce::AudioProcessorGraph::NodeID audioOutputNodeId;
+    juce::AudioProcessorGraph::NodeID audioInputNodeId;
     juce::AudioProcessorGraph::Node::Ptr masterGainNode;  // GainProcessor
 
     // Shared effect node type
@@ -127,6 +133,9 @@ private:
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
         bool midiEnabled = true;
+        TrackSourceType sourceType = TrackSourceType::Instrument;
+        int inputChannelStart = -1;
+        int inputChannelCount = 0;
         std::vector<EffectNode> effects;
 
         struct SendNode {

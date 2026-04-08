@@ -51,6 +51,9 @@ public:
                     const juce::String& presetName);
     std::vector<juce::String> listPresets(const juce::String& pluginName);
 
+    // --- Audio inputs ---
+    std::vector<juce::String> getInputChannelNames() const;
+
     // --- Device ---
     juce::AudioDeviceManager& getDeviceManager();
     AudioEngine& getAudioEngine() { return engine; }

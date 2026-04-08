@@ -18,7 +18,7 @@ AudioEngine::~AudioEngine() {
 }
 
 void AudioEngine::initialise() {
-    auto result = deviceManager.initialiseWithDefaultDevices(0, 2);
+    auto result = deviceManager.initialiseWithDefaultDevices(2, 2);
     if (result.isNotEmpty()) {
         perfLog("[Engine] Audio device error: %s\n", result.toRawUTF8());
         return;
@@ -49,8 +49,10 @@ void AudioEngine::setupGraph() {
     auto* device = deviceManager.getCurrentAudioDevice();
     if (!device) return;
 
+    int numInputs = device->getActiveInputChannels().countNumberOfSetBits();
+    if (numInputs == 0) numInputs = 2;  // fallback
     graph->setPlayConfigDetails(
-        0, 2,
+        numInputs, 2,
         device->getCurrentSampleRate(),
         device->getCurrentBufferSizeSamples());
     graph->prepareToPlay(
@@ -66,6 +68,11 @@ void AudioEngine::setupGraph() {
         std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
             juce::AudioProcessorGraph::AudioGraphIOProcessor::audioOutputNode));
     audioOutputNodeId = audioOutputNode->nodeID;
+
+    auto audioInputNode = graph->addNode(
+        std::make_unique<juce::AudioProcessorGraph::AudioGraphIOProcessor>(
+            juce::AudioProcessorGraph::AudioGraphIOProcessor::audioInputNode));
+    audioInputNodeId = audioInputNode->nodeID;
 
     // Master output gain (between track/bus outputs and audio output)
     masterGainNode = graph->addNode(std::make_unique<GainProcessor>());
@@ -360,6 +367,21 @@ void AudioEngine::createTrackWithId(const juce::String& id, const juce::String& 
     perfLog("[Engine] Created track: %s (id=%s)\n", trackName.toRawUTF8(), id.toRawUTF8());
 }
 
+void AudioEngine::createAudioInputTrackWithId(const juce::String& id, const juce::String& name,
+                                               int inputChannelStart, int inputChannelCount) {
+    Track track;
+    track.name = name;
+    track.sourceType = TrackSourceType::AudioInput;
+    track.inputChannelStart = inputChannelStart;
+    track.inputChannelCount = inputChannelCount;
+    track.midiEnabled = false;
+    track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
+    tracks[id] = std::move(track);
+    rebuildConnections();
+    perfLog("[Engine] Created audio input track: %s (id=%s, ch=%d, count=%d)\n",
+            name.toRawUTF8(), id.toRawUTF8(), inputChannelStart, inputChannelCount);
+}
+
 void AudioEngine::removeTrack(const juce::String& trackId) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
@@ -566,6 +588,17 @@ void AudioEngine::setTrackMidiEnabled(const juce::String& trackId, bool enabled)
             enabled ? "enabled" : "disabled", trackId.toRawUTF8());
 }
 
+void AudioEngine::setTrackInputChannels(const juce::String& trackId, int start, int count) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    if (it->second.inputChannelStart == start && it->second.inputChannelCount == count) return;
+    it->second.inputChannelStart = start;
+    it->second.inputChannelCount = count;
+    rebuildConnections();
+    perfLog("[Engine] Set input channels for track \"%s\": start=%d count=%d\n",
+            trackId.toRawUTF8(), start, count);
+}
+
 void AudioEngine::setTrackGain(const juce::String& trackId, float gain) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
@@ -702,28 +735,69 @@ void AudioEngine::rebuildConnections() {
 
     // Wire tracks
     for (auto& [trackId, track] : tracks) {
-        if (!track.instrumentNode) continue;
+        // Determine the audio source for this track
+        juce::AudioProcessorGraph::NodeID sourceNodeId;
+        int prevNumOut = 2;
+        bool hasSource = false;
 
-        auto* proc = track.instrumentNode->getProcessor();
-        int numOut = std::min(proc->getTotalNumOutputChannels(), 2);
-        perfLog("[Engine] Wiring track \"%s\": %s (%d out, midi=%s)\n",
-                track.name.toRawUTF8(), proc->getName().toRawUTF8(),
-                numOut, track.midiEnabled ? "on" : "off");
+        if (track.sourceType == TrackSourceType::AudioInput && track.inputChannelStart >= 0) {
+            // Audio input track: wire from audio input node
+            auto firstDestNodeId = track.outputGainNode->nodeID;
+            if (!track.effects.empty() && track.effects[0].node)
+                firstDestNodeId = track.effects[0].node->nodeID;
 
-        // MIDI input -> instrument
-        if (track.midiEnabled) {
-            graph->addConnection({
-                { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
-                { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
-            });
+            if (track.inputChannelCount == 1) {
+                // Mono: duplicate single input to both stereo channels
+                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
+                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 1 }});
+            } else {
+                // Stereo: connect L and R
+                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
+                graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { firstDestNodeId, 1 }});
+            }
+
+            perfLog("[Engine] Wiring audio input track \"%s\": ch=%d count=%d\n",
+                    track.name.toRawUTF8(), track.inputChannelStart, track.inputChannelCount);
+
+            // For the effects/sends chain below, start after the first effect (if any)
+            // since we already connected audio input to it
+            hasSource = true;
+        } else if (track.instrumentNode) {
+            // Instrument track: wire MIDI and instrument audio
+            auto* proc = track.instrumentNode->getProcessor();
+            prevNumOut = std::min(proc->getTotalNumOutputChannels(), 2);
+            perfLog("[Engine] Wiring track \"%s\": %s (%d out, midi=%s)\n",
+                    track.name.toRawUTF8(), proc->getName().toRawUTF8(),
+                    prevNumOut, track.midiEnabled ? "on" : "off");
+
+            if (track.midiEnabled) {
+                graph->addConnection({
+                    { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
+                    { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
+                });
+            }
+
+            sourceNodeId = track.instrumentNode->nodeID;
+            hasSource = true;
         }
 
-        // Audio path: instrument -> insert effects
-        auto prevNodeId = track.instrumentNode->nodeID;
-        int prevNumOut = numOut;
+        if (!hasSource) continue;
 
+        // Audio path: source -> insert effects (for audio input, skip first effect since already connected)
+        bool isAudioInput = (track.sourceType == TrackSourceType::AudioInput && track.inputChannelStart >= 0);
+        auto prevNodeId = isAudioInput ? juce::AudioProcessorGraph::NodeID() : sourceNodeId;
+
+        bool firstEffect = true;
         for (auto& fx : track.effects) {
             if (!fx.node) continue;
+            if (isAudioInput && firstEffect) {
+                // Audio input already connected to first effect above
+                prevNodeId = fx.node->nodeID;
+                prevNumOut = std::min(fx.node->getProcessor()->getTotalNumOutputChannels(), 2);
+                firstEffect = false;
+                continue;
+            }
+            firstEffect = false;
             for (int ch = 0; ch < prevNumOut; ++ch)
                 graph->addConnection({ { prevNodeId, ch }, { fx.node->nodeID, ch } });
             prevNodeId = fx.node->nodeID;
@@ -732,17 +806,38 @@ void AudioEngine::rebuildConnections() {
 
         // Fan out: last insert -> outputGainNode + send gainNodes
         if (track.outputGainNode) {
-            for (int ch = 0; ch < prevNumOut; ++ch)
-                graph->addConnection({ { prevNodeId, ch }, { track.outputGainNode->nodeID, ch } });
+            // For audio input with no effects, audio input already connected to gain node above
+            if (!(isAudioInput && track.effects.empty())) {
+                for (int ch = 0; ch < prevNumOut; ++ch)
+                    graph->addConnection({ { prevNodeId, ch }, { track.outputGainNode->nodeID, ch } });
+            }
             // outputGainNode -> master gain
             for (int ch = 0; ch < 2; ++ch)
                 graph->addConnection({ { track.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
         }
 
+        // For sends, use the last node before outputGain (effects chain end or source)
+        auto sendSourceId = prevNodeId;
+        if (isAudioInput && track.effects.empty()) {
+            // No effects: sends tapped from the gain node input isn't right.
+            // Sends should tap from the same point as the gain node -- the audio input itself.
+            // We re-wire sends directly from audio input.
+        }
         for (auto& send : track.sends) {
             if (!send.gainNode) continue;
-            for (int ch = 0; ch < prevNumOut; ++ch)
-                graph->addConnection({ { prevNodeId, ch }, { send.gainNode->nodeID, ch } });
+            if (isAudioInput && track.effects.empty()) {
+                // Wire sends from audio input directly
+                if (track.inputChannelCount == 1) {
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 1 }});
+                } else {
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { send.gainNode->nodeID, 1 }});
+                }
+            } else {
+                for (int ch = 0; ch < prevNumOut; ++ch)
+                    graph->addConnection({ { sendSourceId, ch }, { send.gainNode->nodeID, ch } });
+            }
         }
     }
 
@@ -855,6 +950,17 @@ std::vector<AudioEngine::EffectInfo> AudioEngine::getBusEffects(const juce::Stri
     for (auto& fx : it->second.effects)
         result.push_back({ fx.id, fx.pluginName });
     return result;
+}
+
+std::vector<juce::String> AudioEngine::getInputChannelNames() const {
+    std::vector<juce::String> names;
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (device) {
+        auto channelNames = device->getInputChannelNames();
+        for (auto& name : channelNames)
+            names.push_back(name);
+    }
+    return names;
 }
 
 std::vector<AudioEngine::SendInfo> AudioEngine::getTrackSends(const juce::String& trackId) const {

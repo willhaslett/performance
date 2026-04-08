@@ -26,7 +26,9 @@ public:
     std::string getMasterOutputId() const;
 
     // --- Tracks ---
-    std::string createTrack(const std::string& name);
+    std::string createTrack(const std::string& name);  // virtual instrument track
+    std::string createAudioInputTrack(const std::string& name, int inputChannelStart,
+                                       int inputChannelCount);
     void removeTrack(const std::string& id);
     void renameTrack(const std::string& id, const std::string& name);
     void setTrackGain(const std::string& id, float gain);
@@ -36,6 +38,7 @@ public:
     void setTrackPlugin(const std::string& id, const std::string& pluginId,
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);
+    void setTrackInputChannels(const std::string& id, int start, int count);
     void setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status);
     TrackState* findTrack(const std::string& id);
     const TrackState* findTrack(const std::string& id) const;

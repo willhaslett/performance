@@ -53,6 +53,8 @@ struct DeviceState {
 // --- Session state (per-song, mutable at runtime) ---
 
 enum class LoadStatus { None, Pending, Loaded, Failed };
+enum class TrackSourceType { Instrument, AudioInput };
+enum class ChannelMode { Mono, Stereo };
 
 struct EffectState {
     std::string id;
@@ -80,8 +82,12 @@ struct TrackState {
     bool midiEnabled = true;
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
-    std::string processorState;      // base64 blob from getStateInformation
-    std::string processorStateHash;  // sha256 of raw blob (for dirty detection)
+    std::string processorState;
+    std::string processorStateHash;
+    TrackSourceType sourceType = TrackSourceType::Instrument;
+    ChannelMode channelMode = ChannelMode::Stereo;
+    int inputChannelStart = -1;  // physical input channel index (-1 = none)
+    int inputChannelCount = 0;   // 1 = mono, 2 = stereo
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
 };
