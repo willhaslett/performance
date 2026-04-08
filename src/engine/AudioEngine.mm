@@ -50,6 +50,10 @@ void AudioEngine::setupGraph() {
     if (!device) return;
 
     int numInputs = device->getActiveInputChannels().countNumberOfSetBits();
+    perfLog("[Engine] Audio inputs: %d active channels\n", numInputs);
+    auto inputNames = device->getInputChannelNames();
+    for (int i = 0; i < inputNames.size(); ++i)
+        perfLog("[Engine]   Input %d: %s\n", i, inputNames[i].toRawUTF8());
     if (numInputs == 0) numInputs = 2;  // fallback
     graph->setPlayConfigDetails(
         numInputs, 2,

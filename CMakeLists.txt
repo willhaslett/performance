@@ -35,6 +35,8 @@ juce_add_gui_app(Performance
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     APP_SANDBOX_ENABLED FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Performance needs microphone access for audio input tracks."
 )
 
 target_sources(Performance PRIVATE
