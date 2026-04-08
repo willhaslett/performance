@@ -148,241 +148,181 @@ static std::string col_str(sqlite3_stmt* stmt, int i) {
 }
 
 void PersistenceLayer::loadInto(StateAPI& state) {
-    loadPlugins(state);
-    loadPresets(state);
-    loadActions(state);
-    loadSongs(state);
-    loadConfig(state);
+    // Build the full state from SQL — no StateAPI mutators, no events, no ID conflicts
+    AppState loaded;
+    readPlugins(loaded);
+    readPresets(loaded);
+    readActions(loaded);
+    readSongs(loaded);
+    readConfig(loaded);
 
-    // Now that all data is loaded, set the current song (triggers EngineSync)
-    // Clear first so setCurrentSong always fires the event
-    state.mutableState().currentSongId.clear();
-    auto currentSongId = state.getConfig("current_song_id");
-    if (!currentSongId.empty() && state.findSong(currentSongId))
-        state.setCurrentSong(currentSongId);
-    else if (!state.allSongs().empty())
-        state.setCurrentSong(state.allSongs()[0].id);
+    // Resolve currentSongId from config
+    auto it = loaded.config.find("current_song_id");
+    if (it != loaded.config.end()) {
+        loaded.currentSongId = it->second;
+        loaded.config.erase(it);  // not needed in the config map
+    } else if (!loaded.songs.empty()) {
+        loaded.currentSongId = loaded.songs[0].id;
+    }
 
-    state.clearDirty();
+    // Atomic swap — fires one event, EngineSync rebuilds
+    state.replaceState(std::move(loaded));
     perfLog("[Persistence] State loaded from database\n");
 }
 
-void PersistenceLayer::loadPlugins(StateAPI& state) {
+void PersistenceLayer::readPlugins(AppState& out) {
     auto* stmt = prepare("SELECT id, name, manufacturer, format_id, is_instrument FROM plugins");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        auto dbId = col_str(stmt, 0);
-        auto name = col_str(stmt, 1);
-        auto mfg = col_str(stmt, 2);
-        auto fmtId = col_str(stmt, 3);
-        bool isInst = sqlite3_column_int(stmt, 4) != 0;
-        auto genId = state.registerPlugin(name, mfg, fmtId, isInst);
-        // Preserve DB ID so FK references in tracks/effects match
-        for (auto& p : state.mutableState().plugins) {
-            if (p.id == genId) { p.id = dbId; break; }
-        }
+        out.plugins.push_back({
+            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2),
+            col_str(stmt, 3), sqlite3_column_int(stmt, 4) != 0
+        });
     }
     sqlite3_finalize(stmt);
 }
 
-void PersistenceLayer::loadPresets(StateAPI& state) {
+void PersistenceLayer::readPresets(AppState& out) {
     auto* stmt = prepare("SELECT id, plugin_id, name, state_path, kind FROM presets");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        auto dbId = col_str(stmt, 0);
-        auto pluginId = col_str(stmt, 1);
-        auto name = col_str(stmt, 2);
-        auto path = col_str(stmt, 3);
-        int kindInt = sqlite3_column_int(stmt, 4);
-        auto kind = static_cast<PresetKind>(kindInt);
-        auto genId = state.createPreset(pluginId, name, path, kind);
-        for (auto& p : state.mutableState().presets) {
-            if (p.id == genId) { p.id = dbId; break; }
-        }
+        out.presets.push_back({
+            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2),
+            col_str(stmt, 3), static_cast<PresetKind>(sqlite3_column_int(stmt, 4))
+        });
     }
     sqlite3_finalize(stmt);
 }
 
-void PersistenceLayer::loadActions(StateAPI& state) {
+void PersistenceLayer::readActions(AppState& out) {
     auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        auto dbId = col_str(stmt, 0);
-        auto name = col_str(stmt, 1);
-        auto label = col_str(stmt, 2);
-        auto schema = col_str(stmt, 3);
-        auto genId = state.registerAction(name, label, schema);
-        for (auto& a : state.mutableState().actions) {
-            if (a.id == genId) { a.id = dbId; break; }
-        }
+        out.actions.push_back({
+            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2), col_str(stmt, 3)
+        });
     }
     sqlite3_finalize(stmt);
 }
 
-void PersistenceLayer::loadSongs(StateAPI& state) {
-    // Load songs
+void PersistenceLayer::readSongs(AppState& out) {
     auto* songStmt = prepare("SELECT id, name, master_gain, initial_state FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
-        auto songDbId = col_str(songStmt, 0);
-        auto name = col_str(songStmt, 1);
-        float masterGain = (float)sqlite3_column_double(songStmt, 2);
-        auto initialState = col_str(songStmt, 3);
+        SongState song;
+        song.id = col_str(songStmt, 0);
+        song.name = col_str(songStmt, 1);
+        song.masterGain = (float)sqlite3_column_double(songStmt, 2);
+        song.initialState = col_str(songStmt, 3);
 
-        auto songId = state.createSong(name);
+        // Tracks
+        auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position FROM tracks WHERE song_id = ? ORDER BY position");
+        sqlite3_bind_text(ts, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(ts) == SQLITE_ROW) {
+            TrackState t;
+            t.id = col_str(ts, 0);
+            t.name = col_str(ts, 1);
+            t.pluginId = col_str(ts, 2);
+            t.presetId = col_str(ts, 3);
+            t.outputGain = (float)sqlite3_column_double(ts, 4);
+            t.midiEnabled = sqlite3_column_int(ts, 5) != 0;
+            t.position = sqlite3_column_int(ts, 6);
 
-        // Overwrite the generated ID with the DB ID to preserve FK references
-        auto* song = state.findSong(songId);
-        if (!song) continue;
-        song->id = songDbId;
-        song->masterGain = masterGain;
-        song->initialState = initialState;
-
-        // Set current song directly (no event) so createTrack etc. work
-        state.mutableState().currentSongId = songDbId;
-
-        // Load tracks for this song
-        auto* trackStmt = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position FROM tracks WHERE song_id = ? ORDER BY position");
-        sqlite3_bind_text(trackStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(trackStmt) == SQLITE_ROW) {
-            auto trackName = col_str(trackStmt, 1);
-            auto trackId = state.createTrack(trackName);
-            auto* track = state.findTrack(trackId);
-            if (!track) continue;
-            track->id = col_str(trackStmt, 0);  // preserve DB ID
-            track->pluginId = col_str(trackStmt, 2);
-            track->presetId = col_str(trackStmt, 3);
-            track->outputGain = (float)sqlite3_column_double(trackStmt, 4);
-            track->midiEnabled = sqlite3_column_int(trackStmt, 5) != 0;
-            track->position = sqlite3_column_int(trackStmt, 6);
-        }
-        sqlite3_finalize(trackStmt);
-
-        // Load busses for this song
-        auto* busStmt = prepare("SELECT id, name, output_gain, position FROM busses WHERE song_id = ? ORDER BY position");
-        sqlite3_bind_text(busStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(busStmt) == SQLITE_ROW) {
-            auto busName = col_str(busStmt, 1);
-            auto busId = state.createBus(busName);
-            auto* bus = state.findBus(busId);
-            if (!bus) continue;
-            bus->id = col_str(busStmt, 0);
-            bus->outputGain = (float)sqlite3_column_double(busStmt, 2);
-            bus->position = sqlite3_column_int(busStmt, 3);
-        }
-        sqlite3_finalize(busStmt);
-
-        // Load effects (for tracks, busses, and master)
-        auto* fxStmt = prepare("SELECT id, parent_id, parent_type, name, plugin_id, preset_id, position FROM effects WHERE parent_id IN (SELECT id FROM tracks WHERE song_id = ?) OR parent_id IN (SELECT id FROM busses WHERE song_id = ?) OR (parent_id = ? AND parent_type = 'song') ORDER BY position");
-        sqlite3_bind_text(fxStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(fxStmt, 2, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(fxStmt, 3, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(fxStmt) == SQLITE_ROW) {
-            auto fxDbId = col_str(fxStmt, 0);
-            auto parentId = col_str(fxStmt, 1);
-            auto fxName = col_str(fxStmt, 3);
-            auto pluginId = col_str(fxStmt, 4);
-
-            auto fxId = state.addEffect(parentId, fxName, pluginId);
-            // Find the effect and overwrite its ID with the DB ID
-            // The effect was just added, so search for it by the generated ID
-            auto* song2 = state.currentSong();
-            if (!song2) continue;
-
-            // Search all effect lists for the generated ID and replace
-            auto replaceId = [&](std::vector<EffectState>& list) {
-                for (auto& fx : list) {
-                    if (fx.id == fxId) {
-                        fx.id = fxDbId;
-                        fx.presetId = col_str(fxStmt, 5);
-                        fx.position = sqlite3_column_int(fxStmt, 6);
-                        return true;
-                    }
-                }
-                return false;
-            };
-
-            if (replaceId(song2->masterEffects)) continue;
-            for (auto& t : song2->tracks)
-                if (replaceId(t.effects)) break;
-            for (auto& b : song2->busses)
-                if (replaceId(b.effects)) break;
-        }
-        sqlite3_finalize(fxStmt);
-
-        // Load sends
-        auto* sendStmt = prepare("SELECT id, track_id, bus_id, gain FROM sends WHERE track_id IN (SELECT id FROM tracks WHERE song_id = ?)");
-        sqlite3_bind_text(sendStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(sendStmt) == SQLITE_ROW) {
-            auto sendDbId = col_str(sendStmt, 0);
-            auto trackId = col_str(sendStmt, 1);
-            auto busId = col_str(sendStmt, 2);
-            float gain = (float)sqlite3_column_double(sendStmt, 3);
-
-            auto sendId = state.addSend(trackId, busId, gain);
-            // Replace generated ID with DB ID
-            auto* track = state.findTrack(trackId);
-            if (track) {
-                for (auto& s : track->sends) {
-                    if (s.id == sendId) { s.id = sendDbId; break; }
-                }
+            // Effects for this track
+            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'track' ORDER BY position");
+            sqlite3_bind_text(fxs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(fxs) == SQLITE_ROW) {
+                t.effects.push_back({
+                    col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
+                    col_str(fxs, 3), sqlite3_column_int(fxs, 4)
+                });
             }
-        }
-        sqlite3_finalize(sendStmt);
+            sqlite3_finalize(fxs);
 
-        // Load score steps
-        auto* scoreStmt = prepare("SELECT action_id, args, description FROM score_steps WHERE song_id = ? ORDER BY position");
-        sqlite3_bind_text(scoreStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(scoreStmt) == SQLITE_ROW) {
-            song->score.push_back({
-                col_str(scoreStmt, 0),
-                col_str(scoreStmt, 1),
-                col_str(scoreStmt, 2)
+            // Sends for this track
+            auto* ss = prepare("SELECT id, bus_id, gain FROM sends WHERE track_id = ?");
+            sqlite3_bind_text(ss, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(ss) == SQLITE_ROW) {
+                t.sends.push_back({ col_str(ss, 0), col_str(ss, 1), (float)sqlite3_column_double(ss, 2) });
+            }
+            sqlite3_finalize(ss);
+
+            song.tracks.push_back(std::move(t));
+        }
+        sqlite3_finalize(ts);
+
+        // Busses
+        auto* bs = prepare("SELECT id, name, output_gain, position FROM busses WHERE song_id = ? ORDER BY position");
+        sqlite3_bind_text(bs, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(bs) == SQLITE_ROW) {
+            BusState b;
+            b.id = col_str(bs, 0);
+            b.name = col_str(bs, 1);
+            b.outputGain = (float)sqlite3_column_double(bs, 2);
+            b.position = sqlite3_column_int(bs, 3);
+
+            // Effects for this bus
+            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'bus' ORDER BY position");
+            sqlite3_bind_text(fxs, 1, b.id.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(fxs) == SQLITE_ROW) {
+                b.effects.push_back({
+                    col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
+                    col_str(fxs, 3), sqlite3_column_int(fxs, 4)
+                });
+            }
+            sqlite3_finalize(fxs);
+
+            song.busses.push_back(std::move(b));
+        }
+        sqlite3_finalize(bs);
+
+        // Master effects
+        auto* mfx = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'song' ORDER BY position");
+        sqlite3_bind_text(mfx, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(mfx) == SQLITE_ROW) {
+            song.masterEffects.push_back({
+                col_str(mfx, 0), col_str(mfx, 1), col_str(mfx, 2),
+                col_str(mfx, 3), sqlite3_column_int(mfx, 4)
             });
         }
-        sqlite3_finalize(scoreStmt);
+        sqlite3_finalize(mfx);
 
-        // Load song-scoped bindings
-        auto* bindStmt = prepare("SELECT id, control_type, channel, number, action_id, args, description FROM bindings WHERE song_id = ?");
-        sqlite3_bind_text(bindStmt, 1, songDbId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(bindStmt) == SQLITE_ROW) {
-            auto bindId = state.addBinding(songDbId,
-                col_str(bindStmt, 1),
-                sqlite3_column_int(bindStmt, 2),
-                sqlite3_column_int(bindStmt, 3),
-                col_str(bindStmt, 4),
-                col_str(bindStmt, 5),
-                col_str(bindStmt, 6));
-            // Replace generated ID
-            for (auto& b : song->bindings) {
-                if (b.id == bindId) {
-                    b.id = col_str(bindStmt, 0);
-                    break;
-                }
-            }
+        // Score steps
+        auto* sc = prepare("SELECT action_id, args, description FROM score_steps WHERE song_id = ? ORDER BY position");
+        sqlite3_bind_text(sc, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(sc) == SQLITE_ROW) {
+            song.score.push_back({ col_str(sc, 0), col_str(sc, 1), col_str(sc, 2) });
         }
-        sqlite3_finalize(bindStmt);
+        sqlite3_finalize(sc);
 
-        // currentSongId already set to songDbId above
+        // Song-scoped bindings
+        auto* bi = prepare("SELECT id, control_type, channel, number, action_id, args, description FROM bindings WHERE song_id = ?");
+        sqlite3_bind_text(bi, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(bi) == SQLITE_ROW) {
+            song.bindings.push_back({
+                col_str(bi, 0), song.id, col_str(bi, 1),
+                sqlite3_column_int(bi, 2), sqlite3_column_int(bi, 3),
+                col_str(bi, 4), col_str(bi, 5), col_str(bi, 6)
+            });
+        }
+        sqlite3_finalize(bi);
+
+        out.songs.push_back(std::move(song));
     }
     sqlite3_finalize(songStmt);
 
-    // Load global bindings (song_id IS NULL)
-    auto* globalBindStmt = prepare("SELECT id, control_type, channel, number, action_id, args, description FROM bindings WHERE song_id IS NULL");
-    while (sqlite3_step(globalBindStmt) == SQLITE_ROW) {
-        state.addGlobalBinding(
-            col_str(globalBindStmt, 1),
-            sqlite3_column_int(globalBindStmt, 2),
-            sqlite3_column_int(globalBindStmt, 3),
-            col_str(globalBindStmt, 4),
-            col_str(globalBindStmt, 5),
-            col_str(globalBindStmt, 6));
-        // Overwrite the generated ID with the DB ID
-        state.mutableState().globalBindings.back().id = col_str(globalBindStmt, 0);
+    // Global bindings
+    auto* gb = prepare("SELECT id, control_type, channel, number, action_id, args, description FROM bindings WHERE song_id IS NULL");
+    while (sqlite3_step(gb) == SQLITE_ROW) {
+        out.globalBindings.push_back({
+            col_str(gb, 0), "", col_str(gb, 1),
+            sqlite3_column_int(gb, 2), sqlite3_column_int(gb, 3),
+            col_str(gb, 4), col_str(gb, 5), col_str(gb, 6)
+        });
     }
-    sqlite3_finalize(globalBindStmt);
+    sqlite3_finalize(gb);
 }
 
-void PersistenceLayer::loadConfig(StateAPI& state) {
+void PersistenceLayer::readConfig(AppState& out) {
     auto* stmt = prepare("SELECT key, value FROM config");
     while (sqlite3_step(stmt) == SQLITE_ROW)
-        state.setConfig(col_str(stmt, 0), col_str(stmt, 1));
+        out.config[col_str(stmt, 0)] = col_str(stmt, 1);
     sqlite3_finalize(stmt);
 }
 

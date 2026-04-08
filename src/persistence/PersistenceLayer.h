@@ -1,4 +1,5 @@
 #pragma once
+#include "state/StateModel.h"
 #include <string>
 #include <sqlite3.h>
 
@@ -25,12 +26,12 @@ private:
     void exec(const std::string& sql);
     sqlite3_stmt* prepare(const std::string& sql);
 
-    // Load helpers
-    void loadPlugins(StateAPI& state);
-    void loadPresets(StateAPI& state);
-    void loadActions(StateAPI& state);
-    void loadSongs(StateAPI& state);
-    void loadConfig(StateAPI& state);
+    // Load helpers — build AppState directly, no StateAPI mutators
+    void readPlugins(AppState& out);
+    void readPresets(AppState& out);
+    void readActions(AppState& out);
+    void readSongs(AppState& out);
+    void readConfig(AppState& out);
 
     // Save helpers
     void savePlugins(const StateAPI& state);

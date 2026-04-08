@@ -133,7 +133,10 @@ public:
 
     // --- Direct access to full state (for persistence layer) ---
     const AppState& appState() const { return state; }
-    AppState& mutableState() { return state; }  // for persistence load only
+
+    // Atomically replace the entire state (used by persistence load).
+    // Fires a single Config "current_song_id" event so EngineSync rebuilds.
+    void replaceState(AppState&& newState);
 
     // --- UUID generation ---
     static std::string generateId();

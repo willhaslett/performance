@@ -794,6 +794,14 @@ StateEventBus& StateAPI::events() {
 
 // --- Dirty tracking ---
 
+void StateAPI::replaceState(AppState&& newState) {
+    state = std::move(newState);
+    dirty = false;
+    // Single event: tell EngineSync to rebuild for the current song
+    if (!state.currentSongId.empty())
+        eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
+}
+
 bool StateAPI::isDirty() const {
     return dirty;
 }
