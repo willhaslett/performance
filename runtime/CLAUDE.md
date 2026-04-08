@@ -97,6 +97,22 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `registryList("bus")` — list busses in current song
 - `registryDelete(id)` — delete entity by UUID
 
+### Audio Input Tracks
+- `createAudioInputTrack(name, inputStart, inputCount)` — create audio input track (start=-1, count=0 for no input)
+- `setTrackInputChannels(track, start, count)` — change input routing (1=mono, 2=stereo)
+- `listInputChannels()` — list available input channels on current audio device
+
+### Audio Device
+- `listAudioDevices()` — list available audio devices (e.g., "MacBook Pro Speakers", "Scarlett 2i2 USB")
+- `setAudioDevice(name)` — switch audio device (both input and output). Name must match exactly.
+
+### Devices (MIDI controllers)
+- `registerDevice(name, portName)` — register a MIDI controller
+- `addDeviceControl(deviceId, name, type, channel, number, group)` — add a named control mapping
+- `addDeviceToSong(songId, deviceId)` — associate device with song
+- `listDevices()` — list registered MIDI devices
+- `listMidiInputs()` — list connected MIDI inputs (for port name lookup)
+
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor
 - `openEditor(track, effect)` — open effect editor
@@ -107,6 +123,7 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 ### Utility
 - `log(message)` — write to app log
 - `dB(value)` — convert dB to linear gain
+- `save()` — save current state to disk
 
 ## Available plugins (commonly used)
 - **Keyscape** — Spectrasonics keyboard instrument (requires clicking through splash + loading a preset)
