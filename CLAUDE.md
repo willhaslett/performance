@@ -153,7 +153,9 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Track preset state restore uses 500ms timer hack — should use LoadStatus callback
 - No error handling on failed plugin loads (user sees nothing)
 
-**Feature backlog:**
+**Feature backlog (near-term):**
+- Customizable keyboard shortcuts — KeyBindings.h has defaults, future settings UI overrides from config. Runtime lookup instead of compile-time constants.
+- MIDI Learn / device management — ad hoc learn/mapping + persisted device maps
 - Global bindings from GUI — "MIDI Learn" mode (move a control → bind)
 - Score authoring — model exists (ScoreStep) but no UI or Lua API to build/replay
 - Auto-create Default preset on first plugin instantiation
