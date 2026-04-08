@@ -130,7 +130,7 @@ void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
 
 void BusStrip::resized() {
     auto bounds = getLocalBounds();
-    constexpr int faderMeterWidth = 28;
+    constexpr int faderMeterWidth = 48;
 
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                         .withTrimmedBottom(Theme::trackPadding)

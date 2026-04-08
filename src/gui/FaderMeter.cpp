@@ -146,7 +146,7 @@ void FaderMeter::paint(juce::Graphics& g) {
 
     // dB tick marks and labels to the right of the meters
     {
-        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
+        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::plain));
 
         struct Tick { float db; const char* label; };
         constexpr Tick ticks[] = {

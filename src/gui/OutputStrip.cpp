@@ -105,7 +105,7 @@ void OutputStrip::paint(juce::Graphics& g) {
 
 void OutputStrip::resized() {
     auto bounds = getLocalBounds();
-    constexpr int faderMeterWidth = 28;
+    constexpr int faderMeterWidth = 48;
 
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
                         .withTrimmedBottom(Theme::trackPadding)

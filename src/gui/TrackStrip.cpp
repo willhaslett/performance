@@ -252,7 +252,7 @@ int TrackStrip::getMinimumHeight() const {
 
 void TrackStrip::resized() {
     auto bounds = getLocalBounds();
-    constexpr int faderMeterWidth = 28;
+    constexpr int faderMeterWidth = 48;
 
     // FaderMeter runs full height on the right
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)

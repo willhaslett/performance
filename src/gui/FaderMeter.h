@@ -34,12 +34,12 @@ private:
     static constexpr float dbMin = -60.0f;
     static constexpr float dbMax = 6.0f;
     static constexpr float dbRange = dbMax - dbMin;
-    static constexpr int faderWidth = 8;
-    static constexpr int meterBarWidth = 4;
-    static constexpr int meterGap = 1;
+    static constexpr int faderWidth = 10;
+    static constexpr int meterBarWidth = 5;
+    static constexpr int meterGap = 2;
     static constexpr int meterWidth = meterBarWidth * 2 + meterGap;
-    static constexpr int labelWidth = 14;
-    static constexpr int gap = 4;
+    static constexpr int labelWidth = 16;
+    static constexpr int gap = 6;
 
     juce::Rectangle<int> getFaderArea() const;
     juce::Rectangle<int> getMeterArea() const;
