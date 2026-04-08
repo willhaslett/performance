@@ -337,17 +337,15 @@ void PerformanceCoordinator::loadTrackPreset(const juce::String& trackId,
         if (plugin)
             stateAPI->setTrackPlugin(trackId.toStdString(), plugin->id);
 
-        // Restore instrument state after plugin loads
+        // Store captured state on the track — EngineSync restores it
+        // automatically when the plugin finishes async loading (LoadStatus → Loaded)
         auto stateB64 = json.getProperty("pluginState", "").toString();
         if (stateB64.isNotEmpty()) {
-            auto stableId = trackId;
-            juce::Timer::callAfterDelay(500, [this, stableId, stateB64] {
-                if (auto* proc = audioEngine->getTrackInstrumentProcessor(stableId)) {
-                    juce::MemoryBlock memState;
-                    memState.fromBase64Encoding(stateB64);
-                    proc->setStateInformation(memState.getData(), (int)memState.getSize());
-                }
-            });
+            auto* track = stateAPI->findTrack(trackId.toStdString());
+            if (track) {
+                track->processorState = stateB64.toStdString();
+                track->processorStateHash.clear();  // will be set on next capture
+            }
         }
     }
 
