@@ -89,6 +89,7 @@ void TrackStrip::setSourceType(TrackSourceType type) {
     if (type == TrackSourceType::AudioInput) {
         instrumentSlot.setVisible(false);
         inputSelector.setVisible(true);
+        rebuildEffectSlots();  // show empty effect slot for audio input tracks
     } else {
         instrumentSlot.setVisible(true);
         inputSelector.setVisible(false);
@@ -146,7 +147,8 @@ void TrackStrip::rebuildEffectSlots() {
         effectSlots.push_back(std::move(slot));
     }
 
-    if (instrumentSlot.hasPlugin()) {
+    // Show empty "add effect" slot for instrument tracks with a plugin, or any audio input track
+    if (instrumentSlot.hasPlugin() || sourceType == TrackSourceType::AudioInput) {
         auto slot = std::make_unique<PluginSlot>(PluginSlot::Effect, state, engine, trackId);
         slot->onChanged = [this]() { pendingEffectOpen = true; };
         addAndMakeVisible(*slot);
@@ -174,7 +176,8 @@ void TrackStrip::paint(juce::Graphics& g) {
     constexpr uint32_t bgHeaderAudioInput = 0xff8a6a2a;  // amber/orange
 
     if (isAudioInput)
-        g.setColour(Theme::color(bgHeaderAudioInput));
+        g.setColour(midiEnabled ? juce::Colour(bgHeaderAudioInput)
+                                : Theme::color(Theme::Color::bgHeaderOff));
     else
         g.setColour(Theme::color(midiEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
     g.fillRect(headerBounds);
@@ -182,18 +185,8 @@ void TrackStrip::paint(juce::Graphics& g) {
     midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                           headerBounds.getCentreY() - 7, 14, 14);
 
-    if (isAudioInput) {
-        // Show M (mono) or S (stereo) badge instead of power icon
-        int chCount = 0;
-        int selId = inputSelector.getSelectedId();
-        if (selId >= 1000) chCount = 2;
-        else if (selId > 0) chCount = 1;
-
-        g.setColour(Theme::color(Theme::Color::textWhite));
-        g.setFont(Theme::font(Theme::fontSizeSm).boldened());
-        g.drawText(chCount == 2 ? "S" : "M", midiDotBounds, juce::Justification::centred);
-    } else {
-        // Power icon for instrument tracks
+    {
+        // Power icon for all track types (controls active/mute)
         auto iconColor = midiEnabled ? Theme::color(Theme::Color::midiActive)
                                       : Theme::color(Theme::Color::textDim);
         g.setColour(iconColor);
@@ -287,14 +280,12 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // MIDI toggle only for instrument tracks
-    if (sourceType == TrackSourceType::Instrument) {
-        auto midiHitArea = midiDotBounds.expanded(6);
-        if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
-            midiEnabled = !midiEnabled;
-            state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
-            repaint();
-        }
+    // Power toggle — MIDI enable for instruments, signal enable for audio inputs
+    auto midiHitArea = midiDotBounds.expanded(6);
+    if (midiHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        midiEnabled = !midiEnabled;
+        state.setTrackMidiEnabled(trackId.toStdString(), midiEnabled);
+        repaint();
     }
 }
 
