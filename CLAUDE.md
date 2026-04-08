@@ -146,26 +146,22 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## TODOs
 
-**Next up:**
-- Plugin state restore on session load — instruments load but preset state (binary blob) isn't restored. EngineSync should call setStateInformation after async load completes, using the preset referenced in TrackState/EffectState. LoadStatus field designed for this.
-- Verify IPC/perf tool works end-to-end with new system (IPCServer → LuaEngine → StateAPI)
-- Delete `src/registry/` directory if still present. Check if RegistryTree.h/.cpp is still used by Sidebar or dead.
-- Track preset state restore uses 500ms timer hack — should use LoadStatus callback
-- No error handling on failed plugin loads (user sees nothing)
+**Known functional issues:**
+- Slow startup/quit with heavy plugins (Kontakt, Mobius) — getStateInformation blocks UI thread. Needs background thread optimization.
+- AUShelfFilter crashes on instantiation — plugin-specific, not our bug.
+- AUPitch: preset state restore doesn't take effect — AU-specific issue.
+- juce_String.cpp:327 assertion on startup — non-fatal, likely JUCE internals.
+- No error handling on failed plugin loads (user sees nothing).
 
 **Feature backlog (near-term):**
-- Customizable keyboard shortcuts — KeyBindings.h has defaults, future settings UI overrides from config. Runtime lookup instead of compile-time constants.
-- MIDI Learn / device management — ad hoc learn/mapping + persisted device maps
-- Global bindings from GUI — "MIDI Learn" mode (move a control → bind)
-- Score authoring — model exists (ScoreStep) but no UI or Lua API to build/replay
-- Auto-create Default preset on first plugin instantiation
-- AUPitch: preset state restore doesn't take effect (AU-specific issue)
+- Song development canvas — the "mapping window" becomes a performance design/management view. Bindings, score steps, song state overview.
+- Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
+- MIDI Learn / device management — ad hoc learn/mapping + persisted device maps.
+- Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
+
+**Feature backlog (longer-term):**
 - Live audio tracks (input from audio device, same track model)
-- Undo/redo via state history
 - MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration (buffer size, sample rate)
 - Fader/knob drag: value stops changing at screen edge
-
-**Low priority:**
-- juce_String.cpp:327 assertion on startup — non-fatal, likely JUCE internals
