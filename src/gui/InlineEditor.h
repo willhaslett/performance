@@ -20,6 +20,10 @@ public:
         setSelectAllWhenFocused(true);
     }
 
+private:
+    bool isCancelling = false;
+public:
+
     void show(juce::Component& parent, juce::Rectangle<int> bounds, const juce::String& text) {
         parent.addAndMakeVisible(this);
         setBounds(bounds);
@@ -41,10 +45,10 @@ public:
     }
 
     void focusLost(FocusChangeType) override {
-        commit();
+        if (!isCancelling)
+            commit();
     }
 
-private:
     void commit() {
         auto text = getText().trim();
         auto* parent = getParentComponent();
@@ -53,8 +57,10 @@ private:
     }
 
     void cancel() {
+        isCancelling = true;
         auto* parent = getParentComponent();
         if (parent) parent->removeChildComponent(this);
+        isCancelling = false;
         if (onCancel) onCancel();
     }
 };
