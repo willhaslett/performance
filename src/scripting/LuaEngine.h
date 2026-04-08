@@ -3,7 +3,6 @@
 #include <string>
 #include <vector>
 
-class PerformanceAPI;
 class StateAPI;
 class EngineAPI;
 class PerformanceCoordinator;
@@ -11,7 +10,6 @@ class PerformanceCoordinator;
 class LuaEngine {
 public:
     LuaEngine(StateAPI& state, EngineAPI& engine, PerformanceCoordinator& coordinator);
-    LuaEngine(PerformanceAPI& api);  // legacy
 
     // Execute a Lua string, return result or error
     std::string executeString(const std::string& code);
@@ -29,13 +27,11 @@ public:
     static std::string getSongsDirectory();
 
 private:
-    PerformanceAPI* legacyApi = nullptr;  // legacy mode
-    StateAPI* statePtr = nullptr;
-    EngineAPI* enginePtr = nullptr;
-    PerformanceCoordinator* coordPtr = nullptr;
+    StateAPI& stateRef;
+    EngineAPI& engineRef;
+    PerformanceCoordinator& coordRef;
     sol::state lua;
 
-    void registerAPI();       // legacy
-    void registerNewAPI();    // new StateAPI+EngineAPI+Coordinator
+    void registerAPI();
     void loadLibraries();
 };

@@ -87,11 +87,11 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 
 ### Other Components
 
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods. Dual-mode: accepts Registry& (legacy) or StateAPI& (new).
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods.
 - **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All methods accept UUIDs. Pure view of state.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
-- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Dual-mode: legacy (PerformanceAPI) or new (StateAPI+EngineAPI+Coordinator).
+- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Takes StateAPI+EngineAPI+Coordinator.
 - **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket `/tmp/performance.sock`. `bin/perf` shell command.
 - **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map.
 
@@ -137,27 +137,27 @@ Track presets: `~/.config/performance/track_presets/<name>.json` — full chain 
 
 Index .component bundle Info.plist metadata at startup, on-demand register via AudioComponentRegister. Cache: `~/.config/performance/plugin-cache.xml`.
 
-### Legacy Code (to be removed)
-
-- `PerformanceAPI` (`src/api/PerformanceAPI.h/.cpp`) — monolithic API, replaced by StateAPI+EngineAPI+Coordinator. Still used by legacy test suite.
-- `Registry` (`src/registry/Registry.h/.cpp`) — SQLite-backed state with event bus, replaced by StateAPI+PersistenceLayer. Still used by legacy test suite.
-- `RegistryEvents` (`src/registry/RegistryEvents.h`) — replaced by StateEvents.
-
 ## Test Suite
 
-82 tests total:
-- Registry tests (legacy): CRUD, cascade deletes, master gain, sandbox protection
-- API lifecycle tests (legacy): track/bus CRUD, rename, effects, gains, sends, MIDI enabled, song switching
-- StateAPI tests: full in-memory state store coverage (34 tests)
-- Persistence round-trip tests: save→load fidelity, multi-song, empty DB
+49 tests:
+- StateAPI tests (34): full in-memory state store coverage
+- Persistence round-trip tests (3): save→load fidelity, multi-song, empty DB
+- Integration tests (12): full coordinator→state→EngineSync→engine path
 
 ## TODOs
 
-- Delete legacy PerformanceAPI + Registry + RegistryEvents (after migrating remaining tests)
+**Immediate (debt cleanup):**
+1. ~~Delete legacy code~~ Done. PerformanceAPI, Registry, RegistryEvents deleted. Tests migrated.
+2. ~~Remove dual-mode~~ Done. EngineSync and LuaEngine are StateAPI-only.
+3. Remove SongDef/TrackDef/BusDef from Song.h — duplicates StateModel. Clean up SongRuntime's direct AudioEngine& reference.
+4. Fix juce_String.cpp:327 assertion on startup — null pointer hitting juce::String constructor.
+5. Add auto-save timer — periodic dirty-flag check, flush to SQLite. Protects against crash data loss.
+6. Add integration tests — exercise full PerformanceCoordinator → StateAPI → EngineSync → AudioEngine path.
+
+**Backlog:**
 - Auto-create Default preset on first plugin instantiation
-- AUPitch: preset state restore via setStateInformation doesn't take effect (only known plugin with this issue)
-- LoadStatus integration: EngineSync updates TrackState/EffectState load status, GUI observes for auto-open
-- Test suite expansion: continuous value paths, preset lifecycle, persistence edge cases
+- AUPitch: preset state restore doesn't take effect (AU-specific issue)
+- LoadStatus integration: EngineSync updates TrackState/EffectState, GUI observes for auto-open
 - Live audio tracks (input from audio device, same track model)
 - Undo/redo via state history
 - MIDI device hot-plug
