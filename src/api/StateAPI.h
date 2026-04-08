@@ -129,6 +129,7 @@ public:
 
     // --- Dirty tracking ---
     bool isDirty() const;
+    void markDirty();
     void clearDirty();
 
     // --- Direct access to full state (for persistence layer) ---
@@ -145,8 +146,6 @@ private:
     AppState state;
     StateEventBus eventBus;
     bool dirty = false;
-
-    void markDirty() { dirty = true; }
 
     // Find the effects vector that contains effectId, and optionally the parent ID
     std::vector<EffectState>* findEffectList(const std::string& effectId, std::string* outParentId = nullptr);

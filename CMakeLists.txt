@@ -85,6 +85,7 @@ target_link_libraries(Performance PRIVATE
     juce::juce_events
     juce::juce_gui_basics
     juce::juce_gui_extra
+    juce::juce_cryptography
     lua_static
     sol2
     sqlite3
@@ -129,6 +130,7 @@ target_link_libraries(PerformanceTests PRIVATE
     juce::juce_events
     juce::juce_gui_basics
     juce::juce_gui_extra
+    juce::juce_cryptography
     lua_static
     sol2
     sqlite3

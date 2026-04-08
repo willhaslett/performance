@@ -44,6 +44,8 @@ struct EffectState {
     std::string presetId;
     int position = 0;
     LoadStatus loadStatus = LoadStatus::None;
+    std::string processorState;      // base64 blob from getStateInformation
+    std::string processorStateHash;  // sha256 of raw blob (for dirty detection)
 };
 
 struct SendState {
@@ -61,6 +63,8 @@ struct TrackState {
     bool midiEnabled = true;
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
+    std::string processorState;      // base64 blob from getStateInformation
+    std::string processorStateHash;  // sha256 of raw blob (for dirty detection)
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
 };

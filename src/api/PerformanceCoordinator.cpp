@@ -8,6 +8,7 @@
 #include "engine/MIDIEngine.h"
 #include "engine/Log.h"
 #include "song/SongRuntime.h"
+#include <juce_cryptography/juce_cryptography.h>
 
 PerformanceCoordinator::PerformanceCoordinator() {}
 
@@ -106,6 +107,9 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
         return;
     }
 
+    // Capture processor state from current song before switching
+    captureProcessorState();
+
     songRuntime->clearBindings();
     stateAPI->setCurrentSong(songId);  // triggers EngineSync via config event
     restoreBindings();
@@ -145,7 +149,96 @@ void PerformanceCoordinator::unloadSong() {
 
 // --- Persistence ---
 
+static std::string computeHash(const juce::MemoryBlock& data) {
+    juce::SHA256 sha(data);
+    return sha.toHexString().toStdString();
+}
+
+static void captureProcessorBlob(juce::AudioProcessor* proc, std::string& outState, std::string& outHash) {
+    if (!proc) return;
+    juce::MemoryBlock block;
+    proc->getStateInformation(block);
+    if (block.getSize() > 0) {
+        outState = block.toBase64Encoding().toStdString();
+        outHash = computeHash(block);
+    }
+}
+
+void PerformanceCoordinator::captureProcessorState() {
+    auto* song = stateAPI->currentSong();
+    if (!song) return;
+
+    int captured = 0;
+    for (auto& track : song->tracks) {
+        // Instrument
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(track.id));
+        if (proc) {
+            std::string newHash;
+            std::string newState;
+            captureProcessorBlob(proc, newState, newHash);
+            if (newHash != track.processorStateHash) {
+                track.processorState = std::move(newState);
+                track.processorStateHash = std::move(newHash);
+                captured++;
+            }
+        }
+
+        // Effects
+        for (auto& fx : track.effects) {
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(track.id), juce::String(fx.id));
+            if (fxProc) {
+                std::string newHash;
+                std::string newState;
+                captureProcessorBlob(fxProc, newState, newHash);
+                if (newHash != fx.processorStateHash) {
+                    fx.processorState = std::move(newState);
+                    fx.processorStateHash = std::move(newHash);
+                    captured++;
+                }
+            }
+        }
+    }
+
+    // Bus effects
+    for (auto& bus : song->busses) {
+        for (auto& fx : bus.effects) {
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(bus.id), juce::String(fx.id));
+            if (fxProc) {
+                std::string newHash;
+                std::string newState;
+                captureProcessorBlob(fxProc, newState, newHash);
+                if (newHash != fx.processorStateHash) {
+                    fx.processorState = std::move(newState);
+                    fx.processorStateHash = std::move(newHash);
+                    captured++;
+                }
+            }
+        }
+    }
+
+    // Master effects
+    for (auto& fx : song->masterEffects) {
+        auto* fxProc = audioEngine->getEffectProcessor(juce::String("Output"), juce::String(fx.id));
+        if (fxProc) {
+            std::string newHash;
+            std::string newState;
+            captureProcessorBlob(fxProc, newState, newHash);
+            if (newHash != fx.processorStateHash) {
+                fx.processorState = std::move(newState);
+                fx.processorStateHash = std::move(newHash);
+                captured++;
+            }
+        }
+    }
+
+    if (captured > 0) {
+        stateAPI->markDirty();
+        perfLog("[Coordinator] Captured %d processor states\n", captured);
+    }
+}
+
 void PerformanceCoordinator::save() {
+    captureProcessorState();
     if (persistence && stateAPI)
         persistence->saveFrom(*stateAPI);
 }

@@ -167,8 +167,37 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
 
 void EngineSync::restorePresetState(const std::string& parentId, const std::string& effectId,
                                      const std::string& presetId) {
-    if (presetId.empty()) return;
+    // Get the processor from the engine
+    juce::AudioProcessor* proc = nullptr;
+    auto engParentId = (parentId == activeSongId) ? juce::String("Output") : juce::String(parentId);
+    if (effectId.empty())
+        proc = engine.getTrackInstrumentProcessor(juce::String(parentId));
+    else
+        proc = engine.getEffectProcessor(engParentId, juce::String(effectId));
+    if (!proc) return;
 
+    // Priority 1: captured processor state (base64 blob from last save)
+    std::string processorState;
+    if (effectId.empty()) {
+        auto* track = stateAPI.findTrack(parentId);
+        if (track) processorState = track->processorState;
+    } else {
+        auto* fx = stateAPI.findEffect(effectId);
+        if (fx) processorState = fx->processorState;
+    }
+
+    if (!processorState.empty()) {
+        juce::MemoryBlock block;
+        block.fromBase64Encoding(juce::String(processorState));
+        if (block.getSize() > 0) {
+            proc->setStateInformation(block.getData(), (int)block.getSize());
+            perfLog("[EngineSync] Restored captured state (%d bytes)\n", (int)block.getSize());
+            return;
+        }
+    }
+
+    // Priority 2: named preset file
+    if (presetId.empty()) return;
     auto* preset = stateAPI.findPresetById(presetId);
     if (!preset || preset->statePath.empty()) return;
 
@@ -177,20 +206,9 @@ void EngineSync::restorePresetState(const std::string& parentId, const std::stri
 
     juce::MemoryBlock state;
     file.loadFileAsData(state);
-
-    // Get the processor from the engine
-    juce::AudioProcessor* proc = nullptr;
-    auto engParentId = (parentId == activeSongId) ? juce::String("Output") : juce::String(parentId);
-    if (effectId.empty())
-        proc = engine.getTrackInstrumentProcessor(juce::String(parentId));
-    else
-        proc = engine.getEffectProcessor(engParentId, juce::String(effectId));
-
-    if (proc) {
-        proc->setStateInformation(state.getData(), (int)state.getSize());
-        perfLog("[EngineSync] Restored preset state: %s (%d bytes)\n",
-                preset->name.c_str(), (int)state.getSize());
-    }
+    proc->setStateInformation(state.getData(), (int)state.getSize());
+    perfLog("[EngineSync] Restored preset file: %s (%d bytes)\n",
+            preset->name.c_str(), (int)state.getSize());
 }
 
 void EngineSync::onSendCreated(const std::string& sendId) {

@@ -38,6 +38,7 @@ public:
 
     // --- Persistence ---
     void save();  // flush state to SQLite
+    void captureProcessorState();  // grab all plugin binary blobs into state
 
     // --- Song state snapshots ---
     void saveInitialState();

@@ -802,6 +802,10 @@ void StateAPI::replaceState(AppState&& newState) {
         eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
 }
 
+void StateAPI::markDirty() {
+    dirty = true;
+}
+
 bool StateAPI::isDirty() const {
     return dirty;
 }

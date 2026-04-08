@@ -92,7 +92,9 @@ void PersistenceLayer::createSchema() {
             preset_id TEXT REFERENCES presets(id),
             output_gain REAL DEFAULT 1.0,
             midi_enabled INTEGER DEFAULT 1,
-            position INTEGER DEFAULT 0
+            position INTEGER DEFAULT 0,
+            processor_state TEXT,
+            processor_state_hash TEXT
         );
 
         CREATE TABLE IF NOT EXISTS busses (
@@ -110,7 +112,9 @@ void PersistenceLayer::createSchema() {
             name TEXT NOT NULL,
             plugin_id TEXT NOT NULL REFERENCES plugins(id),
             preset_id TEXT REFERENCES presets(id),
-            position INTEGER DEFAULT 0
+            position INTEGER DEFAULT 0,
+            processor_state TEXT,
+            processor_state_hash TEXT
         );
 
         CREATE TABLE IF NOT EXISTS sends (
@@ -136,6 +140,12 @@ void PersistenceLayer::createSchema() {
             value TEXT NOT NULL
         );
     )");
+
+    // Migrations for existing databases
+    sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN processor_state TEXT", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN processor_state_hash TEXT", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE effects ADD COLUMN processor_state TEXT", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE effects ADD COLUMN processor_state_hash TEXT", nullptr, nullptr, nullptr);
 }
 
 // ============================================================================
@@ -212,7 +222,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         song.initialState = col_str(songStmt, 3);
 
         // Tracks
-        auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position FROM tracks WHERE song_id = ? ORDER BY position");
+        auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash FROM tracks WHERE song_id = ? ORDER BY position");
         sqlite3_bind_text(ts, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(ts) == SQLITE_ROW) {
             TrackState t;
@@ -223,14 +233,17 @@ void PersistenceLayer::readSongs(AppState& out) {
             t.outputGain = (float)sqlite3_column_double(ts, 4);
             t.midiEnabled = sqlite3_column_int(ts, 5) != 0;
             t.position = sqlite3_column_int(ts, 6);
+            t.processorState = col_str(ts, 7);
+            t.processorStateHash = col_str(ts, 8);
 
             // Effects for this track
-            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'track' ORDER BY position");
+            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position, processor_state, processor_state_hash FROM effects WHERE parent_id = ? AND parent_type = 'track' ORDER BY position");
             sqlite3_bind_text(fxs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 t.effects.push_back({
                     col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
-                    col_str(fxs, 3), sqlite3_column_int(fxs, 4)
+                    col_str(fxs, 3), sqlite3_column_int(fxs, 4),
+                    LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
                 });
             }
             sqlite3_finalize(fxs);
@@ -258,12 +271,13 @@ void PersistenceLayer::readSongs(AppState& out) {
             b.position = sqlite3_column_int(bs, 3);
 
             // Effects for this bus
-            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'bus' ORDER BY position");
+            auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position, processor_state, processor_state_hash FROM effects WHERE parent_id = ? AND parent_type = 'bus' ORDER BY position");
             sqlite3_bind_text(fxs, 1, b.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 b.effects.push_back({
                     col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
-                    col_str(fxs, 3), sqlite3_column_int(fxs, 4)
+                    col_str(fxs, 3), sqlite3_column_int(fxs, 4),
+                    LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
                 });
             }
             sqlite3_finalize(fxs);
@@ -273,12 +287,13 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_finalize(bs);
 
         // Master effects
-        auto* mfx = prepare("SELECT id, name, plugin_id, preset_id, position FROM effects WHERE parent_id = ? AND parent_type = 'song' ORDER BY position");
+        auto* mfx = prepare("SELECT id, name, plugin_id, preset_id, position, processor_state, processor_state_hash FROM effects WHERE parent_id = ? AND parent_type = 'song' ORDER BY position");
         sqlite3_bind_text(mfx, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(mfx) == SQLITE_ROW) {
             song.masterEffects.push_back({
                 col_str(mfx, 0), col_str(mfx, 1), col_str(mfx, 2),
-                col_str(mfx, 3), sqlite3_column_int(mfx, 4)
+                col_str(mfx, 3), sqlite3_column_int(mfx, 4),
+                LoadStatus::None, col_str(mfx, 5), col_str(mfx, 6)
             });
         }
         sqlite3_finalize(mfx);
@@ -413,7 +428,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
             // Bus effects
             for (auto& fx : b.effects) {
-                auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position) VALUES (?, ?, 'bus', ?, ?, ?, ?)");
+                auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position, processor_state, processor_state_hash) VALUES (?, ?, 'bus', ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(fs, 1, fx.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(fs, 2, b.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(fs, 3, fx.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -422,6 +437,12 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                     sqlite3_bind_text(fs, 5, fx.presetId.c_str(), -1, SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 5);
                 sqlite3_bind_int(fs, 6, fx.position);
+                if (!fx.processorState.empty())
+                    sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                else sqlite3_bind_null(fs, 7);
+                if (!fx.processorStateHash.empty())
+                    sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
+                else sqlite3_bind_null(fs, 8);
                 sqlite3_step(fs);
                 sqlite3_finalize(fs);
             }
@@ -429,7 +450,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
         // Tracks (after busses, since sends reference bus IDs)
         for (auto& t : song.tracks) {
-            auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(ts, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 3, t.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -442,12 +463,18 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_double(ts, 6, t.outputGain);
             sqlite3_bind_int(ts, 7, t.midiEnabled ? 1 : 0);
             sqlite3_bind_int(ts, 8, t.position);
+            if (!t.processorState.empty())
+                sqlite3_bind_text(ts, 9, t.processorState.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(ts, 9);
+            if (!t.processorStateHash.empty())
+                sqlite3_bind_text(ts, 10, t.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(ts, 10);
             sqlite3_step(ts);
             sqlite3_finalize(ts);
 
             // Track effects
             for (auto& fx : t.effects) {
-                auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position) VALUES (?, ?, 'track', ?, ?, ?, ?)");
+                auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position, processor_state, processor_state_hash) VALUES (?, ?, 'track', ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(fs, 1, fx.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(fs, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(fs, 3, fx.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -456,6 +483,12 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                     sqlite3_bind_text(fs, 5, fx.presetId.c_str(), -1, SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 5);
                 sqlite3_bind_int(fs, 6, fx.position);
+                if (!fx.processorState.empty())
+                    sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                else sqlite3_bind_null(fs, 7);
+                if (!fx.processorStateHash.empty())
+                    sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
+                else sqlite3_bind_null(fs, 8);
                 sqlite3_step(fs);
                 sqlite3_finalize(fs);
             }
@@ -474,7 +507,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
         // Master effects
         for (auto& fx : song.masterEffects) {
-            auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position) VALUES (?, ?, 'song', ?, ?, ?, ?)");
+            auto* fs = prepare("INSERT INTO effects (id, parent_id, parent_type, name, plugin_id, preset_id, position, processor_state, processor_state_hash) VALUES (?, ?, 'song', ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(fs, 1, fx.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(fs, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(fs, 3, fx.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -483,6 +516,12 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_text(fs, 5, fx.presetId.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(fs, 5);
             sqlite3_bind_int(fs, 6, fx.position);
+            if (!fx.processorState.empty())
+                sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(fs, 7);
+            if (!fx.processorStateHash.empty())
+                sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(fs, 8);
             sqlite3_step(fs);
             sqlite3_finalize(fs);
         }
