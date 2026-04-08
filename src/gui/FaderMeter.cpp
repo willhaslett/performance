@@ -24,35 +24,22 @@ void FaderMeter::setPeakLevelStereo(float left, float right) {
 
 juce::Rectangle<int> FaderMeter::getFaderArea() const {
     return getLocalBounds()
-        .withTrimmedRight(meterWidth + labelWidth + gap)
+        .withTrimmedRight(meterWidth + labelWidth + gap + labelPad)
         .withSizeKeepingCentre(faderWidth, getHeight());
 }
 
 juce::Rectangle<int> FaderMeter::getMeterArea() const {
-    return getLocalBounds().withTrimmedRight(labelWidth).removeFromRight(meterWidth);
+    auto area = getLocalBounds();
+    area.removeFromRight(labelWidth + labelPad);  // labels + padding
+    return area.removeFromRight(meterWidth);
 }
 
-// IEC-style piecewise linear curve: expanded near 0dB, compressed at bottom.
-// Breakpoints (dB → normalized position from bottom):
-//   +6  → 1.00
-//    0  → 0.85
-//   -6  → 0.70
-//  -12  → 0.55
-//  -24  → 0.35
-//  -36  → 0.18
-//  -48  → 0.08
-//  -60  → 0.00
-
+// IEC-style piecewise linear curve
 struct DbMapPoint { float db; float norm; };
 static constexpr DbMapPoint dbMap[] = {
-    { -60.0f, 0.00f },
-    { -48.0f, 0.08f },
-    { -36.0f, 0.18f },
-    { -24.0f, 0.35f },
-    { -12.0f, 0.55f },
-    {  -6.0f, 0.70f },
-    {   0.0f, 0.85f },
-    {   6.0f, 1.00f },
+    { -60.0f, 0.00f }, { -48.0f, 0.08f }, { -36.0f, 0.18f },
+    { -24.0f, 0.35f }, { -12.0f, 0.55f }, {  -6.0f, 0.70f },
+    {   0.0f, 0.85f }, {   6.0f, 1.00f },
 };
 static constexpr int dbMapSize = sizeof(dbMap) / sizeof(dbMap[0]);
 
@@ -99,7 +86,6 @@ static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area,
     int meterHeight = (int)(area.getHeight() * meterNorm);
     auto fillArea = area.withTop(area.getBottom() - meterHeight);
 
-    // Color zones at 0dB and -12dB boundaries
     int zeroY = area.getBottom() - (int)(area.getHeight() * FaderMeter::dbToNormalized(0.0f));
     int warmY = area.getBottom() - (int)(area.getHeight() * FaderMeter::dbToNormalized(-12.0f));
 
@@ -128,12 +114,40 @@ void FaderMeter::paint(juce::Graphics& g) {
     auto faderArea = getFaderArea();
     auto meterArea = getMeterArea();
 
-    // Fader groove
+    // --- 1. Grid lines first (painted under everything) ---
+    {
+        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain));
+
+        struct Tick { float db; const char* label; };
+        constexpr Tick ticks[] = {
+            {   6, "+6" }, {   0, "0"  }, {  -6, "-6" },
+            { -12, "12" }, { -24, "24" }, { -36, "36" }, { -48, "48" }
+        };
+
+        int labelX = getWidth() - labelWidth;
+        float gridX1 = (float)(faderArea.getX() - 2);  // left edge of fader handle
+        float gridX2 = (float)(labelX - labelPad);
+
+        for (auto& tick : ticks) {
+            float norm = dbToNormalized(tick.db);
+            float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
+
+            // Grid line spanning fader through meters to labels
+            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.35f));
+            g.drawLine(gridX1, y, gridX2, y, 0.5f);
+
+            // Label
+            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(tick.db == 0 ? 1.0f : 0.7f));
+            g.drawText(tick.label, labelX, (int)(y - 5), labelWidth, 10,
+                       juce::Justification::centredLeft, false);
+        }
+    }
+
+    // --- 2. Fader groove + handle (paints over grid) ---
     auto groove = faderArea.withSizeKeepingCentre(2, faderArea.getHeight());
     g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(groove.toFloat(), 1.0f);
 
-    // Fader handle
     constexpr int handleHeight = 8;
     float normalized = gainToNormalized(gainValue);
     int travel = faderArea.getHeight() - handleHeight;
@@ -144,36 +158,7 @@ void FaderMeter::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.fillRoundedRectangle(handle.toFloat(), 3.0f);
 
-    // dB tick marks and labels to the right of the meters
-    {
-        g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::plain));
-
-        struct Tick { float db; const char* label; };
-        constexpr Tick ticks[] = {
-            {   6, "+6" }, {   0, "0"  }, {  -6, "-6" },
-            { -12, "12" }, { -24, "24" }, { -36, "36" }, { -48, "48" }
-        };
-
-        int labelX = getWidth() - labelWidth;
-        float tickX1 = (float)(meterArea.getRight() + 1);
-        float tickX2 = (float)(labelX - 1);
-
-        for (auto& tick : ticks) {
-            float norm = dbToNormalized(tick.db);
-            float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
-
-            // Tick line from meter edge to label
-            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.5f));
-            g.drawLine(tickX1, y, tickX2, y, 0.5f);
-
-            // Label
-            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(tick.db == 0 ? 0.9f : 0.6f));
-            g.drawText(tick.label, labelX, (int)(y - 4), labelWidth, 8,
-                       juce::Justification::centredLeft, false);
-        }
-    }
-
-    // Stereo meters
+    // --- 3. Stereo meters (paint over grid) ---
     auto meterLeft = meterArea.removeFromLeft(meterBarWidth);
     meterArea.removeFromLeft(meterGap);
     auto meterRight = meterArea.removeFromLeft(meterBarWidth);
@@ -197,7 +182,6 @@ void FaderMeter::mouseDrag(const juce::MouseEvent& event) {
     auto faderArea = getFaderArea();
     int deltaY = dragStartY - event.getPosition().getY();
 
-    // Convert drag delta to normalized space, then back to dB via the curve
     float startNorm = gainToNormalized(dragStartGain);
     float normDelta = (float)deltaY / (float)faderArea.getHeight();
     float newNorm = juce::jlimit(0.0f, 1.0f, startNorm + normDelta);
