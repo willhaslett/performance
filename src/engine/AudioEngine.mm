@@ -151,8 +151,16 @@ void AudioEngine::rebuildGraph() {
 void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source) {
     if (source == &deviceManager) {
         auto* device = deviceManager.getCurrentAudioDevice();
-        if (device)
-            perfLog("[Engine] Audio device changed: %s\n", device->getName().toRawUTF8());
+        perfLog("[Engine] Device change notification (device=%s, tracks=%d)\n",
+                device ? device->getName().toRawUTF8() : "null", (int)tracks.size());
+        if (!device) {
+            // Device gone — stop processing but leave graph intact for when it returns.
+            // JUCE will send another notification when a device comes back.
+            deviceManager.removeAudioCallback(player.get());
+            player->setProcessor(nullptr);
+            perfLog("[Engine] Audio device lost — processing stopped\n");
+            return;
+        }
         rebuildGraph();
     }
 }
@@ -863,15 +871,20 @@ void AudioEngine::rebuildConnections() {
             // Instrument track: wire MIDI and instrument audio
             auto* proc = track.instrumentNode->getProcessor();
             prevNumOut = std::min(proc->getTotalNumOutputChannels(), 2);
-            perfLog("[Engine] Wiring track \"%s\": %s (%d out, midi=%s)\n",
+            perfLog("[Engine] Wiring track \"%s\": %s (%d out, midi=%s, audio=%s)\n",
                     track.name.toRawUTF8(), proc->getName().toRawUTF8(),
-                    prevNumOut, track.midiEnabled ? "on" : "off");
+                    prevNumOut, track.midiEnabled ? "on" : "off",
+                    track.audioEnabled ? "on" : "off");
 
             if (track.midiEnabled && track.audioEnabled) {
-                graph->addConnection({
+                bool ok = graph->addConnection({
                     { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
                     { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
                 });
+                perfLog("[Engine]   MIDI %s for \"%s\"\n",
+                        ok ? "connected" : "FAILED", track.name.toRawUTF8());
+            } else {
+                perfLog("[Engine]   MIDI skipped for \"%s\"\n", track.name.toRawUTF8());
             }
 
             sourceNodeId = track.instrumentNode->nodeID;
@@ -1004,6 +1017,8 @@ void AudioEngine::rebuildConnections() {
         }
         for (int ch = 0; ch < 2; ++ch)
             graph->addConnection({ { prevNodeId, ch }, { audioOutputNodeId, ch } });
+        perfLog("[Engine] Master output wired (%d total connections)\n",
+                (int)graph->getConnections().size());
     }
 }
 

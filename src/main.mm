@@ -210,6 +210,8 @@ public:
             auto& dm = coordinator->engine().getDeviceManager();
             auto setup = dm.getAudioDeviceSetup();
             auto jName = juce::String(deviceName);
+            // Skip if already on this device
+            if (setup.outputDeviceName == jName && setup.inputDeviceName == jName) return;
             setup.outputDeviceName = jName;
             setup.inputDeviceName = jName;
             coordinator->state().setConfig("audio_device", deviceName);
