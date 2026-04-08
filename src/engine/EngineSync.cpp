@@ -114,6 +114,8 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
         engine.createAudioInputTrackWithId(juce::String(track->id), juce::String(track->name),
                                             track->inputChannelStart, track->inputChannelCount);
         engine.setTrackGain(juce::String(track->id), track->outputGain);
+        if (!track->audioEnabled)
+            engine.setTrackAudioEnabled(juce::String(track->id), false);
         return;
     }
 
@@ -121,6 +123,8 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
     engine.setTrackGain(juce::String(track->id), track->outputGain);
     if (!track->midiEnabled)
         engine.setTrackMidiEnabled(juce::String(track->id), false);
+    if (!track->audioEnabled)
+        engine.setTrackAudioEnabled(juce::String(track->id), false);
 
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
