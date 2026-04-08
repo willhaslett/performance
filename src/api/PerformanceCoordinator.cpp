@@ -8,7 +8,6 @@
 #include "engine/MIDIEngine.h"
 #include "engine/Log.h"
 #include "song/SongRuntime.h"
-#include "song/Song.h"
 
 PerformanceCoordinator::PerformanceCoordinator() {}
 
@@ -53,7 +52,7 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     registerBuiltinActions();
 
     automationEngine = std::make_unique<AutomationEngine>();
-    songRuntime = std::make_unique<SongRuntime>(*audioEngine);
+    songRuntime = std::make_unique<SongRuntime>();
 
     midiEngine = std::make_unique<MIDIEngine>(
         audioEngine->getDeviceManager(), *audioEngine);
@@ -61,9 +60,21 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     midiEngine->setMonitorMode(true);
     midiEngine->initialise();
     perfLog("[Coordinator] MIDIEngine initialised\n");
+
+    // Auto-save every 30 seconds if dirty
+    startTimer(30000);
+}
+
+void PerformanceCoordinator::timerCallback() {
+    if (stateAPI && persistence && stateAPI->isDirty()) {
+        persistence->saveFrom(*stateAPI);
+        stateAPI->clearDirty();
+        perfLog("[Coordinator] Auto-saved\n");
+    }
 }
 
 void PerformanceCoordinator::shutdown() {
+    stopTimer();
     if (stateAPI && persistence && stateAPI->isDirty())
         persistence->saveFrom(*stateAPI);
     songRuntime.reset();

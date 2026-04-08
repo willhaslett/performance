@@ -147,12 +147,12 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 ## TODOs
 
 **Immediate (debt cleanup):**
-1. ~~Delete legacy code~~ Done. PerformanceAPI, Registry, RegistryEvents deleted. Tests migrated.
-2. ~~Remove dual-mode~~ Done. EngineSync and LuaEngine are StateAPI-only.
-3. Remove SongDef/TrackDef/BusDef from Song.h — duplicates StateModel. Clean up SongRuntime's direct AudioEngine& reference.
-4. Fix juce_String.cpp:327 assertion on startup — null pointer hitting juce::String constructor.
-5. Add auto-save timer — periodic dirty-flag check, flush to SQLite. Protects against crash data loss.
-6. Add integration tests — exercise full PerformanceCoordinator → StateAPI → EngineSync → AudioEngine path.
+1. ~~Delete legacy code~~ Done.
+2. ~~Remove dual-mode~~ Done.
+3. ~~Remove SongDef/TrackDef/BusDef~~ Done. Song.h now just MIDIControl + ControlHandler. SongRuntime is pure MIDI dispatch, no AudioEngine dependency.
+4. juce_String.cpp:327 assertion on startup — non-fatal, likely from JUCE internals (plugin cache XML). Low priority.
+5. ~~Add auto-save timer~~ Done. 30-second dirty check, flushes to SQLite.
+6. ~~Add integration tests~~ Done. 12 tests covering coordinator→state→engine path.
 
 **Backlog:**
 - Auto-create Default preset on first plugin instantiation

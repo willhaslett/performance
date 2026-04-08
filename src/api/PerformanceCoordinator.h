@@ -18,7 +18,7 @@ class SongRuntime;
 // Consumers get StateAPI& and EngineAPI& from this — they never interact
 // with the coordinator directly except for lifecycle and cross-cutting operations.
 
-class PerformanceCoordinator {
+class PerformanceCoordinator : private juce::Timer {
 public:
     PerformanceCoordinator();
     ~PerformanceCoordinator();
@@ -77,6 +77,7 @@ private:
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
 
+    void timerCallback() override;
     void populatePluginCatalog();
     void registerBuiltinActions();
     void restoreBindings();

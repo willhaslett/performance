@@ -1,21 +1,11 @@
 #pragma once
 #include "song/Song.h"
-#include <juce_audio_processors/juce_audio_processors.h>
 #include <unordered_map>
+#include <vector>
 
-class AudioEngine;
-
-// Manages the live state of a loaded song
+// MIDI control dispatch — routes MIDI controls to bound action handlers.
 class SongRuntime {
 public:
-    SongRuntime(AudioEngine& engine);
-
-    // Load a song definition — instantiates plugins, builds tracks/busses, activates bindings
-    void load(const SongDef& song);
-
-    // Unload current song
-    void unload();
-
     // Called by MIDIEngine for control events
     void handleControl(int channel, int ccNumber, int value);
     void handleNoteOn(int channel, int noteNumber, int velocity);
@@ -23,26 +13,15 @@ public:
     void handlePitchBend(int channel, int value);
     void handlePressure(int channel, int value);
 
-    // Access a loaded plugin's parameter by track/effect name and param name
-    juce::AudioProcessorParameter* findParam(const juce::String& trackName,
-                                              const juce::String& effectName,
-                                              const juce::String& paramName);
-
-    // Direct binding management (used by API layer)
+    // Binding management
     void addBinding(const MIDIControl& control, ControlHandler handler,
                     const juce::String& description = "");
     void removeBinding(const MIDIControl& control);
     void clearBindings();
 
-    bool isLoaded() const { return loaded; }
-    const juce::String& getSongName() const { return songName; }
+    void unload();
 
 private:
-    AudioEngine& engine;
-    juce::String songName;
-    bool loaded = false;
-
-    // Bindings indexed by control type for fast dispatch
     std::unordered_map<MIDIControl, std::vector<ControlHandler>, MIDIControlHash> controlMap;
 
     void dispatchControl(const MIDIControl& control, float value);
