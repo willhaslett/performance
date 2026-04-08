@@ -74,7 +74,8 @@ public:
                         std::function<void(const std::string& controlType, int channel, int number)> callback);
     void cancelMidiLearn();
     void setMidiDeviceMonitor(const std::string& deviceId,
-                              std::function<void(const std::string& description)> callback);
+                              std::function<void(const std::string& description,
+                                                 const std::string& type, int channel, int number)> callback);
     void clearMidiDeviceMonitor();
 
     // --- Logging ---

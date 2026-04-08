@@ -35,14 +35,16 @@ DeviceEditorPane::DeviceEditorPane(StateAPI& state, PerformanceCoordinator& coor
     addChildComponent(statusLabel);
 
     midiEventLabel.setFont(Theme::font(Theme::fontSizeXs));
-    midiEventLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
+    midiEventLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::midiActive));
     midiEventLabel.setJustificationType(juce::Justification::centred);
+    midiEventLabel.setText("Incoming MIDI: \xe2\x80\x94", juce::dontSendNotification);
     addChildComponent(midiEventLabel);
 
     setWantsKeyboardFocus(true);
 }
 
 DeviceEditorPane::~DeviceEditorPane() {
+    stopTimer();
     coordinator.clearMidiDeviceMonitor();
     if (stateSubscriptionId >= 0)
         state.events().unsubscribe(stateSubscriptionId);
@@ -62,7 +64,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
     coordinator.clearMidiDeviceMonitor();
     lastEvent1.clear();
     lastEvent2.clear();
-    midiEventLabel.setText("", juce::dontSendNotification);
+    midiEventLabel.setText("Incoming MIDI: \xe2\x80\x94", juce::dontSendNotification);
 
     if (!deviceId.empty()) {
         currentDeviceId = deviceId;
@@ -74,6 +76,7 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
                 portName.c_str(), currentDeviceId.c_str());
     } else {
         currentDeviceId.clear();
+        stopTimer();
         deviceNameLabel.setVisible(false);
         portNameLabel.setVisible(false);
         learnButton.setVisible(false);
@@ -98,9 +101,11 @@ void DeviceEditorPane::setDevice(const std::string& deviceId, const std::string&
     // Set up MIDI monitor for this device
     // The MIDIEngine callback is already dispatched to the message thread
     coordinator.setMidiDeviceMonitor(currentDeviceId,
-        [this](const std::string& desc) {
-            onMidiEvent(desc);
+        [this](const std::string& desc, const std::string& type, int ch, int num) {
+            onMidiEvent(desc, type, ch, num);
         });
+
+    startTimer(100); // 10Hz for activity light decay
 
     // Show header and controls
     deviceNameLabel.setVisible(true);
@@ -140,13 +145,24 @@ void DeviceEditorPane::refreshControls() {
     repaint();
 }
 
-void DeviceEditorPane::onMidiEvent(const std::string& description) {
+void DeviceEditorPane::onMidiEvent(const std::string& description,
+                                    const std::string& type, int channel, int number) {
     lastEvent2 = lastEvent1;
     lastEvent1 = description;
-    std::string display = lastEvent1;
+    std::string display = "Incoming MIDI: " + lastEvent1;
     if (!lastEvent2.empty())
         display += " | " + lastEvent2;
     midiEventLabel.setText(juce::String(display), juce::dontSendNotification);
+
+    // Match against controls for activity light
+    auto now = juce::Time::currentTimeMillis();
+    for (auto& ctrl : controls) {
+        if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
+            ctrl.lastActivityMs = now;
+            repaint();
+            break;
+        }
+    }
 }
 
 void DeviceEditorPane::startLearn() {
@@ -201,6 +217,7 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
         // Select existing row and open rename
         editRowIndex = existingIndex;
         editInitialText = controls[existingIndex].name;
+        pendingLearnControlIndex = -1;
     } else {
         // Add new control with default name
         std::string defaultName = "Control " + std::to_string(controls.size() + 1);
@@ -208,16 +225,24 @@ void DeviceEditorPane::onLearnCapture(const std::string& type, int channel, int 
         refreshControls();
         editRowIndex = (int)controls.size() - 1;
         editInitialText = defaultName;
+        pendingLearnControlIndex = editRowIndex;
     }
 
     // Open inline editor on the row's name field
     if (editRowIndex >= 0) {
         auto nameBounds = getNameCellBounds(editRowIndex);
         inlineEditor.onCommit = [this, editRowIndex](const juce::String& newText) {
+            pendingLearnControlIndex = -1;
             state.renameDeviceControl(currentDeviceId, editRowIndex, newText.toStdString());
             refreshControls();
         };
-        inlineEditor.onCancel = nullptr;
+        inlineEditor.onCancel = [this]() {
+            if (pendingLearnControlIndex >= 0) {
+                state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+                pendingLearnControlIndex = -1;
+                refreshControls();
+            }
+        };
         inlineEditor.show(*this, nameBounds, juce::String(editInitialText));
     }
 }
@@ -234,7 +259,7 @@ juce::Rectangle<int> DeviceEditorPane::getRowBounds(int rowIndex) const {
 
 juce::Rectangle<int> DeviceEditorPane::getNameCellBounds(int rowIndex) const {
     auto row = getRowBounds(rowIndex);
-    return juce::Rectangle<int>(row.getX() + 12, row.getY(), 160, rowHeight);
+    return juce::Rectangle<int>(row.getX() + 24, row.getY(), 148, rowHeight);
 }
 
 juce::Rectangle<int> DeviceEditorPane::getDeleteButtonBounds(int rowIndex) const {
@@ -266,7 +291,7 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
     g.fillRect(0, colY, getWidth(), columnHeaderHeight);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeXs));
-    g.drawText("Name",  12,  colY, 160, columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("Name",  24,  colY, 148, columnHeaderHeight, juce::Justification::centredLeft);
     g.drawText("Type",  180, colY, 80,  columnHeaderHeight, juce::Justification::centredLeft);
     g.drawText("Ch",    268, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
     g.drawText("#",     316, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
@@ -297,11 +322,20 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
             }
 
             auto& ctrl = controls[i];
+
+            // Activity light
+            auto now = juce::Time::currentTimeMillis();
+            bool active = (ctrl.lastActivityMs > 0 && now - ctrl.lastActivityMs < 300);
+            float lightX = 8.0f;
+            float lightY = rowBounds.getY() + (rowHeight - 6) / 2.0f;
+            g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+            g.fillEllipse(lightX, lightY, 6.0f, 6.0f);
+
             g.setColour(Theme::color(Theme::Color::textPrimary));
             g.setFont(Theme::font(Theme::fontSizeSm));
 
             auto name = ctrl.name.empty() ? "(unnamed)" : ctrl.name;
-            g.drawText(juce::String(name), 12, rowBounds.getY(), 160, rowHeight,
+            g.drawText(juce::String(name), 24, rowBounds.getY(), 148, rowHeight,
                        juce::Justification::centredLeft);
             g.drawText(juce::String(ctrl.controlType), 180, rowBounds.getY(), 80, rowHeight,
                        juce::Justification::centredLeft);
@@ -348,6 +382,25 @@ void DeviceEditorPane::resized() {
 void DeviceEditorPane::mouseUp(const juce::MouseEvent& event) {
     if (currentDeviceId.empty()) return;
 
+    // Right-click context menu on control rows
+    if (event.mods.isPopupMenu() && !isLearning) {
+        for (int i = 0; i < (int)controls.size(); ++i) {
+            auto rowBounds = getRowBounds(i);
+            if (rowBounds.contains(event.getPosition())) {
+                juce::PopupMenu menu;
+                menu.addItem(1, "Delete");
+                menu.showMenuAsync(juce::PopupMenu::Options(),
+                    [this, i](int result) {
+                        if (result == 1) {
+                            state.removeDeviceControl(currentDeviceId, i);
+                            refreshControls();
+                        }
+                    });
+                return;
+            }
+        }
+    }
+
     // Check delete button clicks
     for (int i = 0; i < (int)controls.size(); ++i) {
         auto delBounds = getDeleteButtonBounds(i);
@@ -393,9 +446,34 @@ void DeviceEditorPane::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 bool DeviceEditorPane::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress::escapeKey && isLearning) {
-        cancelLearn();
-        return true;
+    if (key == juce::KeyPress::escapeKey) {
+        if (pendingLearnControlIndex >= 0) {
+            // Cancel the pending learn entry
+            state.removeDeviceControl(currentDeviceId, pendingLearnControlIndex);
+            pendingLearnControlIndex = -1;
+            // Dismiss the inline editor if visible
+            if (inlineEditor.getParentComponent())
+                inlineEditor.getParentComponent()->removeChildComponent(&inlineEditor);
+            refreshControls();
+            return true;
+        }
+        if (isLearning) {
+            cancelLearn();
+            return true;
+        }
     }
     return false;
+}
+
+void DeviceEditorPane::timerCallback() {
+    auto now = juce::Time::currentTimeMillis();
+    bool needsRepaint = false;
+    for (auto& ctrl : controls) {
+        // Check if any light just decayed (was active within last 400ms but not 300ms)
+        if (ctrl.lastActivityMs > 0 && now - ctrl.lastActivityMs >= 300 && now - ctrl.lastActivityMs < 400) {
+            needsRepaint = true;
+        }
+    }
+    if (needsRepaint)
+        repaint();
 }

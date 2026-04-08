@@ -9,7 +9,7 @@
 class StateAPI;
 class PerformanceCoordinator;
 
-class DeviceEditorPane : public juce::Component {
+class DeviceEditorPane : public juce::Component, private juce::Timer {
 public:
     DeviceEditorPane(StateAPI& state, PerformanceCoordinator& coordinator);
     ~DeviceEditorPane() override;
@@ -35,6 +35,7 @@ private:
         int channel = 0;
         int number = 0;
         std::string group;
+        int64_t lastActivityMs = 0;
     };
     std::vector<ControlRow> controls;
 
@@ -47,10 +48,14 @@ private:
     juce::Label midiEventLabel;
     std::string lastEvent1;
     std::string lastEvent2;
-    void onMidiEvent(const std::string& description);
+    void onMidiEvent(const std::string& description,
+                     const std::string& type, int channel, int number);
 
     // Inline editing
     InlineEditor inlineEditor;
+
+    // Pending learn control (for Escape cancellation)
+    int pendingLearnControlIndex = -1;
 
     // Hover state for delete buttons
     int hoveredRow = -1;
@@ -71,6 +76,9 @@ private:
     static constexpr int columnHeaderHeight = 24;
 
     int stateSubscriptionId = -1;
+
+    // Timer for activity light decay
+    void timerCallback() override;
 
     // Column layout helpers
     juce::Rectangle<int> getRowBounds(int rowIndex) const;

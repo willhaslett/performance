@@ -26,7 +26,8 @@ public:
     void cancelLearn();
 
     // MIDI event monitoring: receive formatted events from a specific device
-    using MonitorCallback = std::function<void(const std::string& description)>;
+    using MonitorCallback = std::function<void(const std::string& description,
+                                                const std::string& type, int channel, int number)>;
     void setDeviceMonitor(const std::string& deviceId, MonitorCallback callback);
     void clearDeviceMonitor();
 

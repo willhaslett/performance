@@ -163,7 +163,23 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
             }
             if (!desc.empty()) {
                 auto cb = deviceMonitorCallback;
-                juce::MessageManager::callAsync([cb, desc] { cb(desc); });
+                std::string evType;
+                int evCh = ch;
+                int evNum = 0;
+                if (message.isController()) {
+                    evType = "cc";
+                    evNum = message.getControllerNumber();
+                } else if (message.isNoteOn() || message.isNoteOff()) {
+                    evType = "note";
+                    evNum = message.getNoteNumber();
+                } else if (message.isPitchWheel()) {
+                    evType = "pitch";
+                } else if (message.isChannelPressure()) {
+                    evType = "pressure";
+                }
+                juce::MessageManager::callAsync([cb, desc, evType, evCh, evNum] {
+                    cb(desc, evType, evCh, evNum);
+                });
             }
         }
     }

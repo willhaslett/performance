@@ -508,7 +508,8 @@ void PerformanceCoordinator::cancelMidiLearn() {
 }
 
 void PerformanceCoordinator::setMidiDeviceMonitor(const std::string& deviceId,
-    std::function<void(const std::string& description)> callback) {
+    std::function<void(const std::string& description,
+                       const std::string& type, int channel, int number)> callback) {
     if (midiEngine) midiEngine->setDeviceMonitor(deviceId, std::move(callback));
 }
 
