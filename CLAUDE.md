@@ -1,15 +1,16 @@
 # Live Performance Environment
 
-A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load/save only). The audio engine is a pure view of state.
+A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
 ## Core Concepts
 
-- **The app is an environment** — it launches and restores its previous state from SQLite into the in-memory state store. Periodic auto-save and explicit save flush state back to disk. Tracks, instruments, effects, sends, gains, and presets all persist automatically.
+- **The app is an environment** — it launches and restores its previous state from SQLite into the in-memory state store. Save on quit and on explicit save. Tracks, instruments, effects, sends, gains, and presets all persist automatically.
 - **Sandbox** — the permanent scratchpad session. Always exists, always at the top of the sidebar, undeletable. The user can experiment freely without affecting any song. On launch, the app restores the last active session (sandbox or a song).
-- **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from state. Songs are managed via the sidebar.
-- **Action-based bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. No inline code in bindings — all behavior is a registered, reusable action. Bindings persist in the registry and survive restart.
+- **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from state.
+- **Bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. Two scopes: global (always active) and song-scoped (override globals, deleted with song). All behavior is a registered, reusable action.
+- **Score** — an ordered list of action references per song. Used for development ("go to step N" replays from initial state) and as documentation of performance transitions.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
-- **Authoring model** — Claude runs embedded in the app (native chat UI calling Claude API with tool use). Will plays and directs, Claude modifies the environment via the `perf` tool (Lua execution). The GUI provides direct manipulation. All consumers use the same API.
+- **Authoring model** — Claude runs embedded in the app (native chat UI calling Claude API with tool use). Will plays and directs, Claude modifies the environment via the `perf` tool (Lua execution). The GUI provides direct manipulation. All consumers use the same APIs.
 
 ## Architecture
 
@@ -24,67 +25,89 @@ EngineSync (subscribes to state events, applies to engine)
     ↓
 AudioEngine (audio graph — a pure view of state)
 
-PersistenceLayer (SQLite — load on startup, save on demand)
-    ↕ loadInto(StateAPI) / saveFrom(StateAPI)
-StateAPI
+PersistenceLayer (SQLite)
+    loadInto: SQL → AppState struct → state.replaceState() → one event
+    saveFrom: state.appState() → SQL
 ```
 
-**Three APIs, clear responsibilities:**
-- **StateAPI** — all state reads/writes. In-memory C++ structs, observable via events. No JUCE dependency. No SQLite. Every consumer defaults to this.
-- **EngineAPI** — engine-only concerns: peak levels, processor access (for presets/params), plugin editor windows, plugin discovery. Explicitly separate. Use only when you need something the state store can't provide.
-- **PerformanceCoordinator** — lifecycle and orchestration: init/shutdown, song management, track presets (cross-cutting), automation. Owns all subsystems, exposes `state()` and `engine()` to consumers.
+### Three APIs
 
-**Identity is by UUID everywhere.** Every track, bus, effect, send has a UUID assigned at creation. Names are display properties only — freely renameable, allowed to be duplicates. All API methods, engine methods, GUI components, and internal references use UUIDs. Names are resolved to UUIDs exactly once, at the entry point where the user provides them (Lua scripts, Claude tool calls).
+- **StateAPI** (`src/api/StateAPI.h/.cpp`) — all state reads/writes. In-memory C++ structs (`src/state/StateModel.h`), observable via `StateEventBus` (`src/state/StateEvents.h`). No JUCE dependency, no SQLite. Every consumer defaults to this.
+- **EngineAPI** (`src/api/EngineAPI.h/.cpp`) — engine-only concerns: peak levels, processor access (for presets/params), plugin editor windows, plugin discovery. Uses `juce::String`. Use only when you need something the state store can't provide.
+- **PerformanceCoordinator** (`src/api/PerformanceCoordinator.h/.cpp`) — lifecycle and orchestration: init/shutdown, song management, track presets (cross-cutting), automation, action dispatch. Owns all subsystems, exposes `state()` and `engine()` to consumers.
 
-**State events drive the engine:**
-- All mutations go through StateAPI. StateAPI emits events. EngineSync subscribes and applies changes to the engine.
-- EngineSync is a pure event subscriber with zero public methods. Nobody calls it directly.
+### State Model (`src/state/StateModel.h`)
 
-**The engine is a pure view.** It never owns state. Peak levels and processor instances are the only things the engine produces — they're transient, not state. Plugin load status is tracked in the state model (`LoadStatus` enum on TrackState and EffectState), updated by EngineSync when async loading completes.
+```
+AppState
+├── currentSongId
+├── songs: vector<SongState>
+│   ├── tracks: vector<TrackState>
+│   │   ├── effects: vector<EffectState>
+│   │   └── sends: vector<SendState>
+│   ├── busses: vector<BusState>
+│   │   └── effects: vector<EffectState>
+│   ├── masterEffects: vector<EffectState>
+│   ├── bindings: vector<BindingState>  (song-scoped)
+│   ├── score: vector<ScoreStep>
+│   └── selectedTrackIds, selectedBusIds (runtime, not persisted)
+├── globalBindings: vector<BindingState>
+├── plugins: vector<PluginInfo>  (catalog)
+├── presets: vector<PresetInfo>  (catalog)
+├── actions: vector<ActionInfo>  (catalog)
+└── config: map<string, string>
+```
 
-**Rules for new code:**
+Key model features:
+- Effects/sends nested inside parent (no flat table lookup)
+- `LoadStatus` on TrackState and EffectState (None/Pending/Loaded/Failed)
+- `isInstrument` on PluginInfo (GUI builds plugin menus from state)
+- `PresetKind` enum (Instrument/Effect/Track)
+- Selection state on SongState (observable, not persisted)
+
+### Persistence (`src/persistence/PersistenceLayer.h/.cpp`)
+
+SQLite normalized relational schema. `loadInto()` builds a plain `AppState` struct from SQL (no StateAPI mutators, no events, no ID conflicts), then calls `state.replaceState()` which atomically swaps state and fires one event. `saveFrom()` flushes state to SQL.
+
+Database: `~/.config/performance/state.db`
+
+Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks`, `busses`, `effects`, `sends`, `bindings` (nullable `song_id` for global/song scope), `score_steps`, `config`.
+
+### Identity
+
+UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation. Names are display properties only. All APIs, engine, GUI, and internal references use UUIDs. Names resolved to UUIDs once at Lua/Claude entry point.
+
+### Rules for new code
+
 - All state reads/writes go through StateAPI. Never call audioEngine for state.
 - EngineAPI is for peak levels, processors, plugin UI, and plugin discovery only.
+- EngineSync is the only code that calls AudioEngine write methods.
 - NEVER use names as keys or identity. Use UUIDs.
-- When adding a new settable value: add it to the state model, add a StateAPI method, handle in EngineSync.
+- When adding a new settable value: add to StateModel, add StateAPI method, handle in EngineSync.
 
-### Components
+### Other Components
 
-- **StateAPI** (`src/api/StateAPI.h/.cpp`) — in-memory state store backed by plain C++ structs (`src/state/StateModel.h`). All state reads/writes. No JUCE dependency, no SQLite. Observable via `StateEventBus` (`src/state/StateEvents.h`). Tracks dirty flag for persistence.
-- **EngineAPI** (`src/api/EngineAPI.h/.cpp`) — thin wrapper over AudioEngine for peak levels, processor access, plugin UI, plugin discovery. Uses `juce::String`. Cautioned against casual use.
-- **PerformanceCoordinator** (`src/api/PerformanceCoordinator.h/.cpp`) — owns all subsystems. Lifecycle (init/shutdown), song management, track presets, automation, action dispatch. Exposes `state()` and `engine()` to consumers.
-- **PersistenceLayer** (`src/persistence/PersistenceLayer.h/.cpp`) — SQLite read/write. `loadInto(StateAPI&)` on startup, `saveFrom(StateAPI&)` on demand. Not in the hot path.
-- **PerformanceAPI** (`src/api/PerformanceAPI.h/.cpp`) — **legacy, being replaced.** Monolithic API that mixes state and engine concerns. Will be deleted after migration to StateAPI+EngineAPI+PerformanceCoordinator.
-- **Registry** (`src/registry/Registry.h/.cpp`) — **legacy, being replaced by PersistenceLayer.** SQLite-backed state store with event bus. Will be deleted after migration.
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to state events, applies changes to engine. Zero public methods. Uses `createTrackWithId`/`createBusWithId` so engine UUIDs match state UUIDs.
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All public methods accept UUIDs as map keys. Pure view of state — never owns state.
-- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input from all devices, forwards note MIDI to audio graph, dispatches control events to SongRuntime.
-- **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing functions.
-- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Registers API as global functions. Loads library files from `~/.config/performance/lua_lib/`.
-- **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket at `/tmp/performance.sock`. Accepts Lua strings, executes them, returns results.
-- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map. Routes control events to bound handlers.
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods. Dual-mode: accepts Registry& (legacy) or StateAPI& (new).
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All methods accept UUIDs. Pure view of state.
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime.
+- **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
+- **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Dual-mode: legacy (PerformanceAPI) or new (StateAPI+EngineAPI+Coordinator).
+- **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket `/tmp/performance.sock`. `bin/perf` shell command.
+- **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map.
 
 ### GUI
 
-- **MainLayout** (`src/gui/MainLayout.h/.cpp`) — root container: toolbar + sidebar + split panes + mixer
-- **PaneContainer** (`src/gui/PaneContainer.h`) — header-only N-way vertical split with proportional widths and draggable dividers. Currently: Mapping placeholder (60%) + ChatView (40%).
-- **ChatView** (`src/gui/ChatView.h/.cpp`) — native chat UI with scrollable message list + text input. TextEditor-based bubbles (selectable, copyable). Rounded bubble backgrounds with distinct colors per message type (user/assistant/tool/error). Chat theme constants in Theme.h.
-- **ClaudeClient** (`src/api/ClaudeClient.h/.cpp`) — background-thread HTTP client for Claude Messages API. Agentic tool-use loop: sends messages, handles tool calls by executing Lua via LuaEngine on the message thread, returns results, repeats until done.
-- **MixerView** (`src/gui/MixerView.h/.cpp`) — track strips, bus strips, output strip. Content-driven height, horizontal scroll via Viewport. Polls engine state at 30Hz.
-- **TrackStrip** (`src/gui/TrackStrip.h/.cpp`) — blue header with power icon + MIDI toggle, instrument slot, effect slots, sends panel, fader+meter.
-- **BusStrip** (`src/gui/BusStrip.h/.cpp`) — purple header, effect slots, fader+meter.
-- **OutputStrip** (`src/gui/OutputStrip.h/.cpp`) — dark green header, master effect slots, master fader+meter. Singleton, always present after busses. Master GainProcessor in audio graph.
-- **PluginSlot** (`src/gui/PluginSlot.h/.cpp`) — reusable pill: plugin name, picker (no submenu when only Default preset, submenu when user presets exist), right-click context menu (No Plugin / Replace). Works for both tracks and busses.
-- **PresetToolbar** (in `AudioEngine.mm`) — toolbar in plugin editor windows with preset name display, Load button (dropdown of presets), and Save button (save-as dialog with existing presets listed).
-- **FaderMeter** (`src/gui/FaderMeter.h/.cpp`) — reusable fader + VU meter pair: dB scale, drag handling, peak level, color bands.
-- **SendsPanel** (`src/gui/SendsPanel.h/.cpp`) — bottom-aligned panel in track strip. Logic-style horizontal rows: bus name pill + rotary knob (300° arc, 7:00–5:00) with signal glow. Dynamic height. Hidden when no busses exist.
-- **Theme** (`src/gui/Theme.h`) — centralized colors, dimensions, corner radii, fonts. SSOT for visual consistency.
-- **Sidebar** (`src/gui/Sidebar.h/.cpp`) — three sections: Songs (Sandbox always first, active song highlighted), Library (instruments/effects with user presets), Actions (performance verbs with labels). Click song to switch. Subscribes to registry events.
-- **RegistryTree** (`src/gui/RegistryTree.h/.cpp`) — collapsible tree with safe value-type rows
-- **Divider** (`src/gui/Divider.h`) — draggable pane resizer, horizontal or vertical
-- Modal keyboard: s=sidebar, x=mixer, i=focus chat input, Esc=unfocus/close editor. Focus-driven (no explicit insert mode).
-- Native macOS menu bar: File (New/Save/Load/Close Song), Track (New Instrument Track, New Effects Bus), View (Toggle Sidebar/Mixer)
-- Resizable sidebar pane, content-driven mixer height (no manual resize)
+All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
+
+- **MainLayout** — root container: toolbar + sidebar + split panes + mixer
+- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for peak levels)
+- **TrackStrip** — instrument slot, effect slots, sends panel, fader+meter. Track preset callbacks from coordinator.
+- **BusStrip** — effect slots, fader+meter
+- **OutputStrip** — master effect slots, master fader+meter
+- **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
+- **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
+- **Sidebar** — StateAPI only. Songs, Library (instruments/effects with presets), Actions.
+- **FaderMeter**, **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
 
 ### Audio Graph
 
@@ -100,122 +123,41 @@ Master output:
   masterGain → [masterFx1 → masterFx2 →] → audioOutput
 ```
 
-Instrument switching is MIDI routing only — no graph rebuild, no pops.
-
-### Registry Schema
-
-Entities: `plugins`, `presets`, `songs` (with `initial_state` and `score` JSON columns), `tracks`, `busses`, `effects`, `sends`, `actions` (with `label` display name), `bindings`. All have UUID primary keys. Foreign keys with CASCADE deletes. Entity type constants in `EntityType` namespace.
-
-Actions are performance verbs only — things you'd bind to MIDI controls: `setActiveTrack`, `enableTrack`, `disableTrack`, `fadeOut`, `fadeIn`, `crossfade`. Utility functions (log, openEditor, loadSong) are API calls, not registered actions.
-
-Generic CRUD: `registryCreate(type, fields)`, `registryGet(id)`, `registryList(type, filters)`, `registryUpdate(id, fields)`, `registryDelete(id)` — all exposed to Lua.
-
-### Song Model
-
-A song consists of:
-- **Initial state** — tracks, busses, sends, gains, MIDI routing, plugin presets, bindings. Saved explicitly by the user. What the song looks like when loaded fresh.
-- **Score** — an ordered list of registered action references (action ID + args) representing the intended sequence of state changes during performance.
-
-State at any point = initial state + replay of score actions 1..N.
-
-There are no stored waypoints or intermediate state presets. Any intermediate state is computed by replaying the score from initial state. This guarantees consistency — if the score produces wrong state, you discover it during development (replay), not during performance.
-
-**Score uses:**
-- "Go to step N" for development — replays from initial state to work on any section
-- Documentation of the performance — the performer knows what to trigger and when
-- Reset — reload initial state (step 0)
-
-**Persist timer** writes current engine state to the live registry tables for session restore (pick up where you left off on relaunch). The song's initial state is stored separately in the `initial_state` JSON column on the songs table — the persist timer never touches it.
-
-**Operations:**
-- `saveInitialState()` — captures current state (tracks, busses, effects, sends, gains, bindings, plugin presets) as the song's initial state
-- `loadInitialState()` — restores the saved initial state, clearing live state and rebuilding the engine
-- `saveScore(json)` / `getScore()` — persist and retrieve the action score
-
 ### Plugin State Presets
 
-Stored per plugin in `~/.config/performance/presets/<pluginName>/<presetName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in the registry. Independent of songs — any song/session can use any preset.
+Stored per plugin in `~/.config/performance/snapshots/<pluginName>/<presetName>.state`. Binary blobs via JUCE `getStateInformation`/`setStateInformation`. Referenced by UUID in state. Independent of songs. `PresetKind`: Instrument, Effect, Track.
+
+Track presets: `~/.config/performance/track_presets/<name>.json` — full chain (instrument + state + effects + sends + gain + MIDI).
 
 ### IPC
 
-`bin/perf` shell command sends Lua to the running app: `perf 'createTrack("Bass")'`. The embedded Claude uses this to control the app at runtime. `runtime/CLAUDE.md` is the prompt for the embedded Claude instance.
+`bin/perf` shell command sends Lua to the running app. `runtime/CLAUDE.md` is the prompt for the embedded Claude instance.
 
 ### Third-party AU Plugin Loading
 
-Index .component bundle Info.plist metadata at startup, on-demand register via AudioComponentRegister. Plugin scan results cached to `~/.config/performance/plugin-cache.xml`.
+Index .component bundle Info.plist metadata at startup, on-demand register via AudioComponentRegister. Cache: `~/.config/performance/plugin-cache.xml`.
 
-### Device Maps
+### Legacy Code (to be removed)
 
-`devices/mpk_mini_3.lua` — MPK mini 3 control map. Pads in CC mode: bottom row CC 16-19 (pads 1-4), top row CC 20-23 (pads 5-8), channel 10. Keys on channel 1.
+- `PerformanceAPI` (`src/api/PerformanceAPI.h/.cpp`) — monolithic API, replaced by StateAPI+EngineAPI+Coordinator. Still used by legacy test suite.
+- `Registry` (`src/registry/Registry.h/.cpp`) — SQLite-backed state with event bus, replaced by StateAPI+PersistenceLayer. Still used by legacy test suite.
+- `RegistryEvents` (`src/registry/RegistryEvents.h`) — replaced by StateEvents.
 
-## Implementation Status
+## Test Suite
 
-**Working:**
-- Registry-driven engine: SQLite SSOT → EngineSync → AudioEngine
-- Generic CRUD + pub/sub events on all entity types
-- Track/Bus mixer DAG with sends, per-node gain, GainProcessor with peak metering
-- AU plugin hosting with third-party loading and plugin cache
-- Native chat UI with Claude API integration (tool use for Lua execution)
-- IPC socket (`/tmp/performance.sock`) for live Lua execution via `bin/perf`
-- Lua song scripts with automation library (`lua_lib/automation.lua`)
-- Plugin state presets (save/restore, persisted in registry + disk)
-- GUI: 3-pane layout (sidebar, terminal, mixer), toolbar, resizable sidebar
-- Mixer: TrackStrip, BusStrip, OutputStrip — content-driven height, horizontal scroll. Right-click header to delete, double-click to rename.
-- Reusable components: PluginSlot (pill with picker/context menu), FaderMeter (dB-scaled fader + VU pair), InlineEditor (text overlay for rename)
-- Plugin picker: instrument/effect filtered, submenu with preset selection, right-click for No Plugin / Replace
-- Theme system (Theme.h) — all colors, dimensions, fonts centralized
-- Sidebar: Songs (flat), Library (instruments/effects with user presets), Actions (performance verbs with labels)
-- Instrument switching via MIDI routing (no graph rebuild, no pops)
-- Automation engine with easing functions (linear, easein, easeout, cosine, scurve)
-- Global keyboard shortcuts via NSEvent monitor (modal: normal/insert)
-- Native macOS menu bar: File, Track (New Instrument Track, New Effects Bus), View
-- Session restore from registry on app launch (no Lua re-execution needed)
-- Action-based bindings with entity ID arguments, persisted in registry
-- Song initial state: save/load checkpoint separate from live state
-- Score: ordered action list with replay ("go to step N")
-- Default unnamed session on first run (no Lua bootstrap required)
-- 1Hz persist timer: engine values (gain, MIDI enabled) written back to registry
-- Python MIDI test tool (`tools/send_notes.py`) for testing without hardware
+82 tests total:
+- Registry tests (legacy): CRUD, cascade deletes, master gain, sandbox protection
+- API lifecycle tests (legacy): track/bus CRUD, rename, effects, gains, sends, MIDI enabled, song switching
+- StateAPI tests: full in-memory state store coverage (34 tests)
+- Persistence round-trip tests: save→load fidelity, multi-song, empty DB
 
-**Working (continued):**
-- SendsPanel: Logic-style pill+knob rows with signal glow, dynamic height
-- IPC table return serialization (Lua tables → JSON over socket for queries like `registryList`)
-- Content-driven mixer height: mixer pane grows/shrinks based on tallest strip
-- Master output strip: GainProcessor, master effects, gain persistence across sessions
-- Unified addEffect/removeEffect API (tracks, busses, and master output)
-- Inline rename (double-click header) for tracks and busses
-- Vertical dots menu on track headers (save/load track preset, delete)
-- VU meter noise floor gate + unconditional peak level updates (no stuck meters)
-- UUID-keyed track/bus maps in engine (stable identity, rename-safe)
-- Plugin preset toolbar in editor windows (load/save with save-as dialog)
-- Reusable SaveAsDialog component
-- Native chat UI with Claude API (tool use for Lua execution)
-- N-way resizable split panes (PaneContainer)
-- Sandbox session (always exists, undeletable, highlighted in sidebar)
-- "Preset" naming throughout (renamed from "Snapshot")
+## TODOs
 
-**Completed (architecture):**
-- ID-based API — all methods accept UUIDs, names are display only
-- UUID-keyed engine maps — no name-based lookup, no ambiguity
-- GUI holds UUIDs from state via `listTracks()`/`listBusses()`
-- Lua resolves names→IDs at entry point via `findTrackIdByName`/`findBusIdByName`
-- Master output is a state entity (effects nested on SongState)
-- All API state reads come from state store (engine only for peak levels, processors, plugin scan)
-- Auto-open plugin editor on instantiation (instruments via PluginSlot timer, effects via strip detection)
-- Effect plugin preset save/load toolbar
-- 43-test suite covering registry, API lifecycle, multi-track isolation, songs
-
-**In progress (architecture migration):**
-- StateAPI + EngineAPI + PersistenceLayer replacing monolithic PerformanceAPI + Registry
-- In-memory state model (`src/state/StateModel.h`): AppState → SongState → TrackState/BusState with nested effects/sends
-- StateAPI (`src/api/StateAPI.h/.cpp`): complete in-memory state store with events, dirty tracking
-- State model includes: `LoadStatus` on tracks/effects (for async plugin load tracking), `isInstrument` on PluginInfo, selection state on SongState
-- Next: StateAPI tests, PersistenceLayer, EngineAPI, PerformanceCoordinator, consumer migration
-
-**TODOs:**
+- Delete legacy PerformanceAPI + Registry + RegistryEvents (after migrating remaining tests)
 - Auto-create Default preset on first plugin instantiation
-- AUPitch: preset state restore via setStateInformation doesn't take effect (only known plugin with this issue — may need AU-specific preset handling)
-- Test suite expansion: continuous value paths, preset lifecycle
+- AUPitch: preset state restore via setStateInformation doesn't take effect (only known plugin with this issue)
+- LoadStatus integration: EngineSync updates TrackState/EffectState load status, GUI observes for auto-open
+- Test suite expansion: continuous value paths, preset lifecycle, persistence edge cases
 - Live audio tracks (input from audio device, same track model)
 - Undo/redo via state history
 - MIDI device hot-plug
