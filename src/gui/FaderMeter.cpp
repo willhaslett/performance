@@ -32,29 +32,61 @@ juce::Rectangle<int> FaderMeter::getMeterArea() const {
     return getLocalBounds().removeFromRight(meterWidth);
 }
 
-float FaderMeter::gainToNormalized(float gain) const {
-    float db = (gain > 0.0001f) ? 20.0f * std::log10(gain) : dbMin;
-    db = std::max(db, dbMin);
-    db = std::min(db, dbMax);
-    return (db - dbMin) / dbRange;
+// IEC-style piecewise linear curve: expanded near 0dB, compressed at bottom.
+// Breakpoints (dB → normalized position from bottom):
+//   +6  → 1.00
+//    0  → 0.85
+//   -6  → 0.70
+//  -12  → 0.55
+//  -24  → 0.35
+//  -36  → 0.18
+//  -48  → 0.08
+//  -60  → 0.00
+
+struct DbMapPoint { float db; float norm; };
+static constexpr DbMapPoint dbMap[] = {
+    { -60.0f, 0.00f },
+    { -48.0f, 0.08f },
+    { -36.0f, 0.18f },
+    { -24.0f, 0.35f },
+    { -12.0f, 0.55f },
+    {  -6.0f, 0.70f },
+    {   0.0f, 0.85f },
+    {   6.0f, 1.00f },
+};
+static constexpr int dbMapSize = sizeof(dbMap) / sizeof(dbMap[0]);
+
+float FaderMeter::dbToNormalized(float db) {
+    if (db <= dbMap[0].db) return dbMap[0].norm;
+    if (db >= dbMap[dbMapSize - 1].db) return dbMap[dbMapSize - 1].norm;
+    for (int i = 0; i < dbMapSize - 1; ++i) {
+        if (db <= dbMap[i + 1].db) {
+            float t = (db - dbMap[i].db) / (dbMap[i + 1].db - dbMap[i].db);
+            return dbMap[i].norm + t * (dbMap[i + 1].norm - dbMap[i].norm);
+        }
+    }
+    return 1.0f;
 }
 
-// Meter color: smooth gradient from green → amber → red
-static juce::Colour meterColourForDb(float db) {
-    if (db > 0.0f) {
-        // 0 to +6: amber → bright red
-        float t = juce::jlimit(0.0f, 1.0f, db / 6.0f);
-        return juce::Colour(0xffccaa44).interpolatedWith(juce::Colour(0xffee3333), t);
-    } else if (db > -12.0f) {
-        // -12 to 0: green → amber
-        float t = juce::jlimit(0.0f, 1.0f, (db + 12.0f) / 12.0f);
-        return Theme::color(Theme::Color::midiActive).interpolatedWith(juce::Colour(0xffccaa44), t);
+float FaderMeter::normalizedToDb(float norm) {
+    if (norm <= dbMap[0].norm) return dbMap[0].db;
+    if (norm >= dbMap[dbMapSize - 1].norm) return dbMap[dbMapSize - 1].db;
+    for (int i = 0; i < dbMapSize - 1; ++i) {
+        if (norm <= dbMap[i + 1].norm) {
+            float t = (norm - dbMap[i].norm) / (dbMap[i + 1].norm - dbMap[i].norm);
+            return dbMap[i].db + t * (dbMap[i + 1].db - dbMap[i].db);
+        }
     }
-    return Theme::color(Theme::Color::midiActive);
+    return 6.0f;
+}
+
+float FaderMeter::gainToNormalized(float gain) const {
+    float db = (gain > 0.0001f) ? 20.0f * std::log10(gain) : dbMin;
+    return dbToNormalized(db);
 }
 
 static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area,
-                          float level, float dbMin, float dbMax, float dbRange) {
+                          float level, float dbMin, float dbMax) {
     g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(area.toFloat(), 1.5f);
 
@@ -63,35 +95,32 @@ static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area,
     float db = 20.0f * std::log10(level);
     db = std::max(db, dbMin);
     db = std::min(db, dbMax);
-    float meterNorm = (db - dbMin) / dbRange;
+    float meterNorm = FaderMeter::dbToNormalized(db);
     int meterHeight = (int)(area.getHeight() * meterNorm);
     auto fillArea = area.withTop(area.getBottom() - meterHeight);
 
-    // Draw segmented gradient: split at 0dB and -12dB boundaries
-    float zeroNorm = (0.0f - dbMin) / dbRange;
-    float warmNorm = (-12.0f - dbMin) / dbRange;
-
-    int zeroY = area.getBottom() - (int)(area.getHeight() * zeroNorm);
-    int warmY = area.getBottom() - (int)(area.getHeight() * warmNorm);
+    // Color zones at 0dB and -12dB boundaries
+    int zeroY = area.getBottom() - (int)(area.getHeight() * FaderMeter::dbToNormalized(0.0f));
+    int warmY = area.getBottom() - (int)(area.getHeight() * FaderMeter::dbToNormalized(-12.0f));
 
     // Green zone (below -12dB)
     if (fillArea.getBottom() > warmY) {
-        auto greenArea = fillArea.withTop(std::max(fillArea.getY(), warmY));
+        auto zone = fillArea.withTop(std::max(fillArea.getY(), warmY));
         g.setColour(Theme::color(Theme::Color::midiActive));
-        g.fillRect(greenArea);
+        g.fillRect(zone);
     }
     // Amber zone (-12 to 0dB)
     if (fillArea.getY() < warmY && fillArea.getBottom() > zeroY) {
-        auto amberArea = fillArea.withTop(std::max(fillArea.getY(), zeroY))
-                                  .withBottom(std::min(fillArea.getBottom(), warmY));
+        auto zone = fillArea.withTop(std::max(fillArea.getY(), zeroY))
+                             .withBottom(std::min(fillArea.getBottom(), warmY));
         g.setColour(juce::Colour(0xffccaa44));
-        g.fillRect(amberArea);
+        g.fillRect(zone);
     }
     // Red zone (above 0dB)
     if (fillArea.getY() < zeroY) {
-        auto redArea = fillArea.withBottom(std::min(fillArea.getBottom(), zeroY));
+        auto zone = fillArea.withBottom(std::min(fillArea.getBottom(), zeroY));
         g.setColour(juce::Colour(0xffcc4444));
-        g.fillRect(redArea);
+        g.fillRect(zone);
     }
 }
 
@@ -115,39 +144,35 @@ void FaderMeter::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.fillRoundedRectangle(handle.toFloat(), 3.0f);
 
-    // dB tick marks — between fader and meter
+    // dB tick marks between fader and meter
     {
         g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
         constexpr float ticks[] = { 6, 0, -6, -12, -24, -36, -48 };
         float tickX1 = (float)(faderArea.getRight() + 2);
         float tickX2 = (float)(faderArea.getRight() + gap - 2);
-        float labelX = tickX1;
-        float labelW = tickX2 - tickX1;
 
         for (float db : ticks) {
-            float norm = (db - dbMin) / dbRange;
+            float norm = dbToNormalized(db);
             float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
 
-            // Tick line
             g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.4f));
             g.drawLine(tickX1, y, tickX2, y, 0.5f);
         }
 
-        // Just label 0dB — others would be too cramped
-        float zeroNorm = (0.0f - dbMin) / dbRange;
-        float zeroY = (float)faderArea.getBottom() - faderArea.getHeight() * zeroNorm;
+        // Label 0dB
+        float zeroY = (float)faderArea.getBottom() - faderArea.getHeight() * dbToNormalized(0.0f);
         g.setColour(Theme::color(Theme::Color::textDim));
-        g.drawText("0", (int)tickX1, (int)(zeroY - 4), (int)labelW + 2, 8,
+        g.drawText("0", (int)tickX1, (int)(zeroY - 4), (int)(tickX2 - tickX1) + 2, 8,
                    juce::Justification::centred, false);
     }
 
-    // Stereo meters: L on left, R on right
+    // Stereo meters
     auto meterLeft = meterArea.removeFromLeft(meterBarWidth);
     meterArea.removeFromLeft(meterGap);
     auto meterRight = meterArea.removeFromLeft(meterBarWidth);
 
-    drawMeterBar(g, meterLeft, peakL, dbMin, dbMax, dbRange);
-    drawMeterBar(g, meterRight, peakR, dbMin, dbMax, dbRange);
+    drawMeterBar(g, meterLeft, peakL, dbMin, dbMax);
+    drawMeterBar(g, meterRight, peakR, dbMin, dbMax);
 }
 
 void FaderMeter::mouseDown(const juce::MouseEvent& event) {
@@ -164,10 +189,12 @@ void FaderMeter::mouseDrag(const juce::MouseEvent& event) {
 
     auto faderArea = getFaderArea();
     int deltaY = dragStartY - event.getPosition().getY();
-    float dbDelta = (float)deltaY / (float)faderArea.getHeight() * dbRange;
 
-    float startDb = (dragStartGain > 0.0001f) ? 20.0f * std::log10(dragStartGain) : dbMin;
-    float newDb = std::max(dbMin, std::min(dbMax, startDb + dbDelta));
+    // Convert drag delta to normalized space, then back to dB via the curve
+    float startNorm = gainToNormalized(dragStartGain);
+    float normDelta = (float)deltaY / (float)faderArea.getHeight();
+    float newNorm = juce::jlimit(0.0f, 1.0f, startNorm + normDelta);
+    float newDb = normalizedToDb(newNorm);
     float newGain = std::pow(10.0f, newDb / 20.0f);
 
     gainValue = newGain;

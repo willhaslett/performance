@@ -14,6 +14,10 @@ public:
     // Called when user drags the fader
     std::function<void(float newGain)> onGainChanged;
 
+    // IEC-style piecewise dB→normalized mapping (expanded near 0dB, compressed at bottom)
+    static float dbToNormalized(float db);
+    static float normalizedToDb(float norm);
+
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
@@ -33,7 +37,7 @@ private:
     static constexpr int faderWidth = 8;
     static constexpr int meterBarWidth = 4;
     static constexpr int meterGap = 1;
-    static constexpr int meterWidth = meterBarWidth * 2 + meterGap;  // L + gap + R
+    static constexpr int meterWidth = meterBarWidth * 2 + meterGap;
     static constexpr int gap = 8;
 
     juce::Rectangle<int> getFaderArea() const;
