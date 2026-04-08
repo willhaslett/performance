@@ -38,6 +38,7 @@ void LogPane::deactivate() {
 
 void LogPane::timerCallback() {
     if (!logFile) return;
+    clearerr(logFile);  // reset EOF flag so fgets can read new data
     bool changed = false;
     char buf[4096];
     while (fgets(buf, sizeof(buf), logFile)) {
