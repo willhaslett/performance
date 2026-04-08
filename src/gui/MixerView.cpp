@@ -13,7 +13,7 @@ MixerView::MixerView(StateAPI& state, EngineAPI& engine)
 }
 
 int MixerView::getDesiredHeight() const {
-    constexpr int minMixerHeight = 200;
+    constexpr int minMixerHeight = 300;
     int maxH = outputStrip.getMinimumHeight();
     for (auto& s : trackStrips)
         maxH = std::max(maxH, s->getMinimumHeight());

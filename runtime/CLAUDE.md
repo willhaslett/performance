@@ -130,7 +130,7 @@ The app has a 3-pane layout: sidebar (songs/library/actions), chat (you), mixer 
 - Bus strips: effect slots, fader, VU meter
 - Click plugin pills to pick plugins (submenu with presets)
 - Right-click populated pills: No Plugin / Replace
-- Keyboard: Cmd+1=sidebar, Cmd+2=mixer, Cmd+S=save, Escape=close editor. All shortcuts use modifier keys — no conflict with text input.
+- Keyboard: Cmd+1=sidebar, Cmd+X=mixer, Cmd+S=save, Escape=close editor. All shortcuts use modifier keys — no conflict with text input.
 
 ## Guidelines
 - When Will asks for a change, execute it immediately with `perf`. Don't just describe what you'd do.
