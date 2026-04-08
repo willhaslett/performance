@@ -1,5 +1,6 @@
 #include "gui/MainLayout.h"
 #include "gui/KeyBindings.h"
+#include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 

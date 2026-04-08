@@ -83,10 +83,11 @@ void PerformanceCoordinator::shutdown() {
     stopTimer();
     if (stateAPI && stateSubscriptionId >= 0)
         stateAPI->events().unsubscribe(stateSubscriptionId);
-    // Flush to disk — auto-save timer keeps processor state recent (every 30s)
-    // Skip captureProcessorState() here to avoid blocking quit on heavy plugins
-    if (stateAPI && persistence)
+    // Full save on shutdown — captures processor state and flushes
+    if (stateAPI && persistence) {
+        captureProcessorState();
         persistence->saveFrom(*stateAPI);
+    }
     songRuntime.reset();
     midiEngine.reset();
     engineSync.reset();
@@ -248,8 +249,10 @@ void PerformanceCoordinator::captureProcessorState() {
 
 void PerformanceCoordinator::save() {
     captureProcessorState();
-    if (persistence && stateAPI)
+    if (persistence && stateAPI) {
         persistence->saveFrom(*stateAPI);
+        perfLog("[Coordinator] Saved\n");
+    }
 }
 
 // --- Song state snapshots ---
