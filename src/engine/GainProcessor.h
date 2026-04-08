@@ -19,7 +19,10 @@ public:
         buffer.applyGain(gain.load(std::memory_order_relaxed));
         float mag = buffer.getMagnitude(0, buffer.getNumSamples());
         if (mag < 1e-5f) mag = 0.0f;  // noise floor gate
-        peakLevel.store(mag, std::memory_order_relaxed);
+        // Peak hold with exponential decay (~20dB/sec at 44.1kHz/512 block)
+        float prev = peakLevel.load(std::memory_order_relaxed);
+        float decayed = prev * decayCoeff;
+        peakLevel.store(std::max(mag, decayed), std::memory_order_relaxed);
     }
 
     const juce::String getName() const override { return "Gain"; }
@@ -39,4 +42,5 @@ public:
 private:
     std::atomic<float> gain { 1.0f };
     std::atomic<float> peakLevel { 0.0f };
+    static constexpr float decayCoeff = 0.93f;  // ~20dB/sec decay at typical block rates
 };
