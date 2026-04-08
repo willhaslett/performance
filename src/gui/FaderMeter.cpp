@@ -24,12 +24,12 @@ void FaderMeter::setPeakLevelStereo(float left, float right) {
 
 juce::Rectangle<int> FaderMeter::getFaderArea() const {
     return getLocalBounds()
-        .withTrimmedRight(meterWidth + gap)
+        .withTrimmedRight(meterWidth + labelWidth + gap)
         .withSizeKeepingCentre(faderWidth, getHeight());
 }
 
 juce::Rectangle<int> FaderMeter::getMeterArea() const {
-    return getLocalBounds().removeFromRight(meterWidth);
+    return getLocalBounds().withTrimmedRight(labelWidth).removeFromRight(meterWidth);
 }
 
 // IEC-style piecewise linear curve: expanded near 0dB, compressed at bottom.
@@ -144,26 +144,33 @@ void FaderMeter::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.fillRoundedRectangle(handle.toFloat(), 3.0f);
 
-    // dB tick marks between fader and meter
+    // dB tick marks and labels to the right of the meters
     {
         g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
-        constexpr float ticks[] = { 6, 0, -6, -12, -24, -36, -48 };
-        float tickX1 = (float)(faderArea.getRight() + 2);
-        float tickX2 = (float)(faderArea.getRight() + gap - 2);
 
-        for (float db : ticks) {
-            float norm = dbToNormalized(db);
+        struct Tick { float db; const char* label; };
+        constexpr Tick ticks[] = {
+            {   6, "+6" }, {   0, "0"  }, {  -6, "-6" },
+            { -12, "12" }, { -24, "24" }, { -36, "36" }, { -48, "48" }
+        };
+
+        int labelX = getWidth() - labelWidth;
+        float tickX1 = (float)(meterArea.getRight() + 1);
+        float tickX2 = (float)(labelX - 1);
+
+        for (auto& tick : ticks) {
+            float norm = dbToNormalized(tick.db);
             float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
 
-            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.6f));
-            g.drawLine(tickX1, y, tickX2, y, 0.75f);
-        }
+            // Tick line from meter edge to label
+            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.5f));
+            g.drawLine(tickX1, y, tickX2, y, 0.5f);
 
-        // Label 0dB
-        float zeroY = (float)faderArea.getBottom() - faderArea.getHeight() * dbToNormalized(0.0f);
-        g.setColour(Theme::color(Theme::Color::textDim));
-        g.drawText("0", (int)tickX1, (int)(zeroY - 4), (int)(tickX2 - tickX1) + 2, 8,
-                   juce::Justification::centred, false);
+            // Label
+            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(tick.db == 0 ? 0.9f : 0.6f));
+            g.drawText(tick.label, labelX, (int)(y - 4), labelWidth, 8,
+                       juce::Justification::centredLeft, false);
+        }
     }
 
     // Stereo meters
