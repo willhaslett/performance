@@ -155,8 +155,8 @@ void FaderMeter::paint(juce::Graphics& g) {
             float norm = dbToNormalized(db);
             float y = (float)faderArea.getBottom() - faderArea.getHeight() * norm;
 
-            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.4f));
-            g.drawLine(tickX1, y, tickX2, y, 0.5f);
+            g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.6f));
+            g.drawLine(tickX1, y, tickX2, y, 0.75f);
         }
 
         // Label 0dB

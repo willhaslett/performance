@@ -4,19 +4,19 @@
 namespace Theme {
     // Colors
     namespace Color {
-        constexpr uint32_t bgApp        = 0xff121212;
-        constexpr uint32_t bgPanel      = 0xff1a1a1a;
-        constexpr uint32_t bgTrack      = 0xff1e1e1e;
-        constexpr uint32_t bgSlot       = 0xff2a2a2a;
-        constexpr uint32_t bgSlotHover  = 0xff353535;
+        constexpr uint32_t bgApp        = 0xff0e0e0e;
+        constexpr uint32_t bgPanel      = 0xff161616;
+        constexpr uint32_t bgTrack      = 0xff1c1c1c;
+        constexpr uint32_t bgSlot       = 0xff303030;
+        constexpr uint32_t bgSlotHover  = 0xff3c3c3c;
         constexpr uint32_t bgHeader     = 0xff2a6aaa;
-        constexpr uint32_t bgHeaderOff  = 0xff2a2a2a;
+        constexpr uint32_t bgHeaderOff  = 0xff333333;
         constexpr uint32_t bgHeaderBus  = 0xff4a3a6a;
         constexpr uint32_t bgHeaderOut  = 0xff3a4a3a;
-        constexpr uint32_t border       = 0xff3a3a3a;
-        constexpr uint32_t textPrimary  = 0xffcccccc;
-        constexpr uint32_t textSecondary= 0xff888888;
-        constexpr uint32_t textDim      = 0xff555555;
+        constexpr uint32_t border       = 0xff444444;
+        constexpr uint32_t textPrimary  = 0xffd8d8d8;
+        constexpr uint32_t textSecondary= 0xff999999;
+        constexpr uint32_t textDim      = 0xff666666;
         constexpr uint32_t textWhite    = 0xffffffff;
         constexpr uint32_t accent       = 0xff2a6aaa;
         constexpr uint32_t midiActive   = 0xff44cc44;
