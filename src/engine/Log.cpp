@@ -6,9 +6,9 @@ static FILE* gLogFile = nullptr;
 static void writeTimestamp(FILE* f) {
     time_t now = time(nullptr);
     struct tm tm;
-    localtime_r(&now, &tm);
+    gmtime_r(&now, &tm);
     char buf[24];
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S ", &tm);
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ ", &tm);
     fputs(buf, f);
 }
 
