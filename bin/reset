@@ -4,14 +4,15 @@
 # Deletes: songs, tracks, busses, effects, sends, bindings, presets
 # Also removes preset files from disk.
 
-DB="$HOME/.config/performance/registry.db"
+# Support both old (registry.db) and new (state.db) databases
+STATE_DB="$HOME/.config/performance/state.db"
+LEGACY_DB="$HOME/.config/performance/registry.db"
 
-if [ ! -f "$DB" ]; then
-    echo "No registry found at $DB"
-    exit 1
-fi
-
-sqlite3 "$DB" <<'SQL'
+reset_db() {
+    local db="$1"
+    if [ ! -f "$db" ]; then return; fi
+    echo "Resetting $db..."
+    sqlite3 "$db" <<'SQL'
 DELETE FROM bindings;
 DELETE FROM sends;
 DELETE FROM effects;
@@ -19,7 +20,14 @@ DELETE FROM tracks;
 DELETE FROM busses;
 DELETE FROM presets;
 DELETE FROM songs;
+DELETE FROM config;
 SQL
+    # Handle new schema tables (may not exist in old DB)
+    sqlite3 "$db" "DELETE FROM score_steps;" 2>/dev/null
+}
+
+reset_db "$STATE_DB"
+reset_db "$LEGACY_DB"
 
 # Remove preset files from disk
 rm -rf "$HOME/.config/performance/snapshots/"*

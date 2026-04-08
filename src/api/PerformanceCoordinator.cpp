@@ -39,7 +39,11 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // Engine API
     engineAPI = std::make_unique<EngineAPI>(*audioEngine, *stateAPI);
 
-    // Load persisted state first — establishes plugin/action IDs from DB
+    // Engine sync — must exist before any state mutations so it sees all events
+    engineSync = std::make_unique<EngineSync>(*audioEngine, *stateAPI);
+
+    // Load persisted state — establishes plugin/action IDs from DB
+    // EngineSync reacts to creation events, building the engine graph
     persistence->loadInto(*stateAPI);
 
     // Then populate from engine scan — deduplicates by name, keeps DB IDs
@@ -47,9 +51,6 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 
     // Register built-in actions — deduplicates by name, keeps DB IDs
     registerBuiltinActions();
-
-    // Engine sync — state events drive the engine
-    engineSync = std::make_unique<EngineSync>(*audioEngine, *stateAPI);
 
     automationEngine = std::make_unique<AutomationEngine>();
     songRuntime = std::make_unique<SongRuntime>(*audioEngine);

@@ -154,9 +154,14 @@ void PersistenceLayer::loadInto(StateAPI& state) {
     loadSongs(state);
     loadConfig(state);
 
+    // Now that all data is loaded, set the current song (triggers EngineSync)
+    // Clear first so setCurrentSong always fires the event
+    state.mutableState().currentSongId.clear();
     auto currentSongId = state.getConfig("current_song_id");
-    if (!currentSongId.empty())
+    if (!currentSongId.empty() && state.findSong(currentSongId))
         state.setCurrentSong(currentSongId);
+    else if (!state.allSongs().empty())
+        state.setCurrentSong(state.allSongs()[0].id);
 
     state.clearDirty();
     perfLog("[Persistence] State loaded from database\n");
@@ -165,11 +170,16 @@ void PersistenceLayer::loadInto(StateAPI& state) {
 void PersistenceLayer::loadPlugins(StateAPI& state) {
     auto* stmt = prepare("SELECT id, name, manufacturer, format_id, is_instrument FROM plugins");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto dbId = col_str(stmt, 0);
         auto name = col_str(stmt, 1);
         auto mfg = col_str(stmt, 2);
         auto fmtId = col_str(stmt, 3);
         bool isInst = sqlite3_column_int(stmt, 4) != 0;
-        state.registerPlugin(name, mfg, fmtId, isInst);
+        auto genId = state.registerPlugin(name, mfg, fmtId, isInst);
+        // Preserve DB ID so FK references in tracks/effects match
+        for (auto& p : state.mutableState().plugins) {
+            if (p.id == genId) { p.id = dbId; break; }
+        }
     }
     sqlite3_finalize(stmt);
 }
@@ -177,12 +187,16 @@ void PersistenceLayer::loadPlugins(StateAPI& state) {
 void PersistenceLayer::loadPresets(StateAPI& state) {
     auto* stmt = prepare("SELECT id, plugin_id, name, state_path, kind FROM presets");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto dbId = col_str(stmt, 0);
         auto pluginId = col_str(stmt, 1);
         auto name = col_str(stmt, 2);
         auto path = col_str(stmt, 3);
         int kindInt = sqlite3_column_int(stmt, 4);
         auto kind = static_cast<PresetKind>(kindInt);
-        state.createPreset(pluginId, name, path, kind);
+        auto genId = state.createPreset(pluginId, name, path, kind);
+        for (auto& p : state.mutableState().presets) {
+            if (p.id == genId) { p.id = dbId; break; }
+        }
     }
     sqlite3_finalize(stmt);
 }
@@ -190,10 +204,14 @@ void PersistenceLayer::loadPresets(StateAPI& state) {
 void PersistenceLayer::loadActions(StateAPI& state) {
     auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto dbId = col_str(stmt, 0);
         auto name = col_str(stmt, 1);
         auto label = col_str(stmt, 2);
         auto schema = col_str(stmt, 3);
-        state.registerAction(name, label, schema);
+        auto genId = state.registerAction(name, label, schema);
+        for (auto& a : state.mutableState().actions) {
+            if (a.id == genId) { a.id = dbId; break; }
+        }
     }
     sqlite3_finalize(stmt);
 }
@@ -216,8 +234,8 @@ void PersistenceLayer::loadSongs(StateAPI& state) {
         song->masterGain = masterGain;
         song->initialState = initialState;
 
-        // Now set current song using the DB ID
-        state.setCurrentSong(songDbId);
+        // Set current song directly (no event) so createTrack etc. work
+        state.mutableState().currentSongId = songDbId;
 
         // Load tracks for this song
         auto* trackStmt = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position FROM tracks WHERE song_id = ? ORDER BY position");
@@ -589,6 +607,15 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
 void PersistenceLayer::saveConfig(const StateAPI& state) {
     exec("DELETE FROM config");
+
+    // Save current song ID as config (not in the config map, but needs persisting)
+    if (!state.appState().currentSongId.empty()) {
+        auto* stmt = prepare("INSERT INTO config (key, value) VALUES ('current_song_id', ?)");
+        sqlite3_bind_text(stmt, 1, state.appState().currentSongId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+
     for (auto& [key, value] : state.appState().config) {
         auto* stmt = prepare("INSERT INTO config (key, value) VALUES (?, ?)");
         sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);

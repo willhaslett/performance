@@ -46,7 +46,7 @@ static std::string entityName(StateEvent::Entity e) {
 void EngineSync::onStateEvent(const StateEvent& event) {
     // Song switch via config change
     if (event.entity == StateEvent::Config && event.entityId == "current_song_id") {
-        auto newSongId = stateAPI->getConfig("current_song_id");
+        auto newSongId = stateAPI->getMasterOutputId();  // = currentSongId
         if (newSongId != activeSongId) {
             if (newSongId.empty()) {
                 clearEngine();
@@ -182,6 +182,8 @@ void EngineSync::loadSong(const std::string& songId) {
 
     auto busses = getBusses();
     auto tracks = getTracks();
+    perfLog("[EngineSync] loadSong: %s (%d tracks, %d busses)\n",
+            songId.c_str(), (int)tracks.size(), (int)busses.size());
 
     // Rebuild in order: busses → tracks → effects → sends
     for (auto& bus : busses) onBusCreated(bus.id);
@@ -214,6 +216,8 @@ void EngineSync::onBusCreated(const std::string& busId) {
 void EngineSync::onTrackCreated(const std::string& trackId) {
     for (auto& track : getTracks()) {
         if (track.id == trackId) {
+            perfLog("[EngineSync] Creating track: %s pluginId=%s\n",
+                    track.name.c_str(), track.pluginId.c_str());
             engine.createTrackWithId(juce::String(track.id), juce::String(track.name));
             engine.setTrackGain(juce::String(track.id), track.outputGain);
             if (!track.midiEnabled)
