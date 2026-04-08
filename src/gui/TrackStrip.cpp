@@ -22,12 +22,16 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     inputSelector.onChange = [this]() {
         int selectedIdx = inputSelector.getSelectedId();
         if (selectedIdx <= 0) return;
-        // IDs are encoded as: mono input N -> id = N+1, stereo pair starting at N -> id = 1000+N+1
-        if (selectedIdx >= 1000) {
-            int start = selectedIdx - 1001;
+        if (selectedIdx == 1) {
+            // "No Input" selected
+            this->state.setTrackInputChannels(trackId.toStdString(), -1, 0);
+        }
+        // IDs: mono input N -> id = N+2 (offset by 1 for "No Input"), stereo -> id = 1000+N+2
+        else if (selectedIdx >= 1000) {
+            int start = selectedIdx - 1002;
             this->state.setTrackInputChannels(trackId.toStdString(), start, 2);
         } else {
-            int start = selectedIdx - 1;
+            int start = selectedIdx - 2;
             this->state.setTrackInputChannels(trackId.toStdString(), start, 1);
         }
     };
@@ -101,27 +105,31 @@ void TrackStrip::setSourceType(TrackSourceType type) {
 void TrackStrip::setInputChannels(int start, int count, const std::vector<juce::String>& availableInputs) {
     inputSelector.clear(juce::dontSendNotification);
 
+    // First item: No Input
+    inputSelector.addItem("No Input", 1);
+
     int numInputs = (int)availableInputs.size();
-    // Add mono inputs
+    // Add mono inputs (id = i+2, offset by 1 for "No Input")
     for (int i = 0; i < numInputs; ++i) {
         juce::String label = availableInputs[i].isEmpty()
             ? "Input " + juce::String(i + 1)
             : availableInputs[i];
-        inputSelector.addItem(label, i + 1);  // id = i+1
+        inputSelector.addItem(label, i + 2);
     }
 
-    // Add stereo pairs
+    // Add stereo pairs (id = 1000+i+2)
     for (int i = 0; i + 1 < numInputs; i += 2) {
         juce::String label = "Input " + juce::String(i + 1) + "-" + juce::String(i + 2) + " (Stereo)";
-        inputSelector.addItem(label, 1000 + i + 1);  // id = 1000+i+1
+        inputSelector.addItem(label, 1000 + i + 2);
     }
 
     // Select current input
-    if (start >= 0) {
-        if (count == 2)
-            inputSelector.setSelectedId(1000 + start + 1, juce::dontSendNotification);
-        else if (count == 1)
-            inputSelector.setSelectedId(start + 1, juce::dontSendNotification);
+    if (start < 0 || count == 0) {
+        inputSelector.setSelectedId(1, juce::dontSendNotification);  // No Input
+    } else if (count == 2) {
+        inputSelector.setSelectedId(1000 + start + 2, juce::dontSendNotification);
+    } else {
+        inputSelector.setSelectedId(start + 2, juce::dontSendNotification);
     }
 }
 

@@ -137,7 +137,7 @@ public:
         else if (menuItemID == 9) {
             auto tracks = state.listTracks();
             auto name = "Audio " + juce::String((int)tracks.size() + 1);
-            state.createAudioInputTrack(name.toStdString(), 0, 2);  // default stereo input 1-2
+            state.createAudioInputTrack(name.toStdString(), -1, 0);  // no input until user selects
         }
         else if (menuItemID == CommandIDs::newEffectsBus) {
             auto busses = state.listBusses();
