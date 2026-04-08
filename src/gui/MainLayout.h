@@ -21,6 +21,7 @@ public:
     bool handleGlobalKey(const juce::KeyPress& key);
 
     Sidebar& getSidebar() { return sidebar; }
+    MixerView& getMixer() { return mixerView; }
 
 private:
     StateAPI& state;

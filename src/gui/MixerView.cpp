@@ -187,6 +187,11 @@ void MixerView::rebuildStrips() {
             sends.push_back({ juce::String(s.busName), juce::String(s.busId), s.gain, 0.0f });
         strip->setSends(sends);
 
+        // Wire track preset callbacks from coordinator
+        strip->onSaveTrackPreset = onSaveTrackPreset;
+        strip->onLoadTrackPreset = onLoadTrackPreset;
+        strip->onListTrackPresets = onListTrackPresets;
+
         stripContainer.addAndMakeVisible(*strip);
         trackStrips.push_back(std::move(strip));
     }

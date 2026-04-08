@@ -39,14 +39,14 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // Engine API
     engineAPI = std::make_unique<EngineAPI>(*audioEngine, *stateAPI);
 
-    // Populate plugin catalog from engine scan
+    // Load persisted state first — establishes plugin/action IDs from DB
+    persistence->loadInto(*stateAPI);
+
+    // Then populate from engine scan — deduplicates by name, keeps DB IDs
     populatePluginCatalog();
 
-    // Register built-in actions
+    // Register built-in actions — deduplicates by name, keeps DB IDs
     registerBuiltinActions();
-
-    // Load persisted state into memory
-    persistence->loadInto(*stateAPI);
 
     // Engine sync — state events drive the engine
     engineSync = std::make_unique<EngineSync>(*audioEngine, *stateAPI);

@@ -27,6 +27,13 @@ private:
     EngineAPI& engine;
     int lastDesiredHeight = 0;
 
+public:
+    // Track preset callbacks — set by coordinator, applied to new strips
+    std::function<void(const juce::String&, const juce::String&)> onSaveTrackPreset;
+    std::function<void(const juce::String&, const juce::String&)> onLoadTrackPreset;
+    std::function<std::vector<juce::String>()> onListTrackPresets;
+private:
+
     // Scrollable area for tracks + busses
     class StripContainer : public juce::Component {
     public:

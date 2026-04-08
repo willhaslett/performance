@@ -188,8 +188,16 @@ public:
             coordinator->loadSong(songId);
         };
 
-        // Wire track preset callbacks on mixer strips
-        // (MixerView will set these when it creates TrackStrips)
+        // Wire track preset callbacks — MixerView applies these to each new TrackStrip
+        layout->getMixer().onSaveTrackPreset = [this](const juce::String& trackId, const juce::String& name) {
+            coordinator->saveTrackPreset(trackId, name);
+        };
+        layout->getMixer().onLoadTrackPreset = [this](const juce::String& trackId, const juce::String& name) {
+            coordinator->loadTrackPreset(trackId, name);
+        };
+        layout->getMixer().onListTrackPresets = [this]() {
+            return coordinator->listTrackPresets();
+        };
 
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
