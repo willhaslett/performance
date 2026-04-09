@@ -376,10 +376,17 @@ void LuaEngine::registerAPI() {
         if (descOpt.has_value()) description = descOpt.value();
 
         auto* action = state.findActionByName(actionName);
-        if (!action) return;
+        if (!action) {
+            perfLog("[Lua] bind: unknown action '%s'\n", actionName.c_str());
+            return;
+        }
         auto songId = state.getMasterOutputId();
-        if (!songId.empty())
-            state.addBinding(songId, type, channel, number, action->id, argsJson, description);
+        if (songId.empty()) {
+            perfLog("[Lua] bind: no active song\n");
+            return;
+        }
+        state.addBinding(songId, type, channel, number, action->id, argsJson, description);
+        perfLog("[Lua] bind: %s ch%d #%d -> %s\n", type.c_str(), channel, number, actionName.c_str());
     });
 
     // Generic state queries

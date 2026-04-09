@@ -96,7 +96,13 @@ void ClaudeClient::run() {
                 auto inputJson = juce::JSON::parse(block.toolInput);
                 auto code = inputJson.getProperty("code", "").toString();
 
-                perfLog("[Claude] Tool call: %s\n", code.toRawUTF8());
+                if (code.isEmpty()) {
+                    perfLog("[Claude] WARNING: Empty code from tool input: %s\n",
+                            block.toolInput.toRawUTF8());
+                } else {
+                    perfLog("[Claude] Tool call (%d chars): %s\n",
+                            code.length(), code.toRawUTF8());
+                }
 
                 // Execute on message thread
                 auto result = executeLua(code);

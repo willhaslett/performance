@@ -109,30 +109,75 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `setAudioInputDevice(name)` — switch audio input device independently. On macOS, input and output are separate (e.g. "MacBook Pro Speakers" is output-only, "MacBook Pro Microphone" is input-only, "Scarlett 2i2" is both).
 
 ### Devices (MIDI controllers)
-- `registerDevice(name, portName)` — register a MIDI controller
+- `registerDevice(name, portName)` — register a MIDI controller, returns device ID
 - `addDeviceControl(deviceId, name, type, channel, number, group)` — add a named control mapping
 - `addDeviceToSong(songId, deviceId)` — associate device with song
-- `listDevices()` — list registered MIDI devices
-- `listMidiInputs()` — list connected MIDI inputs (for port name lookup)
-- `getDeviceControl(deviceName, controlName)` — look up a control's MIDI details. Returns table with `type`, `channel`, `number`, `group`. Device matched by name or port name.
-- `listDeviceControls(deviceName)` — list all controls for a device. Returns array of tables with `name`, `type`, `channel`, `number`, `group`.
+- `listDevices()` — returns array of `{id, name, port}` (NOTE: field is `port`, NOT `portName`)
+- `listMidiInputs()` — returns array of `{name, id}` (these are JUCE port identifiers)
+- `getDeviceControl(deviceName, controlName)` — returns `{type, channel, number, group}` or empty table if not found
+- `listDeviceControls(deviceName)` — returns array of `{name, type, channel, number, group}`
 
-#### Binding with device controls
-When creating bindings, ALWAYS query exact names first — names are case-sensitive:
+### Bindings (MIDI control → action)
+
+`bind(type, channel, number, actionName, argsTable, description)`
+- `type`: "cc", "note", "pitchbend", "pressure"
+- `channel`: MIDI channel (1-16)
+- `number`: CC number or note number
+- `actionName`: must match an existing action name exactly
+- `argsTable`: Lua table of arguments, e.g. `{"TrackName"}` or `{"TrackName", 3.0, "cosine"}`
+- `description`: human-readable label
+
+#### Built-in actions (USE THESE FIRST — do NOT create custom actions for basic operations):
+| Action | Args | What it does |
+|--------|------|-------------|
+| `setActiveTrack` | `{"trackName"}` | Enable this track, disable all others |
+| `enableTrack` | `{"trackName"}` | Enable a single track |
+| `disableTrack` | `{"trackName"}` | Disable a single track |
+| `fadeOut` | `{"trackName", duration, "easing"}` | Fade track gain to 0 |
+| `fadeIn` | `{"trackName", duration, "easing"}` | Fade track gain to 1 |
+| `crossfade` | `{"fromTrack", "toTrack", duration, "easing"}` | Crossfade between two tracks |
+
+Easing options: "linear", "easein", "easeout", "cosine", "scurve"
+
+#### Binding workflow — ALWAYS follow this pattern:
 ```lua
--- Get exact track names
+-- Step 1: Query exact track names
 local tracks = registryList("track")
-for i, t in ipairs(tracks) do log(t.name) end
+for i, t in ipairs(tracks) do log(t.id .. " " .. t.name) end
 
--- Get exact control names for a device
-local controls = listDeviceControls("KeyLab mkII 88 MIDI")
-for i, c in ipairs(controls) do log(c.name) end
+-- Step 2: Query device controls
+local controls = listDeviceControls("MPK mini 3")
+for i, c in ipairs(controls) do log(c.name .. " " .. c.type .. " ch" .. c.channel .. " #" .. c.number) end
 
--- Then bind using exact names from the queries above
-local ctrl = getDeviceControl("KeyLab mkII 88 MIDI", "Pad 6")
-bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"PIano", 3.0, "cosine"}, "Pad 6 → fade out PIano")
+-- Step 3: Look up specific control and bind
+local ctrl = getDeviceControl("MPK mini 3", "Pad 1")
+if ctrl.type then
+  bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Piano", 3.0, "cosine"}, "Pad 1 fade out Piano")
+else
+  log("Control not found!")
+end
 ```
-Never guess at track names or control names — always query first.
+NEVER guess names. ALWAYS query first. Names are case-sensitive.
+
+### Custom Actions (macros) — ONLY for complex multi-step sequences
+Only create custom actions when built-in actions are insufficient — e.g. multiple simultaneous fades, delayed sequences, conditional logic. For a simple fade or track switch, use the built-in action directly with `bind`.
+
+- `createAction(name, label, luaCode, songId)` — `songId` optional (omit for global)
+- `removeAction(id)` — remove a custom action
+- `triggerAction(actionName)` — trigger any action (for composability)
+- `currentSongId()` — get current song ID
+
+Example (complex sequence that CANNOT be done with a single built-in action):
+```lua
+createAction("big_transition", "Big Transition", [[
+  interpolate(0.0, 1.0, 20, function(v) setTrackGain("Piano", v) end, "cosine")
+  interpolate(1.0, 0.0, 10, function(v) setTrackGain("Kit", v) end, "cosine")
+  delay(30, function()
+    setTrackGain("Trombone", 1.0)
+    setTrackAudioEnabled("Trombone", true)
+  end)
+]])
+```
 
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor
@@ -140,32 +185,6 @@ Never guess at track names or control names — always query first.
 - `listPlugins()` — list all available AU plugins
 - `listInstrumentPlugins()` — list instrument plugins only
 - `listEffectPlugins()` — list effect plugins only
-
-### Custom Actions (macros)
-Create custom actions that compose existing API calls. These are bindable to MIDI controls.
-- `createAction(name, label, luaCode, songId)` — create a custom action. `songId` is optional (omit for global).
-- `removeAction(id)` — remove a custom action
-- `triggerAction(actionName)` — trigger any action by name (for composability)
-- `currentSongId()` — get current song ID (for song-scoped actions)
-
-The `luaCode` has full access to all Lua API functions. Example:
-```lua
-createAction("piano_entrance", "Piano Entrance", [[
-  local tracks = registryList("track")
-  for i, t in ipairs(tracks) do
-    log(t.name)
-  end
-  interpolate(0.0, 1.0, 20, function(v) setTrackGain("PIano", v) end, "cosine")
-  interpolate(1.0, 0.0, 10, function(v) setTrackGain("Kit", v) end, "cosine")
-  delay(30, function()
-    setTrackGain("Trombone", 1.0)
-    setTrackMidiEnabled("Trombone", true)
-    setTrackAudioEnabled("Trombone", true)
-  end)
-]])
-```
-
-IMPORTANT: Always query track names with `registryList("track")` before using them in custom action code. Custom actions persist and survive restarts. They appear in the bindings action dropdown.
 
 ### Utility
 - `log(message)` — write to app log

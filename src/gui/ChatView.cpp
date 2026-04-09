@@ -90,10 +90,12 @@ void ChatView::onAssistantText(const juce::String& text) {
     addBubble(Bubble::Assistant, text);
 }
 
-void ChatView::onToolUse(const juce::String&, const juce::String&,
-                          const juce::String&, bool) {
-    // Tool calls are internal — don't show to user.
-    // The assistant's text response after tool use is what the user sees.
+void ChatView::onToolUse(const juce::String& toolName, const juce::String& code,
+                          const juce::String& result, bool isError) {
+    // Show tool execution in chat for transparency
+    addBubble(Bubble::Tool, code);
+    if (isError)
+        addBubble(Bubble::Error, result);
 }
 
 void ChatView::onError(const juce::String& error) {
