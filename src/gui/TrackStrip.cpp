@@ -213,12 +213,13 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     bool isAudioInput = (sourceType == TrackSourceType::AudioInput);
     constexpr uint32_t bgHeaderAudioInput = 0xff8a6a2a;  // amber/orange
+    constexpr float disabledDarken = 0.35f;  // blend toward black
 
-    if (isAudioInput)
-        g.setColour(audioEnabled ? juce::Colour(bgHeaderAudioInput)
-                                 : Theme::color(Theme::Color::bgHeaderOff));
-    else
-        g.setColour(Theme::color(audioEnabled ? Theme::Color::bgHeader : Theme::Color::bgHeaderOff));
+    auto headerColour = isAudioInput ? juce::Colour(bgHeaderAudioInput)
+                                      : Theme::color(Theme::Color::bgHeader);
+    if (!audioEnabled)
+        headerColour = headerColour.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+    g.setColour(headerColour);
     g.fillRect(headerBounds);
 
     midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
