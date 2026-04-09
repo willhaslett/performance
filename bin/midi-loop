@@ -1,0 +1,5 @@
+#!/bin/bash
+# Send continuous MIDI notes via a virtual port until killed.
+# Usage: bin/midi-loop [note] [velocity] [interval]
+cd "$(dirname "$0")/.."
+uvx --from python-rtmidi python3 tools/send_notes_loop.py "$@"
