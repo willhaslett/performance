@@ -54,7 +54,16 @@ private:
     bool audioEnabled = true;
 
     TrackSourceType sourceType = TrackSourceType::Instrument;
-    juce::ComboBox inputSelector;  // shown for audio input tracks, hidden for instrument
+
+    // Input selector (audio input tracks) — custom painted slot, not ComboBox
+    juce::Rectangle<int> inputSlotBounds;
+    int inputChannelStart = -1;
+    int inputChannelCount = 0;
+    juce::String inputDisplayName;  // "Input 1", "Input 1-2 (Stereo)", etc.
+    std::vector<juce::String> cachedInputNames;
+    bool inputSlotHovered = false;
+    void showInputPicker(juce::Point<int> screenPos);
+    void paintInputSlot(juce::Graphics& g);
 
     PluginSlot instrumentSlot;
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;

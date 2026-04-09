@@ -11,30 +11,12 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     addAndMakeVisible(instrumentSlot);
     addAndMakeVisible(faderMeter);
     addChildComponent(sendsPanel);  // hidden until busses exist
-    addChildComponent(inputSelector);  // hidden until setSourceType(AudioInput)
 
     faderMeter.onGainChanged = [&](float newGain) {
         state.setTrackGain(trackId.toStdString(), newGain);
     };
 
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
-
-    inputSelector.onChange = [this]() {
-        int selectedIdx = inputSelector.getSelectedId();
-        if (selectedIdx <= 0) return;
-        if (selectedIdx == 1) {
-            // "No Input" selected
-            this->state.setTrackInputChannels(trackId.toStdString(), -1, 0);
-        }
-        // IDs: mono input N -> id = N+2 (offset by 1 for "No Input"), stereo -> id = 1000+N+2
-        else if (selectedIdx >= 1000) {
-            int start = selectedIdx - 1002;
-            this->state.setTrackInputChannels(trackId.toStdString(), start, 2);
-        } else {
-            int start = selectedIdx - 2;
-            this->state.setTrackInputChannels(trackId.toStdString(), start, 1);
-        }
-    };
 }
 
 void TrackStrip::setInstrumentName(const juce::String& name) {
@@ -103,45 +85,85 @@ void TrackStrip::setSourceType(TrackSourceType type) {
     sourceType = type;
     if (type == TrackSourceType::AudioInput) {
         instrumentSlot.setVisible(false);
-        inputSelector.setVisible(true);
-        rebuildEffectSlots();  // show empty effect slot for audio input tracks
+        rebuildEffectSlots();
     } else {
         instrumentSlot.setVisible(true);
-        inputSelector.setVisible(false);
     }
     resized();
     repaint();
 }
 
 void TrackStrip::setInputChannels(int start, int count, const std::vector<juce::String>& availableInputs) {
-    inputSelector.clear(juce::dontSendNotification);
+    cachedInputNames = availableInputs;
+    inputChannelStart = start;
+    inputChannelCount = count;
 
-    // First item: No Input
-    inputSelector.addItem("No Input", 1);
-
-    int numInputs = (int)availableInputs.size();
-    // Add mono inputs (id = i+2, offset by 1 for "No Input")
-    for (int i = 0; i < numInputs; ++i) {
-        juce::String label = availableInputs[i].isEmpty()
-            ? "Input " + juce::String(i + 1)
-            : availableInputs[i];
-        inputSelector.addItem(label, i + 2);
-    }
-
-    // Add stereo pairs (id = 1000+i+2)
-    for (int i = 0; i + 1 < numInputs; i += 2) {
-        juce::String label = "Input " + juce::String(i + 1) + "-" + juce::String(i + 2) + " (Stereo)";
-        inputSelector.addItem(label, 1000 + i + 2);
-    }
-
-    // Select current input
     if (start < 0 || count == 0) {
-        inputSelector.setSelectedId(1, juce::dontSendNotification);  // No Input
+        inputDisplayName = {};
     } else if (count == 2) {
-        inputSelector.setSelectedId(1000 + start + 2, juce::dontSendNotification);
+        inputDisplayName = "Input " + juce::String(start + 1) + "-" + juce::String(start + 2);
+    } else if (start < (int)availableInputs.size() && availableInputs[start].isNotEmpty()) {
+        inputDisplayName = availableInputs[start];
     } else {
-        inputSelector.setSelectedId(start + 2, juce::dontSendNotification);
+        inputDisplayName = "Input " + juce::String(start + 1);
     }
+    repaint();
+}
+
+void TrackStrip::paintInputSlot(juce::Graphics& g) {
+    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSlotHover : Theme::Color::bgSlot));
+    g.fillRoundedRectangle(inputSlotBounds.toFloat(), Theme::cornerRadiusSm);
+
+    g.setFont(Theme::font(Theme::fontSizeSm));
+    if (inputDisplayName.isEmpty()) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.drawText("Select Input", inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
+    } else {
+        g.setColour(juce::Colour(0xff8a6a2a));  // amber, same as audio input header
+        g.drawText(inputDisplayName, inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
+    }
+}
+
+void TrackStrip::showInputPicker(juce::Point<int> screenPos) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "No Input", true, inputChannelStart < 0);
+
+    int numInputs = (int)cachedInputNames.size();
+
+    if (numInputs > 0) {
+        menu.addSeparator();
+        // Mono inputs
+        for (int i = 0; i < numInputs; ++i) {
+            juce::String label = cachedInputNames[i].isEmpty()
+                ? "Input " + juce::String(i + 1)
+                : cachedInputNames[i];
+            bool isCurrent = (inputChannelStart == i && inputChannelCount == 1);
+            menu.addItem(i + 2, label, true, isCurrent);
+        }
+
+        // Stereo pairs
+        if (numInputs >= 2) {
+            menu.addSeparator();
+            for (int i = 0; i + 1 < numInputs; i += 2) {
+                juce::String label = "Input " + juce::String(i + 1) + "-" + juce::String(i + 2) + " (Stereo)";
+                bool isCurrent = (inputChannelStart == i && inputChannelCount == 2);
+                menu.addItem(1000 + i + 2, label, true, isCurrent);
+            }
+        }
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this](int result) {
+            if (result == 0) return;
+            if (result == 1) {
+                state.setTrackInputChannels(trackId.toStdString(), -1, 0);
+            } else if (result >= 1000) {
+                state.setTrackInputChannels(trackId.toStdString(), result - 1002, 2);
+            } else {
+                state.setTrackInputChannels(trackId.toStdString(), result - 2, 1);
+            }
+        });
 }
 
 void TrackStrip::setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions) {
@@ -235,6 +257,10 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.fillEllipse(dx - 1.5f, dy, 3.0f, 3.0f);
         dy += 5.0f;
     }
+
+    // Input slot for audio input tracks
+    if (sourceType == TrackSourceType::AudioInput)
+        paintInputSlot(g);
 }
 
 int TrackStrip::getMinimumHeight() const {
@@ -277,7 +303,7 @@ void TrackStrip::resized() {
     int y = slotArea.getY();
 
     instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
-    inputSelector.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
+    inputSlotBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
     y += Theme::slotHeight + Theme::slotGap;
 
     for (auto& slot : effectSlots) {
@@ -304,10 +330,16 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     if (powerHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         audioEnabled = !audioEnabled;
         state.setTrackAudioEnabled(trackId.toStdString(), audioEnabled);
-        // When user enables a track, also enable MIDI so it makes sound
         if (audioEnabled && sourceType == TrackSourceType::Instrument)
             state.setTrackMidiEnabled(trackId.toStdString(), true);
         repaint();
+        return;
+    }
+
+    // Input slot click — show input picker
+    if (sourceType == TrackSourceType::AudioInput &&
+        inputSlotBounds.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        showInputPicker(event.getScreenPosition());
     }
 }
 
