@@ -304,6 +304,9 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     if (powerHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         audioEnabled = !audioEnabled;
         state.setTrackAudioEnabled(trackId.toStdString(), audioEnabled);
+        // When user enables a track, also enable MIDI so it makes sound
+        if (audioEnabled && sourceType == TrackSourceType::Instrument)
+            state.setTrackMidiEnabled(trackId.toStdString(), true);
         repaint();
     }
 }
