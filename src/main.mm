@@ -205,17 +205,25 @@ public:
             layout->getDeviceEditor().setDevice(deviceId, portName);
         };
 
-        // Wire sidebar audio device selection — only change output device.
-        // On macOS, input and output are independent (e.g. "MacBook Pro Speakers"
-        // is output-only, mic is a separate device). Setting inputDeviceName to an
-        // output-only device causes the entire open to fail.
-        layout->getSidebar().onAudioDeviceSelected = [this, layout](const std::string& deviceName) {
+        // Wire sidebar audio output device selection
+        layout->getSidebar().onAudioOutputSelected = [this](const std::string& deviceName) {
             auto& dm = coordinator->engine().getDeviceManager();
             auto setup = dm.getAudioDeviceSetup();
             auto jName = juce::String(deviceName);
             if (setup.outputDeviceName == jName) return;
             setup.outputDeviceName = jName;
-            coordinator->state().setConfig("audio_device", deviceName);
+            coordinator->state().setConfig("audio_output_device", deviceName);
+            dm.setAudioDeviceSetup(setup, true);
+        };
+
+        // Wire sidebar audio input device selection
+        layout->getSidebar().onAudioInputSelected = [this](const std::string& deviceName) {
+            auto& dm = coordinator->engine().getDeviceManager();
+            auto setup = dm.getAudioDeviceSetup();
+            auto jName = juce::String(deviceName);
+            if (setup.inputDeviceName == jName) return;
+            setup.inputDeviceName = jName;
+            coordinator->state().setConfig("audio_input_device", deviceName);
             dm.setAudioDeviceSetup(setup, true);
         };
 

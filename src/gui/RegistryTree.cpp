@@ -86,7 +86,7 @@ void RegistryTree::paint(juce::Graphics& g) {
 
         if (row.isLeaf) {
             // Active audio device: green dot indicator
-            if (row.type == "audio_device_active") {
+            if (row.type == "audio_output_active" || row.type == "audio_input_active") {
                 g.setColour(Theme::color(Theme::Color::midiActive));
                 g.fillEllipse((float)(x + 4), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
             }

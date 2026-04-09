@@ -46,21 +46,35 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // EngineSync reacts to creation events, building the engine graph
     persistence->loadInto(*stateAPI);
 
-    // Restore saved audio device (must be after loadInto so config is available)
-    auto savedDevice = stateAPI->getConfig("audio_device");
-    if (!savedDevice.empty()) {
+    // Restore saved audio devices (must be after loadInto so config is available)
+    {
         auto& dm = audioEngine->getDeviceManager();
         auto setup = dm.getAudioDeviceSetup();
-        perfLog("[Coordinator] Audio device config: saved='%s', current='%s'\n",
-                savedDevice.c_str(), setup.outputDeviceName.toRawUTF8());
-        if (setup.outputDeviceName != juce::String(savedDevice)) {
-            setup.outputDeviceName = juce::String(savedDevice);
+        bool changed = false;
+
+        auto savedOutput = stateAPI->getConfig("audio_output_device");
+        auto savedInput = stateAPI->getConfig("audio_input_device");
+
+        perfLog("[Coordinator] Audio config: output saved='%s' current='%s', input saved='%s' current='%s'\n",
+                savedOutput.c_str(), setup.outputDeviceName.toRawUTF8(),
+                savedInput.c_str(), setup.inputDeviceName.toRawUTF8());
+
+        if (!savedOutput.empty() && setup.outputDeviceName != juce::String(savedOutput)) {
+            setup.outputDeviceName = juce::String(savedOutput);
+            changed = true;
+        }
+        if (!savedInput.empty() && setup.inputDeviceName != juce::String(savedInput)) {
+            setup.inputDeviceName = juce::String(savedInput);
+            changed = true;
+        }
+
+        if (changed) {
             auto err = dm.setAudioDeviceSetup(setup, true);
             if (err.isEmpty())
-                perfLog("[Coordinator] Restored audio device: %s\n", savedDevice.c_str());
+                perfLog("[Coordinator] Restored audio devices: out='%s', in='%s'\n",
+                        setup.outputDeviceName.toRawUTF8(), setup.inputDeviceName.toRawUTF8());
             else
-                perfLog("[Coordinator] Failed to restore audio device '%s': %s\n",
-                        savedDevice.c_str(), err.toRawUTF8());
+                perfLog("[Coordinator] Failed to restore audio devices: %s\n", err.toRawUTF8());
         }
     }
 

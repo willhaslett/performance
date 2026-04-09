@@ -21,8 +21,9 @@ public:
     // Callback for MIDI device selection (deviceId set if registered, portName set if unregistered)
     std::function<void(const std::string& deviceId, const std::string& portName)> onDeviceSelected;
 
-    // Callback for audio device selection
-    std::function<void(const std::string& deviceName)> onAudioDeviceSelected;
+    // Callbacks for audio device selection (output and input independently)
+    std::function<void(const std::string& deviceName)> onAudioOutputSelected;
+    std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
     // Callbacks for pane selection
     std::function<void()> onDebugSelected;
@@ -44,5 +45,6 @@ private:
     std::string lastHighlightedId;
     std::string selectedDeviceId;
     int lastMidiDeviceCount = -1;
-    juce::String lastAudioDeviceName;
+    juce::String lastAudioOutputName;
+    juce::String lastAudioInputName;
 };
