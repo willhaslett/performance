@@ -124,36 +124,38 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `channel`: MIDI channel (1-16)
 - `number`: CC number or note number
 - `actionName`: must match an existing action name exactly
-- `argsTable`: Lua table of arguments, e.g. `{"TrackName"}` or `{"TrackName", 3.0, "cosine"}`
+- `argsTable`: Lua table of arguments — track args use the **exact name** from `registryList("track")`, which gets resolved to a UUID at bind-time. If the name can't be resolved, the bind fails.
 - `description`: human-readable label
 - `deviceId`: device UUID from `getDeviceControl().deviceId` — ALWAYS pass this
 
 #### Built-in actions (USE THESE FIRST — do NOT create custom actions for basic operations):
 | Action | Args | What it does |
 |--------|------|-------------|
-| `setActiveTrack` | `{"trackName"}` | Enable this track, disable all others |
-| `enableTrack` | `{"trackName"}` | Enable a single track |
-| `disableTrack` | `{"trackName"}` | Disable a single track |
-| `fadeOut` | `{"trackName", duration, "easing"}` | Fade track gain to 0 |
-| `fadeIn` | `{"trackName", duration, "easing"}` | Fade track gain to 1 |
-| `crossfade` | `{"fromTrack", "toTrack", duration, "easing"}` | Crossfade between two tracks |
+| `setActiveTrack` | `{trackName}` | Enable this track, disable all others |
+| `enableTrack` | `{trackName}` | Enable a single track |
+| `disableTrack` | `{trackName}` | Disable a single track |
+| `fadeOut` | `{trackName, duration, "easing"}` | Fade track gain to 0 |
+| `fadeIn` | `{trackName, duration, "easing"}` | Fade track gain to 1 |
+| `crossfade` | `{fromTrackName, toTrackName, duration, "easing"}` | Crossfade between two tracks |
 
+Track name args are resolved to UUIDs at bind-time. Use exact names from `registryList("track")`.
 Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 
-#### Binding workflow — ALWAYS follow this pattern:
+#### Binding workflow — ALWAYS follow this exact pattern:
 ```lua
--- Step 1: Query exact track names
+-- Step 1: Query tracks to get exact names
 local tracks = registryList("track")
 for i, t in ipairs(tracks) do log(t.id .. " " .. t.name) end
+-- Example output: "abc123... PIano"   "def456... Kit"
 
 -- Step 2: Query device controls
 local controls = listDeviceControls("MPK mini 3")
 for i, c in ipairs(controls) do log(c.name .. " " .. c.type .. " ch" .. c.channel .. " #" .. c.number) end
 
--- Step 3: Look up specific control and bind (ALWAYS pass ctrl.deviceId)
+-- Step 3: Look up specific control and bind using EXACT track name from step 1
 local ctrl = getDeviceControl("MPK mini 3", "Pad 1")
 if ctrl.type then
-  bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Piano", 3.0, "cosine"}, "Pad 1 fade out Piano", ctrl.deviceId)
+  bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"PIano", 3.0, "cosine"}, "Pad 1 fade out PIano", ctrl.deviceId)
 else
   log("Control not found!")
 end
