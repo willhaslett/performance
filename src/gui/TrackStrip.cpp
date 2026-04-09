@@ -102,8 +102,6 @@ void TrackStrip::setInputChannels(int start, int count, const std::vector<juce::
         inputDisplayName = {};
     } else if (count == 2) {
         inputDisplayName = "Input " + juce::String(start + 1) + "-" + juce::String(start + 2);
-    } else if (start < (int)availableInputs.size() && availableInputs[start].isNotEmpty()) {
-        inputDisplayName = availableInputs[start];
     } else {
         inputDisplayName = "Input " + juce::String(start + 1);
     }
@@ -119,7 +117,7 @@ void TrackStrip::paintInputSlot(juce::Graphics& g) {
         g.setColour(Theme::color(Theme::Color::textDim));
         g.drawText("Select Input", inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
     } else {
-        g.setColour(juce::Colour(0xff8a6a2a));  // amber, same as audio input header
+        g.setColour(Theme::color(Theme::Color::instrument));
         g.drawText(inputDisplayName, inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
     }
 }
