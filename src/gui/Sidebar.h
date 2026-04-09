@@ -26,6 +26,7 @@ public:
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
     // Callbacks for pane selection
+    std::function<void()> onBindingsSelected;
     std::function<void()> onDebugSelected;
     std::function<void()> onLogsSelected;
     std::function<void()> onChatSelected;

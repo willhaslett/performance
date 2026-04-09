@@ -38,6 +38,9 @@ Sidebar::Sidebar() {
             // id is "audio_in:DeviceName"
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioInputSelected) onAudioInputSelected(devName);
+        } else if (type == "bindings") {
+            selectedDeviceId = id;
+            if (onBindingsSelected) onBindingsSelected();
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
@@ -338,6 +341,7 @@ void Sidebar::refreshTree() {
             panesNode.children.push_back(leaf);
         };
 
+        addLeaf("Bindings", "bindings", "bindings");
         addLeaf("Debug", "debug", "debug");
         addLeaf("Logs", "logs", "logs");
         addLeaf("Chat", "chat", "chat");

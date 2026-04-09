@@ -6,6 +6,7 @@
 #include "gui/DeviceEditorPane.h"
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
+#include "gui/BindingsPane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
@@ -38,6 +39,7 @@ public:
     // Expose panes for wiring
     DeviceEditorPane deviceEditor;
     DebugPane debugPane;
+    BindingsPane bindingsPane;
     ChatView chatView;
     LogPane logPane;
 

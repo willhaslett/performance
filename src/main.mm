@@ -228,6 +228,9 @@ public:
         };
 
         // Wire sidebar pane selection
+        layout->getSidebar().onBindingsSelected = [layout]() {
+            layout->showLeftPane(&layout->bindingsPane);
+        };
         layout->getSidebar().onDebugSelected = [layout]() {
             layout->showLeftPane(&layout->debugPane);
         };
