@@ -320,6 +320,8 @@ void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string
     auto* statePtr = &state;
     auto actionCopy = action;
 
+    // Note: deleteWhenDismissed must be false — the callback reads dialog widgets.
+    // The shared_ptr prevents the dialog from being deleted until the callback completes.
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
         [dialog, statePtr, fields, deviceId, ctrlType, channel, number, ctrlName,
          actionCopy, songId](int result) {
@@ -350,5 +352,5 @@ void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string
 
             statePtr->addBinding(songId, ctrlType, channel, number,
                                   actionCopy.id, argsJson, desc, deviceId);
-        }), true);
+        }), false);
 }
