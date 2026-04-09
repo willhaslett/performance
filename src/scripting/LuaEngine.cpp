@@ -389,9 +389,41 @@ void LuaEngine::registerAPI() {
             perfLog("[Lua] bind: no active song\n");
             return;
         }
+
+        // Resolve track-name args to UUIDs at bind-time using paramSchema
+        auto argsVar = juce::JSON::parse(juce::String(argsJson));
+        if (auto* argsArr = argsVar.getArray()) {
+            auto schema = juce::JSON::parse(juce::String(action->paramSchema));
+            if (auto* params = schema.getArray()) {
+                for (int i = 0; i < std::min(argsArr->size(), params->size()); ++i) {
+                    auto paramName = (*params)[i].getProperty("name", "").toString();
+                    if (paramName.containsIgnoreCase("track") && (*argsArr)[i].isString()) {
+                        auto trackName = (*argsArr)[i].toString();
+                        // Resolve: try exact, then case-insensitive
+                        std::string resolved;
+                        for (auto& t : state.listTracks()) {
+                            if (juce::String(t.name) == trackName) { resolved = t.id; break; }
+                        }
+                        if (resolved.empty()) {
+                            auto lower = trackName.toLowerCase();
+                            for (auto& t : state.listTracks()) {
+                                if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id; break; }
+                            }
+                        }
+                        if (resolved.empty()) {
+                            perfLog("[Lua] bind: track '%s' not found\n", trackName.toRawUTF8());
+                            return;
+                        }
+                        argsArr->set(i, juce::var(juce::String(resolved)));
+                    }
+                }
+            }
+            argsJson = juce::JSON::toString(argsVar, true).toStdString();
+        }
+
         state.addBinding(songId, type, channel, number, action->id, argsJson, description, deviceId);
-        perfLog("[Lua] bind: %s ch%d #%d dev='%s' -> %s\n",
-                type.c_str(), channel, number, deviceId.c_str(), actionName.c_str());
+        perfLog("[Lua] bind: %s ch%d #%d dev='%s' -> %s args=%s\n",
+                type.c_str(), channel, number, deviceId.c_str(), actionName.c_str(), argsJson.c_str());
     });
 
     // Generic state queries

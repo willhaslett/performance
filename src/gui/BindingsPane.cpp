@@ -26,8 +26,15 @@ std::string BindingsPane::formatArgs(const std::string& argsJson) const {
     auto parsed = juce::JSON::parse(juce::String(argsJson));
     if (auto* arr = parsed.getArray()) {
         juce::StringArray parts;
-        for (auto& v : *arr)
-            parts.add(v.toString());
+        for (auto& v : *arr) {
+            auto s = v.toString();
+            // If it looks like a UUID, try to resolve to track name for display
+            if (s.length() == 32 && s.containsOnly("0123456789abcdef")) {
+                auto* track = state.findTrack(s.toStdString());
+                if (track) { parts.add(juce::String(track->name)); continue; }
+            }
+            parts.add(s);
+        }
         return parts.joinIntoString(", ").toStdString();
     }
     return "";
@@ -337,7 +344,16 @@ void BindingsPane::showArgsPopup(const Row& row, const ActionInfo& action) {
                                 field.name.find("Track") != std::string::npos);
                 bool isEasing = (field.name == "easing");
 
-                if (isTrack || isEasing) {
+                if (isTrack) {
+                    if (auto* cb = dialog->getComboBoxComponent(jName)) {
+                        // Resolve track name to UUID
+                        auto trackName = cb->getText();
+                        juce::String trackId;
+                        for (auto& t : statePtr->listTracks())
+                            if (juce::String(t.name) == trackName) { trackId = juce::String(t.id); break; }
+                        argsArray.append(juce::var(trackId.isNotEmpty() ? trackId : trackName));
+                    }
+                } else if (isEasing) {
                     if (auto* cb = dialog->getComboBoxComponent(jName))
                         argsArray.append(juce::var(cb->getText()));
                 } else {
