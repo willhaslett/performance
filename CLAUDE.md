@@ -189,6 +189,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 **Known issues with embedded Claude:**
 - Bindings created via Claude/Lua may use incorrect track names (case-sensitive mismatch). runtime/CLAUDE.md instructs Claude to query names first, but this isn't always followed. GUI bindings pane is more reliable for now.
+- Custom action creation via embedded Claude consistently fails in practice despite the API working correctly when tested via `bin/perf` IPC. Root cause not yet diagnosed — may be a system prompt issue, tool call formatting, or Lua string escaping through the chat→tool→IPC pipeline. The `createAction` Lua API itself works (verified via direct IPC). Needs investigation.
 
 **Feature backlog (near-term):**
 - Song development canvas — score steps, song state overview. Bindings UI exists but score management still needs a view.
