@@ -203,93 +203,152 @@ void BindingsPane::mouseMove(const juce::MouseEvent& event) {
     }
 }
 
-// --- Add Binding Dialog ---
+// --- Add Binding Dialog (two-step: action menu → args dialog) ---
+
+struct ControlOption { std::string deviceId; std::string type; int channel; int number; std::string name; };
 
 void BindingsPane::showAddDialog() {
     auto* song = state.currentSong();
     if (!song) return;
 
-    auto dialog = std::make_shared<juce::AlertWindow>("Add Binding", "", juce::MessageBoxIconType::NoIcon);
-    dialog->setColour(juce::AlertWindow::backgroundColourId, Theme::color(Theme::Color::bgPanel));
-    dialog->setColour(juce::AlertWindow::textColourId, Theme::color(Theme::Color::textPrimary));
-
-    // Build control options from all registered devices
-    juce::StringArray controlOptions;
-    struct ControlOption { std::string deviceId; std::string type; int channel; int number; std::string name; };
+    // Build control options
     auto controlData = std::make_shared<std::vector<ControlOption>>();
-
-    for (auto& device : state.allDevices()) {
-        for (auto& ctrl : device.controls) {
-            controlOptions.add(juce::String(ctrl.name) + " (" + device.name + ")");
+    for (auto& device : state.allDevices())
+        for (auto& ctrl : device.controls)
             controlData->push_back({ device.id, ctrl.controlType, ctrl.channel, ctrl.number, ctrl.name });
-        }
-    }
 
-    if (controlOptions.isEmpty()) {
+    if (controlData->empty()) {
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
             "No Controls", "Map some controls on a MIDI device first.");
         return;
     }
 
-    // Build action options
-    juce::StringArray actionOptions;
-    auto& actions = state.allActions();
-    for (auto& action : actions)
-        actionOptions.add(juce::String(action.label.empty() ? action.name : action.label));
+    // Step 1: Pick control via popup
+    juce::PopupMenu controlMenu;
+    for (int i = 0; i < (int)controlData->size(); ++i) {
+        auto& c = (*controlData)[i];
+        auto* device = state.findDevice(c.deviceId);
+        auto label = c.name + (device ? " (" + device->name + ")" : "");
+        controlMenu.addItem(i + 1, juce::String(label));
+    }
 
-    dialog->addComboBox("control", controlOptions, "Control");
-    dialog->addComboBox("action", actionOptions, "Action");
+    auto songId = song->id;
+    controlMenu.showMenuAsync(juce::PopupMenu::Options(),
+        [this, controlData, songId](int controlResult) {
+            if (controlResult == 0) return;
+            int controlIdx = controlResult - 1;
+            auto ctrl = (*controlData)[controlIdx];
 
-    // Dynamic arg fields — we'll add text fields for the most common pattern
-    // For now: one "Arguments" text field where user types comma-separated values
-    // The action's paramSchema tells us what to expect
-    dialog->addTextEditor("args", "", "Arguments (comma-separated)");
-    dialog->addTextEditor("desc", "", "Description (optional)");
+            // Step 2: Pick action via popup
+            juce::PopupMenu actionMenu;
+            auto& actions = state.allActions();
+            for (int i = 0; i < (int)actions.size(); ++i)
+                actionMenu.addItem(i + 1, juce::String(
+                    actions[i].label.empty() ? actions[i].name : actions[i].label));
+
+            actionMenu.showMenuAsync(juce::PopupMenu::Options(),
+                [this, ctrl, songId](int actionResult) {
+                    if (actionResult == 0) return;
+                    int actionIdx = actionResult - 1;
+                    auto& actions = state.allActions();
+                    if (actionIdx >= (int)actions.size()) return;
+                    auto action = actions[actionIdx];
+
+                    // Step 3: Show dialog with action-specific arg fields
+                    showArgsDialog(ctrl.deviceId, ctrl.type, ctrl.channel, ctrl.number,
+                                    ctrl.name, action, songId);
+                });
+        });
+}
+
+void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string& ctrlType,
+                                    int channel, int number, const std::string& ctrlName,
+                                    const ActionInfo& action, const std::string& songId) {
+    auto label = action.label.empty() ? action.name : action.label;
+    auto dialog = std::make_shared<juce::AlertWindow>(
+        juce::String(label) + " — " + ctrlName, "", juce::MessageBoxIconType::NoIcon);
+    dialog->setColour(juce::AlertWindow::backgroundColourId, Theme::color(Theme::Color::bgPanel));
+    dialog->setColour(juce::AlertWindow::textColourId, Theme::color(Theme::Color::textPrimary));
+
+    // Parse paramSchema to build appropriate fields
+    auto schema = juce::JSON::parse(juce::String(action.paramSchema));
+    auto* params = schema.getArray();
+
+    // Track names for dropdowns
+    juce::StringArray trackNames;
+    for (auto& t : state.listTracks())
+        trackNames.add(juce::String(t.name));
+
+    // Easing options
+    juce::StringArray easingOptions = { "linear", "easein", "easeout", "cosine", "scurve" };
+
+    // Add fields based on schema
+    struct FieldInfo { std::string name; std::string type; };
+    auto fields = std::make_shared<std::vector<FieldInfo>>();
+
+    if (params) {
+        for (auto& param : *params) {
+            auto name = param.getProperty("name", "").toString().toStdString();
+            auto type = param.getProperty("type", "string").toString().toStdString();
+            fields->push_back({ name, type });
+
+            // Track name params → combo box of current tracks
+            if (name.find("track") != std::string::npos || name.find("Track") != std::string::npos) {
+                dialog->addComboBox(juce::String(name), trackNames, juce::String(name));
+            }
+            // Easing → combo box
+            else if (name == "easing") {
+                dialog->addComboBox("easing", easingOptions, "Easing");
+                // Default to cosine
+                if (auto* cb = dialog->getComboBoxComponent("easing"))
+                    cb->setSelectedItemIndex(3);  // cosine
+            }
+            // Duration → text editor with default
+            else if (name == "duration" || type == "float") {
+                dialog->addTextEditor(juce::String(name), "3.0", juce::String(name));
+            }
+            // Fallback → text editor
+            else {
+                dialog->addTextEditor(juce::String(name), "", juce::String(name));
+            }
+        }
+    }
 
     dialog->addButton("Add", 1);
     dialog->addButton("Cancel", 0);
 
-    auto songId = song->id;
     auto* statePtr = &state;
-    auto actionsRef = std::make_shared<std::vector<ActionInfo>>(actions);
+    auto actionCopy = action;
 
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dialog, statePtr, controlData, actionsRef, songId](int result) {
+        [dialog, statePtr, fields, deviceId, ctrlType, channel, number, ctrlName,
+         actionCopy, songId](int result) {
             if (result == 0) return;
 
-            int controlIdx = dialog->getComboBoxComponent("control")->getSelectedItemIndex();
-            int actionIdx = dialog->getComboBoxComponent("action")->getSelectedItemIndex();
-            auto argsText = dialog->getTextEditorContents("args");
-            auto descText = dialog->getTextEditorContents("desc");
-
-            if (controlIdx < 0 || actionIdx < 0) return;
-            if (controlIdx >= (int)controlData->size()) return;
-            if (actionIdx >= (int)actionsRef->size()) return;
-
-            auto& ctrl = (*controlData)[controlIdx];
-            auto& action = (*actionsRef)[actionIdx];
-
-            // Build args JSON array from comma-separated text
+            // Build args JSON from field values
             juce::var argsArray;
-            if (argsText.isNotEmpty()) {
-                auto parts = juce::StringArray::fromTokens(argsText, ",", "\"");
-                for (auto& part : parts) {
-                    auto trimmed = part.trim();
-                    // Try to parse as number
-                    if (trimmed.containsOnly("0123456789.")) {
-                        argsArray.append(trimmed.getFloatValue());
-                    } else {
-                        argsArray.append(juce::var(trimmed));
-                    }
+            for (auto& field : *fields) {
+                auto jName = juce::String(field.name);
+                bool isTrack = (field.name.find("track") != std::string::npos ||
+                                field.name.find("Track") != std::string::npos);
+                bool isEasing = (field.name == "easing");
+
+                if (isTrack || isEasing) {
+                    if (auto* cb = dialog->getComboBoxComponent(jName))
+                        argsArray.append(juce::var(cb->getText()));
+                } else {
+                    auto text = dialog->getTextEditorContents(jName);
+                    if (field.type == "float")
+                        argsArray.append(text.getFloatValue());
+                    else
+                        argsArray.append(juce::var(text));
                 }
             }
+
             auto argsJson = juce::JSON::toString(argsArray, true).toStdString();
+            auto desc = ctrlName + " -> " + actionCopy.name;
 
-            auto desc = descText.isEmpty()
-                ? ctrl.name + " -> " + action.name
-                : descText.toStdString();
-
-            statePtr->addBinding(songId, ctrl.type, ctrl.channel, ctrl.number,
-                                  action.id, argsJson, desc, ctrl.deviceId);
+            statePtr->addBinding(songId, ctrlType, channel, number,
+                                  actionCopy.id, argsJson, desc, deviceId);
         }), true);
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/Theme.h"
+#include "state/StateModel.h"
 #include <string>
 #include <vector>
 
@@ -38,6 +39,9 @@ private:
     juce::TextButton addButton;
 
     void showAddDialog();
+    void showArgsDialog(const std::string& deviceId, const std::string& ctrlType,
+                         int channel, int number, const std::string& ctrlName,
+                         const ActionInfo& action, const std::string& songId);
 
     static constexpr int headerHeight = 44;
     static constexpr int rowHeight = 24;
