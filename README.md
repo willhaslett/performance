@@ -1,6 +1,6 @@
 # Performance
 
-A scriptable live music performance environment for macOS. Built for a solo keys player with an Arturia KeyLab 88 MkII, Audio Unit plugins, and an AI copilot.
+A scriptable live music performance environment for macOS. Route MIDI controllers and live audio through Audio Unit plugins, bind physical controls to actions, and let an AI copilot modify the environment while you play.
 
 ![Screenshot](docs/screenshot.png)
 
