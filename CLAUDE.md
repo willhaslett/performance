@@ -150,6 +150,12 @@ Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disabl
 
 SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact match → any device → any channel → any device + any channel.
 
+**Global vs song bindings**: Global bindings store track UUIDs that belong to the song where they were created — they won't resolve in other songs. Global bindings should only be used for song-agnostic actions (reset state, save, next song, etc.). Track-specific actions (fade, enable, crossfade) should always be song-scoped.
+
+### Maps (unified device mapping + bindings)
+
+MappingPane (`src/gui/MappingPane.h/.cpp`) — single pane per device showing all mapped controls in two sections: Global Bindings (always active, no score) and Song Bindings (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Accessible via "Maps" sidebar section. Includes Learn mode for adding new controls, inline name/group editing. Replaces the separate DeviceEditorPane + BindingsPane for the Maps workflow.
+
 ### Logging
 
 `perfLog()` writes to stderr and `/tmp/performance.log` (unbuffered, ISO 8601 UTC timestamps). Subsystems prefix: `[Engine]`, `[EngineSync]`, `[Coordinator]`, `[MIDI]`, `[Persistence]`, `[Sidebar]`, `[IPC]`. Tail with `tail -f /tmp/performance.log`. In-app LogPane provides selectable/searchable view.
