@@ -7,15 +7,9 @@
 BindingsPane::BindingsPane(StateAPI& state, EngineAPI& engine)
     : state(state), engine(engine) {
 
-    addButton.setButtonText("+");
-    addButton.setColour(juce::TextButton::buttonColourId, Theme::color(Theme::Color::accent));
-    addButton.setColour(juce::TextButton::textColourOnId, Theme::color(Theme::Color::textWhite));
-    addButton.setColour(juce::TextButton::textColourOffId, Theme::color(Theme::Color::textWhite));
-    addButton.onClick = [this]() { showAddDialog(); };
-    addAndMakeVisible(addButton);
-
     stateSubscriptionId = state.events().subscribe([this](const StateEvent& event) {
-        if (event.entity == StateEvent::Song || event.entity == StateEvent::Config) {
+        if (event.entity == StateEvent::Song || event.entity == StateEvent::Config
+            || event.entity == StateEvent::Binding || event.entity == StateEvent::Device) {
             juce::MessageManager::callAsync([this] { refresh(); });
         }
     });
@@ -28,25 +22,6 @@ BindingsPane::~BindingsPane() {
         state.events().unsubscribe(stateSubscriptionId);
 }
 
-std::string BindingsPane::formatControl(const std::string& type, int channel, int number,
-                                         const std::string& deviceId) const {
-    // Try to find a named control from the device map
-    if (!deviceId.empty()) {
-        auto* device = state.findDevice(deviceId);
-        if (device) {
-            for (auto& ctrl : device->controls) {
-                if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number)
-                    return ctrl.name + " (" + device->name + ")";
-            }
-        }
-    }
-    // Fallback: raw MIDI description
-    std::string desc = type + " ch" + std::to_string(channel);
-    if (type == "cc" || type == "note")
-        desc += " #" + std::to_string(number);
-    return desc;
-}
-
 std::string BindingsPane::formatArgs(const std::string& argsJson) const {
     auto parsed = juce::JSON::parse(juce::String(argsJson));
     if (auto* arr = parsed.getArray()) {
@@ -55,34 +30,67 @@ std::string BindingsPane::formatArgs(const std::string& argsJson) const {
             parts.add(v.toString());
         return parts.joinIntoString(", ").toStdString();
     }
-    return argsJson;
+    return "";
+}
+
+void BindingsPane::buildRows() {
+    rows.clear();
+
+    // Build binding lookup from effective bindings
+    bindingMap.clear();
+    for (auto& b : state.effectiveBindings())
+        bindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
+
+    // For each registered device, list its controls
+    for (auto& device : state.allDevices()) {
+        Row header;
+        header.rowType = Row::DeviceHeader;
+        header.deviceName = device.name;
+        header.deviceId = device.id;
+        rows.push_back(header);
+
+        for (auto& ctrl : device.controls) {
+            Row row;
+            row.rowType = Row::ControlRow;
+            row.controlName = ctrl.name;
+            row.group = ctrl.group;
+            row.controlType = ctrl.controlType;
+            row.channel = ctrl.channel;
+            row.number = ctrl.number;
+            row.deviceId = device.id;
+
+            // Check if there's a binding for this control
+            auto it = bindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, device.id });
+            if (it != bindingMap.end()) {
+                row.bindingId = it->second.id;
+                auto* action = state.findActionById(it->second.actionId);
+                row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
+                row.argsDisplay = formatArgs(it->second.args);
+            }
+
+            rows.push_back(row);
+        }
+    }
 }
 
 void BindingsPane::refresh() {
-    rows.clear();
-    auto bindings = state.effectiveBindings();
-    for (auto& b : bindings) {
-        BindingRow row;
-        row.id = b.id;
-        row.controlDesc = formatControl(b.controlType, b.channel, b.number, b.deviceId);
-        auto* action = state.findActionById(b.actionId);
-        row.actionLabel = action ? (action->label.empty() ? action->name : action->label) : "(unknown)";
-        row.argsDesc = formatArgs(b.args);
-        row.description = b.description;
-        row.isGlobal = b.songId.empty();
-        rows.push_back(row);
-    }
+    buildRows();
     repaint();
 }
 
 juce::Rectangle<int> BindingsPane::getRowBounds(int rowIndex) const {
-    int y = headerHeight + columnHeaderHeight + rowIndex * rowHeight;
-    return juce::Rectangle<int>(0, y, getWidth(), rowHeight);
+    int y = headerHeight;
+    for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i)
+        y += (rows[i].rowType == Row::DeviceHeader) ? deviceRowHeight : rowHeight;
+    y -= scrollOffset;
+    int h = (rowIndex < (int)rows.size() && rows[rowIndex].rowType == Row::DeviceHeader)
+            ? deviceRowHeight : rowHeight;
+    return juce::Rectangle<int>(0, y, getWidth(), h);
 }
 
-juce::Rectangle<int> BindingsPane::getDeleteButtonBounds(int rowIndex) const {
+juce::Rectangle<int> BindingsPane::getActionArea(int rowIndex) const {
     auto row = getRowBounds(rowIndex);
-    return juce::Rectangle<int>(row.getRight() - 28, row.getY() + 2, 20, rowHeight - 4);
+    return row.withLeft(280).withRight(row.getRight() - 8);
 }
 
 void BindingsPane::paint(juce::Graphics& g) {
@@ -95,10 +103,7 @@ void BindingsPane::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(18.0f));
     g.drawText("Bindings", headerArea.reduced(12, 0), juce::Justification::centredLeft);
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine(0.0f, (float)headerHeight, (float)getWidth(), (float)headerHeight, 1.0f);
 
-    // Song context
     auto* song = state.currentSong();
     if (song) {
         g.setColour(Theme::color(Theme::Color::textDim));
@@ -107,83 +112,94 @@ void BindingsPane::paint(juce::Graphics& g) {
                    juce::Justification::centredLeft);
     }
 
-    // Column headers
-    int colY = headerHeight;
-    g.setColour(Theme::color(Theme::Color::bgSlot));
-    g.fillRect(0, colY, getWidth(), columnHeaderHeight);
-    g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeXs));
-    g.drawText("Control", 12, colY, 150, columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("Action",  170, colY, 100, columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("Args",    278, colY, 150, columnHeaderHeight, juce::Justification::centredLeft);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine(0.0f, (float)headerHeight, (float)getWidth(), (float)headerHeight, 1.0f);
 
-    // Rows
     if (rows.empty()) {
         g.setColour(Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSize));
-        g.drawText("No bindings. Click + to add.",
-                   getLocalBounds().withTrimmedTop(headerHeight + columnHeaderHeight),
-                   juce::Justification::centred);
-    } else {
-        for (int i = 0; i < (int)rows.size(); ++i) {
-            auto rowBounds = getRowBounds(i);
-            if (rowBounds.getBottom() < headerHeight + columnHeaderHeight) continue;
-            if (rowBounds.getY() > getHeight()) break;
+        g.drawText("No devices with mapped controls",
+                   getLocalBounds().withTrimmedTop(headerHeight), juce::Justification::centred);
+        return;
+    }
 
-            if (i % 2 == 1) {
+    // Rows
+    g.reduceClipRegion(getLocalBounds().withTrimmedTop(headerHeight));
+
+    for (int i = 0; i < (int)rows.size(); ++i) {
+        auto bounds = getRowBounds(i);
+        if (bounds.getBottom() < headerHeight) continue;
+        if (bounds.getY() > getHeight()) break;
+
+        auto& row = rows[i];
+
+        if (row.rowType == Row::DeviceHeader) {
+            g.setColour(Theme::color(Theme::Color::bgSlot));
+            g.fillRect(bounds);
+            g.setColour(Theme::color(Theme::Color::textWhite));
+            g.setFont(Theme::font(Theme::fontSizeSm));
+            g.drawText(juce::String(row.deviceName), bounds.reduced(12, 0),
+                       juce::Justification::centredLeft);
+        } else {
+            // Alternating background
+            if (i % 2 == 0) {
                 g.setColour(Theme::color(Theme::Color::bgPanel));
-                g.fillRect(rowBounds);
+                g.fillRect(bounds);
             }
             if (i == hoveredRow) {
                 g.setColour(Theme::color(Theme::Color::bgSlotHover));
-                g.fillRect(rowBounds);
+                g.fillRect(bounds);
             }
 
-            auto& row = rows[i];
+            // Control name + group
             g.setFont(Theme::font(Theme::fontSizeSm));
-
             g.setColour(Theme::color(Theme::Color::textPrimary));
-            g.drawText(juce::String(row.controlDesc), 12, rowBounds.getY(), 150, rowHeight,
-                       juce::Justification::centredLeft);
+            g.drawText(juce::String(row.controlName), bounds.getX() + 20, bounds.getY(),
+                       160, bounds.getHeight(), juce::Justification::centredLeft);
 
-            g.setColour(Theme::color(Theme::Color::instrument));
-            g.drawText(juce::String(row.actionLabel), 170, rowBounds.getY(), 100, rowHeight,
-                       juce::Justification::centredLeft);
-
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-            g.drawText(juce::String(row.argsDesc), 278, rowBounds.getY(), 150, rowHeight,
-                       juce::Justification::centredLeft);
-
-            // Scope indicator
-            if (row.isGlobal) {
+            if (!row.group.empty()) {
                 g.setColour(Theme::color(Theme::Color::textDim));
-                g.setFont(Theme::font(9.0f));
-                g.drawText("G", rowBounds.getRight() - 44, rowBounds.getY(), 12, rowHeight,
-                           juce::Justification::centred);
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText(juce::String(row.group), bounds.getX() + 180, bounds.getY(),
+                           90, bounds.getHeight(), juce::Justification::centredLeft);
             }
 
-            // Delete button on hover
-            if (i == hoveredRow) {
-                auto delBounds = getDeleteButtonBounds(i);
+            // Action area
+            auto actionArea = getActionArea(i);
+            if (row.bindingId.empty()) {
+                // Unbound — show placeholder
                 g.setColour(Theme::color(Theme::Color::textDim));
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText("-- assign --", actionArea, juce::Justification::centredLeft);
+            } else {
+                // Bound — show action + args
+                g.setColour(Theme::color(Theme::Color::instrument));
                 g.setFont(Theme::font(Theme::fontSizeSm));
-                g.drawText("x", delBounds, juce::Justification::centred);
+                g.drawText(juce::String(row.actionName), actionArea.removeFromLeft(120),
+                           juce::Justification::centredLeft);
+
+                if (!row.argsDisplay.empty()) {
+                    g.setColour(Theme::color(Theme::Color::textSecondary));
+                    g.setFont(Theme::font(Theme::fontSizeXs));
+                    g.drawText(juce::String(row.argsDisplay), actionArea,
+                               juce::Justification::centredLeft);
+                }
             }
         }
     }
 }
 
-void BindingsPane::resized() {
-    addButton.setBounds(getWidth() - 36, 10, 24, 24);
-}
+void BindingsPane::resized() {}
 
 void BindingsPane::mouseUp(const juce::MouseEvent& event) {
-    // Delete button
     for (int i = 0; i < (int)rows.size(); ++i) {
-        auto delBounds = getDeleteButtonBounds(i);
-        if (delBounds.expanded(4).contains(event.getPosition())) {
-            state.removeBinding(rows[i].id);
-            refresh();
+        auto bounds = getRowBounds(i);
+        if (!bounds.contains(event.getPosition())) continue;
+        if (rows[i].rowType != Row::ControlRow) continue;
+
+        auto actionArea = getActionArea(i);
+        if (actionArea.contains(event.getPosition()) || event.getPosition().getX() > 180) {
+            showActionMenu(i, event.getScreenPosition());
             return;
         }
     }
@@ -192,7 +208,7 @@ void BindingsPane::mouseUp(const juce::MouseEvent& event) {
 void BindingsPane::mouseMove(const juce::MouseEvent& event) {
     int newHovered = -1;
     for (int i = 0; i < (int)rows.size(); ++i) {
-        if (getRowBounds(i).contains(event.getPosition())) {
+        if (rows[i].rowType == Row::ControlRow && getRowBounds(i).contains(event.getPosition())) {
             newHovered = i;
             break;
         }
@@ -203,86 +219,83 @@ void BindingsPane::mouseMove(const juce::MouseEvent& event) {
     }
 }
 
-// --- Add Binding Dialog (two-step: action menu → args dialog) ---
+void BindingsPane::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) {
+    // Calculate total content height
+    int totalHeight = 0;
+    for (auto& r : rows)
+        totalHeight += (r.rowType == Row::DeviceHeader) ? deviceRowHeight : rowHeight;
+    int viewHeight = getHeight() - headerHeight;
+    int maxScroll = std::max(0, totalHeight - viewHeight);
+    scrollOffset = juce::jlimit(0, maxScroll, scrollOffset - (int)(wheel.deltaY * 40));
+    repaint();
+}
 
-struct ControlOption { std::string deviceId; std::string type; int channel; int number; std::string name; };
+// --- Action menu and binding creation ---
 
-void BindingsPane::showAddDialog() {
-    auto* song = state.currentSong();
-    if (!song) return;
+void BindingsPane::showActionMenu(int rowIndex, juce::Point<int> screenPos) {
+    auto& row = rows[rowIndex];
 
-    // Build control options
-    auto controlData = std::make_shared<std::vector<ControlOption>>();
-    for (auto& device : state.allDevices())
-        for (auto& ctrl : device.controls)
-            controlData->push_back({ device.id, ctrl.controlType, ctrl.channel, ctrl.number, ctrl.name });
+    juce::PopupMenu menu;
+    auto& actions = state.allActions();
 
-    if (controlData->empty()) {
-        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-            "No Controls", "Map some controls on a MIDI device first.");
-        return;
+    // "None" to clear binding
+    menu.addItem(1, "-- none --", true, row.bindingId.empty());
+
+    for (int i = 0; i < (int)actions.size(); ++i) {
+        auto label = actions[i].label.empty() ? actions[i].name : actions[i].label;
+        auto* bound = row.bindingId.empty() ? nullptr : state.findActionById(
+            bindingMap[{ row.controlType, row.channel, row.number, row.deviceId }].actionId);
+        bool isCurrent = (bound && bound->id == actions[i].id);
+        menu.addItem(i + 2, juce::String(label), true, isCurrent);
     }
 
-    // Step 1: Pick control via popup
-    juce::PopupMenu controlMenu;
-    for (int i = 0; i < (int)controlData->size(); ++i) {
-        auto& c = (*controlData)[i];
-        auto* device = state.findDevice(c.deviceId);
-        auto label = c.name + (device ? " (" + device->name + ")" : "");
-        controlMenu.addItem(i + 1, juce::String(label));
-    }
+    menu.showMenuAsync(juce::PopupMenu::Options()
+        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, rowIndex](int result) {
+            if (result == 0) return;  // dismissed
+            auto& row = rows[rowIndex];
+            if (result == 1) {
+                // Clear binding
+                if (!row.bindingId.empty()) {
+                    removeBinding(row.bindingId);
+                }
+                return;
+            }
 
-    auto songId = song->id;
-    controlMenu.showMenuAsync(juce::PopupMenu::Options(),
-        [this, controlData, songId](int controlResult) {
-            if (controlResult == 0) return;
-            int controlIdx = controlResult - 1;
-            auto ctrl = (*controlData)[controlIdx];
-
-            // Step 2: Pick action via popup
-            juce::PopupMenu actionMenu;
+            int actionIdx = result - 2;
             auto& actions = state.allActions();
-            for (int i = 0; i < (int)actions.size(); ++i)
-                actionMenu.addItem(i + 1, juce::String(
-                    actions[i].label.empty() ? actions[i].name : actions[i].label));
+            if (actionIdx < 0 || actionIdx >= (int)actions.size()) return;
+            auto action = actions[actionIdx];
 
-            actionMenu.showMenuAsync(juce::PopupMenu::Options(),
-                [this, ctrl, songId](int actionResult) {
-                    if (actionResult == 0) return;
-                    int actionIdx = actionResult - 1;
-                    auto& actions = state.allActions();
-                    if (actionIdx >= (int)actions.size()) return;
-                    auto action = actions[actionIdx];
-
-                    // Step 3: Show dialog with action-specific arg fields
-                    showArgsDialog(ctrl.deviceId, ctrl.type, ctrl.channel, ctrl.number,
-                                    ctrl.name, action, songId);
-                });
+            // If action has no params, create binding immediately
+            auto schema = juce::JSON::parse(juce::String(action.paramSchema));
+            auto* params = schema.getArray();
+            if (!params || params->isEmpty()) {
+                auto args = juce::var(juce::Array<juce::var>());
+                createOrUpdateBinding(row, action, args);
+            } else {
+                showArgsPopup(row, action);
+            }
         });
 }
 
-void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string& ctrlType,
-                                    int channel, int number, const std::string& ctrlName,
-                                    const ActionInfo& action, const std::string& songId) {
+void BindingsPane::showArgsPopup(const Row& row, const ActionInfo& action) {
     auto label = action.label.empty() ? action.name : action.label;
     auto dialog = std::make_shared<juce::AlertWindow>(
-        juce::String(label) + " — " + ctrlName, "", juce::MessageBoxIconType::NoIcon);
+        juce::String(label), "Configure for " + juce::String(row.controlName),
+        juce::MessageBoxIconType::NoIcon);
     dialog->setColour(juce::AlertWindow::backgroundColourId, Theme::color(Theme::Color::bgPanel));
     dialog->setColour(juce::AlertWindow::textColourId, Theme::color(Theme::Color::textPrimary));
 
-    // Parse paramSchema to build appropriate fields
     auto schema = juce::JSON::parse(juce::String(action.paramSchema));
     auto* params = schema.getArray();
 
-    // Track names for dropdowns
     juce::StringArray trackNames;
     for (auto& t : state.listTracks())
         trackNames.add(juce::String(t.name));
 
-    // Easing options
     juce::StringArray easingOptions = { "linear", "easein", "easeout", "cosine", "scurve" };
 
-    // Add fields based on schema
     struct FieldInfo { std::string name; std::string type; };
     auto fields = std::make_shared<std::vector<FieldInfo>>();
 
@@ -292,42 +305,31 @@ void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string
             auto type = param.getProperty("type", "string").toString().toStdString();
             fields->push_back({ name, type });
 
-            // Track name params → combo box of current tracks
             if (name.find("track") != std::string::npos || name.find("Track") != std::string::npos) {
                 dialog->addComboBox(juce::String(name), trackNames, juce::String(name));
-            }
-            // Easing → combo box
-            else if (name == "easing") {
+            } else if (name == "easing") {
                 dialog->addComboBox("easing", easingOptions, "Easing");
-                // Default to cosine
                 if (auto* cb = dialog->getComboBoxComponent("easing"))
-                    cb->setSelectedItemIndex(3);  // cosine
-            }
-            // Duration → text editor with default
-            else if (name == "duration" || type == "float") {
+                    cb->setSelectedItemIndex(3);
+            } else if (name == "duration" || type == "float") {
                 dialog->addTextEditor(juce::String(name), "3.0", juce::String(name));
-            }
-            // Fallback → text editor
-            else {
+            } else {
                 dialog->addTextEditor(juce::String(name), "", juce::String(name));
             }
         }
     }
 
-    dialog->addButton("Add", 1);
+    dialog->addButton("OK", 1);
     dialog->addButton("Cancel", 0);
 
-    auto* statePtr = &state;
+    auto rowCopy = row;
     auto actionCopy = action;
+    auto* statePtr = &state;
 
-    // Note: deleteWhenDismissed must be false — the callback reads dialog widgets.
-    // The shared_ptr prevents the dialog from being deleted until the callback completes.
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dialog, statePtr, fields, deviceId, ctrlType, channel, number, ctrlName,
-         actionCopy, songId](int result) {
+        [dialog, statePtr, fields, rowCopy, actionCopy](int result) {
             if (result == 0) return;
 
-            // Build args JSON from field values
             auto argsArray = juce::var(juce::Array<juce::var>());
             for (auto& field : *fields) {
                 auto jName = juce::String(field.name);
@@ -347,10 +349,37 @@ void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string
                 }
             }
 
-            auto argsJson = juce::JSON::toString(argsArray, true).toStdString();
-            auto desc = ctrlName + " -> " + actionCopy.name;
+            // Remove existing binding if any
+            if (!rowCopy.bindingId.empty())
+                statePtr->removeBinding(rowCopy.bindingId);
 
-            statePtr->addBinding(songId, ctrlType, channel, number,
-                                  actionCopy.id, argsJson, desc, deviceId);
+            auto* song = statePtr->currentSong();
+            if (!song) return;
+
+            auto argsJson = juce::JSON::toString(argsArray, true).toStdString();
+            auto desc = rowCopy.controlName + " -> " + actionCopy.name;
+
+            statePtr->addBinding(song->id, rowCopy.controlType, rowCopy.channel,
+                                  rowCopy.number, actionCopy.id, argsJson, desc,
+                                  rowCopy.deviceId);
         }), false);
+}
+
+void BindingsPane::createOrUpdateBinding(const Row& row, const ActionInfo& action, const juce::var& args) {
+    // Remove existing binding if any
+    if (!row.bindingId.empty())
+        removeBinding(row.bindingId);
+
+    auto* song = state.currentSong();
+    if (!song) return;
+
+    auto argsJson = juce::JSON::toString(args, true).toStdString();
+    auto desc = row.controlName + " -> " + action.name;
+
+    state.addBinding(song->id, row.controlType, row.channel, row.number,
+                      action.id, argsJson, desc, row.deviceId);
+}
+
+void BindingsPane::removeBinding(const std::string& bindingId) {
+    state.removeBinding(bindingId);
 }
