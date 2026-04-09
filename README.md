@@ -1,33 +1,30 @@
 # Performance
 
-A scriptable live music performance environment for macOS. Route MIDI controllers and live audio through Audio Unit plugins, bind physical controls to actions, and let an AI copilot modify the environment while you play.
+A live music performance environment for macOS. MIDI controllers, live audio, Audio Unit plugins, and an embedded Claude instance for environment authoring.
 
 ![Screenshot](docs/screenshot.png)
 
-## What it does
+## Overview
 
-Performance is a live environment — always running, always ready. You build songs from virtual instrument tracks, audio input tracks, effects chains, busses, and sends. MIDI controllers bind to actions like track switching, fades, and crossfades. An embedded Claude assistant can modify the environment in real time via Lua while you play.
-
-## Key features
-
-- **Instrument and audio input tracks** with AU plugin hosting, effects chains, sends, and per-track gain
-- **Stereo VU meters** with IEC-style non-linear dB scale, peak hold with exponential decay
-- **MIDI device mapping** with Learn mode — map physical controls, assign actions, build score sequences
-- **Bindings system** — MIDI controls trigger named actions (fade, crossfade, track switch) with song-scoped and global scope
-- **Custom Lua actions** — composable macros for complex multi-step transitions, created by Claude or by hand
-- **Audio device management** — independent input/output device selection, hot-swappable, persisted
-- **Song management** — named sessions with independent tracks, busses, bindings, and scores. Sandbox session for experimentation.
-- **Embedded Claude chat** — AI assistant with tool use that modifies the live environment via Lua. Sees track state, device mappings, and the full API.
-- **Persistence** — SQLite saves everything: tracks, instruments, effects, processor state, bindings, device mappings. Restore exactly where you left off.
-- **Flexible UI** — sidebar (songs, library, maps, devices, panes), dual content panes (mapping editor, debug, logs, chat), collapsible mixer
+- Instrument tracks (MIDI to AU plugin) and audio input tracks (physical input to effects chain)
+- Effects chains, busses, sends, per-track gain
+- Stereo VU meters, IEC-style non-linear dB scale, peak hold with exponential decay
+- MIDI device mapping with Learn mode
+- Bindings: MIDI controls to named actions (fade, crossfade, track switch), song-scoped and global
+- Custom Lua actions for multi-step transitions
+- Independent audio input/output device selection, persisted
+- Songs: named sessions with tracks, busses, bindings, scores. Persistent sandbox session.
+- Embedded Claude with tool use for environment authoring via Lua
+- SQLite persistence: tracks, instruments, effects, processor state, bindings, device mappings
+- Sidebar (songs, library, maps, devices, panes), dual content panes, collapsible mixer
 
 ## Architecture
 
-In-memory state store (StateAPI) is the single source of truth at runtime. All mutations flow through it. An event bus notifies the engine sync layer, which applies changes to the JUCE AudioProcessorGraph. SQLite is the persistence layer — loaded on startup, saved on quit and on demand.
+In-memory state store (StateAPI) as runtime SSOT. Event bus notifies engine sync layer, which applies changes to JUCE AudioProcessorGraph. SQLite for persistence.
 
-Three APIs: **StateAPI** (all state reads/writes), **EngineAPI** (peak levels, processors, plugin UI), **PerformanceCoordinator** (lifecycle, orchestration, action dispatch).
+Three APIs: StateAPI (state reads/writes), EngineAPI (peak levels, processors, plugin UI), PerformanceCoordinator (lifecycle, orchestration, action dispatch).
 
-See [CLAUDE.md](CLAUDE.md) for full architecture documentation.
+See [CLAUDE.md](CLAUDE.md) for details.
 
 ## Building
 
@@ -48,7 +45,7 @@ cd build
 ./PerformanceTests_artefacts/Debug/PerformanceTests
 ```
 
-76 tests covering state management, persistence round-trips, engine sync, and audio device configuration.
+76 tests: state management, persistence round-trips, engine sync, audio device configuration.
 
 ## Tools
 
@@ -67,4 +64,4 @@ cd build
 
 ## Status
 
-Active development. Solo project by Will Haslett, built entirely with Claude.
+In development.
