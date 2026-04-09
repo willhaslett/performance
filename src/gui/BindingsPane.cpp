@@ -326,7 +326,7 @@ void BindingsPane::showArgsDialog(const std::string& deviceId, const std::string
             if (result == 0) return;
 
             // Build args JSON from field values
-            juce::var argsArray;
+            auto argsArray = juce::var(juce::Array<juce::var>());
             for (auto& field : *fields) {
                 auto jName = juce::String(field.name);
                 bool isTrack = (field.name.find("track") != std::string::npos ||
