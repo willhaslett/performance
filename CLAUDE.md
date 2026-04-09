@@ -109,10 +109,11 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio with per-device Input/Output children + MIDI), Panes (Debug, Logs, Chat). Audio device nodes are always expanded; click device name to set both I/O, click Input or Output leaf to set individually. Green dot on active role.
+- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio with per-device Input/Output children + MIDI), Panes (Bindings, Debug, Logs, Chat). Audio device nodes are always expanded; click device name to set both I/O, click Input or Output leaf to set individually. Green dot on active role.
 - **DeviceEditorPane** — MIDI device control mapping editor with learn mode. Shown when a MIDI device is selected in sidebar.
+- **BindingsPane** — Device-centric inline binding editor. Tree layout: device headers → control rows. Click any control to assign an action via popup menu. Actions with params (track, duration, easing) show a dialog with appropriate dropdowns/fields generated from the action's `paramSchema`. Existing bindings display inline (action in amber + args).
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
-- **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Color-coded by subsystem. Auto-scrolls.
+- **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
 - **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
 
 ### Audio Graph
@@ -139,7 +140,15 @@ Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDevic
 
 Audio output and input devices are independent (macOS CoreAudio). Selection persists via `config["audio_output_device"]` and `config["audio_input_device"]` — restored on startup after `loadInto`. Only `outputDeviceName` or `inputDeviceName` is set (never both to the same value, which fails for output-only devices like MacBook Pro Speakers). Clicking the same device is a no-op. If device goes null mid-transition, async retry recovers once JUCE finishes opening the new device.
 
-MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents wasted synthesis across multiple instrument tracks. `midiEnabled` and `audioEnabled` are both required for MIDI connection in `rebuildConnections`.
+MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents wasted synthesis across multiple instrument tracks. `midiEnabled` and `audioEnabled` are both required for MIDI connection in `rebuildConnections`. The power icon controls `audioEnabled` and also re-enables `midiEnabled` when turning a track on. Actions (`setActiveTrack`, `enableTrack`, `disableTrack`) set both `audioEnabled` and `midiEnabled` together so the UI reflects action-driven changes.
+
+### Bindings & Actions
+
+Bindings map MIDI controls to named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active). `effectiveBindings()` merges both (song wins on conflict). Bindings store action args as JSON arrays. Action `paramSchema` (JSON) defines expected parameters — used by BindingsPane to generate appropriate input fields.
+
+Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disableTrack(trackName)`, `fadeOut(trackName, duration, easing)`, `fadeIn(trackName, duration, easing)`, `crossfade(fromTrack, toTrack, duration, easing)`. All track args resolved by name or UUID at execution time via `resolveTrack()`.
+
+SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact match → any device → any channel → any device + any channel.
 
 ### Logging
 
@@ -178,13 +187,16 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - juce_String.cpp:327 assertion on startup — non-fatal, likely JUCE internals.
 - No error handling on failed plugin loads (user sees nothing).
 
+**Known issues with embedded Claude:**
+- Bindings created via Claude/Lua may use incorrect track names (case-sensitive mismatch). runtime/CLAUDE.md instructs Claude to query names first, but this isn't always followed. GUI bindings pane is more reliable for now.
+
 **Feature backlog (near-term):**
-- Song development canvas — the "mapping window" becomes a performance design/management view. Bindings, score steps, song state overview.
+- Song development canvas — score steps, song state overview. Bindings UI exists but score management still needs a view.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
+- MIDI device hot-plug — currently requires app restart to detect new devices.
 
 **Feature backlog (longer-term):**
-- MIDI device hot-plug
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Audio device configuration UI (buffer size, sample rate — device switching already works)
 - Fader/knob drag: value stops changing at screen edge
