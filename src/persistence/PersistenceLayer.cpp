@@ -65,7 +65,9 @@ void PersistenceLayer::createSchema() {
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL UNIQUE,
             label TEXT,
-            param_schema TEXT
+            param_schema TEXT,
+            lua_code TEXT,
+            song_id TEXT
         );
 
         CREATE TABLE IF NOT EXISTS songs (
@@ -235,11 +237,16 @@ void PersistenceLayer::readPresets(AppState& out) {
 }
 
 void PersistenceLayer::readActions(AppState& out) {
-    auto* stmt = prepare("SELECT id, name, label, param_schema FROM actions");
+    auto* stmt = prepare("SELECT id, name, label, param_schema, lua_code, song_id FROM actions");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        out.actions.push_back({
-            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2), col_str(stmt, 3)
-        });
+        ActionInfo a;
+        a.id = col_str(stmt, 0);
+        a.name = col_str(stmt, 1);
+        a.label = col_str(stmt, 2);
+        a.paramSchema = col_str(stmt, 3);
+        a.luaCode = col_str(stmt, 4);
+        a.songId = col_str(stmt, 5);
+        out.actions.push_back(std::move(a));
     }
     sqlite3_finalize(stmt);
 }
@@ -451,11 +458,13 @@ void PersistenceLayer::savePresets(const StateAPI& state) {
 
 void PersistenceLayer::saveActions(const StateAPI& state) {
     for (auto& a : state.allActions()) {
-        auto* stmt = prepare("INSERT OR REPLACE INTO actions (id, name, label, param_schema) VALUES (?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT OR REPLACE INTO actions (id, name, label, param_schema, lua_code, song_id) VALUES (?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, a.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, a.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, a.label.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 4, a.paramSchema.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 5, a.luaCode.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 6, a.songId.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
     }

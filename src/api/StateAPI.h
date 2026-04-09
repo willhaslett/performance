@@ -123,6 +123,9 @@ public:
     // --- Catalog: Actions ---
     std::string registerAction(const std::string& name, const std::string& label = "",
                                const std::string& paramSchema = "");
+    std::string createCustomAction(const std::string& name, const std::string& label,
+                                    const std::string& luaCode, const std::string& songId = "");
+    void removeAction(const std::string& id);
     const ActionInfo* findActionByName(const std::string& name) const;
     const ActionInfo* findActionById(const std::string& id) const;
     const std::vector<ActionInfo>& allActions() const;

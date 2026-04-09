@@ -469,6 +469,16 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
                                             const juce::var& args, float value) {
     if (value == 0.0f) return;
 
+    // Check for custom Lua action first
+    auto* actionInfo = stateAPI->findActionByName(actionName);
+    if (actionInfo && !actionInfo->luaCode.empty() && luaExecutor) {
+        perfLog("[Coordinator] Executing custom action: %s\n", actionName.c_str());
+        auto result = luaExecutor(actionInfo->luaCode);
+        if (!result.empty() && result != "ok")
+            perfLog("[Coordinator] Custom action error: %s\n", result.c_str());
+        return;
+    }
+
     auto getArg = [&](int index) -> juce::String {
         if (auto* arr = args.getArray())
             if (index < arr->size())

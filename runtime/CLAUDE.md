@@ -141,6 +141,32 @@ Never guess at track names or control names — always query first.
 - `listInstrumentPlugins()` — list instrument plugins only
 - `listEffectPlugins()` — list effect plugins only
 
+### Custom Actions (macros)
+Create custom actions that compose existing API calls. These are bindable to MIDI controls.
+- `createAction(name, label, luaCode, songId)` — create a custom action. `songId` is optional (omit for global).
+- `removeAction(id)` — remove a custom action
+- `triggerAction(actionName)` — trigger any action by name (for composability)
+- `currentSongId()` — get current song ID (for song-scoped actions)
+
+The `luaCode` has full access to all Lua API functions. Example:
+```lua
+createAction("piano_entrance", "Piano Entrance", [[
+  local tracks = registryList("track")
+  for i, t in ipairs(tracks) do
+    log(t.name)
+  end
+  interpolate(0.0, 1.0, 20, function(v) setTrackGain("PIano", v) end, "cosine")
+  interpolate(1.0, 0.0, 10, function(v) setTrackGain("Kit", v) end, "cosine")
+  delay(30, function()
+    setTrackGain("Trombone", 1.0)
+    setTrackMidiEnabled("Trombone", true)
+    setTrackAudioEnabled("Trombone", true)
+  end)
+]])
+```
+
+IMPORTANT: Always query track names with `registryList("track")` before using them in custom action code. Custom actions persist and survive restarts. They appear in the bindings action dropdown.
+
 ### Utility
 - `log(message)` — write to app log
 - `dB(value)` — convert dB to linear gain

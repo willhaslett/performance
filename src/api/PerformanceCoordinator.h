@@ -32,6 +32,9 @@ public:
     StateAPI& state();
     EngineAPI& engine();
 
+    // Lua execution callback (set by main after LuaEngine is created)
+    std::function<std::string(const std::string& code)> luaExecutor;
+
     // --- Song lifecycle ---
     std::string createSong(const juce::String& name);
     void loadSong(const std::string& songId);

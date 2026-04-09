@@ -413,6 +413,26 @@ void LuaEngine::registerAPI() {
         else if (state.findSong(id)) state.deleteSong(id);
     });
 
+    // Custom actions
+    lua.set_function("createAction", [&state](const std::string& name, const std::string& label,
+                                               const std::string& luaCode,
+                                               sol::optional<std::string> songId) {
+        auto sid = songId.has_value() ? songId.value() : "";
+        auto id = state.createCustomAction(name, label, luaCode, sid);
+        perfLog("[Lua] Created custom action: %s (id=%s)\n", name.c_str(), id.c_str());
+        return id;
+    });
+    lua.set_function("removeAction", [&state](const std::string& id) {
+        state.removeAction(id);
+    });
+    lua.set_function("triggerAction", [&coord](const std::string& actionName) {
+        coord.executeAction(actionName, juce::var(), 1.0f);
+    });
+    lua.set_function("currentSongId", [&state]() -> std::string {
+        auto* song = state.currentSong();
+        return song ? song->id : "";
+    });
+
     // Utility
     lua.set_function("log", [](const std::string& msg) { perfLog("[Lua] %s\n", msg.c_str()); });
     lua.set_function("dB", [](float db) -> float { return std::pow(10.0f, db / 20.0f); });

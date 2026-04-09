@@ -183,6 +183,12 @@ public:
         luaEngine = std::make_unique<LuaEngine>(
             coordinator->state(), coordinator->engine(), *coordinator);
 
+        // Wire Lua executor for custom actions
+        auto* lua = luaEngine.get();
+        coordinator->luaExecutor = [lua](const std::string& code) {
+            return lua->executeString(code);
+        };
+
         mainWindow = std::make_unique<MainWindow>(
             coordinator->state(), coordinator->engine(), *luaEngine, *coordinator);
 

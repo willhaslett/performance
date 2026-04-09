@@ -31,6 +31,8 @@ struct ActionInfo {
     std::string name;
     std::string label;
     std::string paramSchema;  // JSON
+    std::string luaCode;      // custom action body (empty for built-in)
+    std::string songId;       // empty = global, non-empty = song-scoped
 };
 
 // --- Devices (registered physical controllers) ---

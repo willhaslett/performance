@@ -866,6 +866,36 @@ std::string StateAPI::registerAction(const std::string& name, const std::string&
     return state.actions.back().id;
 }
 
+std::string StateAPI::createCustomAction(const std::string& name, const std::string& label,
+                                          const std::string& luaCode, const std::string& songId) {
+    // Replace if same name already exists
+    for (auto& a : state.actions) {
+        if (a.name == name) {
+            a.label = label;
+            a.luaCode = luaCode;
+            a.songId = songId;
+            markDirty();
+            return a.id;
+        }
+    }
+    ActionInfo action;
+    action.id = generateId();
+    action.name = name;
+    action.label = label;
+    action.luaCode = luaCode;
+    action.songId = songId;
+    state.actions.push_back(std::move(action));
+    markDirty();
+    return state.actions.back().id;
+}
+
+void StateAPI::removeAction(const std::string& id) {
+    auto& actions = state.actions;
+    actions.erase(std::remove_if(actions.begin(), actions.end(),
+        [&](const ActionInfo& a) { return a.id == id; }), actions.end());
+    markDirty();
+}
+
 const ActionInfo* StateAPI::findActionByName(const std::string& name) const {
     for (auto& a : state.actions)
         if (a.name == name) return &a;
