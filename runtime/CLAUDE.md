@@ -114,6 +114,15 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `addDeviceToSong(songId, deviceId)` — associate device with song
 - `listDevices()` — list registered MIDI devices
 - `listMidiInputs()` — list connected MIDI inputs (for port name lookup)
+- `getDeviceControl(deviceName, controlName)` — look up a control's MIDI details. Returns table with `type`, `channel`, `number`, `group`. Device matched by name or port name.
+- `listDeviceControls(deviceName)` — list all controls for a device. Returns array of tables with `name`, `type`, `channel`, `number`, `group`.
+
+#### Binding with device controls
+To bind a mapped device control to an action, look up the control first:
+```lua
+local ctrl = getDeviceControl("KeyLab mkII 88 MIDI", "Pad 6")
+bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Keys", 3.0, "cosine"}, "Pad 6 → fade out Keys")
+```
 
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor

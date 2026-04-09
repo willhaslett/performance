@@ -302,6 +302,42 @@ void LuaEngine::registerAPI() {
         }
         return result;
     });
+    lua.set_function("getDeviceControl", [this, &state](const std::string& deviceName,
+                                                         const std::string& controlName) -> sol::table {
+        sol::table result = lua.create_table();
+        for (auto& d : state.allDevices()) {
+            if (d.name == deviceName || d.midiPortName == deviceName) {
+                for (auto& ctrl : d.controls) {
+                    if (ctrl.name == controlName) {
+                        result["type"] = ctrl.controlType;
+                        result["channel"] = ctrl.channel;
+                        result["number"] = ctrl.number;
+                        result["group"] = ctrl.group;
+                        return result;
+                    }
+                }
+            }
+        }
+        return result;  // empty table if not found
+    });
+    lua.set_function("listDeviceControls", [this, &state](const std::string& deviceName) -> sol::table {
+        sol::table result = lua.create_table();
+        for (auto& d : state.allDevices()) {
+            if (d.name == deviceName || d.midiPortName == deviceName) {
+                for (auto& ctrl : d.controls) {
+                    sol::table row = lua.create_table();
+                    row["name"] = ctrl.name;
+                    row["type"] = ctrl.controlType;
+                    row["channel"] = ctrl.channel;
+                    row["number"] = ctrl.number;
+                    row["group"] = ctrl.group;
+                    result.add(row);
+                }
+                break;
+            }
+        }
+        return result;
+    });
     lua.set_function("listMidiInputs", [this, &engine]() -> sol::table {
         auto devices = juce::MidiInput::getAvailableDevices();
         sol::table result = lua.create_table();
