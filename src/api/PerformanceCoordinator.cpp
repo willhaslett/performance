@@ -495,14 +495,21 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
 
     if (actionName == "setActiveTrack") {
         auto targetId = resolveTrack(getArg(0));
-        for (auto& t : stateAPI->listTracks())
-            stateAPI->setTrackMidiEnabled(t.id, t.id == targetId);
+        for (auto& t : stateAPI->listTracks()) {
+            bool active = (t.id == targetId);
+            stateAPI->setTrackMidiEnabled(t.id, active);
+            stateAPI->setTrackAudioEnabled(t.id, active);
+        }
     }
     else if (actionName == "enableTrack") {
-        stateAPI->setTrackMidiEnabled(resolveTrack(getArg(0)), true);
+        auto id = resolveTrack(getArg(0));
+        stateAPI->setTrackMidiEnabled(id, true);
+        stateAPI->setTrackAudioEnabled(id, true);
     }
     else if (actionName == "disableTrack") {
-        stateAPI->setTrackMidiEnabled(resolveTrack(getArg(0)), false);
+        auto id = resolveTrack(getArg(0));
+        stateAPI->setTrackMidiEnabled(id, false);
+        stateAPI->setTrackAudioEnabled(id, false);
     }
     else if (actionName == "fadeOut") {
         auto track = resolveTrack(getArg(0));
