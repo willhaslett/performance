@@ -24,14 +24,20 @@ Sidebar::Sidebar() {
             onDeviceSelected("", id);  // id is the port name for unregistered devices
         } else if (type == "audio_device") {
             selectedDeviceId = id;
-            if (onAudioOutputSelected) onAudioOutputSelected(label);
-            if (onAudioInputSelected) onAudioInputSelected(label);
-        } else if ((type == "audio_output" || type == "audio_output_active") && onAudioOutputSelected) {
+            // id is "audio_both:DeviceName" — extract device name
+            auto devName = id.substr(id.find(':') + 1);
+            if (onAudioOutputSelected) onAudioOutputSelected(devName);
+            if (onAudioInputSelected) onAudioInputSelected(devName);
+        } else if (type == "audio_output" || type == "audio_output_active") {
             selectedDeviceId = id;
-            onAudioOutputSelected(label);
-        } else if ((type == "audio_input" || type == "audio_input_active") && onAudioInputSelected) {
+            // id is "audio_out:DeviceName"
+            auto devName = id.substr(id.find(':') + 1);
+            if (onAudioOutputSelected) onAudioOutputSelected(devName);
+        } else if (type == "audio_input" || type == "audio_input_active") {
             selectedDeviceId = id;
-            onAudioInputSelected(label);
+            // id is "audio_in:DeviceName"
+            auto devName = id.substr(id.find(':') + 1);
+            if (onAudioInputSelected) onAudioInputSelected(devName);
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
@@ -259,16 +265,8 @@ void Sidebar::refreshTree() {
                     deviceNode.label = nameStr;
                     deviceNode.id = "audio_both:" + nameStr;
                     deviceNode.type = "audio_device";
+                    deviceNode.expanded = true;  // always expanded
 
-                    if (hasOutput) {
-                        TreeNode outLeaf;
-                        outLeaf.label = "Output";
-                        bool isActive = (name == setup.outputDeviceName);
-                        outLeaf.id = "audio_out:" + nameStr;
-                        outLeaf.type = isActive ? "audio_output_active" : "audio_output";
-                        outLeaf.isLeaf = true;
-                        deviceNode.children.push_back(outLeaf);
-                    }
                     if (hasInput) {
                         TreeNode inLeaf;
                         inLeaf.label = "Input";
@@ -277,6 +275,15 @@ void Sidebar::refreshTree() {
                         inLeaf.type = isActive ? "audio_input_active" : "audio_input";
                         inLeaf.isLeaf = true;
                         deviceNode.children.push_back(inLeaf);
+                    }
+                    if (hasOutput) {
+                        TreeNode outLeaf;
+                        outLeaf.label = "Output";
+                        bool isActive = (name == setup.outputDeviceName);
+                        outLeaf.id = "audio_out:" + nameStr;
+                        outLeaf.type = isActive ? "audio_output_active" : "audio_output";
+                        outLeaf.isLeaf = true;
+                        deviceNode.children.push_back(outLeaf);
                     }
 
                     audioNode.children.push_back(deviceNode);

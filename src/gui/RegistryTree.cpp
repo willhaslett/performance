@@ -7,7 +7,9 @@ static void applyExpansion(std::vector<TreeNode>& nodes, const std::set<std::str
                             const std::string& prefix = "") {
     for (auto& node : nodes) {
         auto key = prefix + "/" + node.label;
-        node.expanded = expanded.count(key) > 0;
+        // audio_device nodes are always expanded (set in Sidebar::refreshTree)
+        if (node.type != "audio_device")
+            node.expanded = expanded.count(key) > 0;
         applyExpansion(node.children, expanded, key);
     }
 }
@@ -97,13 +99,22 @@ void RegistryTree::paint(juce::Graphics& g) {
                        x + 14, y, getWidth() - x - 20, rowHeight,
                        juce::Justification::centredLeft);
         } else {
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-            drawArrow(g, x, y, row.expanded);
+            // Audio device nodes: no arrow (always expanded), draw like a leaf
+            if (row.type == "audio_device") {
+                g.setColour(isActive ? Theme::color(Theme::Color::textWhite)
+                                     : Theme::color(Theme::Color::textPrimary));
+                g.drawText(juce::String(row.label),
+                           x + 14, y, getWidth() - x - 20, rowHeight,
+                           juce::Justification::centredLeft);
+            } else {
+                g.setColour(Theme::color(Theme::Color::textSecondary));
+                drawArrow(g, x, y, row.expanded);
 
-            g.setColour(Theme::color(Theme::Color::textWhite));
-            g.drawText(juce::String(row.label),
-                       x + 14, y, getWidth() - x - 20, rowHeight,
-                       juce::Justification::centredLeft);
+                g.setColour(Theme::color(Theme::Color::textWhite));
+                g.drawText(juce::String(row.label),
+                           x + 14, y, getWidth() - x - 20, rowHeight,
+                           juce::Justification::centredLeft);
+            }
         }
     }
 }
@@ -122,7 +133,7 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
             clickKey = row.key;
             clickIsLeaf = row.isLeaf;
 
-            if (!clickIsLeaf) {
+            if (!clickIsLeaf && clickType != "audio_device") {
                 if (row.expanded)
                     expandedKeys.erase(clickKey);
                 else
@@ -137,8 +148,8 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
         }
     }
 
-    // Only dispatch click action for leaf nodes — non-leaf just expands/collapses
-    if (clickIsLeaf && !clickId.empty() && onNodeClick)
+    // Dispatch click for leaf nodes and audio_device nodes (always-expanded, clickable)
+    if ((clickIsLeaf || clickType == "audio_device") && !clickId.empty() && onNodeClick)
         onNodeClick(clickType, clickId, clickLabel);
 }
 
