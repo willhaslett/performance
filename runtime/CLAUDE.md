@@ -114,18 +114,19 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `addDeviceToSong(songId, deviceId)` — associate device with song
 - `listDevices()` — returns array of `{id, name, port}` (NOTE: field is `port`, NOT `portName`)
 - `listMidiInputs()` — returns array of `{name, id}` (these are JUCE port identifiers)
-- `getDeviceControl(deviceName, controlName)` — returns `{type, channel, number, group}` or empty table if not found
+- `getDeviceControl(deviceName, controlName)` — returns `{type, channel, number, group, deviceId}` or empty table if not found
 - `listDeviceControls(deviceName)` — returns array of `{name, type, channel, number, group}`
 
 ### Bindings (MIDI control → action)
 
-`bind(type, channel, number, actionName, argsTable, description)`
+`bind(type, channel, number, actionName, argsTable, description, deviceId)`
 - `type`: "cc", "note", "pitchbend", "pressure"
 - `channel`: MIDI channel (1-16)
 - `number`: CC number or note number
 - `actionName`: must match an existing action name exactly
 - `argsTable`: Lua table of arguments, e.g. `{"TrackName"}` or `{"TrackName", 3.0, "cosine"}`
 - `description`: human-readable label
+- `deviceId`: device UUID from `getDeviceControl().deviceId` — ALWAYS pass this
 
 #### Built-in actions (USE THESE FIRST — do NOT create custom actions for basic operations):
 | Action | Args | What it does |
@@ -149,10 +150,10 @@ for i, t in ipairs(tracks) do log(t.id .. " " .. t.name) end
 local controls = listDeviceControls("MPK mini 3")
 for i, c in ipairs(controls) do log(c.name .. " " .. c.type .. " ch" .. c.channel .. " #" .. c.number) end
 
--- Step 3: Look up specific control and bind
+-- Step 3: Look up specific control and bind (ALWAYS pass ctrl.deviceId)
 local ctrl = getDeviceControl("MPK mini 3", "Pad 1")
 if ctrl.type then
-  bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Piano", 3.0, "cosine"}, "Pad 1 fade out Piano")
+  bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Piano", 3.0, "cosine"}, "Pad 1 fade out Piano", ctrl.deviceId)
 else
   log("Control not found!")
 end

@@ -313,6 +313,7 @@ void LuaEngine::registerAPI() {
                         result["channel"] = ctrl.channel;
                         result["number"] = ctrl.number;
                         result["group"] = ctrl.group;
+                        result["deviceId"] = d.id;
                         return result;
                     }
                 }
@@ -354,9 +355,11 @@ void LuaEngine::registerAPI() {
     lua.set_function("bind", [this, &state](const std::string& type, int channel, int number,
                                              const std::string& actionName,
                                              sol::optional<sol::object> argsOrDesc,
-                                             sol::optional<std::string> descOpt) {
+                                             sol::optional<std::string> descOpt,
+                                             sol::optional<std::string> deviceIdOpt) {
         std::string argsJson = "[]";
         std::string description;
+        std::string deviceId;
         if (argsOrDesc.has_value()) {
             auto& val = argsOrDesc.value();
             if (val.is<sol::table>()) {
@@ -374,6 +377,7 @@ void LuaEngine::registerAPI() {
             }
         }
         if (descOpt.has_value()) description = descOpt.value();
+        if (deviceIdOpt.has_value()) deviceId = deviceIdOpt.value();
 
         auto* action = state.findActionByName(actionName);
         if (!action) {
@@ -385,8 +389,9 @@ void LuaEngine::registerAPI() {
             perfLog("[Lua] bind: no active song\n");
             return;
         }
-        state.addBinding(songId, type, channel, number, action->id, argsJson, description);
-        perfLog("[Lua] bind: %s ch%d #%d -> %s\n", type.c_str(), channel, number, actionName.c_str());
+        state.addBinding(songId, type, channel, number, action->id, argsJson, description, deviceId);
+        perfLog("[Lua] bind: %s ch%d #%d dev='%s' -> %s\n",
+                type.c_str(), channel, number, deviceId.c_str(), actionName.c_str());
     });
 
     // Generic state queries
