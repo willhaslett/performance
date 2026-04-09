@@ -118,11 +118,21 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `listDeviceControls(deviceName)` — list all controls for a device. Returns array of tables with `name`, `type`, `channel`, `number`, `group`.
 
 #### Binding with device controls
-To bind a mapped device control to an action, look up the control first:
+When creating bindings, ALWAYS query exact names first — names are case-sensitive:
 ```lua
+-- Get exact track names
+local tracks = registryList("track")
+for i, t in ipairs(tracks) do log(t.name) end
+
+-- Get exact control names for a device
+local controls = listDeviceControls("KeyLab mkII 88 MIDI")
+for i, c in ipairs(controls) do log(c.name) end
+
+-- Then bind using exact names from the queries above
 local ctrl = getDeviceControl("KeyLab mkII 88 MIDI", "Pad 6")
-bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"Keys", 3.0, "cosine"}, "Pad 6 → fade out Keys")
+bind(ctrl.type, ctrl.channel, ctrl.number, "fadeOut", {"PIano", 3.0, "cosine"}, "Pad 6 → fade out PIano")
 ```
+Never guess at track names or control names — always query first.
 
 ### Plugins & UI
 - `openEditor(track)` — open instrument editor
