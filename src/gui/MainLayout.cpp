@@ -12,6 +12,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
       bindingsPane(state, engine), chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
+    sidebar.setCoordinator(&coordinator);
     addAndMakeVisible(sidebar);
 
     // Register all panes with PaneContainer (left slot 60%, right slot 40%)

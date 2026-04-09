@@ -83,6 +83,11 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
         auto it = portToDeviceId.find(sourcePortName);
         if (it != portToDeviceId.end())
             deviceId = it->second;
+        // Track per-device/port activity
+        auto now = juce::Time::currentTimeMillis();
+        portActivityMs[sourcePortName] = now;
+        if (!deviceId.empty())
+            deviceActivityMs[deviceId] = now;
     }
     // Log dispatch context for note events on ch10 (pad debugging)
     if (message.isNoteOn() && message.getChannel() == 10) {
@@ -265,4 +270,14 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
     } else if (message.isProgramChange()) {
         perfLog("[MIDI] ch=%d  PROGRAM %d\n", ch, message.getProgramChangeNumber());
     }
+}
+
+int64_t MIDIEngine::getDeviceLastActivityMs(const std::string& deviceId) const {
+    auto it = deviceActivityMs.find(deviceId);
+    return it != deviceActivityMs.end() ? it->second : 0;
+}
+
+int64_t MIDIEngine::getPortLastActivityMs(const juce::String& portName) const {
+    auto it = portActivityMs.find(portName);
+    return it != portActivityMs.end() ? it->second : 0;
 }

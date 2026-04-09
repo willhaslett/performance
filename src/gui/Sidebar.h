@@ -6,6 +6,7 @@
 
 class StateAPI;
 class EngineAPI;
+class PerformanceCoordinator;
 
 class Sidebar : public juce::Component, private juce::Timer {
 public:
@@ -14,12 +15,16 @@ public:
 
     void setStateAPI(StateAPI* s);
     void setEngineAPI(EngineAPI* e);
+    void setCoordinator(PerformanceCoordinator* c);
 
     // Callback for song loading (coordinator-level operation)
     std::function<void(const std::string& songId)> onLoadSong;
 
     // Callback for MIDI device selection (deviceId set if registered, portName set if unregistered)
     std::function<void(const std::string& deviceId, const std::string& portName)> onDeviceSelected;
+
+    // Callback for Maps device selection
+    std::function<void(const std::string& deviceId, const std::string& portName)> onMapSelected;
 
     // Callbacks for audio device selection (output and input independently)
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
@@ -40,6 +45,7 @@ private:
 
     StateAPI* state = nullptr;
     EngineAPI* engineAPI = nullptr;
+    PerformanceCoordinator* coordinator = nullptr;
     RegistryTree tree;
     int subscriptionId = -1;
     bool needsRefresh = false;

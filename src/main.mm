@@ -205,8 +205,15 @@ public:
             coordinator->loadSong(songId);
         };
 
-        // Wire sidebar device selection
+        // Wire sidebar device selection (MIDI section under Devices)
         layout->getSidebar().onDeviceSelected = [layout](const std::string& deviceId, const std::string& portName) {
+            layout->showLeftPane(&layout->deviceEditor);
+            layout->getDeviceEditor().setDevice(deviceId, portName);
+        };
+
+        // Wire sidebar Maps device selection
+        layout->getSidebar().onMapSelected = [layout](const std::string& deviceId, const std::string& portName) {
+            // For now, use the existing DeviceEditorPane — will be replaced by MappingPane
             layout->showLeftPane(&layout->deviceEditor);
             layout->getDeviceEditor().setDevice(deviceId, portName);
         };

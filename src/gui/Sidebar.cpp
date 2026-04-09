@@ -1,6 +1,7 @@
 #include "gui/Sidebar.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
+#include "api/PerformanceCoordinator.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
 
@@ -38,6 +39,14 @@ Sidebar::Sidebar() {
             // id is "audio_in:DeviceName"
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioInputSelected) onAudioInputSelected(devName);
+        } else if (type == "map_device" || type == "map_unregistered") {
+            selectedDeviceId = id;
+            if (onMapSelected) {
+                if (type == "map_device")
+                    onMapSelected(id, "");
+                else
+                    onMapSelected("", id);  // id is port name for unregistered
+            }
         } else if (type == "bindings") {
             selectedDeviceId = id;
             if (onBindingsSelected) onBindingsSelected();
@@ -62,6 +71,10 @@ Sidebar::~Sidebar() {
 void Sidebar::setEngineAPI(EngineAPI* e) {
     engineAPI = e;
     refreshTree();
+}
+
+void Sidebar::setCoordinator(PerformanceCoordinator* c) {
+    coordinator = c;
 }
 
 void Sidebar::setStateAPI(StateAPI* s) {
@@ -233,6 +246,45 @@ void Sidebar::refreshTree() {
             actionsNode.children.push_back(actionLeaf);
         }
         roots.push_back(actionsNode);
+    }
+
+    // Maps — connected MIDI devices with activity lights
+    {
+        TreeNode mapsNode;
+        mapsNode.label = "Maps";
+        mapsNode.type = "category";
+
+        auto midiDevices = juce::MidiInput::getAvailableDevices();
+        auto now = juce::Time::currentTimeMillis();
+
+        for (auto& midi : midiDevices) {
+            auto portName = midi.name.toStdString();
+            auto* device = state->findDeviceByPortName(portName);
+
+            TreeNode leaf;
+            if (device) {
+                leaf.label = device->name;
+                leaf.id = device->id;
+                leaf.type = "map_device";
+            } else {
+                leaf.label = portName;
+                leaf.id = portName;
+                leaf.type = "map_unregistered";
+            }
+            leaf.isLeaf = true;
+
+            // Activity indicator: check if this port had recent MIDI activity
+            if (coordinator) {
+                int64_t lastMs = coordinator->getMidiPortActivityMs(portName);
+                bool active = (lastMs > 0 && now - lastMs < 400);
+                // Encode activity in the type suffix so RegistryTree can draw it
+                if (active) leaf.type += "_active";
+            }
+
+            mapsNode.children.push_back(leaf);
+        }
+
+        roots.push_back(mapsNode);
     }
 
     // Devices — Audio and MIDI subsections

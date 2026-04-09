@@ -581,6 +581,14 @@ void PerformanceCoordinator::clearGlobalMidiMonitor() {
     if (midiEngine) midiEngine->clearGlobalMonitor();
 }
 
+int64_t PerformanceCoordinator::getMidiDeviceActivityMs(const std::string& deviceId) {
+    return midiEngine ? midiEngine->getDeviceLastActivityMs(deviceId) : 0;
+}
+
+int64_t PerformanceCoordinator::getMidiPortActivityMs(const std::string& portName) {
+    return midiEngine ? midiEngine->getPortLastActivityMs(juce::String(portName)) : 0;
+}
+
 void PerformanceCoordinator::log(const juce::String& message) {
     perfLog("[Coordinator] %s\n", message.toRawUTF8());
 }

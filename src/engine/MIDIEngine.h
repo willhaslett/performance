@@ -43,6 +43,10 @@ public:
                                    const juce::MidiMessage& message) override;
     void refreshDeviceMapping();  // call after registering new devices
 
+    // Per-device activity tracking (for sidebar indicators)
+    int64_t getDeviceLastActivityMs(const std::string& deviceId) const;
+    int64_t getPortLastActivityMs(const juce::String& portName) const;
+
 private:
 
     juce::AudioDeviceManager& deviceManager;
@@ -57,4 +61,6 @@ private:
     MonitorCallback deviceMonitorCallback;
     std::string monitorDeviceId;
     GlobalMonitorCallback globalMonitorCallback;
+    std::map<std::string, int64_t> deviceActivityMs;   // deviceId → last activity time
+    std::map<juce::String, int64_t> portActivityMs;    // portName → last activity time
 };

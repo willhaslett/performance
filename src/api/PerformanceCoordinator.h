@@ -80,6 +80,8 @@ public:
                               std::function<void(const std::string& description,
                                                  const std::string& type, int channel, int number)> callback);
     void clearMidiDeviceMonitor();
+    int64_t getMidiDeviceActivityMs(const std::string& deviceId);
+    int64_t getMidiPortActivityMs(const std::string& portName);
 
     // Global MIDI monitor (for debug pane — fires for all devices)
     void setGlobalMidiMonitor(std::function<void(const std::string& deviceName,
