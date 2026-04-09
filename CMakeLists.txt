@@ -58,6 +58,7 @@ target_sources(Performance PRIVATE
     src/gui/DeviceEditorPane.cpp
     src/gui/DebugPane.cpp
     src/gui/BindingsPane.cpp
+    src/gui/MappingPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
     src/api/ClaudeClient.cpp

@@ -7,6 +7,7 @@
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
 #include "gui/BindingsPane.h"
+#include "gui/MappingPane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
@@ -40,6 +41,7 @@ public:
     DeviceEditorPane deviceEditor;
     DebugPane debugPane;
     BindingsPane bindingsPane;
+    MappingPane mappingPane;
     ChatView chatView;
     LogPane logPane;
 

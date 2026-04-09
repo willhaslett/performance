@@ -9,7 +9,8 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
     : state(state), engine(engine),
       deviceEditor(state, coordinator), debugPane(coordinator, engine),
-      bindingsPane(state, engine), chatView(lua), mixerView(state, engine) {
+      bindingsPane(state, engine), mappingPane(state, engine, coordinator),
+      chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
     sidebar.setCoordinator(&coordinator);
@@ -19,6 +20,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     paneContainer.addPane(&deviceEditor, 0.6f);
     paneContainer.addPane(&debugPane, 0.6f);
     paneContainer.addPane(&bindingsPane, 0.6f);
+    paneContainer.addPane(&mappingPane, 0.6f);
     paneContainer.addPane(&chatView, 0.4f);
     paneContainer.addPane(&logPane, 0.4f);
 
@@ -27,6 +29,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     activeRightPane = &chatView;
     paneContainer.setPaneVisible(&debugPane, false);
     paneContainer.setPaneVisible(&bindingsPane, false);
+    paneContainer.setPaneVisible(&mappingPane, false);
     paneContainer.setPaneVisible(&logPane, false);
 
     addAndMakeVisible(paneContainer);

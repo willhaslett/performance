@@ -213,9 +213,8 @@ public:
 
         // Wire sidebar Maps device selection
         layout->getSidebar().onMapSelected = [layout](const std::string& deviceId, const std::string& portName) {
-            // For now, use the existing DeviceEditorPane — will be replaced by MappingPane
-            layout->showLeftPane(&layout->deviceEditor);
-            layout->getDeviceEditor().setDevice(deviceId, portName);
+            layout->showLeftPane(&layout->mappingPane);
+            layout->mappingPane.setDevice(deviceId, portName);
         };
 
         // Wire sidebar audio output device selection
