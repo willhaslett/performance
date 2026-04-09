@@ -109,7 +109,7 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio + MIDI subsections), Panes (Debug, Logs, Chat).
+- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio with per-device Input/Output children + MIDI), Panes (Debug, Logs, Chat). Audio device nodes are always expanded; click device name to set both I/O, click Input or Output leaf to set individually. Green dot on active role.
 - **DeviceEditorPane** — MIDI device control mapping editor with learn mode. Shown when a MIDI device is selected in sidebar.
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Color-coded by subsystem. Auto-scrolls.
@@ -137,7 +137,7 @@ Master output:
 
 Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. If device goes null (mid-transition), processing stops cleanly and recovers on next notification. `InputMeter` callback provides per-channel peak levels for the debug pane.
 
-Audio device selection persists via `config["audio_device"]` — restored on startup after `loadInto`. Clicking the same device in the sidebar is a no-op.
+Audio output and input devices are independent (macOS CoreAudio). Selection persists via `config["audio_output_device"]` and `config["audio_input_device"]` — restored on startup after `loadInto`. Only `outputDeviceName` or `inputDeviceName` is set (never both to the same value, which fails for output-only devices like MacBook Pro Speakers). Clicking the same device is a no-op. If device goes null mid-transition, async retry recovers once JUCE finishes opening the new device.
 
 MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents wasted synthesis across multiple instrument tracks. `midiEnabled` and `audioEnabled` are both required for MIDI connection in `rebuildConnections`.
 

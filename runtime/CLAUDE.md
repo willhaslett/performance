@@ -104,8 +104,9 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 - `listInputChannels()` — list available input channels on current audio device
 
 ### Audio Device
-- `listAudioDevices()` — list available audio devices (e.g., "MacBook Pro Speakers", "Scarlett 2i2 USB")
-- `setAudioDevice(name)` — switch audio device (both input and output). Name must match exactly.
+- `listAudioDevices()` — list available audio output devices
+- `setAudioDevice(name)` — switch audio output device. Name must match exactly.
+- `setAudioInputDevice(name)` — switch audio input device independently. On macOS, input and output are separate (e.g. "MacBook Pro Speakers" is output-only, "MacBook Pro Microphone" is input-only, "Scarlett 2i2" is both).
 
 ### Devices (MIDI controllers)
 - `registerDevice(name, portName)` — register a MIDI controller
