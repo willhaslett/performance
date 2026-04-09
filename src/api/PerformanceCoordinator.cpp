@@ -492,19 +492,10 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return def;
     };
 
-    // Resolve track name or ID to ID (case-insensitive name match)
-    auto resolveTrack = [this](const juce::String& nameOrId) -> std::string {
-        auto s = nameOrId.toStdString();
-        // Try as ID first
-        if (stateAPI->findTrack(s)) return s;
-        // Try as name (exact)
-        for (auto& t : stateAPI->listTracks())
-            if (t.name == s) return t.id;
-        // Try as name (case-insensitive)
-        auto lower = juce::String(s).toLowerCase();
-        for (auto& t : stateAPI->listTracks())
-            if (juce::String(t.name).toLowerCase() == lower) return t.id;
-        perfLog("[Coordinator] resolveTrack: '%s' not found\n", s.c_str());
+    auto resolveTrack = [this](const juce::String& id) -> std::string {
+        auto s = id.toStdString();
+        if (!stateAPI->findTrack(s))
+            perfLog("[Coordinator] resolveTrack: '%s' not found\n", s.c_str());
         return s;
     };
 
