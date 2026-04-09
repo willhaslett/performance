@@ -482,40 +482,49 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return def;
     };
 
-    auto sid = [](const juce::String& s) { return s.toStdString(); };
+    // Resolve track name or ID to ID
+    auto resolveTrack = [this](const juce::String& nameOrId) -> std::string {
+        auto s = nameOrId.toStdString();
+        // Try as ID first
+        if (stateAPI->findTrack(s)) return s;
+        // Try as name
+        for (auto& t : stateAPI->listTracks())
+            if (t.name == s) return t.id;
+        return s;
+    };
 
     if (actionName == "setActiveTrack") {
-        auto targetId = getArg(0);
+        auto targetId = resolveTrack(getArg(0));
         for (auto& t : stateAPI->listTracks())
-            stateAPI->setTrackMidiEnabled(t.id, t.id == sid(targetId));
+            stateAPI->setTrackMidiEnabled(t.id, t.id == targetId);
     }
     else if (actionName == "enableTrack") {
-        stateAPI->setTrackMidiEnabled(sid(getArg(0)), true);
+        stateAPI->setTrackMidiEnabled(resolveTrack(getArg(0)), true);
     }
     else if (actionName == "disableTrack") {
-        stateAPI->setTrackMidiEnabled(sid(getArg(0)), false);
+        stateAPI->setTrackMidiEnabled(resolveTrack(getArg(0)), false);
     }
     else if (actionName == "fadeOut") {
-        auto track = sid(getArg(0));
+        auto track = resolveTrack(getArg(0));
         auto dur = getArgFloat(1, 3.0f);
         float current = stateAPI->getTrackGain(track);
         automationEngine->interpolate(current, 0.0f, dur,
             [this, track](float v) { stateAPI->setTrackGain(track, v); },
-            AutomationEngine::easingByName(sid(getArg(2))));
+            AutomationEngine::easingByName(getArg(2).toStdString()));
     }
     else if (actionName == "fadeIn") {
-        auto track = sid(getArg(0));
+        auto track = resolveTrack(getArg(0));
         auto dur = getArgFloat(1, 3.0f);
         float current = stateAPI->getTrackGain(track);
         automationEngine->interpolate(current, 1.0f, dur,
             [this, track](float v) { stateAPI->setTrackGain(track, v); },
-            AutomationEngine::easingByName(sid(getArg(2))));
+            AutomationEngine::easingByName(getArg(2).toStdString()));
     }
     else if (actionName == "crossfade") {
-        auto from = sid(getArg(0));
-        auto to = sid(getArg(1));
+        auto from = resolveTrack(getArg(0));
+        auto to = resolveTrack(getArg(1));
         auto dur = getArgFloat(2, 3.0f);
-        auto easing = AutomationEngine::easingByName(sid(getArg(3)));
+        auto easing = AutomationEngine::easingByName(getArg(3).toStdString());
         automationEngine->interpolate(1.0f, 0.0f, dur,
             [this, from](float v) { stateAPI->setTrackGain(from, v); }, easing);
         automationEngine->interpolate(0.0f, 1.0f, dur,
@@ -666,7 +675,12 @@ void PerformanceCoordinator::restoreBindings() {
         MIDIControl control = { parseControlType(juce::String(binding.controlType)),
                                 binding.channel, binding.number, binding.deviceId };
 
+        perfLog("[Coordinator] Binding: %s ch%d #%d dev='%s' -> %s\n",
+                binding.controlType.c_str(), binding.channel, binding.number,
+                binding.deviceId.c_str(), actionNameStr.c_str());
+
         songRuntime->addBinding(control, [this, actionNameStr, argsStr](float value) {
+            perfLog("[Coordinator] Action triggered: %s (value=%.2f)\n", actionNameStr.c_str(), value);
             auto args = juce::JSON::parse(juce::String(argsStr));
             executeAction(actionNameStr, args, value);
         }, juce::String(binding.description));
