@@ -5,6 +5,7 @@
 #include <functional>
 #include <string>
 #include <vector>
+#include <set>
 
 class StateAPI;
 class PerformanceCoordinator;
@@ -85,6 +86,9 @@ private:
     // Column layout helpers
     juce::Rectangle<int> getRowBounds(int rowIndex) const;
     juce::Rectangle<int> getNameCellBounds(int rowIndex) const;
+    juce::Rectangle<int> getGroupCellBounds(int rowIndex) const;
     juce::Rectangle<int> getDeleteButtonBounds(int rowIndex) const;
     juce::Rectangle<int> getControlListArea() const;
+
+    std::set<std::string> getExistingGroups() const;
 };

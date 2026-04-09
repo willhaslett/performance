@@ -329,7 +329,19 @@ juce::Rectangle<int> DeviceEditorPane::getRowBounds(int rowIndex) const {
 
 juce::Rectangle<int> DeviceEditorPane::getNameCellBounds(int rowIndex) const {
     auto row = getRowBounds(rowIndex);
-    return juce::Rectangle<int>(row.getX() + 24, row.getY(), 148, rowHeight);
+    return juce::Rectangle<int>(row.getX() + 24, row.getY(), 120, rowHeight);
+}
+
+juce::Rectangle<int> DeviceEditorPane::getGroupCellBounds(int rowIndex) const {
+    auto row = getRowBounds(rowIndex);
+    return juce::Rectangle<int>(row.getX() + 152, row.getY(), 80, rowHeight);
+}
+
+std::set<std::string> DeviceEditorPane::getExistingGroups() const {
+    std::set<std::string> groups;
+    for (auto& ctrl : controls)
+        if (!ctrl.group.empty()) groups.insert(ctrl.group);
+    return groups;
 }
 
 juce::Rectangle<int> DeviceEditorPane::getDeleteButtonBounds(int rowIndex) const {
@@ -361,10 +373,11 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
     g.fillRect(0, colY, getWidth(), columnHeaderHeight);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeXs));
-    g.drawText("Name",  24,  colY, 148, columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("Type",  180, colY, 80,  columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("Ch",    268, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
-    g.drawText("#",     316, colY, 40,  columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("Name",  24,  colY, 120, columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("Group", 152, colY, 80,  columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("Type",  240, colY, 60,  columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("Ch",    308, colY, 30,  columnHeaderHeight, juce::Justification::centredLeft);
+    g.drawText("#",     346, colY, 30,  columnHeaderHeight, juce::Justification::centredLeft);
 
     // Control rows
     if (controls.empty()) {
@@ -405,13 +418,20 @@ void DeviceEditorPane::paint(juce::Graphics& g) {
             g.setFont(Theme::font(Theme::fontSizeSm));
 
             auto name = ctrl.name.empty() ? "(unnamed)" : ctrl.name;
-            g.drawText(juce::String(name), 24, rowBounds.getY(), 148, rowHeight,
+            g.drawText(juce::String(name), 24, rowBounds.getY(), 120, rowHeight,
                        juce::Justification::centredLeft);
-            g.drawText(juce::String(ctrl.controlType), 180, rowBounds.getY(), 80, rowHeight,
+
+            g.setColour(Theme::color(Theme::Color::textSecondary));
+            auto groupLabel = ctrl.group.empty() ? "Default" : ctrl.group;
+            g.drawText(juce::String(groupLabel), 152, rowBounds.getY(), 80, rowHeight,
                        juce::Justification::centredLeft);
-            g.drawText(juce::String(ctrl.channel), 268, rowBounds.getY(), 40, rowHeight,
+
+            g.setColour(Theme::color(Theme::Color::textPrimary));
+            g.drawText(juce::String(ctrl.controlType), 240, rowBounds.getY(), 60, rowHeight,
                        juce::Justification::centredLeft);
-            g.drawText(juce::String(ctrl.number), 316, rowBounds.getY(), 40, rowHeight,
+            g.drawText(juce::String(ctrl.channel), 308, rowBounds.getY(), 30, rowHeight,
+                       juce::Justification::centredLeft);
+            g.drawText(juce::String(ctrl.number), 346, rowBounds.getY(), 30, rowHeight,
                        juce::Justification::centredLeft);
 
             // Delete button (x) — only show on hover
@@ -513,6 +533,75 @@ void DeviceEditorPane::mouseDoubleClick(const juce::MouseEvent& event) {
             };
             inlineEditor.onCancel = nullptr;
             inlineEditor.show(*this, nameBounds, juce::String(controls[i].name));
+            return;
+        }
+
+        // Check if double-click is on a group cell
+        auto groupBounds = getGroupCellBounds(i);
+        if (groupBounds.contains(event.getPosition())) {
+            auto groups = getExistingGroups();
+
+            if (groups.size() >= 1) {
+                // Show popup menu with existing groups + "New Group..."
+                juce::PopupMenu menu;
+                int itemId = 1;
+                std::vector<std::string> groupList(groups.begin(), groups.end());
+
+                // "Default" always first if not already in the set
+                menu.addItem(itemId++, "Default",
+                             true, controls[i].group.empty() || controls[i].group == "Default");
+
+                for (auto& g : groupList) {
+                    if (g == "Default") continue;
+                    menu.addItem(itemId++, juce::String(g),
+                                 true, controls[i].group == g);
+                }
+
+                menu.addSeparator();
+                int newGroupId = itemId;
+                menu.addItem(newGroupId, "New Group...");
+
+                menu.showMenuAsync(juce::PopupMenu::Options()
+                    .withTargetScreenArea(juce::Rectangle<int>(
+                        event.getScreenPosition().x, event.getScreenPosition().y, 1, 1)),
+                    [this, i, groupList, newGroupId](int result) {
+                        if (result == 0) return;
+                        if (result == newGroupId) {
+                            // Show inline editor for new group name
+                            auto bounds = getGroupCellBounds(i);
+                            inlineEditor.onCommit = [this, i](const juce::String& newText) {
+                                auto group = newText.isEmpty() ? "" : newText.toStdString();
+                                state.setDeviceControlGroup(currentDeviceId, i, group);
+                                refreshControls();
+                            };
+                            inlineEditor.onCancel = nullptr;
+                            inlineEditor.show(*this, bounds, "");
+                        } else if (result == 1) {
+                            // "Default" selected
+                            state.setDeviceControlGroup(currentDeviceId, i, "");
+                            refreshControls();
+                        } else {
+                            int idx = result - 2;  // offset for "Default" at 1
+                            // Filter out "Default" from groupList index
+                            std::vector<std::string> filtered;
+                            for (auto& g : groupList)
+                                if (g != "Default") filtered.push_back(g);
+                            if (idx >= 0 && idx < (int)filtered.size()) {
+                                state.setDeviceControlGroup(currentDeviceId, i, filtered[idx]);
+                                refreshControls();
+                            }
+                        }
+                    });
+            } else {
+                // No groups yet — inline editor to create first group
+                inlineEditor.onCommit = [this, i](const juce::String& newText) {
+                    auto group = newText.isEmpty() ? "" : newText.toStdString();
+                    state.setDeviceControlGroup(currentDeviceId, i, group);
+                    refreshControls();
+                };
+                inlineEditor.onCancel = nullptr;
+                inlineEditor.show(*this, groupBounds, "");
+            }
             return;
         }
     }

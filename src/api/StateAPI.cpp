@@ -657,6 +657,14 @@ void StateAPI::renameDeviceControl(const std::string& deviceId, int index, const
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
 }
 
+void StateAPI::setDeviceControlGroup(const std::string& deviceId, int index, const std::string& group) {
+    auto* device = findDevice(deviceId);
+    if (!device || index < 0 || index >= (int)device->controls.size()) return;
+    device->controls[index].group = group;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
+}
+
 void StateAPI::addDeviceToSong(const std::string& songId, const std::string& deviceId) {
     auto* song = findSong(songId);
     if (!song) return;

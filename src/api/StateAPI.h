@@ -99,6 +99,7 @@ public:
                                  const std::string& group = "");
     void removeDeviceControl(const std::string& deviceId, int index);
     void renameDeviceControl(const std::string& deviceId, int index, const std::string& name);
+    void setDeviceControlGroup(const std::string& deviceId, int index, const std::string& group);
 
     // Song-device association
     void addDeviceToSong(const std::string& songId, const std::string& deviceId);
