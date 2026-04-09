@@ -55,7 +55,6 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
                 savedDevice.c_str(), setup.outputDeviceName.toRawUTF8());
         if (setup.outputDeviceName != juce::String(savedDevice)) {
             setup.outputDeviceName = juce::String(savedDevice);
-            setup.inputDeviceName = juce::String(savedDevice);
             auto err = dm.setAudioDeviceSetup(setup, true);
             if (err.isEmpty())
                 perfLog("[Coordinator] Restored audio device: %s\n", savedDevice.c_str());

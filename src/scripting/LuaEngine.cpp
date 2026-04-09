@@ -103,7 +103,6 @@ void LuaEngine::registerAPI() {
             auto& dm = engine.getDeviceManager();
             auto setup = dm.getAudioDeviceSetup();
             setup.outputDeviceName = deviceName;
-            setup.inputDeviceName = deviceName;
             dm.setAudioDeviceSetup(setup, true);
         });
     });
