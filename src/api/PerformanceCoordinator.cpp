@@ -594,6 +594,12 @@ void PerformanceCoordinator::log(const juce::String& message) {
 // --- State event handler: auto-create Default preset ---
 
 void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
+    // Binding changes — rebuild runtime dispatch map
+    if (event.entity == StateEvent::Binding) {
+        restoreBindings();
+        return;
+    }
+
     // Watch for Track or Effect Updated events — LoadStatus may have changed to Loaded
     if (event.action != StateEvent::Updated) return;
 
