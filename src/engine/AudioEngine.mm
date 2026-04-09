@@ -154,11 +154,20 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source) {
         perfLog("[Engine] Device change notification (device=%s, tracks=%d)\n",
                 device ? device->getName().toRawUTF8() : "null", (int)tracks.size());
         if (!device) {
-            // Device gone — stop processing but leave graph intact for when it returns.
-            // JUCE will send another notification when a device comes back.
+            // Device is mid-transition (old closed, new not yet open).
+            // Stop processing and retry shortly — JUCE may not send another notification.
             deviceManager.removeAudioCallback(player.get());
             player->setProcessor(nullptr);
-            perfLog("[Engine] Audio device lost — processing stopped\n");
+            perfLog("[Engine] Audio device transitioning — will retry\n");
+            juce::MessageManager::callAsync([this]() {
+                auto* dev = deviceManager.getCurrentAudioDevice();
+                if (dev) {
+                    perfLog("[Engine] Device available after retry: %s\n", dev->getName().toRawUTF8());
+                    rebuildGraph();
+                } else {
+                    perfLog("[Engine] Device still null after retry\n");
+                }
+            });
             return;
         }
         rebuildGraph();
