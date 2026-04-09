@@ -22,6 +22,10 @@ Sidebar::Sidebar() {
         } else if (type == "unregistered_device" && onDeviceSelected) {
             selectedDeviceId = id;
             onDeviceSelected("", id);  // id is the port name for unregistered devices
+        } else if (type == "audio_device") {
+            selectedDeviceId = id;
+            if (onAudioOutputSelected) onAudioOutputSelected(label);
+            if (onAudioInputSelected) onAudioInputSelected(label);
         } else if ((type == "audio_output" || type == "audio_output_active") && onAudioOutputSelected) {
             selectedDeviceId = id;
             onAudioOutputSelected(label);
@@ -228,47 +232,57 @@ void Sidebar::refreshTree() {
         devicesNode.label = "Devices";
         devicesNode.type = "category";
 
-        // Audio output devices
+        // Audio devices — each device is a node with Input/Output children
         if (engineAPI) {
             auto& dm = engineAPI->getDeviceManager();
             auto setup = dm.getAudioDeviceSetup();
 
-            TreeNode outputNode;
-            outputNode.label = "Output";
-            outputNode.type = "category";
+            TreeNode audioNode;
+            audioNode.label = "Audio";
+            audioNode.type = "category";
 
             if (auto* type = dm.getCurrentDeviceTypeObject()) {
                 auto outputNames = type->getDeviceNames(false);
-                for (auto& name : outputNames) {
-                    TreeNode leaf;
-                    bool isActive = (name == setup.outputDeviceName);
-                    leaf.label = name.toStdString();
-                    leaf.id = "audio_out:" + name.toStdString();
-                    leaf.type = isActive ? "audio_output_active" : "audio_output";
-                    leaf.isLeaf = true;
-                    outputNode.children.push_back(leaf);
-                }
-            }
-            devicesNode.children.push_back(outputNode);
-
-            // Audio input devices
-            TreeNode inputNode;
-            inputNode.label = "Input";
-            inputNode.type = "category";
-
-            if (auto* type = dm.getCurrentDeviceTypeObject()) {
                 auto inputNames = type->getDeviceNames(true);
-                for (auto& name : inputNames) {
-                    TreeNode leaf;
-                    bool isActive = (name == setup.inputDeviceName);
-                    leaf.label = name.toStdString();
-                    leaf.id = "audio_in:" + name.toStdString();
-                    leaf.type = isActive ? "audio_input_active" : "audio_input";
-                    leaf.isLeaf = true;
-                    inputNode.children.push_back(leaf);
+
+                // Collect unique device names across input and output
+                std::set<juce::String> allNames;
+                for (auto& n : outputNames) allNames.insert(n);
+                for (auto& n : inputNames) allNames.insert(n);
+
+                for (auto& name : allNames) {
+                    auto nameStr = name.toStdString();
+                    bool hasOutput = outputNames.contains(name);
+                    bool hasInput = inputNames.contains(name);
+
+                    TreeNode deviceNode;
+                    deviceNode.label = nameStr;
+                    deviceNode.id = "audio_both:" + nameStr;
+                    deviceNode.type = "audio_device";
+
+                    if (hasOutput) {
+                        TreeNode outLeaf;
+                        outLeaf.label = "Output";
+                        bool isActive = (name == setup.outputDeviceName);
+                        outLeaf.id = "audio_out:" + nameStr;
+                        outLeaf.type = isActive ? "audio_output_active" : "audio_output";
+                        outLeaf.isLeaf = true;
+                        deviceNode.children.push_back(outLeaf);
+                    }
+                    if (hasInput) {
+                        TreeNode inLeaf;
+                        inLeaf.label = "Input";
+                        bool isActive = (name == setup.inputDeviceName);
+                        inLeaf.id = "audio_in:" + nameStr;
+                        inLeaf.type = isActive ? "audio_input_active" : "audio_input";
+                        inLeaf.isLeaf = true;
+                        deviceNode.children.push_back(inLeaf);
+                    }
+
+                    audioNode.children.push_back(deviceNode);
                 }
             }
-            devicesNode.children.push_back(inputNode);
+            devicesNode.children.push_back(audioNode);
         }
 
         // MIDI devices
