@@ -110,7 +110,7 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
 - **Sidebar** — StateAPI + EngineAPI + PerformanceCoordinator. Songs, Library (instruments/effects with presets), Actions, Maps (MIDI devices with activity lights), Devices (Audio with per-device Input/Output children), Panes (Debug, Logs, Chat). Audio device nodes always expanded; click device name to set both I/O, click Input or Output leaf individually. Green dot on active role/activity.
-- **MappingPane** — Unified device mapping + bindings + score pane. Per-device view with Global Bindings section (always active, no score) and Song Bindings section (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Learn mode, inline name/group editing, action assignment via popup menu with param dialogs.
+- **MappingPane** — Unified device mapping + bindings + score pane. Page title "Mappings" with device/song context. Single table with columns: MIDI Source, Score Step, Group, Type, Ch, #, Action. Score steps sort to top. Score Step column is a clickable integer selector with insert/replace semantics. Learn mode with default names, inline name/group editing, action assignment via popup with param dialogs, right-click to delete. Effect plugins grouped by manufacturer in picker menus.
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
 - **SettingsWindow** — popup window (Cmd+,) with tabbed interface. Audio tab: output/input device, buffer size, sample rate, computed latency. MIDI tab placeholder. Also accessible via Performance menu → Settings.
@@ -146,15 +146,15 @@ MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents
 
 Bindings map MIDI controls to named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active). `effectiveBindings()` merges both (song wins on conflict). Bindings store action args as JSON arrays with track UUIDs (resolved from names at bind-time). Action `paramSchema` (JSON) defines expected parameters — used by MappingPane to generate appropriate input fields.
 
-Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disableTrack(trackName)`, `fadeOut(trackName, duration, easing)`, `fadeIn(trackName, duration, easing)`, `crossfade(fromTrack, toTrack, duration, easing)`. All track args resolved by name or UUID at execution time via `resolveTrack()`.
+Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disableTrack(trackName)`, `fadeOut(trackName, duration, easing)`, `fadeIn(trackName, duration, easing)`, `crossfade(fromTrack, toTrack, duration, easing)`. Track args stored as UUIDs (resolved at bind-time). `resolveTrack()` expects UUIDs only — no name fallback at runtime.
 
 SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact match → any device → any channel → any device + any channel.
 
 **All bindings are song-scoped.** Global bindings are deferred — the data model supports them but the UI only creates song bindings. Track UUIDs in binding args belong to the song where they were created. Future: "Copy to song" or global bindings for song-agnostic actions (reset, save, next song).
 
-### Maps (unified device mapping + bindings)
+### Maps (unified device mapping + bindings + score)
 
-MappingPane (`src/gui/MappingPane.h/.cpp`) — unified device mapping + bindings + score pane. Per-device view with two sections: Song Bindings (with "add to score" column) and Score (ordered score steps with "remove" column). Each row: activity light, name, group, type, ch, #, action. Accessible via "Maps" sidebar section. Includes Learn mode, inline name/group editing, action assignment with param dialogs, right-click to delete controls/bindings.
+MappingPane (`src/gui/MappingPane.h/.cpp`) — single table per device. Accessible via "Maps" sidebar section with per-device MIDI activity lights. All bindings are song-scoped — switching songs refreshes bindings (device controls persist). Score steps sort to top of the table. Score Step is a clickable integer selector: "Not in score", "Step N (append)", or insert before/after/replace existing steps with automatic position bumping.
 
 ### Logging
 
@@ -217,3 +217,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - DAW-like features (sequencing, recording, arranging) behind a clean SequencerAPI boundary. Deferred — needs design.
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Fader/knob drag: value stops changing at screen edge
+
+## LOC
+
+~15,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
