@@ -41,6 +41,26 @@ Sidebar::Sidebar() {
                 else
                     onMapSelected("", id);  // id is port name for unregistered
             }
+        } else if (type == "audio_buffer" && engineAPI) {
+            // Show buffer size picker popup
+            auto& dm = engineAPI->getDeviceManager();
+            if (auto* device = dm.getCurrentAudioDevice()) {
+                auto bufferSizes = device->getAvailableBufferSizes();
+                int currentBuf = device->getCurrentBufferSizeSamples();
+                juce::PopupMenu menu;
+                for (int i = 0; i < bufferSizes.size(); ++i)
+                    menu.addItem(i + 1, juce::String(bufferSizes[i]) + " samples",
+                                 true, bufferSizes[i] == currentBuf);
+                menu.showMenuAsync(juce::PopupMenu::Options(),
+                    [this, bufferSizes](int result) {
+                        if (result == 0) return;
+                        int newSize = bufferSizes[result - 1];
+                        auto& dm = engineAPI->getDeviceManager();
+                        auto setup = dm.getAudioDeviceSetup();
+                        setup.bufferSize = newSize;
+                        dm.setAudioDeviceSetup(setup, true);
+                    });
+            }
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
@@ -335,6 +355,22 @@ void Sidebar::refreshTree() {
                     audioNode.children.push_back(deviceNode);
                 }
             }
+            // Buffer size / sample rate info
+            if (auto* device = dm.getCurrentAudioDevice()) {
+                int bufSize = device->getCurrentBufferSizeSamples();
+                double sampleRate = device->getCurrentSampleRate();
+                float latencyMs = (float)bufSize / (float)sampleRate * 1000.0f;
+                char label[64];
+                snprintf(label, sizeof(label), "Buffer: %d (%.1fms @ %.0fkHz)",
+                         bufSize, latencyMs, sampleRate / 1000.0);
+                TreeNode bufLeaf;
+                bufLeaf.label = label;
+                bufLeaf.id = "audio_buffer";
+                bufLeaf.type = "audio_buffer";
+                bufLeaf.isLeaf = true;
+                audioNode.children.push_back(bufLeaf);
+            }
+
             devicesNode.children.push_back(audioNode);
         }
 
