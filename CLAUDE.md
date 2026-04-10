@@ -184,25 +184,31 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## TODOs
 
+**Production readiness (active priority):**
+1. Beach ball → spinner overlay: show an in-app loading indicator during save/load instead of the macOS spinning wait cursor. Doesn't fix the root cause (blocking message thread) but eliminates the bad optic.
+2. Directory permission prompt: app prompts for ~/Documents access on every launch. Audit file access — should only touch ~/.config/performance and plugin directories.
+3. Audio buffer size / sample rate control: add UI for selecting buffer size and sample rate per audio device. Currently hardcoded to OS defaults (~512 samples). Directly affects latency.
+4. MIDI device hot-plug: detect new/removed MIDI devices without app restart. Poll MidiInput::getAvailableDevices, diff against enabled set, add/remove callbacks.
+5. Error boundary: top-level crash handler (JUCE SystemStats::setApplicationCrashHandler + signal handler). Catch what we can, log context, show a friendly message instead of silent death.
+6. Background plugin state capture: move getStateInformation calls off the message thread. Root cause of the beach ball. Hard — JUCE plugin APIs aren't thread-safe.
+
 **Known functional issues:**
-- Device Learn: new mappings persist immediately on capture instead of waiting for name commit. Escape/Stop Learning doesn't prevent persistence. Root cause: JUCE TextEditor focusLost fires commit before cancel can intercept. Workaround: delete unwanted mappings via right-click → Delete.
-- Slow startup/quit with heavy plugins (Kontakt, Mobius) — getStateInformation blocks UI thread. Needs background thread optimization.
-- AUShelfFilter crashes on instantiation — plugin-specific, not our bug.
-- AUPitch: preset state restore doesn't take effect — AU-specific issue.
-- juce_String.cpp:327 assertion on startup — non-fatal, likely JUCE internals.
+- Device Learn: new mappings persist immediately on capture instead of waiting for name commit. Root cause: JUCE TextEditor focusLost fires commit before cancel can intercept. Workaround: right-click → Delete.
+- AUShelfFilter crashes on instantiation — plugin bug.
+- AUPitch: preset state restore doesn't take effect — AU bug.
+- juce_String.cpp:327 assertion on startup — non-fatal, JUCE internals.
 - No error handling on failed plugin loads (user sees nothing).
+- State changes sometimes not visible until restart — watch for missed rebuildConnections/restoreBindings calls.
 
 **Known issues with embedded Claude:**
-- Bindings created via Claude/Lua may use incorrect track names (case-sensitive mismatch). runtime/CLAUDE.md instructs Claude to query names first, but this isn't always followed. GUI bindings pane is more reliable for now.
-- Custom action creation via embedded Claude consistently fails in practice despite the API working correctly when tested via `bin/perf` IPC. Root cause not yet diagnosed — may be a system prompt issue, tool call formatting, or Lua string escaping through the chat→tool→IPC pipeline. The `createAction` Lua API itself works (verified via direct IPC). Needs investigation.
+- Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
+- Custom action creation via Claude fails despite API working via direct IPC. Needs investigation (string escaping through chat→tool→IPC pipeline).
 
 **Feature backlog (near-term):**
-- Song development canvas — score steps, song state overview. Bindings UI exists but score management still needs a view.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
-- MIDI device hot-plug — currently requires app restart to detect new devices.
 
 **Feature backlog (longer-term):**
+- DAW-like features (sequencing, recording, arranging) behind a clean SequencerAPI boundary. Deferred — needs design.
 - MIDI effects (transpose, channel filter, arpeggiator)
-- Audio device configuration UI (buffer size, sample rate — device switching already works)
 - Fader/knob drag: value stops changing at screen edge
