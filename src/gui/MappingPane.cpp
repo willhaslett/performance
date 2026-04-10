@@ -65,7 +65,9 @@ void MappingPane::setDevice(const std::string& deviceId, const std::string& port
 
     auto* device = state.findDevice(currentDeviceId);
     if (device) {
-        deviceNameLabel.setText(juce::String(device->name), juce::dontSendNotification);
+        auto* song = state.currentSong();
+        auto title = device->name + (song ? " — " + song->name : "");
+        deviceNameLabel.setText(juce::String(title), juce::dontSendNotification);
         portNameLabel.setText(juce::String(device->midiPortName), juce::dontSendNotification);
         deviceNameLabel.setVisible(true);
         portNameLabel.setVisible(true);
@@ -275,9 +277,7 @@ void MappingPane::paint(juce::Graphics& g) {
             if (row.section == Row::GlobalHeader)
                 g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
             else if (row.section == Row::SongHeader) {
-                auto* song = state.currentSong();
-                auto label = song ? "Song: " + song->name : "Song Bindings";
-                g.drawText(juce::String(label), bounds.reduced(12, 0), juce::Justification::centredLeft);
+                g.drawText("Mappings", bounds.reduced(12, 0), juce::Justification::centredLeft);
                 // Column label for score toggle
                 g.setColour(Theme::color(Theme::Color::textDim));
                 g.setFont(Theme::font(Theme::fontSizeXs));
