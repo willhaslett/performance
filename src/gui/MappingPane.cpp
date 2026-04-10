@@ -435,6 +435,29 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         if (row.section != Row::GlobalControl && row.section != Row::SongControl
             && row.section != Row::ScoreControl) continue;
 
+        // Right-click context menu
+        if (event.mods.isPopupMenu()) {
+            juce::PopupMenu menu;
+            if (!row.bindingId.empty())
+                menu.addItem(1, "Clear Binding");
+            if (row.controlIndex >= 0)
+                menu.addItem(2, "Delete Control");
+
+            menu.showMenuAsync(juce::PopupMenu::Options()
+                .withTargetScreenArea(juce::Rectangle<int>(
+                    event.getScreenPosition().x, event.getScreenPosition().y, 1, 1)),
+                [this, bindingId = row.bindingId, ctrlIdx = row.controlIndex](int result) {
+                    if (result == 1 && !bindingId.empty()) {
+                        state.removeBinding(bindingId);
+                        refresh();
+                    } else if (result == 2 && ctrlIdx >= 0) {
+                        state.removeDeviceControl(currentDeviceId, ctrlIdx);
+                        refresh();
+                    }
+                });
+            return;
+        }
+
         int x = event.getPosition().getX();
 
         // Action column click (not for score rows — they already have an action)
