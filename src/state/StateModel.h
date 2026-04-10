@@ -118,6 +118,21 @@ struct BindingState {
     int scorePosition = -1;  // order within score (-1 = not a score step)
 };
 
+// Tempo change at a specific beat position.
+// The first event (beat 0) sets the initial tempo.
+struct TempoEvent {
+    double beat = 0.0;
+    double bpm = 120.0;
+};
+
+// Time signature change at a specific beat position.
+// The first event (beat 0) sets the initial time signature.
+struct TimeSignatureEvent {
+    double beat = 0.0;
+    int numerator = 4;
+    int denominator = 4;
+};
+
 struct SongState {
     std::string id;
     std::string name;
@@ -129,6 +144,10 @@ struct SongState {
     std::vector<BindingState> bindings;      // song-scoped bindings (includes score steps)
     std::vector<std::string> deviceIds;    // which devices this song uses
     std::string initialState;                 // JSON snapshot
+
+    // Tempo and time signature maps (sorted by beat)
+    std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
+    std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
 
     // Selection state (observable, not persisted)
     std::vector<std::string> selectedTrackIds;

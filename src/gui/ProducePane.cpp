@@ -169,88 +169,113 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // --- Position display (LCD-style, centered) ---
-    int lcdWidth = 240;
+    int lcdWidth = 440;
     int lcdX = area.getCentreX() - lcdWidth / 2;
     int lcdY = area.getY() + 4;
     int lcdHeight = area.getHeight() - 8;
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
 
     // LCD background
-    g.setColour(juce::Colour(0xff1a1a2a));
+    auto lcdBg = juce::Colour(0xff1a1a2a);
+    auto lcdBorder = juce::Colour(0xff2a2a3a);
+    auto lcdDigit = juce::Colour(0xffddeeff);
+    g.setColour(lcdBg);
     g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
-    g.setColour(juce::Colour(0xff2a2a3a));
+    g.setColour(lcdBorder);
     g.drawRoundedRectangle(lcdBounds.toFloat(), 4.0f, 1.0f);
 
-    // Position values
-    int bar = (int)(beat / beatsPerBar) + 1;
-    int beatInBar = (int)std::fmod(beat, (double)beatsPerBar) + 1;
-    double fractional = std::fmod(beat, 1.0);
-    int div = (int)(fractional * 4) + 1;  // subdivision (1-4)
-    int tick = (int)(std::fmod(fractional * 4, 1.0) * 240);  // ticks (0-239)
-
-    // Large digits
-    auto monoFont = Theme::fontMono(22.0f);
-    g.setFont(monoFont);
-
-    int colX = lcdBounds.getX() + 8;
+    // Shared layout
     int digitTop = lcdBounds.getY() + 2;
     int digitH = lcdBounds.getHeight() - 14;
     int labelY = lcdBounds.getBottom() - 13;
+    auto monoLg = Theme::fontMono(22.0f);
+    auto monoMd = Theme::fontMono(18.0f);
+    auto labelFont = Theme::font(8.0f);
+    char buf[16];
 
-    // Bar (3 digits)
-    g.setColour(juce::Colour(0xffddeeff));
-    char buf[8];
+    // --- Beat position: BAR . BEAT . DIV . TICK ---
+    int bar = (int)(beat / beatsPerBar) + 1;
+    int beatInBar = (int)std::fmod(beat, (double)beatsPerBar) + 1;
+    double fractional = std::fmod(beat, 1.0);
+    int div = (int)(fractional * 4) + 1;
+    int tick = (int)(std::fmod(fractional * 4, 1.0) * 240);
+
+    int colX = lcdBounds.getX() + 6;
+
+    auto drawCol = [&](const char* text, const char* label, int width, juce::Font font) {
+        g.setFont(font);
+        g.setColour(lcdDigit);
+        g.drawText(text, colX, digitTop, width, digitH, juce::Justification::centred);
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(labelFont);
+        g.drawText(label, colX, labelY, width, 12, juce::Justification::centred);
+        colX += width;
+    };
+
+    auto drawSep = [&]() {
+        g.setColour(lcdBorder);
+        g.drawLine((float)colX, (float)(lcdBounds.getY() + 4),
+                   (float)colX, (float)(lcdBounds.getBottom() - 4), 1.0f);
+        colX += 6;
+    };
+
     snprintf(buf, sizeof(buf), "%3d", bar);
-    g.drawText(buf, colX, digitTop, 52, digitH, juce::Justification::centred);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(8.0f));
-    g.drawText("BAR", colX, labelY, 52, 12, juce::Justification::centred);
-
-    // Beat
-    colX += 52;
-    g.setFont(monoFont);
-    g.setColour(juce::Colour(0xffddeeff));
+    drawCol(buf, "BAR", 46, monoLg);
     snprintf(buf, sizeof(buf), "%d", beatInBar);
-    g.drawText(buf, colX, digitTop, 32, digitH, juce::Justification::centred);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(8.0f));
-    g.drawText("BEAT", colX, labelY, 32, 12, juce::Justification::centred);
-
-    // Div
-    colX += 32;
-    g.setFont(monoFont);
-    g.setColour(juce::Colour(0xffddeeff));
+    drawCol(buf, "BEAT", 30, monoLg);
     snprintf(buf, sizeof(buf), "%d", div);
-    g.drawText(buf, colX, digitTop, 28, digitH, juce::Justification::centred);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(8.0f));
-    g.drawText("DIV", colX, labelY, 28, 12, juce::Justification::centred);
-
-    // Tick
-    colX += 28;
-    g.setFont(monoFont);
-    g.setColour(juce::Colour(0xffddeeff));
+    drawCol(buf, "DIV", 26, monoLg);
     snprintf(buf, sizeof(buf), "%03d", tick);
-    g.drawText(buf, colX, digitTop, 48, digitH, juce::Justification::centred);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(8.0f));
-    g.drawText("TICK", colX, labelY, 48, 12, juce::Justification::centred);
+    drawCol(buf, "TICK", 42, monoLg);
 
-    // Separator + tempo section
-    colX += 52;
-    g.setColour(juce::Colour(0xff2a2a3a));
-    g.drawLine((float)colX, (float)(lcdBounds.getY() + 4),
-               (float)colX, (float)(lcdBounds.getBottom() - 4), 1.0f);
+    drawSep();
+
+    // --- Time: HH : MM : SS . ms ---
+    double totalSeconds = (bpm > 0) ? (beat / (bpm / 60.0)) : 0.0;
+    int hrs = (int)(totalSeconds / 3600.0);
+    int mins = (int)(std::fmod(totalSeconds, 3600.0) / 60.0);
+    int secs = (int)std::fmod(totalSeconds, 60.0);
+    int ms = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
+
+    snprintf(buf, sizeof(buf), "%d", hrs);
+    drawCol(buf, "HR", 22, monoMd);
+
+    // Colon
+    g.setFont(monoMd);
+    g.setColour(lcdDigit);
+    g.drawText(":", colX - 2, digitTop, 8, digitH, juce::Justification::centred);
     colX += 4;
 
-    // BPM
-    g.setFont(Theme::fontMono(18.0f));
-    g.setColour(juce::Colour(0xffddeeff));
+    snprintf(buf, sizeof(buf), "%02d", mins);
+    drawCol(buf, "MIN", 30, monoMd);
+
+    g.setFont(monoMd);
+    g.setColour(lcdDigit);
+    g.drawText(":", colX - 2, digitTop, 8, digitH, juce::Justification::centred);
+    colX += 4;
+
+    snprintf(buf, sizeof(buf), "%02d", secs);
+    drawCol(buf, "SEC", 30, monoMd);
+
+    g.setFont(monoMd);
+    g.setColour(lcdDigit);
+    g.drawText(".", colX - 2, digitTop, 8, digitH, juce::Justification::centred);
+    colX += 4;
+
+    snprintf(buf, sizeof(buf), "%03d", ms);
+    drawCol(buf, "MS", 36, monoMd);
+
+    drawSep();
+
+    // --- Tempo + Time Signature ---
     snprintf(buf, sizeof(buf), "%.1f", bpm);
-    g.drawText(buf, colX, digitTop, 56, digitH, juce::Justification::centred);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(8.0f));
-    g.drawText("BPM", colX, labelY, 56, 12, juce::Justification::centred);
+    drawCol(buf, "BPM", 52, monoMd);
+
+    colX += 2;
+    int tsNum = sequencer->getTimeSignatureNumerator();
+    int tsDen = sequencer->getTimeSignatureDenominator();
+    snprintf(buf, sizeof(buf), "%d/%d", tsNum, tsDen);
+    drawCol(buf, "TIME SIG", 48, monoMd);
 }
 
 void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
