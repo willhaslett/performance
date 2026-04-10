@@ -313,8 +313,8 @@ void MappingPane::paint(juce::Graphics& g) {
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
-        // Score Step column — clickable integer or "--"
-        if (row.section == Row::SongControl && !row.bindingId.empty()) {
+        // Score Step column — always visible
+        if (row.section == Row::SongControl) {
             g.setFont(Theme::font(Theme::fontSizeSm));
             if (row.scorePosition >= 0) {
                 g.setColour(Theme::color(Theme::Color::accent));
@@ -417,10 +417,18 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
 
         int x = event.getPosition().getX();
 
-        // Score Step column click — show score step menu
-        if (row.section == Row::SongControl && !row.bindingId.empty()
-            && x >= colScore && x < colGroup) {
-            showScoreMenu(i, event.getScreenPosition());
+        // Score Step column click
+        if (row.section == Row::SongControl && x >= colScore && x < colGroup) {
+            if (row.bindingId.empty()) {
+                // Can't set score step without an action — show tooltip-like message
+                juce::PopupMenu menu;
+                menu.addItem(0, "Assign an action first", false);
+                menu.showMenuAsync(juce::PopupMenu::Options()
+                    .withTargetScreenArea(juce::Rectangle<int>(
+                        event.getScreenPosition().x, event.getScreenPosition().y, 1, 1)));
+            } else {
+                showScoreMenu(i, event.getScreenPosition());
+            }
             return;
         }
 
