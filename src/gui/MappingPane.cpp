@@ -135,47 +135,13 @@ void MappingPane::buildRows() {
     auto* device = state.findDevice(currentDeviceId);
     if (!device) return;
 
-    // Build binding lookups
-    globalBindingMap.clear();
+    // Build binding lookup (song-scoped only)
     songBindingMap.clear();
-    for (auto& b : state.globalBindings())
-        if (b.deviceId == currentDeviceId)
-            globalBindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
-
     auto* song = state.currentSong();
     if (song) {
         for (auto& b : song->bindings)
             if (b.deviceId == currentDeviceId)
                 songBindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
-    }
-
-    // Global section
-    {
-        Row header;
-        header.section = Row::GlobalHeader;
-        rows.push_back(header);
-
-        for (int i = 0; i < (int)device->controls.size(); ++i) {
-            auto& ctrl = device->controls[i];
-            Row row;
-            row.section = Row::GlobalControl;
-            row.controlName = ctrl.name;
-            row.group = ctrl.group;
-            row.controlType = ctrl.controlType;
-            row.channel = ctrl.channel;
-            row.number = ctrl.number;
-            row.controlIndex = i;
-            row.isGlobal = true;
-
-            auto it = globalBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
-            if (it != globalBindingMap.end()) {
-                row.bindingId = it->second.id;
-                auto* action = state.findActionById(it->second.actionId);
-                row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
-                row.argsDisplay = formatArgs(it->second.args);
-            }
-            rows.push_back(row);
-        }
     }
 
     // Song section — non-score bindings
@@ -623,7 +589,6 @@ void MappingPane::onLearnCapture(const std::string& type, int channel, int numbe
 
 void MappingPane::showActionMenu(int rowIndex, juce::Point<int> screenPos) {
     auto& row = rows[rowIndex];
-    bool global = (row.section == Row::GlobalControl);
 
     juce::PopupMenu menu;
     auto& actions = state.allActions();
@@ -635,7 +600,7 @@ void MappingPane::showActionMenu(int rowIndex, juce::Point<int> screenPos) {
 
     menu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, rowIndex, global](int result) {
+        [this, rowIndex](int result) {
             if (result == 0) return;
             auto& row = rows[rowIndex];
 
@@ -660,22 +625,17 @@ void MappingPane::showActionMenu(int rowIndex, juce::Point<int> screenPos) {
                 auto args = juce::var(juce::Array<juce::var>());
                 auto argsJson = juce::JSON::toString(args, true).toStdString();
                 auto desc = row.controlName + " -> " + action.name;
-                if (global)
-                    state.addGlobalBinding(row.controlType, row.channel, row.number,
-                                            action.id, argsJson, desc, currentDeviceId);
-                else {
-                    auto* song = state.currentSong();
-                    if (song)
-                        state.addBinding(song->id, row.controlType, row.channel, row.number,
-                                          action.id, argsJson, desc, currentDeviceId);
-                }
+                auto* song = state.currentSong();
+                if (song)
+                    state.addBinding(song->id, row.controlType, row.channel, row.number,
+                                      action.id, argsJson, desc, currentDeviceId);
             } else {
-                showArgsPopup(row, action, global);
+                showArgsPopup(row, action);
             }
         });
 }
 
-void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action, bool global) {
+void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action) {
     auto label = action.label.empty() ? action.name : action.label;
     auto dialog = std::make_shared<juce::AlertWindow>(
         juce::String(label), "Configure for " + juce::String(row.controlName),
@@ -721,7 +681,7 @@ void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action, bool g
     auto devId = currentDeviceId;
 
     dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dialog, statePtr, fields, rowCopy, actionCopy, global, devId](int result) {
+        [dialog, statePtr, fields, rowCopy, actionCopy, devId](int result) {
             if (result == 0) return;
 
             auto argsArray = juce::var(juce::Array<juce::var>());
@@ -757,15 +717,10 @@ void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action, bool g
             auto argsJson = juce::JSON::toString(argsArray, true).toStdString();
             auto desc = rowCopy.controlName + " -> " + actionCopy.name;
 
-            if (global)
-                statePtr->addGlobalBinding(rowCopy.controlType, rowCopy.channel, rowCopy.number,
-                                            actionCopy.id, argsJson, desc, devId);
-            else {
-                auto* song = statePtr->currentSong();
-                if (song)
-                    statePtr->addBinding(song->id, rowCopy.controlType, rowCopy.channel, rowCopy.number,
-                                          actionCopy.id, argsJson, desc, devId);
-            }
+            auto* song = statePtr->currentSong();
+            if (song)
+                statePtr->addBinding(song->id, rowCopy.controlType, rowCopy.channel, rowCopy.number,
+                                      actionCopy.id, argsJson, desc, devId);
         }), false);
 }
 

@@ -149,11 +149,11 @@ Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disabl
 
 SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact match → any device → any channel → any device + any channel.
 
-**Global vs song bindings**: Global bindings store track UUIDs that belong to the song where they were created — they won't resolve in other songs. Global bindings should only be used for song-agnostic actions (reset state, save, next song, etc.). Track-specific actions (fade, enable, crossfade) should always be song-scoped.
+**All bindings are song-scoped.** Global bindings are deferred — the data model supports them but the UI only creates song bindings. Track UUIDs in binding args belong to the song where they were created. Future: "Copy to song" or global bindings for song-agnostic actions (reset, save, next song).
 
 ### Maps (unified device mapping + bindings)
 
-MappingPane (`src/gui/MappingPane.h/.cpp`) — unified device mapping + bindings + score pane. Per-device view with two sections: Global Bindings (always active, no score) and Song Bindings (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Accessible via "Maps" sidebar section. Includes Learn mode, inline name/group editing, action assignment with param dialogs.
+MappingPane (`src/gui/MappingPane.h/.cpp`) — unified device mapping + bindings + score pane. Per-device view with two sections: Song Bindings (with "add to score" column) and Score (ordered score steps with "remove" column). Each row: activity light, name, group, type, ch, #, action. Accessible via "Maps" sidebar section. Includes Learn mode, inline name/group editing, action assignment with param dialogs, right-click to delete controls/bindings.
 
 ### Logging
 

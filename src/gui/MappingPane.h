@@ -91,7 +91,7 @@ private:
                      const std::string& type, int channel, int number);
 
     void showActionMenu(int rowIndex, juce::Point<int> screenPos);
-    void showArgsPopup(const Row& row, const ActionInfo& action, bool global);
+    void showArgsPopup(const Row& row, const ActionInfo& action);
     void showScoreMenu(int rowIndex, juce::Point<int> screenPos);
     void showGroupMenu(int rowIndex, juce::Point<int> screenPos);
 
@@ -108,7 +108,6 @@ private:
             return deviceId < o.deviceId;
         }
     };
-    std::map<ControlKey, BindingState> globalBindingMap;
     std::map<ControlKey, BindingState> songBindingMap;
 
     // Layout
