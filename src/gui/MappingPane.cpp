@@ -288,7 +288,7 @@ void MappingPane::paint(juce::Graphics& g) {
                 // Column headers — below the title, drawn in the next sectionHeaderHeight
                 g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                int colY = bounds.getBottom();
+                int colY = bounds.getY() + sectionHeaderHeight;
                 g.drawText("Score",   colScore, colY, colName - colScore, sectionHeaderHeight, juce::Justification::centredLeft);
                 g.drawText("MIDI Source", colName, colY, colGroup - colName, sectionHeaderHeight, juce::Justification::centredLeft);
                 g.drawText("Group",   colGroup, colY, colType - colGroup, sectionHeaderHeight, juce::Justification::centredLeft);
