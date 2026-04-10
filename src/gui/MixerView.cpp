@@ -253,8 +253,11 @@ void MixerView::onTrackDragStart(const juce::String& trackId, int stripX) {
 
 void MixerView::onTrackDragMove(int mouseX) {
     if (dragTrackId.isEmpty()) return;
-    // mouseX is already in stripContainer coordinates (from getEventRelativeTo parent)
-    dragIndicatorX = mouseX;
+    // Snap to nearest strip boundary
+    int stripWidth = Theme::trackStripWidth;
+    int slotIdx = (mouseX + stripWidth / 2) / stripWidth;
+    slotIdx = juce::jlimit(0, (int)trackStrips.size(), slotIdx);
+    dragIndicatorX = slotIdx * stripWidth;
     repaint();
 }
 
