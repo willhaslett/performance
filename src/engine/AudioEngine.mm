@@ -1479,3 +1479,11 @@ double AudioEngine::getPlaybackBeatPosition() const {
 void AudioEngine::setArrangement(const Arrangement* arrangement) {
     graphWrapper->setArrangement(arrangement);
 }
+
+void AudioEngine::setRecording(bool recording) {
+    graphWrapper->setRecording(recording);
+}
+
+RecordFIFO& AudioEngine::getRecordFIFO() {
+    return graphWrapper->getRecordFIFO();
+}

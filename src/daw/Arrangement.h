@@ -35,6 +35,7 @@ public:
     // Returns the region being recorded into.
     MidiRegion* startRecording(const std::string& trackId, double startBeat);
     void addRecordedNote(int noteNumber, int velocity, int channel, double beatOffset);
+    void finalizeRecordedNote(int noteNumber, int channel, double beatOffset, double duration);
     void stopRecording();
     bool isRecording() const { return recordingRegion != nullptr; }
 

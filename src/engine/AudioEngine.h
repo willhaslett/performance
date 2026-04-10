@@ -2,6 +2,7 @@
 #include "engine/AudioEngineInterface.h"
 #include "engine/GraphWrapper.h"
 #include "engine/MidiSourceNode.h"
+#include "engine/RecordFIFO.h"
 #include "state/StateModel.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -117,6 +118,10 @@ public:
     void setPlaybackBeatPosition(double beat);
     double getPlaybackBeatPosition() const;
     void setArrangement(const Arrangement* arrangement);
+
+    // Recording
+    void setRecording(bool recording);
+    RecordFIFO& getRecordFIFO();
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }

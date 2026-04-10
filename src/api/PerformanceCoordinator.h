@@ -6,6 +6,7 @@
 #include "daw/SequencerAPI.h"
 #include "daw/Arrangement.h"
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 
@@ -112,6 +113,16 @@ private:
     Arrangement arrangementImpl;
     double lastSequencerTimeMs = 0.0;
     double lastSequencerBeat = 0.0;
+
+    // Recording state
+    bool isRecording = false;
+    struct OpenNote { double beatOffset; int velocity; };
+    std::map<std::pair<int,int>, OpenNote> openNotes;  // {noteNumber, channel} → open note
+    std::vector<std::string> recordingTrackIds;         // tracks being recorded into
+    double recordStartBeat = 0.0;
+    void startRecording();
+    void stopRecording();
+    void drainRecordFIFO();
 
     void timerCallback() override;
     void populatePluginCatalog();

@@ -40,6 +40,8 @@ public:
     bool isTrackMidiEnabled(const std::string& id) const;
     void setTrackAudioEnabled(const std::string& id, bool enabled);
     bool isTrackAudioEnabled(const std::string& id) const;
+    void setTrackArmed(const std::string& id, bool armed);
+    bool isTrackArmed(const std::string& id) const;
     void setTrackPlugin(const std::string& id, const std::string& pluginId,
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);

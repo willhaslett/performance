@@ -24,6 +24,7 @@ public:
     void setEffects(const std::vector<EffectSlotInfo>& effects);
     void setMidiEnabled(bool enabled);
     void setAudioEnabled(bool enabled);
+    void setArmed(bool armed);
     void setPeakLevel(float level);
     void setPeakLevelStereo(float left, float right);
     void setGain(float gain);
@@ -59,6 +60,7 @@ private:
     juce::String trackName;  // display name
     bool midiEnabled = true;
     bool audioEnabled = true;
+    bool armed = false;
 
     TrackSourceType sourceType = TrackSourceType::Instrument;
 
@@ -80,6 +82,7 @@ private:
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> midiDotBounds;
+    juce::Rectangle<int> armDotBounds;
     juce::Rectangle<int> menuDotsBounds;
 
     void showTrackMenu(juce::Point<int> screenPos);

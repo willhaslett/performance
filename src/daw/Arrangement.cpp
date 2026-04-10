@@ -99,6 +99,24 @@ void Arrangement::addRecordedNote(int noteNumber, int velocity, int channel, dou
         recordingRegion->lengthBeats = end;
 }
 
+void Arrangement::finalizeRecordedNote(int noteNumber, int channel,
+                                        double beatOffset, double duration) {
+    if (!recordingRegion) return;
+    // Find the matching note (search backwards — most recent match)
+    for (int i = (int)recordingRegion->notes.size() - 1; i >= 0; --i) {
+        auto& n = recordingRegion->notes[i];
+        if (n.noteNumber == noteNumber && n.channel == channel
+            && std::abs(n.beatOffset - beatOffset) < 0.001) {
+            n.durationBeats = duration;
+            // Extend region if needed
+            double end = beatOffset + duration;
+            if (end > recordingRegion->lengthBeats)
+                recordingRegion->lengthBeats = end;
+            return;
+        }
+    }
+}
+
 void Arrangement::stopRecording() {
     if (recordingRegion) {
         recordingRegion->sortNotes();

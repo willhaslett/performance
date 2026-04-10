@@ -327,6 +327,19 @@ bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
     return track ? track->audioEnabled : true;
 }
 
+void StateAPI::setTrackArmed(const std::string& id, bool armed) {
+    auto* track = findTrack(id);
+    if (!track) return;
+    track->armed = armed;
+    // Don't markDirty — armed is runtime state, not persisted
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+bool StateAPI::isTrackArmed(const std::string& id) const {
+    auto* track = findTrack(id);
+    return track ? track->armed : false;
+}
+
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
     auto* track = findTrack(id);

@@ -83,6 +83,7 @@ struct TrackState {
     float outputGain = 1.0f;
     bool midiEnabled = true;   // receives MIDI notes (instrument tracks)
     bool audioEnabled = true;  // passes audio signal (all tracks)
+    bool armed = false;        // record-armed (records MIDI when playing)
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
     std::string processorState;

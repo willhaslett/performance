@@ -104,8 +104,12 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     auto* seq = static_cast<InternalSequencer*>(sequencerImpl.get());
     seq->setTransportCallback([this](bool playing) {
         audioEngine->setPlaybackState(playing, sequencerImpl->getTempo());
-        if (playing)
+        if (playing) {
             audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
+            startRecording();  // starts if any track is armed
+        } else {
+            stopRecording();
+        }
     });
 
     midiEngine = std::make_unique<MIDIEngine>(
@@ -137,6 +141,9 @@ void PerformanceCoordinator::timerCallback() {
             static_cast<InternalSequencer*>(sequencerImpl.get())->setBeatPositionSilent(audioBeat);
             // Forward tempo to engine (in case it changed from UI)
             audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+            // Drain recorded MIDI events from audio thread
+            if (isRecording)
+                drainRecordFIFO();
         } else {
             // When stopped, the UI is authoritative — forward position to engine
             // so that when play starts, the engine begins from the right place
@@ -157,6 +164,94 @@ void PerformanceCoordinator::timerCallback() {
             persistence->saveFrom(*stateAPI);
             stateAPI->clearDirty();
             perfLog("[Coordinator] Auto-saved\n");
+        }
+    }
+}
+
+void PerformanceCoordinator::startRecording() {
+    if (!stateAPI || !audioEngine) return;
+
+    // Find armed tracks
+    recordingTrackIds.clear();
+    auto tracks = stateAPI->listTracks();
+    for (auto& t : tracks) {
+        auto* ts = stateAPI->findTrack(t.id);
+        if (ts && ts->armed)
+            recordingTrackIds.push_back(t.id);
+    }
+
+    if (recordingTrackIds.empty()) return;
+
+    recordStartBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    openNotes.clear();
+
+    // Start recording on the first armed track
+    arrangementImpl.startRecording(recordingTrackIds[0], recordStartBeat);
+
+    audioEngine->setRecording(true);
+    isRecording = true;
+    perfLog("[Coordinator] Recording started on %d tracks at beat %.1f\n",
+            (int)recordingTrackIds.size(), recordStartBeat);
+}
+
+void PerformanceCoordinator::stopRecording() {
+    if (!isRecording) return;
+
+    audioEngine->setRecording(false);
+
+    // Close any open notes at the current beat
+    double stopBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    for (auto& [key, note] : openNotes) {
+        double duration = stopBeat - recordStartBeat - note.beatOffset;
+        if (duration < 0.01) duration = 0.01;
+        // The note was already added with duration 0 — we need to fix it.
+        // Since Arrangement::addRecordedNote appends, we update the last matching note.
+        // For simplicity, we'll just drain any remaining FIFO events first.
+    }
+
+    // Drain remaining events
+    drainRecordFIFO();
+
+    // Close open notes
+    for (auto& [key, note] : openNotes) {
+        double duration = stopBeat - recordStartBeat - note.beatOffset;
+        if (duration < 0.01) duration = 0.01;
+        // Update the note's duration in the recording region
+        arrangementImpl.finalizeRecordedNote(key.first, key.second, note.beatOffset, duration);
+    }
+    openNotes.clear();
+
+    arrangementImpl.stopRecording();
+    isRecording = false;
+    recordingTrackIds.clear();
+    perfLog("[Coordinator] Recording stopped at beat %.1f\n", stopBeat);
+}
+
+void PerformanceCoordinator::drainRecordFIFO() {
+    if (!audioEngine) return;
+    auto& fifo = audioEngine->getRecordFIFO();
+    RecordedMidiEvent event;
+    while (fifo.pop(event)) {
+        double beatOffset = event.beat - recordStartBeat;
+        if (beatOffset < 0.0) continue;
+
+        auto noteKey = std::make_pair(event.noteNumber, event.channel);
+
+        if (event.velocity > 0) {
+            // Note-on: add to arrangement and track as open
+            arrangementImpl.addRecordedNote(event.noteNumber, event.velocity,
+                                             event.channel, beatOffset);
+            openNotes[noteKey] = { beatOffset, event.velocity };
+        } else {
+            // Note-off: find matching open note and set duration
+            auto it = openNotes.find(noteKey);
+            if (it != openNotes.end()) {
+                double duration = beatOffset - it->second.beatOffset;
+                if (duration < 0.01) duration = 0.01;
+                arrangementImpl.finalizeRecordedNote(event.noteNumber, event.channel,
+                                                      it->second.beatOffset, duration);
+                openNotes.erase(it);
+            }
         }
     }
 }

@@ -64,6 +64,13 @@ void TrackStrip::setAudioEnabled(bool enabled) {
     }
 }
 
+void TrackStrip::setArmed(bool a) {
+    if (armed != a) {
+        armed = a;
+        repaint();
+    }
+}
+
 void TrackStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
@@ -242,9 +249,18 @@ void TrackStrip::paint(juce::Graphics& g) {
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
 
+    // Record arm dot
+    armDotBounds = juce::Rectangle<int>(midiDotBounds.getRight() + 4,
+                                         headerBounds.getCentreY() - 5, 10, 10);
+    {
+        auto armCol = armed ? juce::Colour(0xffcc3333) : Theme::color(Theme::Color::textDim);
+        g.setColour(armCol);
+        g.fillEllipse(armDotBounds.toFloat());
+    }
+
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.withTrimmedLeft(26).withTrimmedRight(20).reduced(4, 0),
+    g.drawText(trackName, headerBounds.withTrimmedLeft(40).withTrimmedRight(20).reduced(4, 0),
                juce::Justification::centredLeft);
 
     // Vertical dots menu button
@@ -347,6 +363,14 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Right-click header also opens menu
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
         showTrackMenu(event.getScreenPosition());
+        return;
+    }
+
+    // Arm dot toggles recording arm
+    if (armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        armed = !armed;
+        state.setTrackArmed(trackId.toStdString(), armed);
+        repaint();
         return;
     }
 

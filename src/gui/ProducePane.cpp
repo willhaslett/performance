@@ -150,7 +150,25 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
         tri.addTriangle(r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
         g.fillPath(tri);
     }
-    btnX += btnSize + btnGap + 6;
+    btnX += btnSize + btnGap;
+
+    // Recording indicator (red dot — lit when any track is armed)
+    {
+        bool anyArmed = false;
+        if (state) {
+            auto tracks = state->listTracks();
+            for (auto& t : tracks) {
+                auto* ts = state->findTrack(t.id);
+                if (ts && ts->armed) { anyArmed = true; break; }
+            }
+        }
+        auto recCol = (anyArmed && playing) ? juce::Colour(0xffee3333)
+                     : anyArmed ? juce::Colour(0xffcc3333)
+                     : Theme::color(Theme::Color::textDim);
+        g.setColour(recCol);
+        g.fillEllipse((float)(btnX + 6), (float)(btnY + 6), (float)(btnSize - 12), (float)(btnSize - 12));
+    }
+    btnX += btnSize + btnGap + 4;
 
     // Cycle (⟳)
     cycleButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
@@ -342,11 +360,17 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         powerIconBounds[i] = iconBounds;
         paintPowerIcon(g, iconBounds, enabled);
 
+        // Arm dot
+        bool isArmed = trackState ? trackState->armed : false;
+        auto armCol = isArmed ? juce::Colour(0xffcc3333) : Theme::color(Theme::Color::textDim);
+        g.setColour(armCol);
+        g.fillEllipse((float)(area.getX() + 26), (float)(y + (trackRowHeight - 8) / 2), 8.0f, 8.0f);
+
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
                              : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), area.getX() + 28, y, area.getWidth() - 32,
+        g.drawText(juce::String(t.name), area.getX() + 38, y, area.getWidth() - 42,
                    trackRowHeight, juce::Justification::centredLeft);
 
         y += trackRowHeight;
@@ -527,23 +551,37 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     dragTrackIndex = -1;
     dragTargetIndex = -1;
 
-    // Power icon toggle
+    // Track header controls (power icon, arm dot)
     if (state && event.getPosition().getX() < trackHeaderWidth) {
         int idx = getTrackIndexAtY(event.getPosition().getY());
-        if (idx >= 0 && idx < (int)powerIconBounds.size()) {
-            if (powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
-                auto tracks = state->listTracks();
-                if (idx < (int)tracks.size()) {
-                    auto* trackState = state->findTrack(tracks[idx].id);
+        if (idx >= 0) {
+            auto tracks = state->listTracks();
+            if (idx < (int)tracks.size()) {
+                auto* trackState = state->findTrack(tracks[idx].id);
+
+                // Power icon
+                if (idx < (int)powerIconBounds.size()
+                    && powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
                     if (trackState) {
                         bool newEnabled = !trackState->audioEnabled;
                         state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
                         if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
                             state->setTrackMidiEnabled(tracks[idx].id, true);
                     }
+                    repaint();
+                    return;
                 }
-                repaint();
-                return;
+
+                // Arm dot (x=26..34 area)
+                int gridTop = transportHeight + rulerHeight;
+                auto armArea = juce::Rectangle<int>(26, gridTop + idx * trackRowHeight + (trackRowHeight - 8) / 2, 8, 8);
+                if (armArea.expanded(4).contains(event.getPosition())) {
+                    if (trackState) {
+                        state->setTrackArmed(tracks[idx].id, !trackState->armed);
+                    }
+                    repaint();
+                    return;
+                }
             }
         }
     }

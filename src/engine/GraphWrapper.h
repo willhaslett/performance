@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "daw/Arrangement.h"
 #include "engine/MidiSourceNode.h"
+#include "engine/RecordFIFO.h"
 #include <atomic>
 #include <map>
 
@@ -39,6 +40,11 @@ public:
     void setArrangement(const Arrangement* arr) {
         arrangement.store(arr, std::memory_order_release);
     }
+
+    // --- Recording ---
+    void setRecording(bool r) { recording.store(r, std::memory_order_release); }
+    bool isRecording() const { return recording.load(std::memory_order_acquire); }
+    RecordFIFO& getRecordFIFO() { return recordFIFO; }
 
     // --- Per-track MIDI source registration ---
     // Called from AudioEngine when tracks are created/destroyed (message thread,
@@ -103,6 +109,19 @@ public:
                         it->second->scheduleSingleMessage(msg, sampleOffset);
                     });
             }
+
+            // Capture incoming live MIDI for recording
+            if (recording.load(std::memory_order_acquire)) {
+                for (const auto metadata : midi) {
+                    auto msg = metadata.getMessage();
+                    if (msg.isNoteOnOrOff()) {
+                        double eventBeat = prevBeat + metadata.samplePosition * beatsPerSample;
+                        recordFIFO.push({ msg.getNoteNumber(),
+                                          msg.isNoteOn() ? (int)msg.getVelocity() : 0,
+                                          msg.getChannel(), eventBeat });
+                    }
+                }
+            }
         }
 
         // Forward to the graph
@@ -137,6 +156,10 @@ private:
 
     // Arrangement pointer (atomic — swapped from message thread)
     std::atomic<const Arrangement*> arrangement { nullptr };
+
+    // Recording
+    std::atomic<bool> recording { false };
+    RecordFIFO recordFIFO;
 
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
