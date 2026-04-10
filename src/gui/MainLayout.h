@@ -33,6 +33,7 @@ public:
     void showRightPane(juce::Component* pane);
 
     std::function<void()> onSave;
+    std::function<void()> onOpenSettings;
 
     // Loading overlay
     void showOverlay(const juce::String& message);

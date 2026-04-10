@@ -56,6 +56,7 @@ target_sources(Performance PRIVATE
     src/gui/RegistryTree.cpp
     src/gui/Sidebar.cpp
     src/gui/DebugPane.cpp
+    src/gui/SettingsWindow.cpp
     src/gui/MappingPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp

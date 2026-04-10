@@ -11,5 +11,6 @@ namespace KeyBindings {
 
     // Actions
     inline const auto save          = juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0);
+    inline const auto settings      = juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0);
     inline const auto closeEditor   = juce::KeyPress(juce::KeyPress::escapeKey);
 }

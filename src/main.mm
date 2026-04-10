@@ -6,6 +6,7 @@
 #include "gui/KeyBindings.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
+#include "gui/SettingsWindow.h"
 #include "engine/Log.h"
 #import <AppKit/AppKit.h>
 
@@ -214,6 +215,15 @@ public:
         menuBar = std::make_unique<AppMenuBar>(*coordinator, *luaEngine, *layout);
         juce::MenuBarModel::setMacMainMenu(menuBar.get());
 
+        // Wire settings
+        layout->onOpenSettings = [this]() {
+            if (!settingsWindow)
+                settingsWindow = std::make_unique<SettingsWindow>(
+                    coordinator->state(), coordinator->engine());
+            settingsWindow->setVisible(true);
+            settingsWindow->toFront(true);
+        };
+
         // Wire save
         layout->onSave = [this, layout]() {
             layout->showOverlay("Saving...");
@@ -316,6 +326,7 @@ private:
     std::unique_ptr<LuaEngine> luaEngine;
     std::unique_ptr<IPCServer> ipcServer;
     std::unique_ptr<AppMenuBar> menuBar;
+    std::unique_ptr<SettingsWindow> settingsWindow;
 };
 
 START_JUCE_APPLICATION(PerformanceApp)

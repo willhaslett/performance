@@ -148,6 +148,11 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
+    if (key == KeyBindings::settings) {
+        if (onOpenSettings) onOpenSettings();
+        return true;
+    }
+
     if (key == KeyBindings::closeEditor) {
         engine.closeTopPluginEditor();
         return true;
