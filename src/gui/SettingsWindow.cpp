@@ -185,9 +185,11 @@ void SettingsWindow::AudioPage::resized() {
     int y = padding;
     int x = padding;
 
+    constexpr int comboHeight = 28;
     auto layoutRow = [&](juce::Label& label, juce::Component& control) {
         label.setBounds(x, y, labelWidth, rowHeight);
-        control.setBounds(x + labelWidth + 8, y, comboWidth, rowHeight);
+        int comboY = y + (rowHeight - comboHeight) / 2;
+        control.setBounds(x + labelWidth + 8, comboY, comboWidth, comboHeight);
         y += rowHeight;
     };
 

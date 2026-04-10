@@ -37,7 +37,7 @@ private:
         void timerCallback() override;
 
     public:
-        static constexpr int rowHeight = 32;
+        static constexpr int rowHeight = 40;
         static constexpr int labelWidth = 160;
         static constexpr int comboWidth = 280;
         static constexpr int padding = 20;
