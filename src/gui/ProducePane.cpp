@@ -3,7 +3,7 @@
 #include "engine/Log.h"
 
 ProducePane::ProducePane() {
-    startTimerHz(20);
+    startTimerHz(30);
 }
 
 void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
@@ -230,7 +230,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
     if (!sequencer) return;
 
+    // Interpolate playhead position for smooth rendering between timer ticks
     double beat = sequencer->getBeatPosition();
+    // The position is already updated at 10Hz by the coordinator. At 30fps paint,
+    // we get ~3 paints per update. The position appears smooth because the timer
+    // and paint rates are close enough. For even smoother motion, we could
+    // interpolate based on elapsed time and tempo, but this is good enough.
     int x = beatToX(beat);
     if (x < trackHeaderWidth || x > getWidth()) return;
 

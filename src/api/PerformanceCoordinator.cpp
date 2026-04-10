@@ -112,7 +112,7 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     });
 
     // Auto-save every 30 seconds if dirty
-    startTimer(100);  // 10Hz — drives sequencer clock + auto-save gated at 30s
+    startTimer(16);  // ~60Hz — drives sequencer clock smoothly, auto-save gated at 30s
 }
 
 void PerformanceCoordinator::timerCallback() {
@@ -143,7 +143,7 @@ void PerformanceCoordinator::timerCallback() {
 
     // Auto-save (every ~30 seconds, not every tick)
     static int saveCounter = 0;
-    if (++saveCounter >= 300) {  // 300 ticks at 10Hz = 30s
+    if (++saveCounter >= 1800) {  // ~1800 ticks at 60Hz = 30s
         saveCounter = 0;
         if (stateAPI && persistence && stateAPI->isDirty()) {
             persistence->saveFrom(*stateAPI);
