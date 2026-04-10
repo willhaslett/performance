@@ -33,7 +33,7 @@ private:
     void timerCallback() override;
 
     // Layout
-    static constexpr int transportHeight = 36;
+    static constexpr int transportHeight = 48;
     static constexpr int trackHeaderWidth = 120;
     static constexpr int trackRowHeight = 40;
     static constexpr int rulerHeight = 20;
@@ -54,8 +54,11 @@ private:
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);
     void paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area);
 
-    // Click areas
+    // Click areas — transport buttons
+    juce::Rectangle<int> rewindButtonBounds;
+    juce::Rectangle<int> stopButtonBounds;
     juce::Rectangle<int> playButtonBounds;
+    juce::Rectangle<int> cycleButtonBounds;
 
     // Per-track power icon bounds (rebuilt each paint)
     std::vector<juce::Rectangle<int>> powerIconBounds;

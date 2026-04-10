@@ -98,37 +98,159 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     if (!sequencer) return;
 
     bool playing = sequencer->isPlaying();
+    bool looping = sequencer->isLoopEnabled();
     double bpm = sequencer->getTempo();
     double beat = sequencer->getBeatPosition();
 
-    // Play/Stop
-    playButtonBounds = juce::Rectangle<int>(area.getX() + 8, area.getY() + 6, 24, 24);
-    if (playing) {
-        g.setColour(Theme::color(Theme::Color::midiActive));
-        g.fillRect(playButtonBounds.reduced(5));
-    } else {
+    // Layout: buttons on left, position display centered, tempo on right
+    int btnSize = 28;
+    int btnY = area.getCentreY() - btnSize / 2;
+    int btnX = area.getX() + 10;
+    int btnGap = 4;
+
+    // --- Transport buttons ---
+
+    // Rewind (|◀◀)
+    rewindButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    {
         g.setColour(Theme::color(Theme::Color::textSecondary));
+        auto r = rewindButtonBounds.reduced(6).toFloat();
+        // Two small left-pointing triangles + bar
+        g.fillRect((int)r.getX(), (int)r.getY(), 2, (int)r.getHeight());
         juce::Path tri;
-        auto r = playButtonBounds.reduced(4).toFloat();
+        tri.addTriangle(r.getX() + 4, r.getCentreY(), r.getRight() - 2, r.getY(),
+                         r.getRight() - 2, r.getBottom());
+        g.fillPath(tri);
+    }
+    btnX += btnSize + btnGap;
+
+    // Stop (■)
+    stopButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    {
+        auto col = !playing ? Theme::color(Theme::Color::textWhite)
+                             : Theme::color(Theme::Color::textSecondary);
+        g.setColour(col);
+        g.fillRect(stopButtonBounds.reduced(8));
+    }
+    btnX += btnSize + btnGap;
+
+    // Play (▶)
+    playButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    {
+        auto col = playing ? Theme::color(Theme::Color::midiActive)
+                            : Theme::color(Theme::Color::textSecondary);
+        g.setColour(col);
+        juce::Path tri;
+        auto r = playButtonBounds.reduced(7).toFloat();
         tri.addTriangle(r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
         g.fillPath(tri);
     }
+    btnX += btnSize + btnGap + 6;
 
-    // Position: bar.beat
+    // Cycle (⟳)
+    cycleButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    {
+        auto col = looping ? Theme::color(Theme::Color::accent)
+                            : Theme::color(Theme::Color::textDim);
+        g.setColour(col);
+        auto r = cycleButtonBounds.reduced(5).toFloat();
+        juce::Path arc;
+        arc.addCentredArc(r.getCentreX(), r.getCentreY(),
+                           r.getWidth() * 0.4f, r.getHeight() * 0.4f,
+                           0.0f, 0.3f, juce::MathConstants<float>::twoPi - 0.5f, true);
+        g.strokePath(arc, juce::PathStrokeType(1.5f));
+        // Arrow head at end of arc
+        float endAngle = juce::MathConstants<float>::twoPi - 0.5f;
+        float ax = r.getCentreX() + r.getWidth() * 0.4f * std::cos(endAngle);
+        float ay = r.getCentreY() + r.getHeight() * 0.4f * std::sin(endAngle);
+        juce::Path arrow;
+        arrow.addTriangle(ax - 3, ay - 4, ax + 3, ay, ax - 1, ay + 4);
+        g.fillPath(arrow);
+    }
+
+    // --- Position display (LCD-style, centered) ---
+    int lcdWidth = 240;
+    int lcdX = area.getCentreX() - lcdWidth / 2;
+    int lcdY = area.getY() + 4;
+    int lcdHeight = area.getHeight() - 8;
+    auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
+
+    // LCD background
+    g.setColour(juce::Colour(0xff1a1a2a));
+    g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.drawRoundedRectangle(lcdBounds.toFloat(), 4.0f, 1.0f);
+
+    // Position values
     int bar = (int)(beat / beatsPerBar) + 1;
     int beatInBar = (int)std::fmod(beat, (double)beatsPerBar) + 1;
-    g.setColour(Theme::color(Theme::Color::textWhite));
-    g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 16.0f, juce::Font::plain));
-    char posBuf[16];
-    snprintf(posBuf, sizeof(posBuf), "%d . %d", bar, beatInBar);
-    g.drawText(posBuf, 40, area.getY(), 80, area.getHeight(), juce::Justification::centredLeft);
+    double fractional = std::fmod(beat, 1.0);
+    int div = (int)(fractional * 4) + 1;  // subdivision (1-4)
+    int tick = (int)(std::fmod(fractional * 4, 1.0) * 240);  // ticks (0-239)
 
-    // Tempo
-    g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeSm));
-    char tempoBuf[16];
-    snprintf(tempoBuf, sizeof(tempoBuf), "%.1f bpm", bpm);
-    g.drawText(tempoBuf, 130, area.getY(), 80, area.getHeight(), juce::Justification::centredLeft);
+    // Large digits
+    auto monoFont = Theme::fontMono(22.0f);
+    g.setFont(monoFont);
+
+    int colX = lcdBounds.getX() + 8;
+    int digitTop = lcdBounds.getY() + 2;
+    int digitH = lcdBounds.getHeight() - 14;
+    int labelY = lcdBounds.getBottom() - 13;
+
+    // Bar (3 digits)
+    g.setColour(juce::Colour(0xffddeeff));
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%3d", bar);
+    g.drawText(buf, colX, digitTop, 52, digitH, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(8.0f));
+    g.drawText("BAR", colX, labelY, 52, 12, juce::Justification::centred);
+
+    // Beat
+    colX += 52;
+    g.setFont(monoFont);
+    g.setColour(juce::Colour(0xffddeeff));
+    snprintf(buf, sizeof(buf), "%d", beatInBar);
+    g.drawText(buf, colX, digitTop, 32, digitH, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(8.0f));
+    g.drawText("BEAT", colX, labelY, 32, 12, juce::Justification::centred);
+
+    // Div
+    colX += 32;
+    g.setFont(monoFont);
+    g.setColour(juce::Colour(0xffddeeff));
+    snprintf(buf, sizeof(buf), "%d", div);
+    g.drawText(buf, colX, digitTop, 28, digitH, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(8.0f));
+    g.drawText("DIV", colX, labelY, 28, 12, juce::Justification::centred);
+
+    // Tick
+    colX += 28;
+    g.setFont(monoFont);
+    g.setColour(juce::Colour(0xffddeeff));
+    snprintf(buf, sizeof(buf), "%03d", tick);
+    g.drawText(buf, colX, digitTop, 48, digitH, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(8.0f));
+    g.drawText("TICK", colX, labelY, 48, 12, juce::Justification::centred);
+
+    // Separator + tempo section
+    colX += 52;
+    g.setColour(juce::Colour(0xff2a2a3a));
+    g.drawLine((float)colX, (float)(lcdBounds.getY() + 4),
+               (float)colX, (float)(lcdBounds.getBottom() - 4), 1.0f);
+    colX += 4;
+
+    // BPM
+    g.setFont(Theme::fontMono(18.0f));
+    g.setColour(juce::Colour(0xffddeeff));
+    snprintf(buf, sizeof(buf), "%.1f", bpm);
+    g.drawText(buf, colX, digitTop, 56, digitH, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(8.0f));
+    g.drawText("BPM", colX, labelY, 56, 12, juce::Justification::centred);
 }
 
 void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -410,9 +532,23 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
 
     if (!sequencer) return;
 
-    // Play button
+    // Transport buttons
+    if (rewindButtonBounds.contains(event.getPosition())) {
+        sequencer->setBeatPosition(0.0);
+        return;
+    }
+    if (stopButtonBounds.contains(event.getPosition())) {
+        if (sequencer->isPlaying()) sequencer->stop();
+        else sequencer->setBeatPosition(0.0);  // second stop = rewind
+        return;
+    }
     if (playButtonBounds.contains(event.getPosition())) {
         sequencer->togglePlayStop();
+        return;
+    }
+    if (cycleButtonBounds.contains(event.getPosition())) {
+        sequencer->setLoopEnabled(!sequencer->isLoopEnabled());
+        repaint();
         return;
     }
 
