@@ -176,7 +176,7 @@ void PerformanceCoordinator::startRecording() {
     auto tracks = stateAPI->listTracks();
     for (auto& t : tracks) {
         auto* ts = stateAPI->findTrack(t.id);
-        if (ts && ts->armed)
+        if (ts && ts->armed && ts->sourceType == TrackSourceType::Instrument)
             recordingTrackIds.push_back(t.id);
     }
 
