@@ -208,26 +208,28 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
            || s == MappingPane::Row::ScoreHeader;
 }
 
+static int sectionHeight(MappingPane::Row::Section s) {
+    // SongHeader is taller — includes title + column header row
+    if (s == MappingPane::Row::SongHeader) return 24 + 24;  // title + columns
+    if (isSectionHeader(s)) return 24;
+    return 24;  // rowHeight
+}
+
 int MappingPane::getRowY(int rowIndex) const {
     int y = headerHeight;
-    bool passedScoreHeader = false;
     for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::ScoreHeader && !passedScoreHeader) {
-            y += scoreSectionGap;  // gap before score header
-            passedScoreHeader = true;
-        }
-        y += isSectionHeader(rows[i].section) ? sectionHeaderHeight : rowHeight;
+        if (rows[i].section == Row::ScoreHeader)
+            y += scoreSectionGap;
+        y += sectionHeight(rows[i].section);
     }
-    // Also add gap if we're AT the score header
-    if (rowIndex < (int)rows.size() && rows[rowIndex].section == Row::ScoreHeader && !passedScoreHeader)
+    if (rowIndex < (int)rows.size() && rows[rowIndex].section == Row::ScoreHeader)
         y += scoreSectionGap;
     return y - scrollOffset;
 }
 
 juce::Rectangle<int> MappingPane::getRowBounds(int rowIndex) const {
     int y = getRowY(rowIndex);
-    int h = (rowIndex < (int)rows.size() && isSectionHeader(rows[rowIndex].section))
-            ? sectionHeaderHeight : rowHeight;
+    int h = (rowIndex < (int)rows.size()) ? sectionHeight(rows[rowIndex].section) : rowHeight;
     return juce::Rectangle<int>(0, y, getWidth(), h);
 }
 
@@ -235,8 +237,8 @@ int MappingPane::getTotalHeight() const {
     int h = headerHeight;
     for (auto& r : rows) {
         if (r.section == Row::ScoreHeader)
-            h += scoreSectionGap;  // gap before score header
-        h += isSectionHeader(r.section) ? sectionHeaderHeight : rowHeight;
+            h += scoreSectionGap;
+        h += sectionHeight(r.section);
     }
     return h;
 }
@@ -281,17 +283,19 @@ void MappingPane::paint(juce::Graphics& g) {
             if (row.section == Row::GlobalHeader)
                 g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
             else if (row.section == Row::SongHeader) {
+                // Table title
                 g.drawText("Mappings", bounds.reduced(12, 0), juce::Justification::centredLeft);
-                // Column headers
-                g.setColour(Theme::color(Theme::Color::textDim));
+                // Column headers — below the title, drawn in the next sectionHeaderHeight
+                g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText("Name", colName, bounds.getY(), colGroup - colName, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Group", colGroup, bounds.getY(), colType - colGroup, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Type", colType, bounds.getY(), colCh - colType, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Ch", colCh, bounds.getY(), colNum - colCh, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("#", colNum, bounds.getY(), colAction - colNum, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Action", colAction, bounds.getY(), 80, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("In Score", getWidth() - scoreColWidth, bounds.getY(), scoreColWidth - 8, sectionHeaderHeight, juce::Justification::centred);
+                int colY = bounds.getBottom();
+                g.drawText("Score",   colScore, colY, colName - colScore, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("MIDI Source", colName, colY, colGroup - colName, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Group",   colGroup, colY, colType - colGroup, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Type",    colType, colY, colCh - colType, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Ch",      colCh, colY, colNum - colCh, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("#",       colNum, colY, colAction - colNum, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Action",  colAction, colY, 80, sectionHeaderHeight, juce::Justification::centredLeft);
             } else {
                 // Score header — same style as Mappings header
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
@@ -315,8 +319,7 @@ void MappingPane::paint(juce::Graphics& g) {
 
         bool isScore = (row.section == Row::ScoreControl);
         auto textCol = Theme::color(Theme::Color::textPrimary);
-        auto dimCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::textDim);
-        auto secCol = Theme::color(Theme::Color::textSecondary);
+        auto secCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::textSecondary);
         auto actionCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::instrument);
 
         // Activity light (not for score rows)
@@ -328,21 +331,37 @@ void MappingPane::paint(juce::Graphics& g) {
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
-        // Score position prefix — draw before the name with enough space
+        // Score Step column (song rows)
+        if (row.section == Row::SongControl && !row.bindingId.empty()) {
+            bool inScore = (row.scorePosition >= 0);
+            float cx = (float)(colScore + 18);
+            float cy = (float)bounds.getCentreY();
+            if (inScore) {
+                g.setColour(Theme::color(Theme::Color::accent));
+                g.fillEllipse(cx - 5.0f, cy - 5.0f, 10.0f, 10.0f);
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText(juce::String(row.scorePosition), (int)cx + 8, bounds.getY(), 16, rowHeight,
+                           juce::Justification::centredLeft);
+            } else {
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.drawEllipse(cx - 4.0f, cy - 4.0f, 8.0f, 8.0f, 1.0f);
+            }
+        }
+        // Score position for score rows
         if (isScore) {
             g.setColour(secCol);
-            g.drawText(juce::String(row.scorePosition) + ".", colActivity - 2, bounds.getY(), 16, rowHeight,
-                       juce::Justification::centredLeft);
+            g.drawText(juce::String(row.scorePosition) + ".", colScore, bounds.getY(), colName - colScore, rowHeight,
+                       juce::Justification::centred);
         }
 
-        // Name
+        // MIDI Source (name)
         g.setColour(textCol);
         g.drawText(juce::String(row.controlName), colName, bounds.getY(), colGroup - colName, rowHeight,
                    juce::Justification::centredLeft);
 
-        // Group
-        g.setColour(dimCol);
-        g.setFont(Theme::font(Theme::fontSizeXs));
+        // Group — same brightness as name
+        g.setColour(textCol);
+        g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(juce::String(row.group.empty() ? "Default" : row.group),
                    colGroup, bounds.getY(), colType - colGroup, rowHeight,
                    juce::Justification::centredLeft);
@@ -359,7 +378,7 @@ void MappingPane::paint(juce::Graphics& g) {
         // Action
         g.setFont(Theme::font(Theme::fontSizeSm));
         if (row.bindingId.empty() && !isScore) {
-            g.setColour(dimCol);
+            g.setColour(Theme::color(Theme::Color::textDim));
             g.drawText("-- assign --", colAction, bounds.getY(), 140, rowHeight,
                        juce::Justification::centredLeft);
         } else if (!row.bindingId.empty()) {
@@ -368,28 +387,11 @@ void MappingPane::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
             g.setColour(secCol);
             g.setFont(Theme::font(Theme::fontSizeXs));
-            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), getWidth() - scoreColWidth - colAction - 90, rowHeight,
+            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), getWidth() - colAction - 100, rowHeight,
                        juce::Justification::centredLeft);
         }
 
-        // Score toggle (song rows with a binding)
-        if (row.section == Row::SongControl && !row.bindingId.empty()) {
-            bool inScore = (row.scorePosition >= 0);
-            // Filled circle = in score, empty circle = not in score
-            float cx = (float)(getWidth() - scoreColWidth + 12);
-            float cy = (float)bounds.getCentreY();
-            if (inScore) {
-                g.setColour(Theme::color(Theme::Color::accent));
-                g.fillEllipse(cx - 5.0f, cy - 5.0f, 10.0f, 10.0f);
-                // Show position number next to it
-                g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText(juce::String(row.scorePosition), (int)cx + 8, bounds.getY(), 20, rowHeight,
-                           juce::Justification::centredLeft);
-            } else {
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.drawEllipse(cx - 4.0f, cy - 4.0f, 8.0f, 8.0f, 1.0f);
-            }
-        }
+        // (Score toggle now drawn in the Score Step column above)
 
     }
 }
@@ -444,21 +446,9 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
 
         int x = event.getPosition().getX();
 
-        // Action column click (not for score rows — they already have an action)
-        int scoreX = getWidth() - scoreColWidth;
-        if (x >= colAction && x < scoreX && row.section != Row::ScoreControl) {
-            showActionMenu(i, event.getScreenPosition());
-            return;
-        }
-
-        // Score row: click position number to reorder
-        if (row.section == Row::ScoreControl && x < colName) {
-            showScoreMenu(i, event.getScreenPosition());
-            return;
-        }
-
-        // Score toggle: click circle to add/remove from score
-        if (row.section == Row::SongControl && !row.bindingId.empty() && x >= scoreX) {
+        // Score Step column click — toggle in/out of score
+        if (row.section == Row::SongControl && !row.bindingId.empty()
+            && x >= colScore && x < colName) {
             if (row.scorePosition >= 0) {
                 // Remove from score
                 state.clearScoreStep(row.bindingId);
@@ -471,6 +461,18 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
                 state.setBindingAsScoreStep(row.bindingId, maxPos + 1);
             }
             refresh();
+            return;
+        }
+
+        // Action column click
+        if (x >= colAction && row.section == Row::SongControl) {
+            showActionMenu(i, event.getScreenPosition());
+            return;
+        }
+
+        // Score row: click position number to reorder
+        if (row.section == Row::ScoreControl && x >= colScore && x < colName) {
+            showScoreMenu(i, event.getScreenPosition());
             return;
         }
     }
