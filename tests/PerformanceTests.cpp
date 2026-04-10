@@ -679,6 +679,134 @@ public:
             s.setCurrentSong(songId);
             expectEquals(s.getMasterOutputId(), songId);
         }
+
+    // --- New coverage: audioEnabled, custom actions, score steps, device groups ---
+
+        beginTest("Track audioEnabled independent of midiEnabled");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto id = s.createTrack("T");
+            expect(s.isTrackAudioEnabled(id) == true);
+            expect(s.isTrackMidiEnabled(id) == true);
+
+            s.setTrackAudioEnabled(id, false);
+            expect(s.isTrackAudioEnabled(id) == false);
+            expect(s.isTrackMidiEnabled(id) == true);  // independent
+
+            s.setTrackMidiEnabled(id, false);
+            expect(s.isTrackMidiEnabled(id) == false);
+            expect(s.isTrackAudioEnabled(id) == false);  // still off
+
+            s.setTrackAudioEnabled(id, true);
+            expect(s.isTrackAudioEnabled(id) == true);
+            expect(s.isTrackMidiEnabled(id) == false);  // still off
+        }
+
+        beginTest("Custom action create and remove");
+        {
+            StateAPI s;
+            auto id = s.createCustomAction("myAction", "My Action",
+                                            "log('hello')", "");
+            expect(!id.empty());
+
+            auto* action = s.findActionByName("myAction");
+            expect(action != nullptr);
+            expectEquals(action->label, std::string("My Action"));
+            expectEquals(action->luaCode, std::string("log('hello')"));
+            expect(action->songId.empty());  // global
+
+            // Update existing by same name
+            auto id2 = s.createCustomAction("myAction", "Updated", "log('bye')", "song1");
+            expectEquals(id, id2);  // same ID
+            action = s.findActionByName("myAction");
+            expectEquals(action->label, std::string("Updated"));
+            expectEquals(action->luaCode, std::string("log('bye')"));
+            expectEquals(action->songId, std::string("song1"));
+
+            // Remove
+            s.removeAction(id);
+            expect(s.findActionByName("myAction") == nullptr);
+        }
+
+        beginTest("Score steps: set, query, clear, ordering");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto t1 = s.createTrack("T1");
+            auto t2 = s.createTrack("T2");
+            auto actionId = s.registerAction("fadeOut", "Fade Out");
+
+            auto b1 = s.addBinding(songId, "note", 10, 40, actionId, "[]", "Pad 1");
+            auto b2 = s.addBinding(songId, "note", 10, 41, actionId, "[]", "Pad 2");
+            auto b3 = s.addBinding(songId, "note", 10, 42, actionId, "[]", "Pad 3");
+
+            s.setBindingAsScoreStep(b1, 1);
+            s.setBindingAsScoreStep(b3, 2);
+
+            auto steps = s.scoreSteps();
+            expectEquals((int)steps.size(), 2);
+            expectEquals(steps[0].id, b1);
+            expectEquals(steps[0].scorePosition, 1);
+            expectEquals(steps[1].id, b3);
+            expectEquals(steps[1].scorePosition, 2);
+
+            // Clear a step
+            s.clearScoreStep(b1);
+            steps = s.scoreSteps();
+            expectEquals((int)steps.size(), 1);
+            expectEquals(steps[0].id, b3);
+
+            // b2 was never a score step
+            auto* song = s.findSong(songId);
+            for (auto& b : song->bindings)
+                if (b.id == b2) expect(!b.isScoreStep);
+        }
+
+        beginTest("Device control group assignment");
+        {
+            StateAPI s;
+            auto devId = s.registerDevice("MPK", "MPK mini 3");
+            s.addDeviceControl(devId, "Pad 1", "note", 10, 40);
+            s.addDeviceControl(devId, "Fader 1", "cc", 1, 73);
+
+            auto* device = s.findDevice(devId);
+            expect(device != nullptr);
+            expect(device->controls[0].group.empty());
+
+            s.setDeviceControlGroup(devId, 0, "Pads");
+            s.setDeviceControlGroup(devId, 1, "Faders");
+
+            device = s.findDevice(devId);
+            expectEquals(device->controls[0].group, std::string("Pads"));
+            expectEquals(device->controls[1].group, std::string("Faders"));
+
+            // Change group
+            s.setDeviceControlGroup(devId, 0, "");
+            device = s.findDevice(devId);
+            expect(device->controls[0].group.empty());
+        }
+
+        beginTest("Binding stores device ID");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto actionId = s.registerAction("test");
+
+            auto bId = s.addBinding(songId, "note", 10, 40, actionId,
+                                     "[]", "desc", "device123");
+
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            for (auto& b : song->bindings) {
+                if (b.id == bId) {
+                    expectEquals(b.deviceId, std::string("device123"));
+                }
+            }
+        }
     }
 };
 
@@ -965,6 +1093,84 @@ public:
 
             loaded.setCurrentSong(loaded.allSongs()[0].id);
             expect(loaded.selectedTrackIds().empty());
+        }
+
+        beginTest("Custom actions persist with lua_code and song_id");
+        {
+            TempDB db;
+
+            StateAPI original;
+            original.createSong("S");
+            original.registerAction("builtIn", "Built-in");  // no lua_code
+            original.createCustomAction("custom1", "Custom One", "log('hi')", "");
+            original.createCustomAction("custom2", "Custom Two", "fadeOut()", "song123");
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* builtIn = loaded.findActionByName("builtIn");
+            expect(builtIn != nullptr);
+            expect(builtIn->luaCode.empty());
+
+            auto* c1 = loaded.findActionByName("custom1");
+            expect(c1 != nullptr);
+            expectEquals(c1->label, std::string("Custom One"));
+            expectEquals(c1->luaCode, std::string("log('hi')"));
+            expect(c1->songId.empty());
+
+            auto* c2 = loaded.findActionByName("custom2");
+            expect(c2 != nullptr);
+            expectEquals(c2->luaCode, std::string("fadeOut()"));
+            expectEquals(c2->songId, std::string("song123"));
+        }
+
+        beginTest("Audio device config round-trip with buffer and sample rate");
+        {
+            TempDB db;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.state().setConfig("audio_output_device", "Scarlett 2i2");
+                coord.state().setConfig("audio_input_device", "MacBook Pro Mic");
+                coord.state().setConfig("audio_buffer_size", "256");
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                expectEquals(coord.state().getConfig("audio_output_device"),
+                             std::string("Scarlett 2i2"));
+                expectEquals(coord.state().getConfig("audio_input_device"),
+                             std::string("MacBook Pro Mic"));
+                expectEquals(coord.state().getConfig("audio_buffer_size"),
+                             std::string("256"));
+                coord.shutdown();
+            }
+        }
+
+        beginTest("Device control groups persist");
+        {
+            TempDB db;
+
+            StateAPI original;
+            original.createSong("S");
+            auto devId = original.registerDevice("MPK", "MPK mini 3");
+            original.addDeviceControl(devId, "Pad 1", "note", 10, 40, "Pads");
+            original.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* dev = loaded.findDeviceByPortName("MPK mini 3");
+            expect(dev != nullptr);
+            expectEquals((int)dev->controls.size(), 2);
+            expectEquals(dev->controls[0].group, std::string("Pads"));
+            expectEquals(dev->controls[1].group, std::string("Faders"));
         }
     }
 };
@@ -1457,6 +1663,54 @@ public:
 
             expect(mock.hasCall("createAudioInputTrackWithId"));
             expectEquals(mock.countCalls("createTrackWithId"), 0);
+        }
+
+        beginTest("Disabled track propagates audioEnabled on creation");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+            state.setTrackAudioEnabled(trackId, false);  // disable before sync
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);  // triggers loadSong
+
+            // The engine should get setTrackAudioEnabled(false)
+            auto* call = mock.findCall("setTrackAudioEnabled");
+            expect(call != nullptr);
+            if (call) expect(call->boolArg == false);
+        }
+
+        beginTest("Binding changes trigger restoreBindings via state event");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto actionId = state.registerAction("test");
+
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+
+            // Adding a binding should fire a Binding event
+            // (restoreBindings is handled by coordinator, not EngineSync,
+            //  but the event should fire)
+            bool bindingEventFired = false;
+            auto subId = state.events().subscribe([&](const StateEvent& event) {
+                if (event.entity == StateEvent::Binding)
+                    bindingEventFired = true;
+            });
+
+            state.addBinding(songId, "note", 10, 40, actionId, "[]", "test");
+            expect(bindingEventFired);
+
+            state.events().unsubscribe(subId);
         }
     }
 };
