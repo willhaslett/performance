@@ -59,10 +59,16 @@ Sidebar::Sidebar() {
                         auto setup = dm.getAudioDeviceSetup();
                         setup.bufferSize = newSize;
                         auto err = dm.setAudioDeviceSetup(setup, true);
-                        if (err.isEmpty())
-                            perfLog("[Sidebar] Buffer size changed to %d\n", newSize);
-                        else
+                        if (err.isEmpty()) {
+                            // Verify and persist
+                            if (auto* dev = dm.getCurrentAudioDevice())
+                                perfLog("[Sidebar] Buffer size: requested=%d actual=%d\n",
+                                        newSize, dev->getCurrentBufferSizeSamples());
+                            if (state)
+                                state->setConfig("audio_buffer_size", std::to_string(newSize));
+                        } else {
                             perfLog("[Sidebar] Buffer size change failed: %s\n", err.toRawUTF8());
+                        }
                         refreshTree();
                     });
             }

@@ -68,6 +68,15 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             changed = true;
         }
 
+        auto savedBuffer = stateAPI->getConfig("audio_buffer_size");
+        if (!savedBuffer.empty()) {
+            int bufSize = std::stoi(savedBuffer);
+            if (setup.bufferSize != bufSize) {
+                setup.bufferSize = bufSize;
+                changed = true;
+            }
+        }
+
         if (changed) {
             auto err = dm.setAudioDeviceSetup(setup, true);
             if (err.isEmpty())
