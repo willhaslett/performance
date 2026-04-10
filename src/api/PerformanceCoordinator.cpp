@@ -185,8 +185,9 @@ void PerformanceCoordinator::startRecording() {
     recordStartBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
     openNotes.clear();
 
-    // Start recording on the first armed track
-    arrangementImpl.startRecording(recordingTrackIds[0], recordStartBeat);
+    // Start a recording region for each armed track
+    for (auto& trackId : recordingTrackIds)
+        arrangementImpl.startRecording(trackId, recordStartBeat);
 
     audioEngine->setRecording(true);
     isRecording = true;

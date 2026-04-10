@@ -30,18 +30,18 @@ public:
                                                   double eventBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, MidiEventCallback callback) const;
 
-    // --- Recording ---
+    // --- Recording (supports multiple armed tracks simultaneously) ---
     // Start recording into a new region on the given track at the given beat.
-    // Returns the region being recorded into.
+    // Call once per armed track. All active recording regions receive notes.
     MidiRegion* startRecording(const std::string& trackId, double startBeat);
     void addRecordedNote(int noteNumber, int velocity, int channel, double beatOffset);
     void finalizeRecordedNote(int noteNumber, int channel, double beatOffset, double duration);
     void stopRecording();
-    bool isRecording() const { return recordingRegion != nullptr; }
+    bool isRecording() const { return !recordingRegions.empty(); }
 
 private:
     std::vector<std::unique_ptr<Region>> regions;
-    MidiRegion* recordingRegion = nullptr;
+    std::vector<MidiRegion*> recordingRegions;  // active recording targets (non-owning)
 
     static std::string generateId();
 };

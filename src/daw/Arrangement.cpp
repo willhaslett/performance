@@ -33,7 +33,7 @@ void Arrangement::clearTrack(const std::string& trackId) {
 
 void Arrangement::clearAll() {
     regions.clear();
-    recordingRegion = nullptr;
+    recordingRegions.clear();
 }
 
 std::vector<Region*> Arrangement::regionsForTrack(const std::string& trackId) const {
@@ -79,47 +79,45 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
 
 MidiRegion* Arrangement::startRecording(const std::string& trackId, double startBeat) {
     auto* region = addMidiRegion(trackId, startBeat, 0.0);
-    recordingRegion = region;
+    recordingRegions.push_back(region);
     return region;
 }
 
 void Arrangement::addRecordedNote(int noteNumber, int velocity, int channel, double beatOffset) {
-    if (!recordingRegion) return;
     MidiNoteEvent event;
     event.beatOffset = beatOffset;
     event.durationBeats = 0.0;  // will be set on note-off
     event.noteNumber = noteNumber;
     event.velocity = velocity;
     event.channel = channel;
-    recordingRegion->notes.push_back(event);
 
-    // Extend region length
-    double end = beatOffset + 0.5;  // minimum length
-    if (end > recordingRegion->lengthBeats)
-        recordingRegion->lengthBeats = end;
+    for (auto* region : recordingRegions) {
+        region->notes.push_back(event);
+        double end = beatOffset + 0.5;
+        if (end > region->lengthBeats)
+            region->lengthBeats = end;
+    }
 }
 
 void Arrangement::finalizeRecordedNote(int noteNumber, int channel,
                                         double beatOffset, double duration) {
-    if (!recordingRegion) return;
-    // Find the matching note (search backwards — most recent match)
-    for (int i = (int)recordingRegion->notes.size() - 1; i >= 0; --i) {
-        auto& n = recordingRegion->notes[i];
-        if (n.noteNumber == noteNumber && n.channel == channel
-            && std::abs(n.beatOffset - beatOffset) < 0.001) {
-            n.durationBeats = duration;
-            // Extend region if needed
-            double end = beatOffset + duration;
-            if (end > recordingRegion->lengthBeats)
-                recordingRegion->lengthBeats = end;
-            return;
+    for (auto* region : recordingRegions) {
+        for (int i = (int)region->notes.size() - 1; i >= 0; --i) {
+            auto& n = region->notes[i];
+            if (n.noteNumber == noteNumber && n.channel == channel
+                && std::abs(n.beatOffset - beatOffset) < 0.001) {
+                n.durationBeats = duration;
+                double end = beatOffset + duration;
+                if (end > region->lengthBeats)
+                    region->lengthBeats = end;
+                break;  // found match in this region, move to next
+            }
         }
     }
 }
 
 void Arrangement::stopRecording() {
-    if (recordingRegion) {
-        recordingRegion->sortNotes();
-        recordingRegion = nullptr;
-    }
+    for (auto* region : recordingRegions)
+        region->sortNotes();
+    recordingRegions.clear();
 }
