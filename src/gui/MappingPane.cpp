@@ -201,7 +201,7 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 }
 
 static int sectionHeight(MappingPane::Row::Section s) {
-    if (s == MappingPane::Row::SongHeader) return 52;
+    if (s == MappingPane::Row::SongHeader) return 60;  // 8px top + 20px title + 12px gap + 20px columns
     return 24;
 }
 
@@ -273,12 +273,12 @@ void MappingPane::paint(juce::Graphics& g) {
             if (row.section == Row::GlobalHeader)
                 g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
             else if (row.section == Row::SongHeader) {
-                // Table title
-                g.drawText("Mappings", bounds.reduced(12, 0), juce::Justification::centredLeft);
-                // Column headers — below the title, drawn in the next sectionHeaderHeight
+                // Table title — 8px from top
+                g.drawText("Mappings", 12, bounds.getY() + 8, 200, 20, juce::Justification::centredLeft);
+                // Column headers — at bottom of header area
                 g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                int colY = bounds.getBottom() - 22;  // column headers near bottom of header area
+                int colY = bounds.getBottom() - 20;
                 g.drawText("MIDI Source", colName, colY, colScore - colName, 20, juce::Justification::centredLeft);
                 g.drawText("Score Step", colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
                 g.drawText("Group",   colGroup, colY, colType - colGroup, 20, juce::Justification::centredLeft);
@@ -392,8 +392,7 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         auto bounds = getRowBounds(i);
         if (!bounds.contains(event.getPosition())) continue;
         auto& row = rows[i];
-        if (row.section != Row::GlobalControl && row.section != Row::SongControl
-            && row.section != Row::ScoreControl) continue;
+        if (row.section != Row::SongControl) continue;
 
         // Right-click context menu
         if (event.mods.isPopupMenu()) {
@@ -460,8 +459,8 @@ void MappingPane::mouseDoubleClick(const juce::MouseEvent& event) {
         int x = event.getPosition().getX();
 
         // Double-click name → rename
-        if (x >= colName && x < colGroup) {
-            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colGroup - colName, rowHeight);
+        if (x >= colName && x < colScore) {
+            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colScore - colName, rowHeight);
             inlineEditor.onCommit = [this, idx = row.controlIndex](const juce::String& newText) {
                 state.renameDeviceControl(currentDeviceId, idx, newText.toStdString());
                 refresh();
