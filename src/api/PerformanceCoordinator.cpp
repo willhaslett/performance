@@ -99,6 +99,15 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     sequencerImpl = std::make_unique<InternalSequencer>();
     lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
 
+    // Wire arrangement and transport to engine for audio-thread MIDI scheduling
+    audioEngine->setArrangement(&arrangementImpl);
+    auto* seq = static_cast<InternalSequencer*>(sequencerImpl.get());
+    seq->setTransportCallback([this](bool playing) {
+        audioEngine->setPlaybackState(playing, sequencerImpl->getTempo());
+        if (playing)
+            audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
+    });
+
     midiEngine = std::make_unique<MIDIEngine>(
         audioEngine->getDeviceManager(), *audioEngine, *stateAPI);
     midiEngine->setSongRuntime(songRuntime.get());
@@ -116,28 +125,23 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 }
 
 void PerformanceCoordinator::timerCallback() {
-    // Advance sequencer clock and scan arrangement
+    // Advance sequencer clock for UI (beat callbacks, playhead display).
+    // MIDI playback is handled on the audio thread by GraphWrapper.
     if (sequencerImpl) {
-        double now = juce::Time::getMillisecondCounterHiRes();
-        double delta = (now - lastSequencerTimeMs) / 1000.0;
-        lastSequencerTimeMs = now;
-        if (delta > 0.0 && delta < 1.0) {
-            double prevBeat = sequencerImpl->getBeatPosition();
-            static_cast<InternalSequencer*>(sequencerImpl.get())->advance(delta);
-            double currentBeat = sequencerImpl->getBeatPosition();
+        if (sequencerImpl->isPlaying() && audioEngine) {
+            // Read the sample-accurate beat position from the audio thread
+            double audioBeat = audioEngine->getPlaybackBeatPosition();
+            // Also keep the message-thread sequencer roughly in sync for UI queries
+            double now = juce::Time::getMillisecondCounterHiRes();
+            double delta = (now - lastSequencerTimeMs) / 1000.0;
+            lastSequencerTimeMs = now;
+            if (delta > 0.0 && delta < 1.0)
+                static_cast<InternalSequencer*>(sequencerImpl.get())->advance(delta);
 
-            // Scan arrangement for MIDI events to inject
-            if (sequencerImpl->isPlaying() && currentBeat > prevBeat) {
-                arrangementImpl.scanMidiEvents(prevBeat, currentBeat,
-                    [this](const std::string& trackId, int noteNumber, int velocity, int channel) {
-                        if (audioEngine) {
-                            auto msg = velocity > 0
-                                ? juce::MidiMessage::noteOn(channel, noteNumber, (juce::uint8)velocity)
-                                : juce::MidiMessage::noteOff(channel, noteNumber);
-                            audioEngine->injectMidi(msg);
-                        }
-                    });
-            }
+            // Forward tempo changes to engine
+            audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+        } else {
+            lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
         }
     }
 

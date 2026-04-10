@@ -26,7 +26,8 @@ public:
     // For each note-on, calls the callback with (trackId, noteNumber, velocity, channel).
     // For note-offs, velocity is 0.
     using MidiEventCallback = std::function<void(const std::string& trackId,
-                                                  int noteNumber, int velocity, int channel)>;
+                                                  int noteNumber, int velocity, int channel,
+                                                  double eventBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, MidiEventCallback callback) const;
 
     // --- Recording ---

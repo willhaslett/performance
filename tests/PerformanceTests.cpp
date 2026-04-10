@@ -2025,7 +2025,7 @@ public:
             r->sortNotes();
 
             std::vector<std::tuple<std::string, int, int>> events;
-            arr.scanMidiEvents(0.0, 1.6, [&](const std::string& trackId, int note, int vel, int ch) {
+            arr.scanMidiEvents(0.0, 1.6, [&](const std::string& trackId, int note, int vel, int ch, double) {
                 events.push_back({ trackId, note, vel });
             });
 
@@ -2042,7 +2042,7 @@ public:
             r->notes.push_back({ 0.0, 0.5, 60, 100, 1 });
 
             int eventCount = 0;
-            arr.scanMidiEvents(0.0, 4.0, [&](auto&, int, int, int) { eventCount++; });
+            arr.scanMidiEvents(0.0, 4.0, [&](auto&, int, int, int, double) { eventCount++; });
             expectEquals(eventCount, 0);  // region starts at 8, scan is 0-4
         }
 

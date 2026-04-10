@@ -1,5 +1,7 @@
 #pragma once
 #include "engine/AudioEngineInterface.h"
+#include "engine/GraphWrapper.h"
+#include "engine/MidiSourceNode.h"
 #include "state/StateModel.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -9,6 +11,7 @@
 #include <map>
 
 class GainProcessor;
+class Arrangement;
 
 class AudioEngine : public AudioEngineInterface,
                      private juce::ChangeListener {
@@ -107,6 +110,12 @@ public:
     // MIDI input to the graph
     void injectMidi(const juce::MidiMessage& message);
 
+    // Sequencer playback — audio-thread-accurate scheduling
+    void setPlaybackState(bool playing, double bpm);
+    void setPlaybackBeatPosition(double beat);
+    double getPlaybackBeatPosition() const;
+    void setArrangement(const Arrangement* arrangement);
+
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }
     juce::KnownPluginList& getKnownPlugins() { return knownPlugins; }
@@ -117,6 +126,7 @@ private:
     juce::KnownPluginList knownPlugins;
 
     std::unique_ptr<juce::AudioProcessorGraph> graph;
+    std::unique_ptr<GraphWrapper> graphWrapper;
     std::unique_ptr<juce::AudioProcessorPlayer> player;
 
     // Graph node IDs
@@ -138,6 +148,7 @@ private:
         juce::String name;
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
+        juce::AudioProcessorGraph::Node::Ptr midiSourceNode;  // per-track sequencer MIDI
         bool midiEnabled = true;
         bool audioEnabled = true;
         TrackSourceType sourceType = TrackSourceType::Instrument;

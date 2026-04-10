@@ -66,12 +66,12 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
 
             // Note-on: fires when we cross the note start
             if (noteAbsBeat >= prevBeat && noteAbsBeat < currentBeat) {
-                callback(midi->trackId, note.noteNumber, note.velocity, note.channel);
+                callback(midi->trackId, note.noteNumber, note.velocity, note.channel, noteAbsBeat);
             }
 
             // Note-off: fires when we cross the note end
             if (noteEndBeat >= prevBeat && noteEndBeat < currentBeat) {
-                callback(midi->trackId, note.noteNumber, 0, note.channel);
+                callback(midi->trackId, note.noteNumber, 0, note.channel, noteEndBeat);
             }
         }
     }

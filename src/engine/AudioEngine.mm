@@ -9,6 +9,7 @@ static std::vector<CFBundleRef> loadedBundles;
 
 AudioEngine::AudioEngine()
     : graph(std::make_unique<juce::AudioProcessorGraph>()),
+      graphWrapper(std::make_unique<GraphWrapper>(*graph)),
       player(std::make_unique<juce::AudioProcessorPlayer>()) {
     juce::addDefaultFormatsToManager(formatManager);
 }
@@ -86,7 +87,15 @@ void AudioEngine::setupGraph() {
     // Master output gain (between track/bus outputs and audio output)
     masterGainNode = graph->addNode(std::make_unique<GainProcessor>());
 
-    player->setProcessor(graph.get());
+    // GraphWrapper sits between the player and graph — handles per-buffer
+    // MIDI scheduling from the arrangement before the graph processes
+    graphWrapper->setPlayConfigDetails(numInputs, 2,
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+    graphWrapper->prepareToPlay(
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+    player->setProcessor(graphWrapper.get());
     deviceManager.addAudioCallback(player.get());
 }
 
@@ -137,8 +146,14 @@ void AudioEngine::rebuildGraph() {
 
     masterGainNode = graph->addNode(std::make_unique<GainProcessor>());
 
-    // Restart audio processing
-    player->setProcessor(graph.get());
+    // Restart audio processing via GraphWrapper
+    graphWrapper->setPlayConfigDetails(numInputs, 2,
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+    graphWrapper->prepareToPlay(
+        device->getCurrentSampleRate(),
+        device->getCurrentBufferSizeSamples());
+    player->setProcessor(graphWrapper.get());
     deviceManager.addAudioCallback(player.get());
 
     // Rewire all connections with new IO nodes
@@ -460,7 +475,10 @@ void AudioEngine::createTrackWithId(const juce::String& id, const juce::String& 
     Track track;
     track.name = trackName;
     track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
+    track.midiSourceNode = graph->addNode(std::make_unique<MidiSourceNode>());
     tracks[id] = std::move(track);
+    graphWrapper->registerTrackMidiSource(id,
+        dynamic_cast<MidiSourceNode*>(tracks[id].midiSourceNode->getProcessor()));
     perfLog("[Engine] Created track: %s (id=%s)\n", trackName.toRawUTF8(), id.toRawUTF8());
 }
 
@@ -473,7 +491,10 @@ void AudioEngine::createAudioInputTrackWithId(const juce::String& id, const juce
     track.inputChannelCount = inputChannelCount;
     track.midiEnabled = false;
     track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
+    track.midiSourceNode = graph->addNode(std::make_unique<MidiSourceNode>());
     tracks[id] = std::move(track);
+    graphWrapper->registerTrackMidiSource(id,
+        dynamic_cast<MidiSourceNode*>(tracks[id].midiSourceNode->getProcessor()));
     rebuildConnections();
     perfLog("[Engine] Created audio input track: %s (id=%s, ch=%d, count=%d)\n",
             name.toRawUTF8(), id.toRawUTF8(), inputChannelStart, inputChannelCount);
@@ -491,6 +512,10 @@ void AudioEngine::removeTrack(const juce::String& trackId) {
         if (send.gainNode) graph->removeNode(send.gainNode->nodeID);
     if (it->second.outputGainNode)
         graph->removeNode(it->second.outputGainNode->nodeID);
+    if (it->second.midiSourceNode) {
+        graphWrapper->unregisterTrackMidiSource(trackId);
+        graph->removeNode(it->second.midiSourceNode->nodeID);
+    }
 
     tracks.erase(it);
     rebuildConnections();
@@ -752,9 +777,12 @@ void AudioEngine::renameBus(const juce::String& busId, const juce::String& newNa
 
 void AudioEngine::clearAllTracks() {
     editorWindows.clear();
+    graphWrapper->clearTrackMidiSources();
     for (auto& [id, track] : tracks) {
         if (track.instrumentNode)
             graph->removeNode(track.instrumentNode->nodeID);
+        if (track.midiSourceNode)
+            graph->removeNode(track.midiSourceNode->nodeID);
         for (auto& fx : track.effects)
             if (fx.node) graph->removeNode(fx.node->nodeID);
         for (auto& send : track.sends)
@@ -892,6 +920,7 @@ void AudioEngine::rebuildConnections() {
                     track.audioEnabled ? "on" : "off");
 
             if (track.midiEnabled && track.audioEnabled) {
+                // Live MIDI from external controllers
                 bool ok = graph->addConnection({
                     { midiInputNodeId, juce::AudioProcessorGraph::midiChannelIndex },
                     { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
@@ -900,6 +929,14 @@ void AudioEngine::rebuildConnections() {
                         ok ? "connected" : "FAILED", track.name.toRawUTF8());
             } else {
                 perfLog("[Engine]   MIDI skipped for \"%s\"\n", track.name.toRawUTF8());
+            }
+
+            // Sequencer MIDI from arrangement (always connected when instrument exists)
+            if (track.midiSourceNode && track.audioEnabled) {
+                graph->addConnection({
+                    { track.midiSourceNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex },
+                    { track.instrumentNode->nodeID, juce::AudioProcessorGraph::midiChannelIndex }
+                });
             }
 
             sourceNodeId = track.instrumentNode->nodeID;
@@ -1403,4 +1440,21 @@ void AudioEngine::closeTopPluginEditor() {
 
 void AudioEngine::injectMidi(const juce::MidiMessage& message) {
     player->getMidiMessageCollector().addMessageToQueue(message);
+}
+
+void AudioEngine::setPlaybackState(bool playing, double bpm) {
+    graphWrapper->setPlaying(playing);
+    graphWrapper->setTempo(bpm);
+}
+
+void AudioEngine::setPlaybackBeatPosition(double beat) {
+    graphWrapper->setBeatPosition(beat);
+}
+
+double AudioEngine::getPlaybackBeatPosition() const {
+    return graphWrapper->getBeatPosition();
+}
+
+void AudioEngine::setArrangement(const Arrangement* arrangement) {
+    graphWrapper->setArrangement(arrangement);
 }
