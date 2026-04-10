@@ -232,17 +232,16 @@ void MappingPane::buildRows() {
             scoreRows.push_back({ it->second.scorePosition, row });
         }
 
-        if (!scoreRows.empty()) {
-            std::sort(scoreRows.begin(), scoreRows.end(),
-                      [](auto& a, auto& b) { return a.first < b.first; });
+        // Always show score section
+        std::sort(scoreRows.begin(), scoreRows.end(),
+                  [](auto& a, auto& b) { return a.first < b.first; });
 
-            Row scoreHeader;
-            scoreHeader.section = Row::ScoreHeader;
-            rows.push_back(scoreHeader);
+        Row scoreHeader;
+        scoreHeader.section = Row::ScoreHeader;
+        rows.push_back(scoreHeader);
 
-            for (auto& [pos, row] : scoreRows)
-                rows.push_back(row);
-        }
+        for (auto& [pos, row] : scoreRows)
+            rows.push_back(row);
     }
 }
 
@@ -322,8 +321,17 @@ void MappingPane::paint(juce::Graphics& g) {
                 auto* song = state.currentSong();
                 auto label = song ? "Song: " + song->name : "Song Bindings";
                 g.drawText(juce::String(label), bounds.reduced(12, 0), juce::Justification::centredLeft);
+                // Column label for the + button
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText("Score", colScore - 4, bounds.getY(), 40, sectionHeaderHeight,
+                           juce::Justification::centred);
             } else {
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText("Remove", colScore - 4, bounds.getY(), 50, sectionHeaderHeight,
+                           juce::Justification::centred);
             }
             continue;
         }
