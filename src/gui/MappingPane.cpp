@@ -210,12 +210,17 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 
 int MappingPane::getRowY(int rowIndex) const {
     int y = headerHeight;
+    bool passedScoreHeader = false;
     for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::ScoreHeader)
-            y += sectionHeaderHeight + scoreSectionGap;
-        else
-            y += isSectionHeader(rows[i].section) ? sectionHeaderHeight : rowHeight;
+        if (rows[i].section == Row::ScoreHeader && !passedScoreHeader) {
+            y += scoreSectionGap;  // gap before score header
+            passedScoreHeader = true;
+        }
+        y += isSectionHeader(rows[i].section) ? sectionHeaderHeight : rowHeight;
     }
+    // Also add gap if we're AT the score header
+    if (rowIndex < (int)rows.size() && rows[rowIndex].section == Row::ScoreHeader && !passedScoreHeader)
+        y += scoreSectionGap;
     return y - scrollOffset;
 }
 
@@ -230,9 +235,8 @@ int MappingPane::getTotalHeight() const {
     int h = headerHeight;
     for (auto& r : rows) {
         if (r.section == Row::ScoreHeader)
-            h += sectionHeaderHeight + scoreSectionGap;
-        else
-            h += isSectionHeader(r.section) ? sectionHeaderHeight : rowHeight;
+            h += scoreSectionGap;  // gap before score header
+        h += isSectionHeader(r.section) ? sectionHeaderHeight : rowHeight;
     }
     return h;
 }
@@ -278,15 +282,18 @@ void MappingPane::paint(juce::Graphics& g) {
                 g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
             else if (row.section == Row::SongHeader) {
                 g.drawText("Mappings", bounds.reduced(12, 0), juce::Justification::centredLeft);
-                // Column label for score toggle
+                // Column headers
                 g.setColour(Theme::color(Theme::Color::textDim));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText("In Score", colScore - 8, bounds.getY(), 50, sectionHeaderHeight,
-                           juce::Justification::centred);
+                g.drawText("Name", colName, bounds.getY(), colGroup - colName, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Group", colGroup, bounds.getY(), colType - colGroup, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Type", colType, bounds.getY(), colCh - colType, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Ch", colCh, bounds.getY(), colNum - colCh, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("#", colNum, bounds.getY(), colAction - colNum, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("Action", colAction, bounds.getY(), 80, sectionHeaderHeight, juce::Justification::centredLeft);
+                g.drawText("In Score", colScore - 8, bounds.getY(), 50, sectionHeaderHeight, juce::Justification::centred);
             } else {
-                // Score header with top border for visual separation
-                g.setColour(Theme::color(Theme::Color::border));
-                g.drawLine(0.0f, (float)bounds.getY(), (float)getWidth(), (float)bounds.getY(), 1.0f);
+                // Score header — same style as Mappings header
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
             }
             continue;
@@ -305,27 +312,42 @@ void MappingPane::paint(juce::Graphics& g) {
             g.fillRect(bounds);
         }
 
-        // Activity light
-        bool active = (row.lastActivityMs > 0 && now - row.lastActivityMs < 300);
-        g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
-        g.fillEllipse((float)colActivity, (float)(bounds.getY() + (rowHeight - 6) / 2), 6.0f, 6.0f);
+        bool isScore = (row.section == Row::ScoreControl);
+        auto textCol = isScore ? Theme::color(Theme::Color::textDim) : Theme::color(Theme::Color::textPrimary);
+        auto dimCol = Theme::color(Theme::Color::textDim);
+        auto secCol = isScore ? dimCol : Theme::color(Theme::Color::textSecondary);
+        auto actionCol = isScore ? dimCol : Theme::color(Theme::Color::instrument);
+
+        // Activity light (not for score rows)
+        if (!isScore) {
+            bool active = (row.lastActivityMs > 0 && now - row.lastActivityMs < 300);
+            g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+            g.fillEllipse((float)colActivity, (float)(bounds.getY() + (rowHeight - 6) / 2), 6.0f, 6.0f);
+        }
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
+        // Score position prefix
+        if (isScore) {
+            g.setColour(secCol);
+            g.drawText(juce::String(row.scorePosition) + ".", colActivity, bounds.getY(), 20, rowHeight,
+                       juce::Justification::centredRight);
+        }
+
         // Name
-        g.setColour(Theme::color(Theme::Color::textPrimary));
+        g.setColour(textCol);
         g.drawText(juce::String(row.controlName), colName, bounds.getY(), colGroup - colName, rowHeight,
                    juce::Justification::centredLeft);
 
         // Group
-        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setColour(dimCol);
         g.setFont(Theme::font(Theme::fontSizeXs));
         g.drawText(juce::String(row.group.empty() ? "Default" : row.group),
                    colGroup, bounds.getY(), colType - colGroup, rowHeight,
                    juce::Justification::centredLeft);
 
         // Type, Ch, #
-        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.setColour(secCol);
         g.drawText(juce::String(row.controlType), colType, bounds.getY(), colCh - colType, rowHeight,
                    juce::Justification::centredLeft);
         g.drawText(juce::String(row.channel), colCh, bounds.getY(), colNum - colCh, rowHeight,
@@ -333,17 +355,17 @@ void MappingPane::paint(juce::Graphics& g) {
         g.drawText(juce::String(row.number), colNum, bounds.getY(), colAction - colNum, rowHeight,
                    juce::Justification::centredLeft);
 
-        // Action binding
+        // Action
         g.setFont(Theme::font(Theme::fontSizeSm));
-        if (row.bindingId.empty()) {
-            g.setColour(Theme::color(Theme::Color::textDim));
+        if (row.bindingId.empty() && !isScore) {
+            g.setColour(dimCol);
             g.drawText("-- assign --", colAction, bounds.getY(), 140, rowHeight,
                        juce::Justification::centredLeft);
-        } else {
-            g.setColour(Theme::color(Theme::Color::instrument));
+        } else if (!row.bindingId.empty()) {
+            g.setColour(actionCol);
             g.drawText(juce::String(row.actionName), colAction, bounds.getY(), 80, rowHeight,
                        juce::Justification::centredLeft);
-            g.setColour(Theme::color(Theme::Color::textSecondary));
+            g.setColour(secCol);
             g.setFont(Theme::font(Theme::fontSizeXs));
             g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), 80, rowHeight,
                        juce::Justification::centredLeft);
@@ -368,13 +390,6 @@ void MappingPane::paint(juce::Graphics& g) {
             }
         }
 
-        // Score section — read-only, position + control name + action
-        if (row.section == Row::ScoreControl) {
-            g.setColour(Theme::color(Theme::Color::accent));
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawText(juce::String(row.scorePosition) + ".", 12, bounds.getY(), 24, rowHeight,
-                       juce::Justification::centredRight);
-        }
     }
 }
 
