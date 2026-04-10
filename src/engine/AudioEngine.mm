@@ -836,6 +836,16 @@ void AudioEngine::setBusGain(const juce::String& busId, float gain) {
         proc->setGain(gain);
 }
 
+void AudioEngine::setBusAudioEnabled(const juce::String& busId, bool enabled) {
+    auto it = busses.find(busId);
+    if (it == busses.end()) return;
+    if (it->second.audioEnabled == enabled) return;
+    it->second.audioEnabled = enabled;
+    rebuildConnections();
+    perfLog("[Engine] Audio %s for bus \"%s\"\n",
+            enabled ? "enabled" : "disabled", busId.toRawUTF8());
+}
+
 void AudioEngine::clearAllBusses() {
     for (auto& [id, bus] : busses) {
         for (auto& fx : bus.effects)
@@ -1046,14 +1056,16 @@ void AudioEngine::rebuildConnections() {
             prevNodeId = fx.node->nodeID;
         }
 
-        // Last effect -> bus outputGainNode -> audio output
+        // Last effect -> bus outputGainNode -> master (only if audio enabled)
         if (bus.outputGainNode) {
             if (prevNodeId != bus.outputGainNode->nodeID) {
                 for (int ch = 0; ch < 2; ++ch)
                     graph->addConnection({ { prevNodeId, ch }, { bus.outputGainNode->nodeID, ch } });
             }
-            for (int ch = 0; ch < 2; ++ch)
-                graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+            if (bus.audioEnabled) {
+                for (int ch = 0; ch < 2; ++ch)
+                    graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+            }
         }
     }
 
@@ -1067,8 +1079,10 @@ void AudioEngine::rebuildConnections() {
                 prevNodeId = fx.node->nodeID;
             }
         }
-        for (int ch = 0; ch < 2; ++ch)
-            graph->addConnection({ { prevNodeId, ch }, { audioOutputNodeId, ch } });
+        if (masterAudioEnabled) {
+            for (int ch = 0; ch < 2; ++ch)
+                graph->addConnection({ { prevNodeId, ch }, { audioOutputNodeId, ch } });
+        }
         perfLog("[Engine] Master output wired (%d total connections)\n",
                 (int)graph->getConnections().size());
     }
@@ -1184,6 +1198,13 @@ float AudioEngine::getBusGain(const juce::String& busId) const {
 void AudioEngine::setMasterGain(float gain) {
     if (auto* proc = dynamic_cast<GainProcessor*>(masterGainNode->getProcessor()))
         proc->setGain(gain);
+}
+
+void AudioEngine::setMasterAudioEnabled(bool enabled) {
+    if (masterAudioEnabled == enabled) return;
+    masterAudioEnabled = enabled;
+    rebuildConnections();
+    perfLog("[Engine] Master audio %s\n", enabled ? "enabled" : "disabled");
 }
 
 float AudioEngine::getMasterGain() const {

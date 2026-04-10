@@ -23,6 +23,8 @@ public:
     void setCurrentSong(const std::string& songId);
     void setMasterGain(float gain);
     float getMasterGain() const;
+    void setMasterAudioEnabled(bool enabled);
+    bool isMasterAudioEnabled() const;
     std::string getMasterOutputId() const;
 
     // --- Tracks ---
@@ -52,6 +54,8 @@ public:
     void renameBus(const std::string& id, const std::string& name);
     void setBusGain(const std::string& id, float gain);
     float getBusGain(const std::string& id) const;
+    void setBusAudioEnabled(const std::string& id, bool enabled);
+    bool isBusAudioEnabled(const std::string& id) const;
     BusState* findBus(const std::string& id);
     const BusState* findBus(const std::string& id) const;
 

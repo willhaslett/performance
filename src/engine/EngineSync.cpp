@@ -95,6 +95,7 @@ void EngineSync::loadSong(const std::string& songId) {
     for (auto& fx : song->masterEffects) onEffectCreated(fx.id);
 
     engine.setMasterGain(song->masterGain);
+    engine.setMasterAudioEnabled(song->masterAudioEnabled);
 }
 
 // --- Entity handlers ---
@@ -285,6 +286,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         auto* b = stateAPI.findBus(entityId);
         if (!b) return;
         engine.setBusGain(id, b->outputGain);
+        engine.setBusAudioEnabled(id, b->audioEnabled);
         engine.renameBus(id, juce::String(b->name));
     }
     else if (entityType == "send") {
@@ -300,7 +302,10 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     else if (entityType == "song") {
         if (entityId == activeSongId) {
             auto* song = stateAPI.findSong(activeSongId);
-            if (song) engine.setMasterGain(song->masterGain);
+            if (song) {
+                engine.setMasterGain(song->masterGain);
+                engine.setMasterAudioEnabled(song->masterAudioEnabled);
+            }
         }
     }
 }

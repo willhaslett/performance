@@ -99,6 +99,7 @@ struct BusState {
     std::string id;
     std::string name;
     float outputGain = 1.0f;
+    bool audioEnabled = true;
     int position = 0;
     std::vector<EffectState> effects;
 };
@@ -121,6 +122,7 @@ struct SongState {
     std::string id;
     std::string name;
     float masterGain = 1.0f;
+    bool masterAudioEnabled = true;
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;

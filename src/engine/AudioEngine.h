@@ -55,6 +55,7 @@ public:
     void removeBus(const juce::String& busId) override;
     void renameBus(const juce::String& busId, const juce::String& newName) override;
     void setBusGain(const juce::String& busId, float gain) override;
+    void setBusAudioEnabled(const juce::String& busId, bool enabled) override;
 
     struct EffectInfo { juce::String id; juce::String pluginName; };
 
@@ -66,6 +67,7 @@ public:
 
     // Master output
     void setMasterGain(float gain) override;
+    void setMasterAudioEnabled(bool enabled) override;
     float getMasterGain() const;
     float getMasterPeakLevel() const;
     std::pair<float, float> getMasterPeakLevelStereo() const;
@@ -168,9 +170,11 @@ private:
     // Bus: effects chain + output gain
     struct Bus {
         juce::String name;
+        bool audioEnabled = true;
         std::vector<EffectNode> effects;
         juce::AudioProcessorGraph::Node::Ptr outputGainNode;
     };
+    bool masterAudioEnabled = true;
     std::map<juce::String, Bus> busses;  // keyed by UUID
 
     // Lookup helpers — resolve display name to UUID

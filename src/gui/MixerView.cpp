@@ -156,6 +156,7 @@ void MixerView::timerCallback() {
             busStrips[i]->setEffects(effects);
 
             busStrips[i]->setGain(state.getBusGain(id.toStdString()));
+            busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(id.toStdString()));
             { auto [l, r] = engine.getBusPeakLevelStereo(id); busStrips[i]->setPeakLevelStereo(l, r); }
         }
     }
@@ -167,6 +168,7 @@ void MixerView::timerCallback() {
         masterEffects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
     outputStrip.setEffects(masterEffects);
     outputStrip.setGain(state.getMasterGain());
+    outputStrip.setAudioEnabled(state.isMasterAudioEnabled());
     { auto [l, r] = engine.getMasterPeakLevelStereo(); outputStrip.setPeakLevelStereo(l, r); }
 
     // If desired height changed, trigger parent re-layout

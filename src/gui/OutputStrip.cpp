@@ -95,12 +95,50 @@ void OutputStrip::paint(juce::Graphics& g) {
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    g.setColour(Theme::color(Theme::Color::bgHeaderOut));
+    constexpr float disabledDarken = 0.35f;
+    auto headerCol = Theme::color(Theme::Color::bgHeaderOut);
+    if (!audioEnabled)
+        headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+    g.setColour(headerCol);
     g.fillRect(headerBounds);
+
+    // Power icon
+    powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
+                                            headerBounds.getCentreY() - 7, 14, 14);
+    {
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::midiActive)
+                                       : Theme::color(Theme::Color::textDim);
+        g.setColour(iconColor);
+        juce::Path powerIcon;
+        auto iconArea = powerIconBounds.reduced(1).toFloat();
+        powerIcon.addCentredArc(iconArea.getCentreX(), iconArea.getCentreY(),
+                                 iconArea.getWidth() * 0.4f, iconArea.getHeight() * 0.4f,
+                                 0.0f, juce::MathConstants<float>::pi * 0.3f,
+                                 juce::MathConstants<float>::pi * 1.7f, true);
+        g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
+        g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
+                   iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
+    }
 
     g.setColour(Theme::color(Theme::Color::textWhite));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText("Output", headerBounds.reduced(8, 0), juce::Justification::centredLeft);
+    g.drawText("Output", headerBounds.withTrimmedLeft(26).reduced(4, 0),
+               juce::Justification::centredLeft);
+}
+
+void OutputStrip::setAudioEnabled(bool enabled) {
+    if (audioEnabled != enabled) {
+        audioEnabled = enabled;
+        repaint();
+    }
+}
+
+void OutputStrip::mouseUp(const juce::MouseEvent& event) {
+    if (!event.mods.isPopupMenu() && powerIconBounds.expanded(6).contains(event.getPosition())) {
+        audioEnabled = !audioEnabled;
+        state.setMasterAudioEnabled(audioEnabled);
+        repaint();
+    }
 }
 
 void OutputStrip::resized() {

@@ -1423,6 +1423,9 @@ public:
     void setBusGain(const juce::String& id, float gain) override {
         calls.push_back({"setBusGain", id.toStdString(), "", "", gain});
     }
+    void setBusAudioEnabled(const juce::String& id, bool enabled) override {
+        calls.push_back({"setBusAudioEnabled", id.toStdString(), "", "", 0, enabled});
+    }
     void renameBus(const juce::String& id, const juce::String& name) override {
         calls.push_back({"renameBus", id.toStdString(), name.toStdString()});
     }
@@ -1447,6 +1450,9 @@ public:
 
     void setMasterGain(float gain) override {
         calls.push_back({"setMasterGain", "", "", "", gain});
+    }
+    void setMasterAudioEnabled(bool enabled) override {
+        calls.push_back({"setMasterAudioEnabled", "", "", "", 0, enabled});
     }
 
     juce::String getTrackPluginName(const juce::String& id) const override {

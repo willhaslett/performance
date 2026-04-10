@@ -187,6 +187,19 @@ float StateAPI::getMasterGain() const {
     return song ? song->masterGain : 1.0f;
 }
 
+void StateAPI::setMasterAudioEnabled(bool enabled) {
+    auto* song = currentSong();
+    if (!song) return;
+    song->masterAudioEnabled = enabled;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+}
+
+bool StateAPI::isMasterAudioEnabled() const {
+    auto* song = currentSong();
+    return song ? song->masterAudioEnabled : true;
+}
+
 std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId;
 }
@@ -403,6 +416,19 @@ void StateAPI::setBusGain(const std::string& id, float gain) {
 float StateAPI::getBusGain(const std::string& id) const {
     auto* bus = findBus(id);
     return bus ? bus->outputGain : 1.0f;
+}
+
+void StateAPI::setBusAudioEnabled(const std::string& id, bool enabled) {
+    auto* bus = findBus(id);
+    if (!bus) return;
+    bus->audioEnabled = enabled;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+}
+
+bool StateAPI::isBusAudioEnabled(const std::string& id) const {
+    auto* bus = findBus(id);
+    return bus ? bus->audioEnabled : true;
 }
 
 // --- Effects ---

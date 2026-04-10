@@ -26,6 +26,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void setAudioEnabled(bool enabled);
+
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
@@ -34,6 +36,8 @@ private:
     EngineAPI& engine;
     juce::String busId;    // stable UUID from registry
     juce::String busName;  // display name
+    bool audioEnabled = true;
+    juce::Rectangle<int> powerIconBounds;
 
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;

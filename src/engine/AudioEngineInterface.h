@@ -31,6 +31,7 @@ public:
     virtual void createBusWithId(const juce::String& id, const juce::String& name) = 0;
     virtual void removeBus(const juce::String& busId) = 0;
     virtual void setBusGain(const juce::String& busId, float gain) = 0;
+    virtual void setBusAudioEnabled(const juce::String& busId, bool enabled) = 0;
     virtual void renameBus(const juce::String& busId, const juce::String& newName) = 0;
     virtual void clearAllBusses() = 0;
 
@@ -45,6 +46,7 @@ public:
 
     // Master
     virtual void setMasterGain(float gain) = 0;
+    virtual void setMasterAudioEnabled(bool enabled) = 0;
 
     // Query
     virtual std::vector<juce::String> getInputChannelNames() const = 0;
