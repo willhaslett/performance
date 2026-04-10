@@ -174,6 +174,23 @@ public:
     void initialise(const juce::String&) override {
         setvbuf(stderr, nullptr, _IONBF, 0);
         initLog();
+
+        // Crash handler — log context before dying
+        juce::SystemStats::setApplicationCrashHandler([](void*) {
+            perfLog("[App] CRASH — writing crash context\n");
+            // Try to save state if possible
+            if (auto* app = dynamic_cast<PerformanceApp*>(juce::JUCEApplication::getInstance())) {
+                if (app->coordinator) {
+                    try {
+                        app->coordinator->save();
+                        perfLog("[App] Emergency save completed\n");
+                    } catch (...) {
+                        perfLog("[App] Emergency save failed\n");
+                    }
+                }
+            }
+        });
+
         perfLog("[App] Starting Performance\n");
 
         // New system: in-memory state + persistence
