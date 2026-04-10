@@ -4,6 +4,7 @@
 #include "state/StateEvents.h"
 #include "state/StateModel.h"
 #include "daw/SequencerAPI.h"
+#include "daw/Arrangement.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -93,6 +94,7 @@ public:
 
     // --- Sequencer (optional — null means disabled) ---
     SequencerAPI* sequencer();  // may return nullptr
+    Arrangement& arrangement() { return arrangementImpl; }
 
     // --- Logging ---
     void log(const juce::String& message);
@@ -107,7 +109,9 @@ private:
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
     std::unique_ptr<SequencerAPI> sequencerImpl;
+    Arrangement arrangementImpl;
     double lastSequencerTimeMs = 0.0;
+    double lastSequencerBeat = 0.0;
 
     void timerCallback() override;
     void populatePluginCatalog();

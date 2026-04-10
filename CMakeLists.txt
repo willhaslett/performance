@@ -59,6 +59,7 @@ target_sources(Performance PRIVATE
     src/gui/SettingsWindow.cpp
     src/gui/TransportBar.cpp
     src/daw/InternalSequencer.cpp
+    src/daw/Arrangement.cpp
     src/gui/MappingPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
@@ -117,6 +118,7 @@ target_sources(PerformanceTests PRIVATE
     src/ipc/IPCServer.cpp
     src/song/SongRuntime.cpp
     src/daw/InternalSequencer.cpp
+    src/daw/Arrangement.cpp
 )
 
 target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)

@@ -116,13 +116,29 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 }
 
 void PerformanceCoordinator::timerCallback() {
-    // Advance sequencer clock
+    // Advance sequencer clock and scan arrangement
     if (sequencerImpl) {
         double now = juce::Time::getMillisecondCounterHiRes();
         double delta = (now - lastSequencerTimeMs) / 1000.0;
         lastSequencerTimeMs = now;
-        if (delta > 0.0 && delta < 1.0)  // sanity check
+        if (delta > 0.0 && delta < 1.0) {
+            double prevBeat = sequencerImpl->getBeatPosition();
             static_cast<InternalSequencer*>(sequencerImpl.get())->advance(delta);
+            double currentBeat = sequencerImpl->getBeatPosition();
+
+            // Scan arrangement for MIDI events to inject
+            if (sequencerImpl->isPlaying() && currentBeat > prevBeat) {
+                arrangementImpl.scanMidiEvents(prevBeat, currentBeat,
+                    [this](const std::string& trackId, int noteNumber, int velocity, int channel) {
+                        if (audioEngine) {
+                            auto msg = velocity > 0
+                                ? juce::MidiMessage::noteOn(channel, noteNumber, (juce::uint8)velocity)
+                                : juce::MidiMessage::noteOff(channel, noteNumber);
+                            audioEngine->injectMidi(msg);
+                        }
+                    });
+            }
+        }
     }
 
     // Auto-save (every ~30 seconds, not every tick)

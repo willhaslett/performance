@@ -1942,6 +1942,102 @@ public:
 static SequencerTests sequencerTests;
 
 // ============================================================================
+// Arrangement tests
+// ============================================================================
+
+#include "daw/Arrangement.h"
+
+class ArrangementTests : public juce::UnitTest {
+public:
+    ArrangementTests() : UnitTest("Arrangement", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Add and find MIDI region");
+        {
+            Arrangement arr;
+            auto* r = arr.addMidiRegion("track1", 0.0, 4.0);
+            expect(r != nullptr);
+            expectEquals(r->trackId, std::string("track1"));
+            expectWithinAbsoluteError(r->startBeat, 0.0, 0.01);
+            expectWithinAbsoluteError(r->lengthBeats, 4.0, 0.01);
+
+            auto* found = arr.findRegion(r->id);
+            expect(found == r);
+        }
+
+        beginTest("Regions for track filters correctly");
+        {
+            Arrangement arr;
+            arr.addMidiRegion("t1", 0.0, 4.0);
+            arr.addMidiRegion("t2", 0.0, 4.0);
+            arr.addMidiRegion("t1", 4.0, 4.0);
+
+            auto t1Regions = arr.regionsForTrack("t1");
+            expectEquals((int)t1Regions.size(), 2);
+            auto t2Regions = arr.regionsForTrack("t2");
+            expectEquals((int)t2Regions.size(), 1);
+        }
+
+        beginTest("Remove region");
+        {
+            Arrangement arr;
+            auto* r = arr.addMidiRegion("t1", 0.0, 4.0);
+            auto id = r->id;
+            arr.removeRegion(id);
+            expect(arr.findRegion(id) == nullptr);
+        }
+
+        beginTest("Scan MIDI events fires note on and off");
+        {
+            Arrangement arr;
+            auto* r = arr.addMidiRegion("t1", 0.0, 4.0);
+            r->notes.push_back({ 1.0, 0.5, 60, 100, 1 });  // note at beat 1, dur 0.5
+            r->sortNotes();
+
+            std::vector<std::tuple<std::string, int, int>> events;
+            arr.scanMidiEvents(0.0, 1.6, [&](const std::string& trackId, int note, int vel, int ch) {
+                events.push_back({ trackId, note, vel });
+            });
+
+            // Should have note-on at beat 1.0 and note-off at beat 1.5
+            expectEquals((int)events.size(), 2);
+            expectEquals(std::get<2>(events[0]), 100);  // note-on velocity
+            expectEquals(std::get<2>(events[1]), 0);    // note-off velocity
+        }
+
+        beginTest("Scan skips regions outside range");
+        {
+            Arrangement arr;
+            auto* r = arr.addMidiRegion("t1", 8.0, 4.0);
+            r->notes.push_back({ 0.0, 0.5, 60, 100, 1 });
+
+            int eventCount = 0;
+            arr.scanMidiEvents(0.0, 4.0, [&](auto&, int, int, int) { eventCount++; });
+            expectEquals(eventCount, 0);  // region starts at 8, scan is 0-4
+        }
+
+        beginTest("Recording creates region and captures notes");
+        {
+            Arrangement arr;
+            auto* r = arr.startRecording("t1", 2.0);
+            expect(arr.isRecording());
+            expect(r != nullptr);
+
+            arr.addRecordedNote(60, 100, 1, 0.0);
+            arr.addRecordedNote(64, 90, 1, 0.5);
+            arr.stopRecording();
+
+            expect(!arr.isRecording());
+            expectEquals((int)r->notes.size(), 2);
+            expect(r->lengthBeats > 0.0);
+        }
+    }
+};
+
+static ArrangementTests arrangementTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 
