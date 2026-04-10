@@ -61,13 +61,13 @@ private:
     struct TabLookAndFeel : public juce::LookAndFeel_V4 {
         void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
                             bool isMouseOver, bool isMouseDown) override {
-            auto area = button.getActiveArea();
+            auto area = button.getLocalBounds();
             bool isFront = button.isFrontTab();
             g.setColour(isFront ? Theme::color(Theme::Color::bgApp)
                                  : Theme::color(Theme::Color::bgPanel));
             g.fillRect(area);
             g.setColour(isFront ? Theme::color(Theme::Color::textWhite)
-                                 : Theme::color(Theme::Color::textSecondary));
+                                 : Theme::color(Theme::Color::textPrimary));
             g.setFont(Theme::font(Theme::fontSize));
             g.drawText(button.getButtonText(), area, juce::Justification::centred);
         }
