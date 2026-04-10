@@ -65,7 +65,7 @@ void ProducePane::paint(juce::Graphics& g) {
 
         // Full-width indicator line
         g.setColour(Theme::color(Theme::Color::accent));
-        g.fillRect(0, indicatorY - 1, getWidth(), 3);
+        g.fillRect(0, indicatorY - 2, getWidth(), 5);
 
         // Dim the source track row
         int srcY = gridTop + dragTrackIndex * trackRowHeight;

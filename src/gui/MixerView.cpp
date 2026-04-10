@@ -40,7 +40,7 @@ void MixerView::paint(juce::Graphics& g) {
     if (dragIndicatorX >= 0) {
         int drawX = dragIndicatorX - viewport.getViewPositionX();
         g.setColour(Theme::color(Theme::Color::accent));
-        g.fillRect(drawX - 1, 0, 3, getHeight());
+        g.fillRect(drawX - 2, 0, 5, getHeight());
     }
 }
 
@@ -251,8 +251,8 @@ void MixerView::onTrackDragStart(const juce::String& trackId, int stripX) {
 
 void MixerView::onTrackDragMove(int mouseX) {
     if (dragTrackId.isEmpty()) return;
-    // Convert viewport-relative X to strip container X
-    dragIndicatorX = mouseX + viewport.getViewPositionX();
+    // mouseX is already in stripContainer coordinates (from getEventRelativeTo parent)
+    dragIndicatorX = mouseX;
     repaint();
 }
 
