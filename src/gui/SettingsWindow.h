@@ -71,9 +71,8 @@ private:
             g.setFont(Theme::font(Theme::fontSize));
             g.drawText(button.getButtonText(), area, juce::Justification::centred);
         }
-        void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics& g, int w, int h) override {
-            g.setColour(Theme::color(Theme::Color::bgPanel));
-            g.fillRect(0, 0, w, h);
+        void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) override {
+            // Don't fill — individual tab buttons handle their own backgrounds
         }
         int getTabButtonOverlap(int) override { return 0; }
     };
