@@ -113,6 +113,7 @@ private:
     // Layout
     static constexpr int headerHeight = 60;
     static constexpr int sectionHeaderHeight = 24;
+    static constexpr int scoreSectionGap = 12;
     static constexpr int rowHeight = 24;
 
     juce::Rectangle<int> getRowBounds(int rowIndex) const;

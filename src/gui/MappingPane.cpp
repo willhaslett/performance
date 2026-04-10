@@ -144,7 +144,7 @@ void MappingPane::buildRows() {
                 songBindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
     }
 
-    // Song section — non-score bindings
+    // Song section — ALL bindings (score steps get an indicator, not removed)
     if (song) {
         Row header;
         header.section = Row::SongHeader;
@@ -152,11 +152,6 @@ void MappingPane::buildRows() {
 
         for (int i = 0; i < (int)device->controls.size(); ++i) {
             auto& ctrl = device->controls[i];
-            auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
-
-            // Skip controls that are score steps — they go in the score section
-            if (it != songBindingMap.end() && it->second.isScoreStep) continue;
-
             Row row;
             row.section = Row::SongControl;
             row.controlName = ctrl.name;
@@ -166,39 +161,27 @@ void MappingPane::buildRows() {
             row.number = ctrl.number;
             row.controlIndex = i;
 
+            auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
             if (it != songBindingMap.end()) {
                 row.bindingId = it->second.id;
                 auto* action = state.findActionById(it->second.actionId);
                 row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
                 row.argsDisplay = formatArgs(it->second.args);
+                row.scorePosition = it->second.isScoreStep ? it->second.scorePosition : -1;
             }
             rows.push_back(row);
         }
 
-        // Score section — song bindings marked as score steps, sorted by position
+        // Score section — read-only ordered view of score steps
         std::vector<std::pair<int, Row>> scoreRows;
-        for (int i = 0; i < (int)device->controls.size(); ++i) {
-            auto& ctrl = device->controls[i];
-            auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
-            if (it == songBindingMap.end() || !it->second.isScoreStep) continue;
-
-            Row row;
-            row.section = Row::ScoreControl;
-            row.controlName = ctrl.name;
-            row.group = ctrl.group;
-            row.controlType = ctrl.controlType;
-            row.channel = ctrl.channel;
-            row.number = ctrl.number;
-            row.controlIndex = i;
-            row.bindingId = it->second.id;
-            auto* action = state.findActionById(it->second.actionId);
-            row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
-            row.argsDisplay = formatArgs(it->second.args);
-            row.scorePosition = it->second.scorePosition;
-            scoreRows.push_back({ it->second.scorePosition, row });
+        for (auto& r : rows) {
+            if (r.section == Row::SongControl && r.scorePosition >= 0) {
+                Row scoreRow = r;
+                scoreRow.section = Row::ScoreControl;
+                scoreRows.push_back({ r.scorePosition, scoreRow });
+            }
         }
 
-        // Always show score section
         std::sort(scoreRows.begin(), scoreRows.end(),
                   [](auto& a, auto& b) { return a.first < b.first; });
 
@@ -225,8 +208,12 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 
 int MappingPane::getRowY(int rowIndex) const {
     int y = headerHeight;
-    for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i)
-        y += isSectionHeader(rows[i].section) ? sectionHeaderHeight : rowHeight;
+    for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i) {
+        if (rows[i].section == Row::ScoreHeader)
+            y += sectionHeaderHeight + scoreSectionGap;
+        else
+            y += isSectionHeader(rows[i].section) ? sectionHeaderHeight : rowHeight;
+    }
     return y - scrollOffset;
 }
 
@@ -239,8 +226,12 @@ juce::Rectangle<int> MappingPane::getRowBounds(int rowIndex) const {
 
 int MappingPane::getTotalHeight() const {
     int h = headerHeight;
-    for (auto& r : rows)
-        h += isSectionHeader(r.section) ? sectionHeaderHeight : rowHeight;
+    for (auto& r : rows) {
+        if (r.section == Row::ScoreHeader)
+            h += sectionHeaderHeight + scoreSectionGap;
+        else
+            h += isSectionHeader(r.section) ? sectionHeaderHeight : rowHeight;
+    }
     return h;
 }
 
@@ -287,27 +278,29 @@ void MappingPane::paint(juce::Graphics& g) {
                 auto* song = state.currentSong();
                 auto label = song ? "Song: " + song->name : "Song Bindings";
                 g.drawText(juce::String(label), bounds.reduced(12, 0), juce::Justification::centredLeft);
-                // Column label for the + button
+                // Column label for score toggle
                 g.setColour(Theme::color(Theme::Color::textDim));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText("Score", colScore - 4, bounds.getY(), 40, sectionHeaderHeight,
+                g.drawText("In Score", colScore - 8, bounds.getY(), 50, sectionHeaderHeight,
                            juce::Justification::centred);
             } else {
+                // Score header with top border for visual separation
+                g.setColour(Theme::color(Theme::Color::border));
+                g.drawLine(0.0f, (float)bounds.getY(), (float)getWidth(), (float)bounds.getY(), 1.0f);
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText("Remove", colScore - 4, bounds.getY(), 50, sectionHeaderHeight,
-                           juce::Justification::centred);
             }
             continue;
         }
 
-        // Control rows
-        if (i % 2 == 0) {
+        // Control rows — score rows get a distinct tint
+        if (row.section == Row::ScoreControl) {
+            g.setColour(juce::Colour(0xff141820));  // subtle dark blue tint
+            g.fillRect(bounds);
+        } else if (i % 2 == 0) {
             g.setColour(Theme::color(Theme::Color::bgPanel));
             g.fillRect(bounds);
         }
-        if (i == hoveredRow) {
+        if (i == hoveredRow && row.section != Row::ScoreControl) {
             g.setColour(Theme::color(Theme::Color::bgSlotHover));
             g.fillRect(bounds);
         }
@@ -356,22 +349,31 @@ void MappingPane::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
         }
 
-        // Score controls
+        // Score toggle (song rows with a binding)
         if (row.section == Row::SongControl && !row.bindingId.empty()) {
-            // [+] button to add to score
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawText("+", colScore, bounds.getY(), 24, rowHeight, juce::Justification::centred);
+            bool inScore = (row.scorePosition >= 0);
+            // Filled circle = in score, empty circle = not in score
+            float cx = (float)colScore + 8.0f;
+            float cy = (float)bounds.getCentreY();
+            if (inScore) {
+                g.setColour(Theme::color(Theme::Color::accent));
+                g.fillEllipse(cx - 5.0f, cy - 5.0f, 10.0f, 10.0f);
+                // Show position number next to it
+                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.drawText(juce::String(row.scorePosition), (int)cx + 8, bounds.getY(), 20, rowHeight,
+                           juce::Justification::centredLeft);
+            } else {
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.drawEllipse(cx - 4.0f, cy - 4.0f, 8.0f, 8.0f, 1.0f);
+            }
         }
+
+        // Score section — read-only, position + control name + action
         if (row.section == Row::ScoreControl) {
-            // Score position number
             g.setColour(Theme::color(Theme::Color::accent));
             g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawText(juce::String(row.scorePosition) + ".", colScore - 20, bounds.getY(), 24, rowHeight,
+            g.drawText(juce::String(row.scorePosition) + ".", 12, bounds.getY(), 24, rowHeight,
                        juce::Justification::centredRight);
-            // [x] button to remove from score
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawText("x", colScore + 8, bounds.getY(), 20, rowHeight, juce::Justification::centred);
         }
     }
 }
@@ -432,28 +434,20 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
             return;
         }
 
-        // [+] button: add song binding to score
+        // Score toggle: click circle to add/remove from score
         if (row.section == Row::SongControl && !row.bindingId.empty() && x >= colScore) {
-            // Find next available score position
-            int maxPos = 0;
-            for (auto& r : rows)
-                if (r.section == Row::ScoreControl && r.scorePosition > maxPos)
-                    maxPos = r.scorePosition;
-            state.setBindingAsScoreStep(row.bindingId, maxPos + 1);
+            if (row.scorePosition >= 0) {
+                // Remove from score
+                state.clearScoreStep(row.bindingId);
+            } else {
+                // Add to score — find next available position
+                int maxPos = 0;
+                for (auto& r : rows)
+                    if (r.section == Row::SongControl && r.scorePosition > maxPos)
+                        maxPos = r.scorePosition;
+                state.setBindingAsScoreStep(row.bindingId, maxPos + 1);
+            }
             refresh();
-            return;
-        }
-
-        // [x] button: remove from score
-        if (row.section == Row::ScoreControl && x >= colScore) {
-            state.clearScoreStep(row.bindingId);
-            refresh();
-            return;
-        }
-
-        // Click score position number to reorder
-        if (row.section == Row::ScoreControl && x >= colScore - 20 && x < colScore + 4) {
-            showScoreMenu(i, event.getScreenPosition());
             return;
         }
     }
