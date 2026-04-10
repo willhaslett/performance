@@ -55,7 +55,10 @@ void ProducePane::paint(juce::Graphics& g) {
     // Track headers on left, grid on right
     auto trackArea = area.removeFromLeft(trackHeaderWidth);
     paintTrackHeaders(g, trackArea);
-    paintGrid(g, area);
+    {
+        juce::Graphics::ScopedSaveState sss(g);
+        paintGrid(g, area);
+    }
 
     // Drag reorder indicator
     if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && dragTrackIndex != dragTargetIndex) {
