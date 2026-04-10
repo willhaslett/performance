@@ -11,6 +11,7 @@ class StateAPI;
 class ProducePane : public juce::Component, private juce::Timer {
 public:
     ProducePane();
+    ~ProducePane() override;
 
     void setState(StateAPI* state, SequencerAPI* sequencer, Arrangement* arrangement);
 
@@ -23,6 +24,7 @@ private:
     StateAPI* state = nullptr;
     SequencerAPI* sequencer = nullptr;
     Arrangement* arrangement = nullptr;
+    int stateSubscriptionId = -1;
 
     void timerCallback() override;
 

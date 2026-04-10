@@ -1,15 +1,28 @@
 #include "gui/ProducePane.h"
 #include "api/StateAPI.h"
+#include "state/StateEvents.h"
 #include "engine/Log.h"
 
 ProducePane::ProducePane() {
     startTimerHz(30);
 }
 
+ProducePane::~ProducePane() {
+    if (state && stateSubscriptionId >= 0)
+        state->events().unsubscribe(stateSubscriptionId);
+}
+
 void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
     state = s;
     sequencer = seq;
     arrangement = arr;
+
+    if (state) {
+        stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
+            if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
+                juce::MessageManager::callAsync([this] { repaint(); });
+        });
+    }
 }
 
 void ProducePane::timerCallback() {
@@ -139,14 +152,33 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
     int y = area.getY();
     for (auto& t : tracks) {
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
+        auto* trackState = state->findTrack(t.id);
 
+        // Track header background — matches mixer header colors
+        bool enabled = trackState ? trackState->audioEnabled : true;
+        bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
+        constexpr float disabledDarken = 0.35f;
+
+        auto headerCol = isAudioInput ? juce::Colour(0xff8a6a2a)  // amber for audio input
+                                       : Theme::color(Theme::Color::bgHeader);
+        if (!enabled)
+            headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+
+        // Small color strip on left edge
+        g.setColour(headerCol);
+        g.fillRect(row.removeFromLeft(4));
+
+        // Row separator
         g.setColour(Theme::color(Theme::Color::border));
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
-        g.setColour(Theme::color(Theme::Color::textPrimary));
+        // Track name
+        g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
+                             : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), row.reduced(8, 0), juce::Justification::centredLeft);
+        g.drawText(juce::String(t.name), area.getX() + 8, y, area.getWidth() - 12,
+                   trackRowHeight, juce::Justification::centredLeft);
 
         y += trackRowHeight;
     }
@@ -161,6 +193,15 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     int gridWidth = area.getWidth();
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
+
+    // Alternating track lane backgrounds
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        int rowY = area.getY() + (int)i * trackRowHeight;
+        if (i % 2 == 1) {
+            g.setColour(juce::Colour(0x08ffffff));
+            g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
+        }
+    }
 
     // Grid lines — bar lines darker, beat lines lighter
     int startBar = (int)(startBeat / beatsPerBar);
