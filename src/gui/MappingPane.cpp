@@ -146,54 +146,46 @@ void MappingPane::buildRows() {
                 songBindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
     }
 
-    // Song section — ALL bindings (score steps get an indicator, not removed)
-    if (song) {
-        Row header;
-        header.section = Row::SongHeader;
-        rows.push_back(header);
+    if (!song) return;
 
-        for (int i = 0; i < (int)device->controls.size(); ++i) {
-            auto& ctrl = device->controls[i];
-            Row row;
-            row.section = Row::SongControl;
-            row.controlName = ctrl.name;
-            row.group = ctrl.group;
-            row.controlType = ctrl.controlType;
-            row.channel = ctrl.channel;
-            row.number = ctrl.number;
-            row.controlIndex = i;
+    // Header
+    Row header;
+    header.section = Row::SongHeader;
+    rows.push_back(header);
 
-            auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
-            if (it != songBindingMap.end()) {
-                row.bindingId = it->second.id;
-                auto* action = state.findActionById(it->second.actionId);
-                row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
-                row.argsDisplay = formatArgs(it->second.args);
-                row.scorePosition = it->second.isScoreStep ? it->second.scorePosition : -1;
-            }
-            rows.push_back(row);
+    // Build all control rows
+    std::vector<Row> scoreRows, nonScoreRows;
+    for (int i = 0; i < (int)device->controls.size(); ++i) {
+        auto& ctrl = device->controls[i];
+        Row row;
+        row.section = Row::SongControl;
+        row.controlName = ctrl.name;
+        row.group = ctrl.group;
+        row.controlType = ctrl.controlType;
+        row.channel = ctrl.channel;
+        row.number = ctrl.number;
+        row.controlIndex = i;
+
+        auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
+        if (it != songBindingMap.end()) {
+            row.bindingId = it->second.id;
+            auto* action = state.findActionById(it->second.actionId);
+            row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
+            row.argsDisplay = formatArgs(it->second.args);
+            row.scorePosition = it->second.isScoreStep ? it->second.scorePosition : -1;
         }
 
-        // Score section — read-only ordered view of score steps
-        std::vector<std::pair<int, Row>> scoreRows;
-        for (auto& r : rows) {
-            if (r.section == Row::SongControl && r.scorePosition >= 0) {
-                Row scoreRow = r;
-                scoreRow.section = Row::ScoreControl;
-                scoreRows.push_back({ r.scorePosition, scoreRow });
-            }
-        }
-
-        std::sort(scoreRows.begin(), scoreRows.end(),
-                  [](auto& a, auto& b) { return a.first < b.first; });
-
-        Row scoreHeader;
-        scoreHeader.section = Row::ScoreHeader;
-        rows.push_back(scoreHeader);
-
-        for (auto& [pos, row] : scoreRows)
-            rows.push_back(row);
+        if (row.scorePosition >= 0)
+            scoreRows.push_back(row);
+        else
+            nonScoreRows.push_back(row);
     }
+
+    // Score steps first, sorted by position
+    std::sort(scoreRows.begin(), scoreRows.end(),
+              [](auto& a, auto& b) { return a.scorePosition < b.scorePosition; });
+    for (auto& r : scoreRows) rows.push_back(r);
+    for (auto& r : nonScoreRows) rows.push_back(r);
 }
 
 void MappingPane::refresh() {
@@ -209,8 +201,7 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 }
 
 static int sectionHeight(MappingPane::Row::Section s) {
-    if (s == MappingPane::Row::SongHeader) return 52;  // title + gap + column headers
-    if (isSectionHeader(s)) return 24;
+    if (s == MappingPane::Row::SongHeader) return 52;
     return 24;
 }
 
@@ -289,7 +280,7 @@ void MappingPane::paint(juce::Graphics& g) {
                 g.setFont(Theme::font(Theme::fontSizeXs));
                 int colY = bounds.getBottom() - 22;  // column headers near bottom of header area
                 g.drawText("MIDI Source", colName, colY, colScore - colName, 20, juce::Justification::centredLeft);
-                g.drawText("Score",   colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
+                g.drawText("Score Step", colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
                 g.drawText("Group",   colGroup, colY, colType - colGroup, 20, juce::Justification::centredLeft);
                 g.drawText("Type",    colType, colY, colCh - colType, 20, juce::Justification::centredLeft);
                 g.drawText("Ch",      colCh, colY, colNum - colCh, 20, juce::Justification::centredLeft);
@@ -303,26 +294,20 @@ void MappingPane::paint(juce::Graphics& g) {
         }
 
         // Control rows — score rows get a distinct tint
-        if (row.section == Row::ScoreControl) {
-            // Score rows use the app background — visually passive
-            g.setColour(Theme::color(Theme::Color::bgApp));
-            g.fillRect(bounds);
-        } else if (i % 2 == 0) {
+        if (i % 2 == 0) {
             g.setColour(Theme::color(Theme::Color::bgPanel));
             g.fillRect(bounds);
         }
-        if (i == hoveredRow && row.section != Row::ScoreControl) {
+        if (i == hoveredRow) {
             g.setColour(Theme::color(Theme::Color::bgSlotHover));
             g.fillRect(bounds);
         }
 
-        bool isScore = (row.section == Row::ScoreControl);
         auto textCol = Theme::color(Theme::Color::textPrimary);
-        auto secCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::textSecondary);
-        auto actionCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::instrument);
+        auto secCol = Theme::color(Theme::Color::textSecondary);
+        auto actionCol = Theme::color(Theme::Color::instrument);
 
-        // Activity light (not for score rows)
-        if (!isScore) {
+        {
             bool active = (row.lastActivityMs > 0 && now - row.lastActivityMs < 300);
             g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
             g.fillEllipse((float)colActivity, (float)(bounds.getY() + (rowHeight - 6) / 2), 6.0f, 6.0f);
@@ -330,27 +315,18 @@ void MappingPane::paint(juce::Graphics& g) {
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
-        // Score Step column (after MIDI Source)
+        // Score Step column — clickable integer or "--"
         if (row.section == Row::SongControl && !row.bindingId.empty()) {
-            bool inScore = (row.scorePosition >= 0);
-            float cx = (float)(colScore + 20);
-            float cy = (float)bounds.getCentreY();
-            if (inScore) {
+            g.setFont(Theme::font(Theme::fontSizeSm));
+            if (row.scorePosition >= 0) {
                 g.setColour(Theme::color(Theme::Color::accent));
-                g.fillEllipse(cx - 5.0f, cy - 5.0f, 10.0f, 10.0f);
-                g.setFont(Theme::font(Theme::fontSizeXs));
-                g.drawText(juce::String(row.scorePosition), (int)cx + 8, bounds.getY(), 16, rowHeight,
-                           juce::Justification::centredLeft);
+                g.drawText(juce::String(row.scorePosition), colScore, bounds.getY(),
+                           colGroup - colScore, rowHeight, juce::Justification::centredLeft);
             } else {
                 g.setColour(Theme::color(Theme::Color::textDim));
-                g.drawEllipse(cx - 4.0f, cy - 4.0f, 8.0f, 8.0f, 1.0f);
+                g.drawText("--", colScore, bounds.getY(),
+                           colGroup - colScore, rowHeight, juce::Justification::centredLeft);
             }
-        }
-        // Score position for score rows
-        if (isScore) {
-            g.setColour(secCol);
-            g.drawText(juce::String(row.scorePosition) + ".", colScore, bounds.getY(), colName - colScore, rowHeight,
-                       juce::Justification::centred);
         }
 
         // MIDI Source (name)
@@ -376,7 +352,7 @@ void MappingPane::paint(juce::Graphics& g) {
 
         // Action
         g.setFont(Theme::font(Theme::fontSizeSm));
-        if (row.bindingId.empty() && !isScore) {
+        if (row.bindingId.empty()) {
             g.setColour(Theme::color(Theme::Color::textDim));
             g.drawText("-- assign --", colAction, bounds.getY(), 140, rowHeight,
                        juce::Justification::centredLeft);
@@ -390,7 +366,6 @@ void MappingPane::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
         }
 
-        // (Score toggle now drawn in the Score Step column above)
 
     }
 }
@@ -445,21 +420,10 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
 
         int x = event.getPosition().getX();
 
-        // Score Step column click — toggle in/out of score
+        // Score Step column click — show score step menu
         if (row.section == Row::SongControl && !row.bindingId.empty()
             && x >= colScore && x < colGroup) {
-            if (row.scorePosition >= 0) {
-                // Remove from score
-                state.clearScoreStep(row.bindingId);
-            } else {
-                // Add to score — find next available position
-                int maxPos = 0;
-                for (auto& r : rows)
-                    if (r.section == Row::SongControl && r.scorePosition > maxPos)
-                        maxPos = r.scorePosition;
-                state.setBindingAsScoreStep(row.bindingId, maxPos + 1);
-            }
-            refresh();
+            showScoreMenu(i, event.getScreenPosition());
             return;
         }
 
@@ -468,20 +432,13 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
             showActionMenu(i, event.getScreenPosition());
             return;
         }
-
-        // Score row: click position number to reorder
-        if (row.section == Row::ScoreControl && x >= colScore && x < colGroup) {
-            showScoreMenu(i, event.getScreenPosition());
-            return;
-        }
     }
 }
 
 void MappingPane::mouseMove(const juce::MouseEvent& event) {
     int newHovered = -1;
     for (int i = 0; i < (int)rows.size(); ++i) {
-        if ((rows[i].section == Row::GlobalControl || rows[i].section == Row::SongControl
-             || rows[i].section == Row::ScoreControl)
+        if (rows[i].section == Row::SongControl
             && getRowBounds(i).contains(event.getPosition())) {
             newHovered = i;
             break;
@@ -757,22 +714,75 @@ void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action) {
 
 void MappingPane::showScoreMenu(int rowIndex, juce::Point<int> screenPos) {
     auto& row = rows[rowIndex];
-    if (row.bindingId.empty()) return;  // must have a binding to be a score step
+    if (row.bindingId.empty()) return;
+
+    // Collect existing score positions
+    std::vector<int> usedPositions;
+    for (auto& r : rows)
+        if (r.scorePosition >= 0 && r.bindingId != row.bindingId)
+            usedPositions.push_back(r.scorePosition);
+    std::sort(usedPositions.begin(), usedPositions.end());
+
+    int nextPos = 1;
+    if (!usedPositions.empty()) nextPos = usedPositions.back() + 1;
 
     juce::PopupMenu menu;
-    menu.addItem(1, "-- none --", true, row.scorePosition < 0);
-    for (int i = 1; i <= 20; ++i)
-        menu.addItem(i + 1, juce::String(i), true, row.scorePosition == i);
+    menu.addItem(1, "Not in score", true, row.scorePosition < 0);
+    menu.addSeparator();
+
+    // Offer the next available position
+    menu.addItem(1000 + nextPos, "Step " + juce::String(nextPos) + " (append)");
+
+    // Offer existing positions for insert/replace
+    for (int pos : usedPositions) {
+        // Find which control owns this position
+        juce::String owner;
+        for (auto& r : rows)
+            if (r.scorePosition == pos) { owner = juce::String(r.controlName); break; }
+
+        juce::PopupMenu subMenu;
+        subMenu.addItem(2000 + pos, "Insert before step " + juce::String(pos));
+        subMenu.addItem(3000 + pos, "Insert after step " + juce::String(pos));
+        subMenu.addItem(4000 + pos, "Replace step " + juce::String(pos));
+        menu.addSubMenu("Step " + juce::String(pos) + " (" + owner + ")", subMenu);
+    }
 
     menu.showMenuAsync(juce::PopupMenu::Options()
         .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
         [this, rowIndex](int result) {
             if (result == 0) return;
             auto& row = rows[rowIndex];
-            if (result == 1)
+
+            if (result == 1) {
                 state.clearScoreStep(row.bindingId);
-            else
-                state.setBindingAsScoreStep(row.bindingId, result - 1);
+            } else if (result >= 4000) {
+                // Replace: take this position, bump nothing
+                int pos = result - 4000;
+                // Clear the existing step at this position
+                for (auto& r : rows)
+                    if (r.scorePosition == pos && r.bindingId != row.bindingId)
+                        state.clearScoreStep(r.bindingId);
+                state.setBindingAsScoreStep(row.bindingId, pos);
+            } else if (result >= 3000) {
+                // Insert after: take pos+1, bump everything >= pos+1
+                int pos = result - 3000;
+                int insertAt = pos + 1;
+                // Bump existing steps at insertAt and above
+                for (auto& r : rows)
+                    if (r.scorePosition >= insertAt && r.bindingId != row.bindingId)
+                        state.setBindingAsScoreStep(r.bindingId, r.scorePosition + 1);
+                state.setBindingAsScoreStep(row.bindingId, insertAt);
+            } else if (result >= 2000) {
+                // Insert before: take this position, bump everything >= pos
+                int pos = result - 2000;
+                for (auto& r : rows)
+                    if (r.scorePosition >= pos && r.bindingId != row.bindingId)
+                        state.setBindingAsScoreStep(r.bindingId, r.scorePosition + 1);
+                state.setBindingAsScoreStep(row.bindingId, pos);
+            } else if (result >= 1000) {
+                // Append
+                state.setBindingAsScoreStep(row.bindingId, result - 1000);
+            }
             refresh();
         });
 }
