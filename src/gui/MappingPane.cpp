@@ -301,7 +301,8 @@ void MappingPane::paint(juce::Graphics& g) {
 
         // Control rows — score rows get a distinct tint
         if (row.section == Row::ScoreControl) {
-            g.setColour(juce::Colour(0xff141820));  // subtle dark blue tint
+            // Score rows use the app background — visually passive
+            g.setColour(Theme::color(Theme::Color::bgApp));
             g.fillRect(bounds);
         } else if (i % 2 == 0) {
             g.setColour(Theme::color(Theme::Color::bgPanel));
@@ -313,10 +314,10 @@ void MappingPane::paint(juce::Graphics& g) {
         }
 
         bool isScore = (row.section == Row::ScoreControl);
-        auto textCol = isScore ? Theme::color(Theme::Color::textDim) : Theme::color(Theme::Color::textPrimary);
-        auto dimCol = Theme::color(Theme::Color::textDim);
-        auto secCol = isScore ? dimCol : Theme::color(Theme::Color::textSecondary);
-        auto actionCol = isScore ? dimCol : Theme::color(Theme::Color::instrument);
+        auto textCol = Theme::color(Theme::Color::textPrimary);
+        auto dimCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::textDim);
+        auto secCol = Theme::color(Theme::Color::textSecondary);
+        auto actionCol = isScore ? Theme::color(Theme::Color::textSecondary) : Theme::color(Theme::Color::instrument);
 
         // Activity light (not for score rows)
         if (!isScore) {
@@ -327,11 +328,11 @@ void MappingPane::paint(juce::Graphics& g) {
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
-        // Score position prefix
+        // Score position prefix — draw before the name with enough space
         if (isScore) {
             g.setColour(secCol);
-            g.drawText(juce::String(row.scorePosition) + ".", colActivity, bounds.getY(), 20, rowHeight,
-                       juce::Justification::centredRight);
+            g.drawText(juce::String(row.scorePosition) + ".", colActivity - 2, bounds.getY(), 16, rowHeight,
+                       juce::Justification::centredLeft);
         }
 
         // Name
@@ -367,7 +368,7 @@ void MappingPane::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
             g.setColour(secCol);
             g.setFont(Theme::font(Theme::fontSizeXs));
-            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), 80, rowHeight,
+            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), colScore - colAction - 90, rowHeight,
                        juce::Justification::centredLeft);
         }
 
@@ -446,6 +447,12 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         // Action column click (not for score rows — they already have an action)
         if (x >= colAction && x < colScore && row.section != Row::ScoreControl) {
             showActionMenu(i, event.getScreenPosition());
+            return;
+        }
+
+        // Score row: click position number to reorder
+        if (row.section == Row::ScoreControl && x < colName) {
+            showScoreMenu(i, event.getScreenPosition());
             return;
         }
 

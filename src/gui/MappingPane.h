@@ -128,7 +128,7 @@ private:
     static constexpr int colCh = 268;
     static constexpr int colNum = 296;
     static constexpr int colAction = 330;
-    static constexpr int colScore = 480;
+    static constexpr int colScore = 540;
 
     void timerCallback() override;
 };
