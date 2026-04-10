@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "state/StateEvents.h"
 #include "state/StateModel.h"
+#include "daw/SequencerAPI.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -90,6 +91,9 @@ public:
                                                   int number, int value)> callback);
     void clearGlobalMidiMonitor();
 
+    // --- Sequencer (optional — null means disabled) ---
+    SequencerAPI* sequencer();  // may return nullptr
+
     // --- Logging ---
     void log(const juce::String& message);
 
@@ -102,6 +106,8 @@ private:
     std::unique_ptr<AutomationEngine> automationEngine;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
+    std::unique_ptr<SequencerAPI> sequencerImpl;
+    double lastSequencerTimeMs = 0.0;
 
     void timerCallback() override;
     void populatePluginCatalog();

@@ -15,6 +15,9 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     sidebar.setCoordinator(&coordinator);
     addAndMakeVisible(sidebar);
 
+    transportBar.setSequencer(coordinator.sequencer());
+    addAndMakeVisible(transportBar);
+
     // Register all panes with PaneContainer (left slot 60%, right slot 40%)
     paneContainer.addPane(&mappingPane, 0.6f);
     paneContainer.addPane(&debugPane, 0.6f);
@@ -93,6 +96,10 @@ void MainLayout::paint(juce::Graphics& g) {
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
+
+    // Transport bar in toolbar (right of sidebar toggle)
+    transportBar.setBounds(36, 2, 220, toolbarHeight - 4);
+
     area.removeFromTop(toolbarHeight);
 
     // Sidebar + divider

@@ -6,6 +6,7 @@
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
 #include "gui/MappingPane.h"
+#include "gui/TransportBar.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
@@ -50,6 +51,7 @@ private:
     EngineAPI& engine;
 
     Sidebar sidebar;
+    TransportBar transportBar;
     PaneContainer paneContainer;
     MixerView mixerView;
 

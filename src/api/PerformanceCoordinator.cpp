@@ -8,6 +8,7 @@
 #include "engine/MIDIEngine.h"
 #include "engine/Log.h"
 #include "song/SongRuntime.h"
+#include "daw/InternalSequencer.h"
 #include <juce_cryptography/juce_cryptography.h>
 
 PerformanceCoordinator::PerformanceCoordinator() {}
@@ -95,6 +96,8 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 
     automationEngine = std::make_unique<AutomationEngine>();
     songRuntime = std::make_unique<SongRuntime>();
+    sequencerImpl = std::make_unique<InternalSequencer>();
+    lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
 
     midiEngine = std::make_unique<MIDIEngine>(
         audioEngine->getDeviceManager(), *audioEngine, *stateAPI);
@@ -109,14 +112,28 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     });
 
     // Auto-save every 30 seconds if dirty
-    startTimer(30000);
+    startTimer(100);  // 10Hz — drives sequencer clock + auto-save gated at 30s
 }
 
 void PerformanceCoordinator::timerCallback() {
-    if (stateAPI && persistence && stateAPI->isDirty()) {
-        persistence->saveFrom(*stateAPI);
-        stateAPI->clearDirty();
-        perfLog("[Coordinator] Auto-saved\n");
+    // Advance sequencer clock
+    if (sequencerImpl) {
+        double now = juce::Time::getMillisecondCounterHiRes();
+        double delta = (now - lastSequencerTimeMs) / 1000.0;
+        lastSequencerTimeMs = now;
+        if (delta > 0.0 && delta < 1.0)  // sanity check
+            static_cast<InternalSequencer*>(sequencerImpl.get())->advance(delta);
+    }
+
+    // Auto-save (every ~30 seconds, not every tick)
+    static int saveCounter = 0;
+    if (++saveCounter >= 300) {  // 300 ticks at 10Hz = 30s
+        saveCounter = 0;
+        if (stateAPI && persistence && stateAPI->isDirty()) {
+            persistence->saveFrom(*stateAPI);
+            stateAPI->clearDirty();
+            perfLog("[Coordinator] Auto-saved\n");
+        }
     }
 }
 
@@ -598,6 +615,10 @@ int64_t PerformanceCoordinator::getMidiDeviceActivityMs(const std::string& devic
 
 int64_t PerformanceCoordinator::getMidiPortActivityMs(const std::string& portName) {
     return midiEngine ? midiEngine->getPortLastActivityMs(juce::String(portName)) : 0;
+}
+
+SequencerAPI* PerformanceCoordinator::sequencer() {
+    return sequencerImpl.get();
 }
 
 void PerformanceCoordinator::log(const juce::String& message) {
