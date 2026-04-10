@@ -344,7 +344,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto headerCol = isAudioInput ? juce::Colour(0xff3a2e18)  // muted amber for audio input
                                        : Theme::color(Theme::Color::bgHeader);
         if (!enabled)
-            headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+            headerCol = headerCol.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
 
         // Full row background
         g.setColour(headerCol);
@@ -355,28 +355,35 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
+        // Layout: 8px | power(14) | 6px | arm(10) | 6px | track name
+        int cx = area.getX() + 8;
+        int cy_row = y + trackRowHeight / 2;
+
         // Power icon
-        auto iconBounds = juce::Rectangle<int>(area.getX() + 8, y + (trackRowHeight - 14) / 2, 14, 14);
+        auto iconBounds = juce::Rectangle<int>(cx, cy_row - 7, 14, 14);
         powerIconBounds[i] = iconBounds;
         paintPowerIcon(g, iconBounds, enabled);
+        cx += 14 + 6;
 
-        // Arm dot — ring when disarmed (shows clickability), filled orange when armed
+        // Arm dot — only shown when enabled
         bool isArmed = trackState ? trackState->armed : false;
-        auto armRect = juce::Rectangle<float>((float)(area.getX() + 25),
-                                               (float)(y + (trackRowHeight - 10) / 2), 10.0f, 10.0f);
-        if (isArmed) {
-            g.setColour(juce::Colour(0xffee8822));
-            g.fillEllipse(armRect);
-        } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawEllipse(armRect.reduced(1.0f), 1.5f);
+        if (enabled) {
+            auto armRect = juce::Rectangle<float>((float)cx, (float)(cy_row - 5), 10.0f, 10.0f);
+            if (isArmed) {
+                g.setColour(juce::Colour(0xffee8822));
+                g.fillEllipse(armRect);
+            } else {
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.drawEllipse(armRect.reduced(1.0f), 1.5f);
+            }
         }
+        cx += 10 + 6;
 
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
                              : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), area.getX() + 38, y, area.getWidth() - 42,
+        g.drawText(juce::String(t.name), cx, y, area.getRight() - cx - 4,
                    trackRowHeight, juce::Justification::centredLeft);
 
         y += trackRowHeight;
@@ -573,20 +580,23 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                         state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
                         if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
                             state->setTrackMidiEnabled(tracks[idx].id, true);
+                        if (!newEnabled && trackState->armed)
+                            state->setTrackArmed(tracks[idx].id, false);
                     }
                     repaint();
                     return;
                 }
 
-                // Arm dot (x=26..34 area)
-                int gridTop = transportHeight + rulerHeight;
-                auto armArea = juce::Rectangle<int>(26, gridTop + idx * trackRowHeight + (trackRowHeight - 8) / 2, 8, 8);
-                if (armArea.expanded(4).contains(event.getPosition())) {
-                    if (trackState) {
+                // Arm dot — only when track is enabled
+                if (trackState && trackState->audioEnabled) {
+                    // Layout: 8 + 14(power) + 6 = 28, arm at 28..38
+                    int gridTop = transportHeight + rulerHeight;
+                    auto armArea = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + (trackRowHeight - 10) / 2, 10, 10);
+                    if (armArea.expanded(4).contains(event.getPosition())) {
                         state->setTrackArmed(tracks[idx].id, !trackState->armed);
+                        repaint();
+                        return;
                     }
-                    repaint();
-                    return;
                 }
             }
         }

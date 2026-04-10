@@ -225,18 +225,19 @@ void TrackStrip::paint(juce::Graphics& g) {
     auto headerColour = isAudioInput ? juce::Colour(bgHeaderAudioInput)
                                       : Theme::color(Theme::Color::bgHeader);
     if (!audioEnabled)
-        headerColour = headerColour.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+        headerColour = headerColour.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
-    midiDotBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
-                                          headerBounds.getCentreY() - 7, 14, 14);
+    // Layout: 8px | power(14) | 6px | arm(12) | 6px | track name | ... | menu
+    int cx = headerBounds.getX() + 8;
+    int cy = headerBounds.getCentreY();
+
+    midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
 
     {
-        // Power icon for all track types (controls audioEnabled)
         auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
                                        : Theme::color(Theme::Color::textDim);
-
         g.setColour(iconColor);
         juce::Path powerIcon;
         auto iconArea = midiDotBounds.reduced(1).toFloat();
@@ -248,23 +249,25 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
+    cx += 14 + 6;
 
-    // Record arm dot — larger, ring when disarmed to show clickability
-    armDotBounds = juce::Rectangle<int>(midiDotBounds.getRight() + 3,
-                                         headerBounds.getCentreY() - 6, 12, 12);
-    {
+    // Record arm dot — only shown when track is enabled
+    armDotBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
+    if (audioEnabled) {
         if (armed) {
-            g.setColour(juce::Colour(0xffee8822));  // orange — r/g safe
+            g.setColour(juce::Colour(0xffee8822));
             g.fillEllipse(armDotBounds.toFloat());
         } else {
             g.setColour(Theme::color(Theme::Color::textDim));
             g.drawEllipse(armDotBounds.reduced(1).toFloat(), 1.5f);
         }
     }
+    cx += 12 + 6;
 
-    g.setColour(Theme::color(Theme::Color::textWhite));
+    g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
+                              : Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.withTrimmedLeft(40).withTrimmedRight(20).reduced(4, 0),
+    g.drawText(trackName, headerBounds.withTrimmedLeft(cx - headerBounds.getX()).withTrimmedRight(20),
                juce::Justification::centredLeft);
 
     // Vertical dots menu button
@@ -370,8 +373,8 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // Arm dot toggles recording arm
-    if (armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+    // Arm dot toggles recording arm (only when track is enabled)
+    if (audioEnabled && armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         armed = !armed;
         state.setTrackArmed(trackId.toStdString(), armed);
         repaint();
@@ -385,6 +388,10 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         state.setTrackAudioEnabled(trackId.toStdString(), audioEnabled);
         if (audioEnabled && sourceType == TrackSourceType::Instrument)
             state.setTrackMidiEnabled(trackId.toStdString(), true);
+        if (!audioEnabled && armed) {
+            armed = false;
+            state.setTrackArmed(trackId.toStdString(), false);
+        }
         repaint();
         return;
     }
