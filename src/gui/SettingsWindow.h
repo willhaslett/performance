@@ -46,6 +46,28 @@ private:
 
     AudioPage audioPage;
 
+    // Custom LookAndFeel to remove tab borders
+    struct TabLookAndFeel : public juce::LookAndFeel_V4 {
+        void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
+                            bool isMouseOver, bool isMouseDown) override {
+            auto area = button.getActiveArea();
+            bool isFront = button.isFrontTab();
+            g.setColour(isFront ? Theme::color(Theme::Color::bgApp)
+                                 : Theme::color(Theme::Color::bgPanel));
+            g.fillRect(area);
+            g.setColour(isFront ? Theme::color(Theme::Color::textWhite)
+                                 : Theme::color(Theme::Color::textSecondary));
+            g.setFont(Theme::font(Theme::fontSize));
+            g.drawText(button.getButtonText(), area, juce::Justification::centred);
+        }
+        void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics& g, int w, int h) override {
+            g.setColour(Theme::color(Theme::Color::bgPanel));
+            g.fillRect(0, 0, w, h);
+        }
+        int getTabButtonOverlap(int) override { return 0; }
+    };
+    TabLookAndFeel tabLF;
+
     // Tab bar
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 };
