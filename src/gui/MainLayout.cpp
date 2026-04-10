@@ -18,8 +18,11 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     transportBar.setSequencer(coordinator.sequencer());
     addAndMakeVisible(transportBar);
 
+    producePane.setState(&state, coordinator.sequencer(), &coordinator.arrangement());
+
     // Register all panes with PaneContainer (left slot 60%, right slot 40%)
     paneContainer.addPane(&mappingPane, 0.6f);
+    paneContainer.addPane(&producePane, 0.6f);
     paneContainer.addPane(&debugPane, 0.6f);
     paneContainer.addPane(&chatView, 0.4f);
     paneContainer.addPane(&logPane, 0.4f);
@@ -27,6 +30,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     // Default: mapping pane (left), chat (right)
     activeLeftPane = &mappingPane;
     activeRightPane = &chatView;
+    paneContainer.setPaneVisible(&producePane, false);
     paneContainer.setPaneVisible(&debugPane, false);
     paneContainer.setPaneVisible(&logPane, false);
 

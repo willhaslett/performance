@@ -58,6 +58,7 @@ target_sources(Performance PRIVATE
     src/gui/DebugPane.cpp
     src/gui/SettingsWindow.cpp
     src/gui/TransportBar.cpp
+    src/gui/ProducePane.cpp
     src/daw/InternalSequencer.cpp
     src/daw/Arrangement.cpp
     src/gui/MappingPane.cpp

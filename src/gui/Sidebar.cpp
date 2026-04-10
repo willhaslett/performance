@@ -72,6 +72,9 @@ Sidebar::Sidebar() {
                         refreshTree();
                     });
             }
+        } else if (type == "produce") {
+            selectedDeviceId = id;
+            if (onProduceSelected) onProduceSelected();
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
@@ -404,6 +407,7 @@ void Sidebar::refreshTree() {
             panesNode.children.push_back(leaf);
         };
 
+        addLeaf("Produce", "produce", "produce");
         addLeaf("Debug", "debug", "debug");
         addLeaf("Logs", "logs", "logs");
         addLeaf("Chat", "chat", "chat");

@@ -7,6 +7,7 @@
 #include "gui/LogPane.h"
 #include "gui/MappingPane.h"
 #include "gui/TransportBar.h"
+#include "gui/ProducePane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
 
@@ -43,6 +44,7 @@ public:
     // Expose panes for wiring
     DebugPane debugPane;
     MappingPane mappingPane;
+    ProducePane producePane;
     ChatView chatView;
     LogPane logPane;
 
