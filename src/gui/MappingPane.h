@@ -54,9 +54,10 @@ private:
     int pendingLearnControlIndex = -1;
     InlineEditor inlineEditor;
 
-    // Flattened row model
+public:
+    // Flattened row model (public for isSectionHeader helper)
     struct Row {
-        enum Section { GlobalHeader, GlobalControl, SongHeader, SongControl };
+        enum Section { GlobalHeader, GlobalControl, SongHeader, SongControl, ScoreHeader, ScoreControl };
         Section section;
         // Control data (for control rows)
         std::string controlName;
@@ -75,6 +76,7 @@ private:
         // Activity
         int64_t lastActivityMs = 0;
     };
+private:
     std::vector<Row> rows;
     int hoveredRow = -1;
     int scrollOffset = 0;
