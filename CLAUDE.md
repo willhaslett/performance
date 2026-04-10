@@ -113,6 +113,7 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **MappingPane** — Unified device mapping + bindings + score pane. Per-device view with Global Bindings section (always active, no score) and Song Bindings section (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Learn mode, inline name/group editing, action assignment via popup menu with param dialogs.
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
+- **SettingsWindow** — popup window (Cmd+,) with tabbed interface. Audio tab: output/input device, buffer size, sample rate, computed latency. MIDI tab placeholder. Also accessible via Performance menu → Settings.
 - **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
 
 ### Audio Graph
@@ -184,13 +185,17 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## TODOs
 
-**Production readiness (active priority):**
-1. Beach ball → spinner overlay: show an in-app loading indicator during save/load instead of the macOS spinning wait cursor. Doesn't fix the root cause (blocking message thread) but eliminates the bad optic.
-2. Directory permission prompt: app prompts for ~/Documents access on every launch. Audit file access — should only touch ~/.config/performance and plugin directories.
-3. Audio buffer size / sample rate control: add UI for selecting buffer size and sample rate per audio device. Currently hardcoded to OS defaults (~512 samples). Directly affects latency.
-4. MIDI device hot-plug: detect new/removed MIDI devices without app restart. Poll MidiInput::getAvailableDevices, diff against enabled set, add/remove callbacks.
-5. Error boundary: top-level crash handler (JUCE SystemStats::setApplicationCrashHandler + signal handler). Catch what we can, log context, show a friendly message instead of silent death.
+**Production readiness (completed):**
+1. ~~Beach ball → spinner overlay~~ — done. Semi-transparent overlay with message during save/load/song switch.
+2. ~~Directory permission prompt~~ — done. Explicit AU plugin paths, no getDefaultLocationsToSearch.
+3. ~~Audio buffer size / sample rate control~~ — done. Settings window (Cmd+,) with Audio tab. Also in sidebar. Persisted.
+4. ~~MIDI device hot-plug~~ — done. 4Hz polling, auto add/remove callbacks.
+5. ~~Error boundary~~ — done. JUCE crash handler with emergency save.
+
+**Production readiness (remaining):**
 6. Background plugin state capture: move getStateInformation calls off the message thread. Root cause of the beach ball. Hard — JUCE plugin APIs aren't thread-safe.
+7. Failed plugin load feedback: user sees nothing when a plugin fails to instantiate. Need status indicator on the slot.
+8. Settings window: MIDI tab placeholder exists, needs content (MIDI channel filtering, transpose, etc).
 
 **Known functional issues:**
 - Device Learn: new mappings persist immediately on capture instead of waiting for name commit. Root cause: JUCE TextEditor focusLost fires commit before cancel can intercept. Workaround: right-click → Delete.
