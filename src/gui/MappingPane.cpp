@@ -65,10 +65,10 @@ void MappingPane::setDevice(const std::string& deviceId, const std::string& port
 
     auto* device = state.findDevice(currentDeviceId);
     if (device) {
+        deviceNameLabel.setText("Mappings", juce::dontSendNotification);
         auto* song = state.currentSong();
-        auto title = device->name + (song ? " — " + song->name : "");
-        deviceNameLabel.setText(juce::String(title), juce::dontSendNotification);
-        portNameLabel.setText(juce::String(device->midiPortName), juce::dontSendNotification);
+        auto info = "Device: " + device->name + (song ? "    Song: " + song->name : "");
+        portNameLabel.setText(juce::String(info), juce::dontSendNotification);
         deviceNameLabel.setVisible(true);
         portNameLabel.setVisible(true);
         learnButton.setVisible(true);
@@ -201,7 +201,7 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 }
 
 static int sectionHeight(MappingPane::Row::Section s) {
-    if (s == MappingPane::Row::SongHeader) return 60;  // 8px top + 20px title + 12px gap + 20px columns
+    if (s == MappingPane::Row::SongHeader) return 30;  // column headers + padding below
     return 24;
 }
 
@@ -273,12 +273,10 @@ void MappingPane::paint(juce::Graphics& g) {
             if (row.section == Row::GlobalHeader)
                 g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
             else if (row.section == Row::SongHeader) {
-                // Table title — 8px from top
-                g.drawText("Mappings", 12, bounds.getY() + 8, 200, 20, juce::Justification::centredLeft);
-                // Column headers — at bottom of header area
+                // Column headers only — title is in the page header
                 g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                int colY = bounds.getBottom() - 20;
+                int colY = bounds.getY();
                 g.drawText("MIDI Source", colName, colY, colScore - colName, 20, juce::Justification::centredLeft);
                 g.drawText("Score Step", colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
                 g.drawText("Group",   colGroup, colY, colType - colGroup, 20, juce::Justification::centredLeft);
@@ -331,7 +329,7 @@ void MappingPane::paint(juce::Graphics& g) {
 
         // MIDI Source (name)
         g.setColour(textCol);
-        g.drawText(juce::String(row.controlName), colName, bounds.getY(), colGroup - colName, rowHeight,
+        g.drawText(juce::String(row.controlName), colName, bounds.getY(), colScore - colName - 4, rowHeight,
                    juce::Justification::centredLeft);
 
         // Group — same brightness as name
@@ -550,7 +548,7 @@ void MappingPane::onLearnCapture(const std::string& type, int channel, int numbe
     for (int i = 0; i < (int)rows.size(); ++i) {
         if (rows[i].section == Row::SongControl && rows[i].controlIndex == newIdx) {
             auto bounds = getRowBounds(i);
-            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colGroup - colName, rowHeight);
+            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colScore - colName - 4, rowHeight);
             pendingLearnControlIndex = newIdx;
             inlineEditor.onCommit = [this, newIdx](const juce::String& newText) {
                 state.renameDeviceControl(currentDeviceId, newIdx, newText.toStdString());
