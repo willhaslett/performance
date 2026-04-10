@@ -109,9 +109,8 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI + EngineAPI. Songs, Library (instruments/effects with presets), Actions, Devices (Audio with per-device Input/Output children + MIDI), Panes (Bindings, Debug, Logs, Chat). Audio device nodes are always expanded; click device name to set both I/O, click Input or Output leaf to set individually. Green dot on active role.
-- **DeviceEditorPane** — MIDI device control mapping editor with learn mode. Shown when a MIDI device is selected in sidebar.
-- **BindingsPane** — Device-centric inline binding editor. Tree layout: device headers → control rows. Click any control to assign an action via popup menu. Actions with params (track, duration, easing) show a dialog with appropriate dropdowns/fields generated from the action's `paramSchema`. Existing bindings display inline (action in amber + args).
+- **Sidebar** — StateAPI + EngineAPI + PerformanceCoordinator. Songs, Library (instruments/effects with presets), Actions, Maps (MIDI devices with activity lights), Devices (Audio with per-device Input/Output children), Panes (Debug, Logs, Chat). Audio device nodes always expanded; click device name to set both I/O, click Input or Output leaf individually. Green dot on active role/activity.
+- **MappingPane** — Unified device mapping + bindings + score pane. Per-device view with Global Bindings section (always active, no score) and Song Bindings section (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Learn mode, inline name/group editing, action assignment via popup menu with param dialogs.
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
 - **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
@@ -144,7 +143,7 @@ MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents
 
 ### Bindings & Actions
 
-Bindings map MIDI controls to named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active). `effectiveBindings()` merges both (song wins on conflict). Bindings store action args as JSON arrays. Action `paramSchema` (JSON) defines expected parameters — used by BindingsPane to generate appropriate input fields.
+Bindings map MIDI controls to named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active). `effectiveBindings()` merges both (song wins on conflict). Bindings store action args as JSON arrays with track UUIDs (resolved from names at bind-time). Action `paramSchema` (JSON) defines expected parameters — used by MappingPane to generate appropriate input fields.
 
 Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disableTrack(trackName)`, `fadeOut(trackName, duration, easing)`, `fadeIn(trackName, duration, easing)`, `crossfade(fromTrack, toTrack, duration, easing)`. All track args resolved by name or UUID at execution time via `resolveTrack()`.
 
@@ -154,7 +153,7 @@ SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact mat
 
 ### Maps (unified device mapping + bindings)
 
-MappingPane (`src/gui/MappingPane.h/.cpp`) — single pane per device showing all mapped controls in two sections: Global Bindings (always active, no score) and Song Bindings (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Accessible via "Maps" sidebar section. Includes Learn mode for adding new controls, inline name/group editing. Replaces the separate DeviceEditorPane + BindingsPane for the Maps workflow.
+MappingPane (`src/gui/MappingPane.h/.cpp`) — unified device mapping + bindings + score pane. Per-device view with two sections: Global Bindings (always active, no score) and Song Bindings (song-scoped, with score step column). Each row: activity light, name, group, type, ch, #, action, score. Accessible via "Maps" sidebar section. Includes Learn mode, inline name/group editing, action assignment with param dialogs.
 
 ### Logging
 
