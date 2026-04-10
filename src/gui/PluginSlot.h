@@ -40,6 +40,7 @@ private:
     bool waitingForLoad = false;
 
     void timerCallback() override;
+    void buildPluginMenu(juce::PopupMenu& menu, const std::vector<juce::String>& plugins, bool isInstrument);
     void showPicker(juce::Point<int> position);
     void showContextMenu(juce::Point<int> position);
 };

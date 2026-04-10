@@ -64,13 +64,10 @@ void PluginSlot::mouseExit(const juce::MouseEvent&) {
     if (hovered) { hovered = false; repaint(); }
 }
 
-void PluginSlot::showPicker(juce::Point<int> position) {
-    juce::PopupMenu menu;
-    bool isInstrument = (slotType == Instrument);
-    auto plugins = isInstrument ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
-
+void PluginSlot::buildPluginMenu(juce::PopupMenu& menu,
+                                  const std::vector<juce::String>& plugins,
+                                  bool isInstrument) {
     if (isInstrument) {
-        // Instruments: flat list with preset submenus
         for (int p = 0; p < (int)plugins.size(); ++p) {
             auto& pname = plugins[p];
             auto presets = engine.listPresets(pname);
@@ -88,7 +85,6 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             }
         }
     } else {
-        // Effects: grouped by manufacturer
         std::map<juce::String, std::vector<int>> byManufacturer;
         for (int p = 0; p < (int)plugins.size(); ++p) {
             auto* info = state.findPluginByName(plugins[p].toStdString());
@@ -118,6 +114,13 @@ void PluginSlot::showPicker(juce::Point<int> position) {
             menu.addSubMenu(mfr, mfrMenu);
         }
     }
+}
+
+void PluginSlot::showPicker(juce::Point<int> position) {
+    juce::PopupMenu menu;
+    bool isInstrument = (slotType == Instrument);
+    auto plugins = isInstrument ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
+    buildPluginMenu(menu, plugins, isInstrument);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
         juce::Rectangle<int>(position.x, position.y, 1, 1)),
@@ -164,24 +167,10 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
     menu.addItem(1, "No Plugin");
     menu.addSeparator();
 
+    bool isInstrument = (slotType == Instrument);
+    auto plugins = isInstrument ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
     juce::PopupMenu replaceMenu;
-    auto plugins = (slotType == Instrument) ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
-    for (int p = 0; p < (int)plugins.size(); ++p) {
-        auto& pname = plugins[p];
-        auto presets = engine.listPresets(pname);
-        bool hasUserPresets = false;
-        for (auto& pr : presets)
-            if (pr != "Default") { hasUserPresets = true; break; }
-
-        if (hasUserPresets) {
-            juce::PopupMenu presetMenu;
-            for (int s = 0; s < (int)presets.size(); ++s)
-                presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
-            replaceMenu.addSubMenu(pname, presetMenu);
-        } else {
-            replaceMenu.addItem(p * 1000 + 1, pname);
-        }
-    }
+    buildPluginMenu(replaceMenu, plugins, isInstrument);
     menu.addSubMenu("Replace", replaceMenu);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
