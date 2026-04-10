@@ -291,7 +291,7 @@ void MappingPane::paint(juce::Graphics& g) {
                 g.drawText("Ch", colCh, bounds.getY(), colNum - colCh, sectionHeaderHeight, juce::Justification::centredLeft);
                 g.drawText("#", colNum, bounds.getY(), colAction - colNum, sectionHeaderHeight, juce::Justification::centredLeft);
                 g.drawText("Action", colAction, bounds.getY(), 80, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("In Score", colScore - 8, bounds.getY(), 50, sectionHeaderHeight, juce::Justification::centred);
+                g.drawText("In Score", getWidth() - scoreColWidth, bounds.getY(), scoreColWidth - 8, sectionHeaderHeight, juce::Justification::centred);
             } else {
                 // Score header — same style as Mappings header
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
@@ -368,7 +368,7 @@ void MappingPane::paint(juce::Graphics& g) {
                        juce::Justification::centredLeft);
             g.setColour(secCol);
             g.setFont(Theme::font(Theme::fontSizeXs));
-            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), colScore - colAction - 90, rowHeight,
+            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), getWidth() - scoreColWidth - colAction - 90, rowHeight,
                        juce::Justification::centredLeft);
         }
 
@@ -376,7 +376,7 @@ void MappingPane::paint(juce::Graphics& g) {
         if (row.section == Row::SongControl && !row.bindingId.empty()) {
             bool inScore = (row.scorePosition >= 0);
             // Filled circle = in score, empty circle = not in score
-            float cx = (float)colScore + 8.0f;
+            float cx = (float)(getWidth() - scoreColWidth + 12);
             float cy = (float)bounds.getCentreY();
             if (inScore) {
                 g.setColour(Theme::color(Theme::Color::accent));
@@ -445,7 +445,8 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         int x = event.getPosition().getX();
 
         // Action column click (not for score rows — they already have an action)
-        if (x >= colAction && x < colScore && row.section != Row::ScoreControl) {
+        int scoreX = getWidth() - scoreColWidth;
+        if (x >= colAction && x < scoreX && row.section != Row::ScoreControl) {
             showActionMenu(i, event.getScreenPosition());
             return;
         }
@@ -457,7 +458,7 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         }
 
         // Score toggle: click circle to add/remove from score
-        if (row.section == Row::SongControl && !row.bindingId.empty() && x >= colScore) {
+        if (row.section == Row::SongControl && !row.bindingId.empty() && x >= scoreX) {
             if (row.scorePosition >= 0) {
                 // Remove from score
                 state.clearScoreStep(row.bindingId);
