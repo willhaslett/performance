@@ -30,6 +30,10 @@ void ProducePane::timerCallback() {
     if (sequencer && sequencer->isPlaying()) repaint();
 }
 
+int ProducePane::beatsPerBar() const {
+    return sequencer ? sequencer->getTimeSignatureNumerator() : 4;
+}
+
 int ProducePane::beatToX(double beat) const {
     return trackHeaderWidth + (int)((beat - scrollBeat) * pixelsPerBeat);
 }
@@ -195,11 +199,12 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     char buf[16];
 
     // --- Beat position: BAR . BEAT . DIV . TICK ---
-    int bar = (int)(beat / beatsPerBar) + 1;
-    int beatInBar = (int)std::fmod(beat, (double)beatsPerBar) + 1;
+    int bar = (int)(beat / beatsPerBar()) + 1;
+    int beatInBar = (int)std::fmod(beat, (double)beatsPerBar()) + 1;
     double fractional = std::fmod(beat, 1.0);
-    int div = (int)(fractional * 4) + 1;
-    int tick = (int)(std::fmod(fractional * 4, 1.0) * 240);
+    int tsDen = sequencer->getTimeSignatureDenominator();
+    int div = (int)(fractional * tsDen) + 1;
+    int tick = (int)(std::fmod(fractional * tsDen, 1.0) * 240);
 
     int colX = lcdBounds.getX() + 6;
 
@@ -248,9 +253,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     drawCol(buf, "BPM", 52, monoMd);
 
     colX += 2;
-    int tsNum = sequencer->getTimeSignatureNumerator();
-    int tsDen = sequencer->getTimeSignatureDenominator();
-    snprintf(buf, sizeof(buf), "%d/%d", tsNum, tsDen);
+    snprintf(buf, sizeof(buf), "%d/%d",
+             sequencer->getTimeSignatureNumerator(), tsDen);
     drawCol(buf, "TIME SIG", 48, monoMd);
 }
 
@@ -264,11 +268,11 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
     // Draw bar numbers
-    int startBar = (int)(startBeat / beatsPerBar);
-    int endBar = (int)(endBeat / beatsPerBar) + 1;
+    int startBar = (int)(startBeat / beatsPerBar());
+    int endBar = (int)(endBeat / beatsPerBar()) + 1;
 
     for (int bar = startBar; bar <= endBar; ++bar) {
-        double barBeat = bar * beatsPerBar;
+        double barBeat = bar * beatsPerBar();
         int x = beatToX(barBeat);
         if (x < trackHeaderWidth || x > getWidth()) continue;
 
@@ -369,12 +373,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // Grid lines — bar lines darker, beat lines lighter
-    int startBar = (int)(startBeat / beatsPerBar);
-    int endBar = (int)(endBeat / beatsPerBar) + 1;
+    int startBar = (int)(startBeat / beatsPerBar());
+    int endBar = (int)(endBeat / beatsPerBar()) + 1;
 
     for (int bar = startBar; bar <= endBar; ++bar) {
-        for (int b = 0; b < beatsPerBar; ++b) {
-            double beat = bar * beatsPerBar + b;
+        for (int b = 0; b < beatsPerBar(); ++b) {
+            double beat = bar * beatsPerBar() + b;
             int x = beatToX(beat);
             if (x < area.getX() || x > area.getRight()) continue;
 
@@ -620,19 +624,17 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // h/l: step playhead by division (1/4 beat)
-    constexpr double divSize = 0.25;
-    if (key.getTextCharacter() == 'h' && sequencer) {
+    // h/l: step playhead by one division (1/denominator of a beat)
+    if ((key.getTextCharacter() == 'h' || key.getTextCharacter() == 'l') && sequencer) {
+        double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
         double beat = sequencer->getBeatPosition();
-        double snapped = std::floor(beat / divSize) * divSize - divSize;
-        sequencer->setBeatPosition(std::max(0.0, snapped));
-        repaint();
-        return true;
-    }
-    if (key.getTextCharacter() == 'l' && sequencer) {
-        double beat = sequencer->getBeatPosition();
-        double snapped = std::floor(beat / divSize) * divSize + divSize;
-        sequencer->setBeatPosition(snapped);
+        if (key.getTextCharacter() == 'h') {
+            double snapped = std::floor(beat / divSize) * divSize - divSize;
+            sequencer->setBeatPosition(std::max(0.0, snapped));
+        } else {
+            double snapped = std::floor(beat / divSize) * divSize + divSize;
+            sequencer->setBeatPosition(snapped);
+        }
         repaint();
         return true;
     }

@@ -38,7 +38,7 @@ private:
     static constexpr int trackHeaderWidth = 120;
     static constexpr int trackRowHeight = 40;
     static constexpr int rulerHeight = 20;
-    static constexpr int beatsPerBar = 4;
+    int beatsPerBar() const;
 
     double pixelsPerBeat = 30.0;
     double scrollBeat = 0.0;  // horizontal scroll position in beats
