@@ -176,14 +176,14 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     // --- Position display (LCD-style, centered) ---
     int lcdWidth = 420;
     int lcdX = area.getCentreX() - lcdWidth / 2;
-    int lcdY = area.getY() + 4;
-    int lcdHeight = area.getHeight() - 8;
+    int lcdY = area.getY() + 8;
+    int lcdHeight = area.getHeight() - 16;
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
 
-    // LCD background
-    auto lcdBg = juce::Colour(0xff1a1a2a);
-    auto lcdBorder = juce::Colour(0xff2a2a3a);
-    auto lcdDigit = juce::Colour(0xffddeeff);
+    // LCD background — matches fader meter groove
+    auto lcdBg = Theme::color(Theme::Color::bgSlot);
+    auto lcdBorder = Theme::color(Theme::Color::border);
+    auto lcdDigit = Theme::color(Theme::Color::midiActive);
     g.setColour(lcdBg);
     g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
     g.setColour(lcdBorder);
