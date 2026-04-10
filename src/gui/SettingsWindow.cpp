@@ -12,6 +12,7 @@ SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
 
     tabs.setLookAndFeel(&tabLF);
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
+    tabs.addTab("MIDI", Theme::color(Theme::Color::bgApp), &midiPage, false);
     tabs.setTabBarDepth(36);
     tabs.setColour(juce::TabbedComponent::backgroundColourId, Theme::color(Theme::Color::bgPanel));
     tabs.setColour(juce::TabbedComponent::outlineColourId, juce::Colours::transparentBlack);

@@ -46,6 +46,17 @@ private:
 
     AudioPage audioPage;
 
+    // Placeholder MIDI page
+    struct MidiPage : public juce::Component {
+        void paint(juce::Graphics& g) override {
+            g.fillAll(Theme::color(Theme::Color::bgApp));
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(14.0f));
+            g.drawText("MIDI settings coming soon", getLocalBounds(), juce::Justification::centred);
+        }
+    };
+    MidiPage midiPage;
+
     // Custom LookAndFeel to remove tab borders
     struct TabLookAndFeel : public juce::LookAndFeel_V4 {
         void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
