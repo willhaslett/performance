@@ -229,6 +229,13 @@ void TrackStrip::paint(juce::Graphics& g) {
         // Power icon for all track types (controls audioEnabled)
         auto iconColor = audioEnabled ? Theme::color(Theme::Color::midiActive)
                                        : Theme::color(Theme::Color::textDim);
+
+        // Glow behind icon when enabled
+        if (audioEnabled) {
+            g.setColour(iconColor.withAlpha(0.25f));
+            g.fillEllipse(midiDotBounds.expanded(3).toFloat());
+        }
+
         g.setColour(iconColor);
         juce::Path powerIcon;
         auto iconArea = midiDotBounds.reduced(1).toFloat();

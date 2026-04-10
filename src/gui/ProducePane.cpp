@@ -158,6 +158,28 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 }
 
+void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled) {
+    auto iconColor = enabled ? Theme::color(Theme::Color::midiActive)
+                              : Theme::color(Theme::Color::textDim);
+
+    // Glow behind icon when enabled
+    if (enabled) {
+        g.setColour(iconColor.withAlpha(0.25f));
+        g.fillEllipse(iconArea.expanded(3).toFloat());
+    }
+
+    g.setColour(iconColor);
+    juce::Path powerIcon;
+    auto a = iconArea.reduced(1).toFloat();
+    powerIcon.addCentredArc(a.getCentreX(), a.getCentreY(),
+                             a.getWidth() * 0.4f, a.getHeight() * 0.4f,
+                             0.0f, juce::MathConstants<float>::pi * 0.3f,
+                             juce::MathConstants<float>::pi * 1.7f, true);
+    g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
+    g.drawLine(a.getCentreX(), a.getY() + 1.0f,
+               a.getCentreX(), a.getCentreY(), 1.5f);
+}
+
 void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(area);
@@ -168,8 +190,10 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
     if (!state) return;
 
     auto tracks = state->listTracks();
+    powerIconBounds.resize(tracks.size());
     int y = area.getY();
-    for (auto& t : tracks) {
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        auto& t = tracks[i];
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
 
@@ -192,11 +216,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
+        // Power icon
+        auto iconBounds = juce::Rectangle<int>(area.getX() + 8, y + (trackRowHeight - 14) / 2, 14, 14);
+        powerIconBounds[i] = iconBounds;
+        paintPowerIcon(g, iconBounds, enabled);
+
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
                              : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), area.getX() + 8, y, area.getWidth() - 12,
+        g.drawText(juce::String(t.name), area.getX() + 28, y, area.getWidth() - 32,
                    trackRowHeight, juce::Justification::centredLeft);
 
         y += trackRowHeight;
@@ -364,6 +393,27 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     dragTrackIndex = -1;
     dragTargetIndex = -1;
 
+    // Power icon toggle
+    if (state && event.getPosition().getX() < trackHeaderWidth) {
+        int idx = getTrackIndexAtY(event.getPosition().getY());
+        if (idx >= 0 && idx < (int)powerIconBounds.size()) {
+            if (powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
+                auto tracks = state->listTracks();
+                if (idx < (int)tracks.size()) {
+                    auto* trackState = state->findTrack(tracks[idx].id);
+                    if (trackState) {
+                        bool newEnabled = !trackState->audioEnabled;
+                        state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
+                        if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
+                            state->setTrackMidiEnabled(tracks[idx].id, true);
+                    }
+                }
+                repaint();
+                return;
+            }
+        }
+    }
+
     if (!sequencer) return;
 
     // Play button
@@ -378,6 +428,33 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         double beat = xToBeat(event.getPosition().getX());
         if (beat >= 0.0) sequencer->setBeatPosition(beat);
     }
+}
+
+void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (!state) return;
+    if (event.getPosition().getX() >= trackHeaderWidth) return;
+
+    int idx = getTrackIndexAtY(event.getPosition().getY());
+    if (idx < 0) return;
+
+    // Don't trigger on power icon double-click
+    if (idx < (int)powerIconBounds.size() && powerIconBounds[idx].expanded(6).contains(event.getPosition()))
+        return;
+
+    auto tracks = state->listTracks();
+    if (idx >= (int)tracks.size()) return;
+
+    int gridTop = transportHeight + rulerHeight;
+    auto editBounds = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + 4,
+                                            trackHeaderWidth - 32, trackRowHeight - 8);
+    auto trackId = tracks[idx].id;
+    nameEditor.onCommit = [this, trackId](const juce::String& newName) {
+        if (state) {
+            state->renameTrack(trackId, newName.toStdString());
+            repaint();
+        }
+    };
+    nameEditor.show(*this, editBounds, juce::String(tracks[idx].name));
 }
 
 void ProducePane::mouseWheelMove(const juce::MouseEvent& event,

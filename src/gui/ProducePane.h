@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/Theme.h"
+#include "gui/InlineEditor.h"
 #include "daw/SequencerAPI.h"
 #include "daw/Arrangement.h"
 
@@ -20,6 +21,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
 
 private:
@@ -55,9 +57,16 @@ private:
     // Click areas
     juce::Rectangle<int> playButtonBounds;
 
+    // Per-track power icon bounds (rebuilt each paint)
+    std::vector<juce::Rectangle<int>> powerIconBounds;
+
     // Track drag reordering
     int dragTrackIndex = -1;
     int dragTargetIndex = -1;
     int dragStartY = 0;
     int getTrackIndexAtY(int y) const;
+
+    // Inline name editing
+    InlineEditor nameEditor;
+    void paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled);
 };
