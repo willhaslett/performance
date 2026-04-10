@@ -192,9 +192,13 @@ void AudioEngine::scanForPlugins() {
 
     for (auto* format : formatManager.getFormats()) {
         if (format->getName() != "AudioUnit") continue;
+        // Use explicit paths to avoid permission prompts for ~/Documents etc.
+        juce::FileSearchPath auPaths;
+        auPaths.add(juce::File("/Library/Audio/Plug-Ins/Components"));
+        auPaths.add(juce::File(juce::File::getSpecialLocation(
+            juce::File::userHomeDirectory).getFullPathName() + "/Library/Audio/Plug-Ins/Components"));
         juce::PluginDirectoryScanner scanner(
-            knownPlugins, *format,
-            format->getDefaultLocationsToSearch(), true, juce::File());
+            knownPlugins, *format, auPaths, true, juce::File());
         juce::String name;
         while (scanner.scanNextFile(true, name)) {}
     }
