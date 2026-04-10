@@ -212,6 +212,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 **Feature backlog (near-term):**
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
+- TempoMap + TimeSignatureMap — runtime evaluation of per-song tempo/time-sig event lists. Data model is ready (`TempoEvent`/`TimeSignatureEvent` vectors on `SongState`, sorted by beat). Runtime needs: (1) TempoMap utility — "what tempo at beat X?", "seconds from beat A to B?" (piecewise integration), "given N samples at beat X, what's the new beat?" Replaces all single-tempo arithmetic in `InternalSequencer::advance()` and `GraphWrapper::processBlock()`. (2) TimeSignatureMap — "what time sig at beat X?", "what bar/beat is beat X?", "where does bar N start?" Replaces `beatsPerBar()` single-value return. (3) GraphWrapper steps through tempo events within each buffer for correct sample offsets across tempo changes. (4) ProducePane grid renders variable-width bars at time sig boundaries. Current code uses single tempo/time-sig everywhere — all callsites are identified and use sequencer queries, so swapping in map lookups is mechanical. No trapdoors.
 
 **Feature backlog (longer-term):**
 - MIDI effects (transpose, channel filter, arpeggiator)
