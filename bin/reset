@@ -1,8 +1,7 @@
 #!/bin/bash
 # Reset all user-mutable state from the Performance database.
-# Keeps: plugins (cache), devices, device_controls (mappings), actions (built-in)
-# Deletes: songs, tracks, busses, effects, sends, bindings, presets,
-#          song_devices, config, custom actions (lua_code not empty)
+# Keeps: plugins (cache), actions (built-in)
+# Deletes: everything else including device mappings
 # Also removes preset files from disk.
 
 STATE_DB="$HOME/.config/performance/state.db"
@@ -13,7 +12,6 @@ if [ ! -f "$STATE_DB" ]; then
 fi
 
 echo "Resetting $STATE_DB..."
-echo "  Preserving: plugins, devices, device_controls"
 
 sqlite3 "$STATE_DB" <<'SQL'
 DELETE FROM bindings;
@@ -25,6 +23,9 @@ DELETE FROM presets;
 DELETE FROM song_devices;
 DELETE FROM songs;
 DELETE FROM config;
+-- Device mappings (comment out to preserve across resets)
+DELETE FROM device_controls;
+DELETE FROM devices;
 -- Remove custom actions but keep built-ins (no lua_code)
 DELETE FROM actions WHERE lua_code IS NOT NULL AND lua_code != '';
 SQL
@@ -34,4 +35,3 @@ rm -rf "$HOME/.config/performance/snapshots/"*
 rm -rf "$HOME/.config/performance/track_presets/"*
 
 echo "Done. Restart the app to get a fresh Sandbox."
-echo "  Devices and control mappings preserved."
