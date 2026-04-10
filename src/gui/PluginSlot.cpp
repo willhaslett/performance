@@ -66,24 +66,56 @@ void PluginSlot::mouseExit(const juce::MouseEvent&) {
 
 void PluginSlot::showPicker(juce::Point<int> position) {
     juce::PopupMenu menu;
-    auto plugins = (slotType == Instrument) ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
+    bool isInstrument = (slotType == Instrument);
+    auto plugins = isInstrument ? engine.listInstrumentPlugins() : engine.listEffectPlugins();
 
-    for (int p = 0; p < (int)plugins.size(); ++p) {
-        auto& pname = plugins[p];
-        auto presets = engine.listPresets(pname);
-        // Only show submenu if there are user presets beyond Default
-        bool hasUserPresets = false;
-        for (auto& pr : presets)
-            if (pr != "Default") { hasUserPresets = true; break; }
+    if (isInstrument) {
+        // Instruments: flat list with preset submenus
+        for (int p = 0; p < (int)plugins.size(); ++p) {
+            auto& pname = plugins[p];
+            auto presets = engine.listPresets(pname);
+            bool hasUserPresets = false;
+            for (auto& pr : presets)
+                if (pr != "Default") { hasUserPresets = true; break; }
 
-        if (hasUserPresets) {
-            juce::PopupMenu presetMenu;
-            for (int s = 0; s < (int)presets.size(); ++s)
-                presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
-            menu.addSubMenu(pname, presetMenu);
-        } else {
-            // No user presets — click plugin name directly
-            menu.addItem(p * 1000 + 1, pname);
+            if (hasUserPresets) {
+                juce::PopupMenu presetMenu;
+                for (int s = 0; s < (int)presets.size(); ++s)
+                    presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
+                menu.addSubMenu(pname, presetMenu);
+            } else {
+                menu.addItem(p * 1000 + 1, pname);
+            }
+        }
+    } else {
+        // Effects: grouped by manufacturer
+        std::map<juce::String, std::vector<int>> byManufacturer;
+        for (int p = 0; p < (int)plugins.size(); ++p) {
+            auto* info = state.findPluginByName(plugins[p].toStdString());
+            auto mfr = info ? juce::String(info->manufacturer) : juce::String("Other");
+            if (mfr.isEmpty()) mfr = "Other";
+            byManufacturer[mfr].push_back(p);
+        }
+
+        for (auto& [mfr, indices] : byManufacturer) {
+            juce::PopupMenu mfrMenu;
+            for (int p : indices) {
+                auto& pname = plugins[p];
+                auto presets = engine.listPresets(pname);
+                bool hasUserPresets = false;
+                for (auto& pr : presets)
+                    if (pr != "Default") { hasUserPresets = true; break; }
+
+                if (hasUserPresets) {
+                    juce::PopupMenu presetMenu;
+                    for (int s = 0; s < (int)presets.size(); ++s)
+                        presetMenu.addItem(p * 1000 + 100 + s, presets[s]);
+                    mfrMenu.addSubMenu(pname, presetMenu);
+                } else {
+                    mfrMenu.addItem(p * 1000 + 1, pname);
+                }
+            }
+            menu.addSubMenu(mfr, mfrMenu);
         }
     }
 
