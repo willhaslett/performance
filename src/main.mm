@@ -75,6 +75,7 @@ enum CommandIDs {
     newEffectsBus = 6,
     toggleSidebar = 7,
     toggleMixer = 8,
+    openSettings = 10,
 };
 
 class AppMenuBar : public juce::MenuBarModel {
@@ -151,6 +152,9 @@ public:
         else if (menuItemID == CommandIDs::toggleMixer) {
             layout.handleGlobalKey(KeyBindings::toggleMixer);
         }
+        else if (menuItemID == CommandIDs::openSettings) {
+            layout.handleGlobalKey(KeyBindings::settings);
+        }
         else if (menuItemID >= 100) {
             auto& songs = state.allSongs();
             int idx = menuItemID - 100;
@@ -213,7 +217,10 @@ public:
         // Menu bar
         auto* layout = mainWindow->getMainLayout();
         menuBar = std::make_unique<AppMenuBar>(*coordinator, *luaEngine, *layout);
-        juce::MenuBarModel::setMacMainMenu(menuBar.get());
+        auto appMenu = std::make_unique<juce::PopupMenu>();
+        appMenu->addItem(CommandIDs::openSettings, "Settings...");
+        juce::MenuBarModel::setMacMainMenu(menuBar.get(), appMenu.get());
+        appMenuItems = std::move(appMenu);
 
         // Wire settings
         layout->onOpenSettings = [this]() {
@@ -326,6 +333,7 @@ private:
     std::unique_ptr<LuaEngine> luaEngine;
     std::unique_ptr<IPCServer> ipcServer;
     std::unique_ptr<AppMenuBar> menuBar;
+    std::unique_ptr<juce::PopupMenu> appMenuItems;
     std::unique_ptr<SettingsWindow> settingsWindow;
 };
 
