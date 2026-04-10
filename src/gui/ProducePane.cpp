@@ -169,7 +169,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // --- Position display (LCD-style, centered) ---
-    int lcdWidth = 480;
+    int lcdWidth = 420;
     int lcdX = area.getCentreX() - lcdWidth / 2;
     int lcdY = area.getY() + 4;
     int lcdHeight = area.getHeight() - 8;
@@ -237,33 +237,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     int secs = (int)std::fmod(totalSeconds, 60.0);
     int ms = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
 
-    snprintf(buf, sizeof(buf), "%d", hrs);
-    drawCol(buf, "HR", 28, monoMd);
-
-    // Colon
-    g.setFont(monoMd);
-    g.setColour(lcdDigit);
-    g.drawText(":", colX, digitTop, 6, digitH, juce::Justification::centred);
-    colX += 6;
-
-    snprintf(buf, sizeof(buf), "%02d", mins);
-    drawCol(buf, "MIN", 34, monoMd);
-
-    g.setFont(monoMd);
-    g.setColour(lcdDigit);
-    g.drawText(":", colX, digitTop, 6, digitH, juce::Justification::centred);
-    colX += 6;
-
-    snprintf(buf, sizeof(buf), "%02d", secs);
-    drawCol(buf, "SEC", 34, monoMd);
-
-    g.setFont(monoMd);
-    g.setColour(lcdDigit);
-    g.drawText(".", colX, digitTop, 6, digitH, juce::Justification::centred);
-    colX += 6;
-
-    snprintf(buf, sizeof(buf), "%03d", ms);
-    drawCol(buf, "MS", 42, monoMd);
+    snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
+    drawCol(buf, "TIME", 150, monoMd);
 
     drawSep();
 
