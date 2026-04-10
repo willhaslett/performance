@@ -566,15 +566,24 @@ void MappingPane::onLearnCapture(const std::string& type, int channel, int numbe
         }
     }
 
-    // Add new control
-    state.addDeviceControl(currentDeviceId, "", type, channel, number);
+    // Generate default name
+    auto* deviceBefore = state.findDevice(currentDeviceId);
+    int controlNum = deviceBefore ? (int)deviceBefore->controls.size() + 1 : 1;
+    juce::String defaultName;
+    if (type == "cc") defaultName = "CC " + juce::String(number);
+    else if (type == "note") defaultName = "Pad " + juce::String(controlNum);
+    else if (type == "pitchbend") defaultName = "Pitch Bend";
+    else if (type == "pressure") defaultName = "Pressure";
+    else defaultName = "Control " + juce::String(controlNum);
+
+    // Add new control with default name
+    state.addDeviceControl(currentDeviceId, defaultName.toStdString(), type, channel, number);
     refresh();
 
-    // Open inline editor for naming
+    // Open inline editor for naming (pre-filled with default, selected for easy replacement)
     int newIdx = (int)state.findDevice(currentDeviceId)->controls.size() - 1;
-    // Find the row for this control in the global section
     for (int i = 0; i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::GlobalControl && rows[i].controlIndex == newIdx) {
+        if (rows[i].section == Row::SongControl && rows[i].controlIndex == newIdx) {
             auto bounds = getRowBounds(i);
             auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colGroup - colName, rowHeight);
             pendingLearnControlIndex = newIdx;
@@ -588,10 +597,14 @@ void MappingPane::onLearnCapture(const std::string& type, int channel, int numbe
                 pendingLearnControlIndex = -1;
                 if (isLearning) armLearnCapture();
             };
-            inlineEditor.show(*this, nameBounds, "");
+            inlineEditor.show(*this, nameBounds, defaultName);
             break;
         }
     }
+
+    // If row wasn't found (shouldn't happen), still re-arm
+    if (pendingLearnControlIndex < 0 && isLearning)
+        armLearnCapture();
 }
 
 // --- Action menu ---
