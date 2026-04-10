@@ -57,6 +57,15 @@ void ProducePane::paint(juce::Graphics& g) {
     paintTrackHeaders(g, trackArea);
     paintGrid(g, area);
 
+    // Drag reorder indicator
+    if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && dragTrackIndex != dragTargetIndex) {
+        int gridTop = transportHeight + rulerHeight;
+        int indicatorY = gridTop + dragTargetIndex * trackRowHeight;
+        if (dragTargetIndex > dragTrackIndex) indicatorY += trackRowHeight;
+        g.setColour(Theme::color(Theme::Color::accent));
+        g.fillRect(0, indicatorY - 1, trackHeaderWidth, 3);
+    }
+
     // Playhead overlaid
     if (sequencer) {
         auto fullGridArea = getLocalBounds()
@@ -293,7 +302,58 @@ void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
 
 void ProducePane::resized() {}
 
+int ProducePane::getTrackIndexAtY(int y) const {
+    int gridTop = transportHeight + rulerHeight;
+    if (y < gridTop) return -1;
+    int idx = (y - gridTop) / trackRowHeight;
+    if (!state) return -1;
+    auto tracks = state->listTracks();
+    if (idx >= (int)tracks.size()) return -1;
+    return idx;
+}
+
+void ProducePane::mouseDown(const juce::MouseEvent& event) {
+    // Start drag on track header area
+    if (event.getPosition().getX() < trackHeaderWidth) {
+        int idx = getTrackIndexAtY(event.getPosition().getY());
+        if (idx >= 0) {
+            dragTrackIndex = idx;
+            dragTargetIndex = idx;
+            dragStartY = event.getPosition().getY();
+        }
+    }
+}
+
+void ProducePane::mouseDrag(const juce::MouseEvent& event) {
+    if (dragTrackIndex < 0) return;
+    if (event.getPosition().getX() >= trackHeaderWidth) return;  // only in header area
+
+    int newTarget = getTrackIndexAtY(event.getPosition().getY());
+    if (newTarget >= 0 && newTarget != dragTargetIndex) {
+        dragTargetIndex = newTarget;
+        repaint();
+    }
+}
+
 void ProducePane::mouseUp(const juce::MouseEvent& event) {
+    // Complete drag reorder
+    if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && dragTrackIndex != dragTargetIndex && state) {
+        auto tracks = state->listTracks();
+        if (dragTrackIndex < (int)tracks.size() && dragTargetIndex < (int)tracks.size()) {
+            auto* srcTrack = state->findTrack(tracks[dragTrackIndex].id);
+            auto* dstTrack = state->findTrack(tracks[dragTargetIndex].id);
+            if (srcTrack && dstTrack) {
+                state->moveTrack(srcTrack->id, dstTrack->position);
+            }
+        }
+        dragTrackIndex = -1;
+        dragTargetIndex = -1;
+        repaint();
+        return;  // don't process other clicks
+    }
+    dragTrackIndex = -1;
+    dragTargetIndex = -1;
+
     if (!sequencer) return;
 
     // Play button

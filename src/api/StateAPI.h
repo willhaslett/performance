@@ -31,6 +31,7 @@ public:
                                        int inputChannelCount);
     void removeTrack(const std::string& id);
     void renameTrack(const std::string& id, const std::string& name);
+    void moveTrack(const std::string& id, int newPosition);  // reorder within song
     void setTrackGain(const std::string& id, float gain);
     float getTrackGain(const std::string& id) const;
     void setTrackMidiEnabled(const std::string& id, bool enabled);

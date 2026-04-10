@@ -807,6 +807,35 @@ public:
                 }
             }
         }
+
+        beginTest("Track reordering via moveTrack");
+        {
+            StateAPI s;
+            auto songId = s.createSong("S");
+            s.setCurrentSong(songId);
+            auto t1 = s.createTrack("A");  // position 0
+            auto t2 = s.createTrack("B");  // position 1
+            auto t3 = s.createTrack("C");  // position 2
+
+            auto tracks = s.listTracks();
+            expectEquals(tracks[0].name, std::string("A"));
+            expectEquals(tracks[1].name, std::string("B"));
+            expectEquals(tracks[2].name, std::string("C"));
+
+            // Move C to position 0 (before A)
+            s.moveTrack(t3, 0);
+            tracks = s.listTracks();
+            expectEquals(tracks[0].name, std::string("C"));
+            expectEquals(tracks[1].name, std::string("A"));
+            expectEquals(tracks[2].name, std::string("B"));
+
+            // Move C back to end (position 2)
+            s.moveTrack(t3, 2);
+            tracks = s.listTracks();
+            expectEquals(tracks[0].name, std::string("A"));
+            expectEquals(tracks[1].name, std::string("B"));
+            expectEquals(tracks[2].name, std::string("C"));
+        }
     }
 };
 

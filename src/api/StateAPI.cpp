@@ -244,6 +244,37 @@ void StateAPI::renameTrack(const std::string& id, const std::string& name) {
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
+void StateAPI::moveTrack(const std::string& id, int newPosition) {
+    auto* song = currentSong();
+    if (!song) return;
+
+    // Find the track and its current position
+    TrackState* target = nullptr;
+    for (auto& t : song->tracks)
+        if (t.id == id) { target = &t; break; }
+    if (!target) return;
+
+    int oldPos = target->position;
+    if (oldPos == newPosition) return;
+
+    // Shift other tracks to make room
+    if (newPosition < oldPos) {
+        // Moving up: shift tracks in [newPos, oldPos) down by 1
+        for (auto& t : song->tracks)
+            if (t.position >= newPosition && t.position < oldPos)
+                t.position++;
+    } else {
+        // Moving down: shift tracks in (oldPos, newPos] up by 1
+        for (auto& t : song->tracks)
+            if (t.position > oldPos && t.position <= newPosition)
+                t.position--;
+    }
+    target->position = newPosition;
+
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
 void StateAPI::setTrackGain(const std::string& id, float gain) {
     auto* track = findTrack(id);
     if (!track) return;
@@ -949,8 +980,13 @@ std::vector<StateAPI::TrackInfo> StateAPI::listTracks() const {
     std::vector<TrackInfo> result;
     auto* song = currentSong();
     if (!song) return result;
-    for (auto& t : song->tracks)
-        result.push_back({ t.id, t.name });
+    // Build list sorted by position
+    std::vector<const TrackState*> sorted;
+    for (auto& t : song->tracks) sorted.push_back(&t);
+    std::sort(sorted.begin(), sorted.end(),
+              [](auto* a, auto* b) { return a->position < b->position; });
+    for (auto* t : sorted)
+        result.push_back({ t->id, t->name });
     return result;
 }
 

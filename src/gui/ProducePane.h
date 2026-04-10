@@ -8,7 +8,7 @@ class StateAPI;
 
 // DAW-style arrange view: transport bar, track headers, timeline grid with regions.
 
-class ProducePane : public juce::Component, private juce::Timer {
+class ProducePane : public juce::Component, public juce::DragAndDropContainer, private juce::Timer {
 public:
     ProducePane();
     ~ProducePane() override;
@@ -18,6 +18,8 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
 
 private:
@@ -52,4 +54,10 @@ private:
 
     // Click areas
     juce::Rectangle<int> playButtonBounds;
+
+    // Track drag reordering
+    int dragTrackIndex = -1;
+    int dragTargetIndex = -1;
+    int dragStartY = 0;
+    int getTrackIndexAtY(int y) const;
 };
