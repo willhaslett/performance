@@ -201,9 +201,9 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         if (!enabled)
             headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
 
-        // Small color strip on left edge
+        // Full row background
         g.setColour(headerCol);
-        g.fillRect(row.removeFromLeft(4));
+        g.fillRect(row);
 
         // Row separator
         g.setColour(Theme::color(Theme::Color::border));
