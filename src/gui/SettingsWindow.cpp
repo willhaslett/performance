@@ -13,8 +13,10 @@ SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
     tabs.setTabBarDepth(36);
     tabs.setColour(juce::TabbedComponent::backgroundColourId, Theme::color(Theme::Color::bgPanel));
+    tabs.setColour(juce::TabbedComponent::outlineColourId, juce::Colours::transparentBlack);
     tabs.setColour(juce::TabbedButtonBar::tabTextColourId, Theme::color(Theme::Color::textSecondary));
     tabs.setColour(juce::TabbedButtonBar::frontTextColourId, Theme::color(Theme::Color::textWhite));
+    tabs.setColour(juce::TabbedButtonBar::tabOutlineColourId, juce::Colours::transparentBlack);
 
     setContentNonOwned(&tabs, false);
     setUsingNativeTitleBar(true);
