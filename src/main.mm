@@ -198,11 +198,21 @@ public:
         juce::MenuBarModel::setMacMainMenu(menuBar.get());
 
         // Wire save
-        layout->onSave = [this]() { coordinator->save(); };
+        layout->onSave = [this, layout]() {
+            layout->showOverlay("Saving...");
+            juce::MessageManager::callAsync([this, layout]() {
+                coordinator->save();
+                layout->hideOverlay();
+            });
+        };
 
         // Wire sidebar song loading
-        layout->getSidebar().onLoadSong = [this](const std::string& songId) {
-            coordinator->loadSong(songId);
+        layout->getSidebar().onLoadSong = [this, layout](const std::string& songId) {
+            layout->showOverlay("Loading song...");
+            juce::MessageManager::callAsync([this, layout, songId]() {
+                coordinator->loadSong(songId);
+                layout->hideOverlay();
+            });
         };
 
         // Wire sidebar Maps device selection
@@ -259,8 +269,12 @@ public:
         ipcServer->start();
 
         // Restore session — deferred so the window paints first
-        juce::MessageManager::callAsync([this] {
-            coordinator->restoreSession();
+        juce::MessageManager::callAsync([this, layout] {
+            layout->showOverlay("Loading session...");
+            juce::MessageManager::callAsync([this, layout] {
+                coordinator->restoreSession();
+                layout->hideOverlay();
+            });
         });
     }
 

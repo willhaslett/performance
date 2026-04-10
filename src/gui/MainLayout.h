@@ -34,6 +34,10 @@ public:
 
     std::function<void()> onSave;
 
+    // Loading overlay
+    void showOverlay(const juce::String& message);
+    void hideOverlay();
+
     // Expose panes for wiring
     DebugPane debugPane;
     MappingPane mappingPane;
@@ -61,4 +65,16 @@ private:
     int dragStartSidebarWidth = 0;
     static constexpr int toolbarHeight = 32;
     static constexpr int minPaneSize = 100;
+
+    // Overlay
+    struct Overlay : public juce::Component {
+        juce::String message;
+        void paint(juce::Graphics& g) override {
+            g.fillAll(juce::Colour(0xaa000000));
+            g.setColour(juce::Colour(0xffcccccc));
+            g.setFont(juce::FontOptions(18.0f));
+            g.drawText(message, getLocalBounds(), juce::Justification::centred);
+        }
+    };
+    Overlay overlay;
 };

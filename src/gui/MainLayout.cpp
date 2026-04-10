@@ -181,3 +181,16 @@ void MainLayout::showRightPane(juce::Component* pane) {
     paneContainer.setPaneVisible(pane, true);
     if (pane == &logPane) logPane.activate();
 }
+
+void MainLayout::showOverlay(const juce::String& message) {
+    overlay.message = message;
+    overlay.setBounds(getLocalBounds());
+    addAndMakeVisible(overlay);
+    overlay.toFront(false);
+    overlay.repaint();
+}
+
+void MainLayout::hideOverlay() {
+    removeChildComponent(&overlay);
+    repaint();
+}
