@@ -50,6 +50,8 @@ AppState
 │   ├── masterEffects: vector<EffectState>
 │   ├── bindings: vector<BindingState>  (song-scoped)
 │   ├── score: vector<ScoreStep>
+│   ├── tempoEvents: vector<TempoEvent>  (beat→bpm changes)
+│   ├── timeSigEvents: vector<TimeSignatureEvent>  (beat→time sig changes)
 │   └── selectedTrackIds, selectedBusIds (runtime, not persisted)
 ├── globalBindings: vector<BindingState>
 ├── plugins: vector<PluginInfo>  (catalog)
@@ -61,10 +63,13 @@ AppState
 Key model features:
 - Two track source types: `TrackSourceType::Instrument` (MIDI→plugin→audio) and `TrackSourceType::AudioInput` (physical input→effects→output, mono→stereo upmix)
 - `midiEnabled` (MIDI note routing, instrument tracks) and `audioEnabled` (audio signal pass-through, all tracks) are distinct properties
+- `armed` (runtime, not persisted) — record-arm; armed tracks record MIDI when the sequencer is playing
+- `audioEnabled` on BusState and `masterAudioEnabled` on SongState — power toggle for busses and master output
 - Effects/sends nested inside parent (no flat table lookup)
 - `LoadStatus` on TrackState and EffectState (None/Pending/Loaded/Failed)
 - `isInstrument` on PluginInfo (GUI builds plugin menus from state)
 - `PresetKind` enum (Instrument/Effect/Track)
+- `TempoEvent`/`TimeSignatureEvent` — per-song tempo and time sig changes at specific beat positions (data model ready, runtime evaluation deferred)
 - Selection state on SongState (observable, not persisted)
 
 ### Persistence (`src/persistence/PersistenceLayer.h/.cpp`)
@@ -89,10 +94,15 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 
 ### Other Components
 
-- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods.
-- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All methods accept UUIDs. Pure view of state.
+- **EngineSync** (`src/engine/EngineSync.h/.cpp`) — pure event subscriber. Subscribes to StateAPI events, applies to engine. Zero public methods. Handles bus/master `audioEnabled`.
+- **AudioEngine** (`src/engine/AudioEngine.h/.mm`) — JUCE AudioProcessorGraph. All methods accept UUIDs. Pure view of state. Owns the `GraphWrapper` which wraps the graph for per-buffer MIDI scheduling.
+- **GraphWrapper** (`src/engine/GraphWrapper.h`) — AudioProcessor wrapping the graph. Advances a sample-accurate beat clock, scans the `Arrangement` for MIDI events per buffer, routes to per-track `MidiSourceNode`s. Captures live MIDI to `RecordFIFO` when recording.
+- **MidiSourceNode** (`src/engine/MidiSourceNode.h`) — per-track AudioProcessor for sequencer MIDI. Filled by GraphWrapper before graph processes, drained during processBlock. Connected to instrument alongside live MIDI input.
+- **RecordFIFO** (`src/engine/RecordFIFO.h`) — lock-free SPSC ring buffer (1024 slots). Audio thread pushes beat-timestamped MIDI events, coordinator timer drains into Arrangement.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
+- **InternalSequencer** (`src/daw/InternalSequencer.h/.cpp`) — own transport, tempo, beat clock. Thread-safe atomics. Transport callback notifies coordinator on play/stop.
+- **Arrangement** (`src/daw/Arrangement.h/.cpp`) — owns regions (MidiRegion, AudioRegion). Provides `scanMidiEvents()` for playback and recording API (`startRecording`/`addRecordedNote`/`finalizeRecordedNote`/`stopRecording`).
 - **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Takes StateAPI+EngineAPI+Coordinator.
 - **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket `/tmp/performance.sock`. `bin/perf` shell command.
 - **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map.
@@ -101,11 +111,12 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 
 All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
-- **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (Device Editor or Debug) and right pane (Chat or Logs) switchable via sidebar.
-- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels)
-- **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Track preset callbacks from coordinator.
-- **BusStrip** — effect slots, fader+stereo meters
-- **OutputStrip** — master effect slots, master fader+stereo meters
+- **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (ProducePane by default, also Debug or Mappings) and right pane (Chat or Logs) switchable via sidebar.
+- **ProducePane** — DAW arrange view: transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record indicator/cycle), track headers with power icons and arm dots, timeline grid with regions, playhead. Click grid to set position. Drag track headers to reorder. Spacebar play/stop, h/l step by division. Track reordering syncs with mixer via shared state.
+- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges).
+- **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Red arm dot toggles `armed` for recording. Track preset callbacks from coordinator.
+- **BusStrip** — effect slots, fader+stereo meters. Power icon toggles bus `audioEnabled`.
+- **OutputStrip** — master effect slots, master fader+stereo meters. Power icon toggles master `audioEnabled`.
 - **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
@@ -120,9 +131,12 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
 ```
 Per instrument track:
-  midiInput → instrument → [fx1 → fx2 →] ┬─ outputGain → masterGain
-                                           ├─ sendGain1  → Bus1
-                                           └─ sendGain2  → Bus2
+  midiInput ──────┐
+  midiSourceNode ─┤→ instrument → [fx1 → fx2 →] ┬─ outputGain → masterGain
+                                                   ├─ sendGain1  → Bus1
+                                                   └─ sendGain2  → Bus2
+  (midiInput = live controllers, midiSourceNode = sequencer playback)
+
 Per audio input track:
   audioInput[ch] → [fx1 → fx2 →] ┬─ outputGain → masterGain
                                    ├─ sendGain1  → Bus1
@@ -134,6 +148,13 @@ Per bus:
 
 Master output:
   masterGain → [masterFx1 → masterFx2 →] → audioOutput
+
+GraphWrapper wraps the entire graph. In processBlock:
+  1. Advances sample-accurate beat clock from sample count + tempo
+  2. Scans Arrangement for MIDI events in this buffer's beat range
+  3. Routes events to per-track MidiSourceNodes with exact sample offsets
+  4. Captures incoming live MIDI to RecordFIFO when recording
+  5. Delegates to graph.processBlock()
 ```
 
 Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. If device goes null (mid-transition), processing stops cleanly and recovers on next notification. `InputMeter` callback provides per-channel peak levels for the debug pane.
@@ -176,12 +197,14 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## Test Suite
 
-76 tests:
+103 tests:
 - StateAPI tests (34): full in-memory state store coverage
 - Persistence round-trip tests (3): save→load fidelity, multi-song, empty DB
 - Integration tests (12): full coordinator→state→EngineSync→engine path
-- EngineSync tests (23): mock engine verifying state→engine event dispatch (includes audio input tracks, audioEnabled, instrument changes, song switching)
+- EngineSync tests (23): mock engine verifying state→engine event dispatch (includes audio input tracks, audioEnabled, bus/master audioEnabled, instrument changes, song switching)
 - Audio device config tests (4): device name persistence, config round-trip, audioEnabled persistence
+- Sequencer tests (14): internal sequencer transport, tempo, beat position, loop, time signature
+- Arrangement tests (13): region CRUD, MIDI event scanning, recording lifecycle, note capture
 
 ## TODOs
 
@@ -301,4 +324,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~15,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~17,500 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
