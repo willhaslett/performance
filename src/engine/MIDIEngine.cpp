@@ -34,6 +34,36 @@ void MIDIEngine::initialise() {
         perfLog("[MIDI]   (none)\n");
 }
 
+void MIDIEngine::rescanDevices() {
+    auto devices = juce::MidiInput::getAvailableDevices();
+
+    // Build set of current identifiers
+    juce::StringArray currentIds;
+    for (auto& d : devices)
+        currentIds.add(d.identifier);
+
+    // Remove callbacks for devices that are gone
+    for (int i = enabledDevices.size() - 1; i >= 0; --i) {
+        if (!currentIds.contains(enabledDevices[i])) {
+            perfLog("[MIDI] Device removed: %s\n", enabledDevices[i].toRawUTF8());
+            deviceManager.removeMidiInputDeviceCallback(enabledDevices[i], this);
+            enabledDevices.remove(i);
+        }
+    }
+
+    // Add callbacks for new devices
+    for (auto& device : devices) {
+        if (!enabledDevices.contains(device.identifier)) {
+            perfLog("[MIDI] Device added: %s\n", device.name.toRawUTF8());
+            deviceManager.setMidiInputDeviceEnabled(device.identifier, true);
+            deviceManager.addMidiInputDeviceCallback(device.identifier, this);
+            enabledDevices.add(device.identifier);
+        }
+    }
+
+    refreshDeviceMapping();
+}
+
 void MIDIEngine::shutdown() {
     for (auto& id : enabledDevices)
         deviceManager.removeMidiInputDeviceCallback(id, this);

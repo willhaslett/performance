@@ -42,6 +42,7 @@ public:
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
     void refreshDeviceMapping();  // call after registering new devices
+    void rescanDevices();         // detect added/removed MIDI devices
 
     // Per-device activity tracking (for sidebar indicators)
     int64_t getDeviceLastActivityMs(const std::string& deviceId) const;

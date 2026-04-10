@@ -135,11 +135,12 @@ void Sidebar::timerCallback() {
         tree.setHighlightedId(highlightId);
     }
 
-    // Poll for MIDI device changes
+    // Poll for MIDI device changes — rescan when count changes
     auto devices = juce::MidiInput::getAvailableDevices();
     int count = (int)devices.size();
     if (count != lastMidiDeviceCount) {
         lastMidiDeviceCount = count;
+        if (coordinator) coordinator->refreshMidiDevices();
         refreshTree();
     }
 

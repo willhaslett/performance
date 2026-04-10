@@ -549,7 +549,9 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
 }
 
 void PerformanceCoordinator::refreshMidiDevices() {
-    if (midiEngine) midiEngine->refreshDeviceMapping();
+    if (midiEngine) {
+        midiEngine->rescanDevices();
+    }
 }
 
 void PerformanceCoordinator::startMidiLearn(const std::string& deviceId,
