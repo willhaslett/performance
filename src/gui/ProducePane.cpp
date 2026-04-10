@@ -4,6 +4,7 @@
 #include "engine/Log.h"
 
 ProducePane::ProducePane() {
+    setWantsKeyboardFocus(true);
     startTimerHz(30);
 }
 
@@ -468,6 +469,8 @@ int ProducePane::getTrackIndexAtY(int y) const {
 }
 
 void ProducePane::mouseDown(const juce::MouseEvent& event) {
+    grabKeyboardFocus();
+
     // Start drag on track header area
     if (event.getPosition().getX() < trackHeaderWidth) {
         int idx = getTrackIndexAtY(event.getPosition().getY());
@@ -604,4 +607,17 @@ void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
         scrollBeat = std::max(0.0, scrollBeat - wheel.deltaY * 4);
     }
     repaint();
+}
+
+bool ProducePane::keyPressed(const juce::KeyPress& key) {
+    // Spacebar toggles play/stop (only if no text editor has focus)
+    if (key == juce::KeyPress::spaceKey && sequencer) {
+        auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        if (!focused || dynamic_cast<juce::TextEditor*>(focused) == nullptr) {
+            sequencer->togglePlayStop();
+            repaint();
+            return true;
+        }
+    }
+    return false;
 }
