@@ -476,6 +476,17 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             dragTargetIndex = idx;
             dragStartY = event.getPosition().getY();
         }
+        return;
+    }
+
+    // Click on ruler or grid to set playhead position (immediate on mouseDown)
+    if (sequencer && event.getPosition().getY() > transportHeight
+        && event.getPosition().getX() > trackHeaderWidth) {
+        double beat = xToBeat(event.getPosition().getX());
+        if (beat >= 0.0) {
+            sequencer->setBeatPosition(beat);
+            repaint();
+        }
     }
 }
 
@@ -535,27 +546,24 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     // Transport buttons
     if (rewindButtonBounds.contains(event.getPosition())) {
         sequencer->setBeatPosition(0.0);
+        repaint();
         return;
     }
     if (stopButtonBounds.contains(event.getPosition())) {
         if (sequencer->isPlaying()) sequencer->stop();
         else sequencer->setBeatPosition(0.0);  // second stop = rewind
+        repaint();
         return;
     }
     if (playButtonBounds.contains(event.getPosition())) {
         sequencer->togglePlayStop();
+        repaint();
         return;
     }
     if (cycleButtonBounds.contains(event.getPosition())) {
         sequencer->setLoopEnabled(!sequencer->isLoopEnabled());
         repaint();
         return;
-    }
-
-    // Click on ruler or grid to set playhead position
-    if (event.getPosition().getY() > transportHeight && event.getPosition().getX() > trackHeaderWidth) {
-        double beat = xToBeat(event.getPosition().getX());
-        if (beat >= 0.0) sequencer->setBeatPosition(beat);
     }
 }
 
