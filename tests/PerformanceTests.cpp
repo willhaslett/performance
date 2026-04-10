@@ -1803,6 +1803,145 @@ public:
 static AudioDeviceConfigTests audioDeviceConfigTests;
 
 // ============================================================================
+// InternalSequencer tests
+// ============================================================================
+
+#include "daw/InternalSequencer.h"
+
+class SequencerTests : public juce::UnitTest {
+public:
+    SequencerTests() : UnitTest("Sequencer", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Transport play/stop");
+        {
+            InternalSequencer seq;
+            expect(!seq.isPlaying());
+            seq.play();
+            expect(seq.isPlaying());
+            seq.stop();
+            expect(!seq.isPlaying());
+            seq.togglePlayStop();
+            expect(seq.isPlaying());
+            seq.togglePlayStop();
+            expect(!seq.isPlaying());
+        }
+
+        beginTest("Tempo get/set with clamping");
+        {
+            InternalSequencer seq;
+            expectWithinAbsoluteError(seq.getTempo(), 120.0, 0.01);
+            seq.setTempo(140.0);
+            expectWithinAbsoluteError(seq.getTempo(), 140.0, 0.01);
+            seq.setTempo(10.0);  // below minimum
+            expectWithinAbsoluteError(seq.getTempo(), 20.0, 0.01);
+            seq.setTempo(400.0);  // above maximum
+            expectWithinAbsoluteError(seq.getTempo(), 300.0, 0.01);
+        }
+
+        beginTest("Beat position advances with tempo");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);  // 2 beats per second
+            seq.play();
+            seq.advance(0.5);  // half second = 1 beat
+            expectWithinAbsoluteError(seq.getBeatPosition(), 1.0, 0.01);
+            seq.advance(0.5);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 2.0, 0.01);
+        }
+
+        beginTest("Position does not advance when stopped");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);
+            seq.advance(1.0);  // stopped — should not advance
+            expectWithinAbsoluteError(seq.getBeatPosition(), 0.0, 0.01);
+        }
+
+        beginTest("Loop wraps position");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);  // 2 bps
+            seq.setLoopEnabled(true);
+            seq.setLoopRange(0.0, 4.0);
+            seq.play();
+            seq.advance(2.5);  // 5 beats at 120bpm in 2.5s, loop at 4 → wraps to 1
+            double pos = seq.getBeatPosition();
+            expectWithinAbsoluteError(pos, 1.0, 0.01);
+        }
+
+        beginTest("Time signature");
+        {
+            InternalSequencer seq;
+            expectEquals(seq.getTimeSignatureNumerator(), 4);
+            expectEquals(seq.getTimeSignatureDenominator(), 4);
+            seq.setTimeSignature(3, 4);
+            expectEquals(seq.getTimeSignatureNumerator(), 3);
+        }
+
+        beginTest("Beat callback fires on each beat");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);
+            int callCount = 0;
+            double lastBeat = -1;
+            seq.setBeatCallback([&](double beat, double bpm) {
+                callCount++;
+                lastBeat = beat;
+            });
+            seq.play();
+            // Advance 2.1 seconds = 4.2 beats → should fire on beats 0, 1, 2, 3, 4
+            for (int i = 0; i < 21; ++i)
+                seq.advance(0.1);
+            expect(callCount >= 4);
+            expect(lastBeat >= 4.0);
+        }
+
+        beginTest("Transport callback fires on play/stop");
+        {
+            InternalSequencer seq;
+            bool lastState = false;
+            int callCount = 0;
+            seq.setTransportCallback([&](bool playing) {
+                lastState = playing;
+                callCount++;
+            });
+            seq.play();
+            expect(lastState == true);
+            seq.stop();
+            expect(lastState == false);
+            expectEquals(callCount, 2);
+        }
+
+        beginTest("Capabilities reflect internal sequencer");
+        {
+            InternalSequencer seq;
+            auto caps = seq.getCapabilities();
+            expect(caps.hasTransport);
+            expect(caps.hasTempo);
+            expect(caps.hasLoop);
+            expect(caps.hasMetronome);
+            expect(!caps.hasRecording);
+            expect(!caps.hasClipTrigger);
+            expect(!caps.hasExternalSync);
+        }
+
+        beginTest("Set beat position resets");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);
+            seq.play();
+            seq.advance(1.0);  // 2 beats
+            seq.setBeatPosition(0.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 0.0, 0.01);
+        }
+    }
+};
+
+static SequencerTests sequencerTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

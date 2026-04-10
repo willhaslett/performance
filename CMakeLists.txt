@@ -57,6 +57,7 @@ target_sources(Performance PRIVATE
     src/gui/Sidebar.cpp
     src/gui/DebugPane.cpp
     src/gui/SettingsWindow.cpp
+    src/daw/InternalSequencer.cpp
     src/gui/MappingPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
@@ -114,6 +115,7 @@ target_sources(PerformanceTests PRIVATE
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp
     src/song/SongRuntime.cpp
+    src/daw/InternalSequencer.cpp
 )
 
 target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)
