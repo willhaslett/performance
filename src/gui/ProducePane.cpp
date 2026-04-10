@@ -552,9 +552,8 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // Click on ruler to set position
-    auto rulerArea = getLocalBounds().withTrimmedTop(transportHeight).removeFromTop(rulerHeight);
-    if (rulerArea.contains(event.getPosition()) && event.getPosition().getX() > trackHeaderWidth) {
+    // Click on ruler or grid to set playhead position
+    if (event.getPosition().getY() > transportHeight && event.getPosition().getX() > trackHeaderWidth) {
         double beat = xToBeat(event.getPosition().getX());
         if (beat >= 0.0) sequencer->setBeatPosition(beat);
     }

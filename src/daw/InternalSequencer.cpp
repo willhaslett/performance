@@ -46,6 +46,10 @@ void InternalSequencer::setBeatPosition(double beat) {
     lastBeatNotified = -1.0;  // force re-notify
 }
 
+void InternalSequencer::setBeatPositionSilent(double beat) {
+    beatPosition.store(std::max(0.0, beat), std::memory_order_relaxed);
+}
+
 void InternalSequencer::setTimeSignature(int numerator, int denominator) {
     timeSigNum.store(numerator);
     timeSigDen.store(denominator);

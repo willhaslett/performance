@@ -53,6 +53,9 @@ public:
     // deltaSeconds = time since last call.
     void advance(double deltaSeconds);
 
+    // Set position without triggering beat callbacks (for sync from audio thread)
+    void setBeatPositionSilent(double beat);
+
 private:
     std::atomic<bool> playing { false };
     std::atomic<double> tempo { 120.0 };

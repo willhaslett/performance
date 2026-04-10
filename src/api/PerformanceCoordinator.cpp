@@ -125,24 +125,28 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 }
 
 void PerformanceCoordinator::timerCallback() {
-    // Advance sequencer clock for UI (beat callbacks, playhead display).
-    // MIDI playback is handled on the audio thread by GraphWrapper.
-    if (sequencerImpl) {
-        if (sequencerImpl->isPlaying() && audioEngine) {
-            // Read the sample-accurate beat position from the audio thread
-            double audioBeat = audioEngine->getPlaybackBeatPosition();
-            // Also keep the message-thread sequencer roughly in sync for UI queries
-            double now = juce::Time::getMillisecondCounterHiRes();
-            double delta = (now - lastSequencerTimeMs) / 1000.0;
-            lastSequencerTimeMs = now;
-            if (delta > 0.0 && delta < 1.0)
-                static_cast<InternalSequencer*>(sequencerImpl.get())->advance(delta);
+    // Sync sequencer ↔ engine. MIDI playback is on the audio thread (GraphWrapper).
+    // This timer keeps the UI sequencer in sync and forwards position/tempo changes.
+    if (sequencerImpl && audioEngine) {
+        double uiBeat = sequencerImpl->getBeatPosition();
 
-            // Forward tempo changes to engine
+        if (sequencerImpl->isPlaying()) {
+            // When playing, the audio thread is authoritative — read its position
+            double audioBeat = audioEngine->getPlaybackBeatPosition();
+            // Keep the UI sequencer in sync with the audio-thread position
+            static_cast<InternalSequencer*>(sequencerImpl.get())->setBeatPositionSilent(audioBeat);
+            // Forward tempo to engine (in case it changed from UI)
             audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
         } else {
-            lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
+            // When stopped, the UI is authoritative — forward position to engine
+            // so that when play starts, the engine begins from the right place
+            double lastSynced = lastSequencerBeat;
+            if (std::abs(uiBeat - lastSynced) > 0.001)
+                audioEngine->setPlaybackBeatPosition(uiBeat);
         }
+
+        lastSequencerBeat = uiBeat;
+        lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
     }
 
     // Auto-save (every ~30 seconds, not every tick)
