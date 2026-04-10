@@ -311,7 +311,32 @@ void TrackStrip::resized() {
     }
 }
 
+void TrackStrip::mouseDown(const juce::MouseEvent& event) {
+    // Track header drag initiation
+    if (headerBounds.contains(event.getPosition()) && !event.mods.isPopupMenu())
+        dragStarted = false;  // will start on mouseDrag if moved enough
+}
+
+void TrackStrip::mouseDrag(const juce::MouseEvent& event) {
+    if (headerBounds.contains(event.getMouseDownPosition())
+        && event.getDistanceFromDragStart() > 5 && !event.mods.isPopupMenu()) {
+        if (!dragStarted) {
+            dragStarted = true;
+            if (onDragStart) onDragStart(trackId, getX());
+        }
+        if (onDragMove) {
+            auto screenPos = event.getEventRelativeTo(getParentComponent()).getPosition();
+            onDragMove(screenPos.getX());
+        }
+    }
+}
+
 void TrackStrip::mouseUp(const juce::MouseEvent& event) {
+    if (dragStarted) {
+        dragStarted = false;
+        if (onDragEnd) onDragEnd();
+        return;
+    }
     // Vertical dots menu
     if (menuDotsBounds.expanded(4).contains(event.getPosition())) {
         showTrackMenu(event.getScreenPosition());

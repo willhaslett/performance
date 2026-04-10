@@ -62,8 +62,15 @@ void ProducePane::paint(juce::Graphics& g) {
         int gridTop = transportHeight + rulerHeight;
         int indicatorY = gridTop + dragTargetIndex * trackRowHeight;
         if (dragTargetIndex > dragTrackIndex) indicatorY += trackRowHeight;
+
+        // Full-width indicator line
         g.setColour(Theme::color(Theme::Color::accent));
-        g.fillRect(0, indicatorY - 1, trackHeaderWidth, 3);
+        g.fillRect(0, indicatorY - 1, getWidth(), 3);
+
+        // Dim the source track row
+        int srcY = gridTop + dragTrackIndex * trackRowHeight;
+        g.setColour(juce::Colour(0x40000000));
+        g.fillRect(0, srcY, getWidth(), trackRowHeight);
     }
 
     // Playhead overlaid
@@ -326,10 +333,10 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
 
 void ProducePane::mouseDrag(const juce::MouseEvent& event) {
     if (dragTrackIndex < 0) return;
-    if (event.getPosition().getX() >= trackHeaderWidth) return;  // only in header area
 
     int newTarget = getTrackIndexAtY(event.getPosition().getY());
-    if (newTarget >= 0 && newTarget != dragTargetIndex) {
+    if (newTarget < 0) return;
+    if (newTarget != dragTargetIndex) {
         dragTargetIndex = newTarget;
         repaint();
     }

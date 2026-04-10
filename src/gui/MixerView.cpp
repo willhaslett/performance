@@ -35,6 +35,13 @@ void MixerView::paint(juce::Graphics& g) {
         auto msgArea = getLocalBounds().withTrimmedRight(Theme::trackStripWidth);
         g.drawText("No tracks", msgArea, juce::Justification::centred);
     }
+
+    // Drag reorder indicator
+    if (dragIndicatorX >= 0) {
+        int drawX = dragIndicatorX - viewport.getViewPositionX();
+        g.setColour(Theme::color(Theme::Color::accent));
+        g.fillRect(drawX - 1, 0, 3, getHeight());
+    }
 }
 
 void MixerView::resized() {
@@ -211,6 +218,11 @@ void MixerView::rebuildStrips() {
         strip->onLoadTrackPreset = onLoadTrackPreset;
         strip->onListTrackPresets = onListTrackPresets;
 
+        // Wire drag reorder
+        strip->onDragStart = [this](const juce::String& id, int x) { onTrackDragStart(id, x); };
+        strip->onDragMove = [this](int x) { onTrackDragMove(x); };
+        strip->onDragEnd = [this]() { onTrackDragEnd(); };
+
         stripContainer.addAndMakeVisible(*strip);
         trackStrips.push_back(std::move(strip));
     }
@@ -229,4 +241,37 @@ void MixerView::rebuildStrips() {
     }
 
     resized();
+}
+
+void MixerView::onTrackDragStart(const juce::String& trackId, int stripX) {
+    dragTrackId = trackId;
+    dragIndicatorX = stripX;
+    repaint();
+}
+
+void MixerView::onTrackDragMove(int mouseX) {
+    if (dragTrackId.isEmpty()) return;
+    // Convert viewport-relative X to strip container X
+    dragIndicatorX = mouseX + viewport.getViewPositionX();
+    repaint();
+}
+
+void MixerView::onTrackDragEnd() {
+    if (dragTrackId.isEmpty()) return;
+
+    // Find which strip position we're over
+    int stripWidth = Theme::trackStripWidth;
+    int targetIdx = dragIndicatorX / stripWidth;
+    targetIdx = juce::jlimit(0, (int)trackStrips.size() - 1, targetIdx);
+
+    // Find the target track's position
+    if (targetIdx < (int)lastTracks.size()) {
+        auto* targetTrack = state.findTrack(lastTracks[targetIdx].id.toStdString());
+        if (targetTrack)
+            state.moveTrack(dragTrackId.toStdString(), targetTrack->position);
+    }
+
+    dragTrackId = {};
+    dragIndicatorX = -1;
+    repaint();
 }

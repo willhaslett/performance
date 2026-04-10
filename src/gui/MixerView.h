@@ -19,6 +19,11 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    // Track reordering — called by TrackStrip on header drag
+    void onTrackDragStart(const juce::String& trackId, int stripX);
+    void onTrackDragMove(int mouseX);
+    void onTrackDragEnd();
+
 private:
     void timerCallback() override;
     void rebuildStrips();
@@ -51,6 +56,10 @@ private:
     std::vector<std::unique_ptr<BusStrip>> busStrips;
     std::vector<TrackInfo> lastTracks;
     std::vector<BusInfo> lastBusses;
+
+    // Track reorder drag state
+    juce::String dragTrackId;
+    int dragIndicatorX = -1;
 
     // Fixed output strip on the right
     OutputStrip outputStrip;

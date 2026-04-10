@@ -38,11 +38,18 @@ public:
     std::function<void(const juce::String& trackId, const juce::String& presetName)> onLoadTrackPreset;
     std::function<std::vector<juce::String>()> onListTrackPresets;
 
+    // Drag reorder callbacks (set by MixerView)
+    std::function<void(const juce::String& trackId, int x)> onDragStart;
+    std::function<void(int mouseX)> onDragMove;
+    std::function<void()> onDragEnd;
+
     int getMinimumHeight() const;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
 private:
@@ -80,4 +87,5 @@ private:
     void rebuildEffectSlots();
     std::vector<EffectSlotInfo> currentEffects;
     bool pendingEffectOpen = false;
+    bool dragStarted = false;
 };
