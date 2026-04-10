@@ -36,7 +36,9 @@ void MixerView::paint(juce::Graphics& g) {
         g.drawText("No tracks", msgArea, juce::Justification::centred);
     }
 
-    // Drag reorder indicator
+}
+
+void MixerView::paintOverChildren(juce::Graphics& g) {
     if (dragIndicatorX >= 0) {
         int drawX = dragIndicatorX - viewport.getViewPositionX();
         g.setColour(Theme::color(Theme::Color::accent));
