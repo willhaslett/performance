@@ -162,12 +162,6 @@ void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconAre
     auto iconColor = enabled ? Theme::color(Theme::Color::midiActive)
                               : Theme::color(Theme::Color::textDim);
 
-    // Glow behind icon when enabled
-    if (enabled) {
-        g.setColour(iconColor.withAlpha(0.25f));
-        g.fillEllipse(iconArea.expanded(3).toFloat());
-    }
-
     g.setColour(iconColor);
     juce::Path powerIcon;
     auto a = iconArea.reduced(1).toFloat();

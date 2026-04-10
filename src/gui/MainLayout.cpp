@@ -24,10 +24,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     paneContainer.addPane(&chatView, 0.4f);
     paneContainer.addPane(&logPane, 0.4f);
 
-    // Default: mapping pane (left), chat (right)
-    activeLeftPane = &mappingPane;
+    // Default: produce pane (left), chat (right)
+    activeLeftPane = &producePane;
     activeRightPane = &chatView;
-    paneContainer.setPaneVisible(&producePane, false);
+    paneContainer.setPaneVisible(&mappingPane, false);
     paneContainer.setPaneVisible(&debugPane, false);
     paneContainer.setPaneVisible(&logPane, false);
 
