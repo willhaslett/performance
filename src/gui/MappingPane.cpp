@@ -36,7 +36,7 @@ MappingPane::MappingPane(StateAPI& state, EngineAPI& engine, PerformanceCoordina
 
     stateSubscriptionId = state.events().subscribe([this](const StateEvent& event) {
         if (event.entity == StateEvent::Device || event.entity == StateEvent::Binding
-            || event.entity == StateEvent::Song) {
+            || event.entity == StateEvent::Song || event.entity == StateEvent::Config) {
             juce::MessageManager::callAsync([this] { refresh(); });
         }
     });
