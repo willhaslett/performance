@@ -162,8 +162,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
                 if (ts && ts->armed) { anyArmed = true; break; }
             }
         }
-        auto recCol = (anyArmed && playing) ? juce::Colour(0xffee3333)
-                     : anyArmed ? juce::Colour(0xffcc3333)
+        auto recCol = (anyArmed && playing) ? juce::Colour(0xffee8822)
+                     : anyArmed ? juce::Colour(0xffcc7720)
                      : Theme::color(Theme::Color::textDim);
         g.setColour(recCol);
         g.fillEllipse((float)(btnX + 6), (float)(btnY + 6), (float)(btnSize - 12), (float)(btnSize - 12));
@@ -304,7 +304,7 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled) {
-    auto iconColor = enabled ? Theme::color(Theme::Color::midiActive)
+    auto iconColor = enabled ? Theme::color(Theme::Color::textWhite)
                               : Theme::color(Theme::Color::textDim);
 
     g.setColour(iconColor);
@@ -341,7 +341,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         constexpr float disabledDarken = 0.35f;
 
-        auto headerCol = isAudioInput ? juce::Colour(0xff8a6a2a)  // amber for audio input
+        auto headerCol = isAudioInput ? juce::Colour(0xff3a2e18)  // muted amber for audio input
                                        : Theme::color(Theme::Color::bgHeader);
         if (!enabled)
             headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
@@ -360,11 +360,17 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         powerIconBounds[i] = iconBounds;
         paintPowerIcon(g, iconBounds, enabled);
 
-        // Arm dot
+        // Arm dot — ring when disarmed (shows clickability), filled orange when armed
         bool isArmed = trackState ? trackState->armed : false;
-        auto armCol = isArmed ? juce::Colour(0xffcc3333) : Theme::color(Theme::Color::textDim);
-        g.setColour(armCol);
-        g.fillEllipse((float)(area.getX() + 26), (float)(y + (trackRowHeight - 8) / 2), 8.0f, 8.0f);
+        auto armRect = juce::Rectangle<float>((float)(area.getX() + 25),
+                                               (float)(y + (trackRowHeight - 10) / 2), 10.0f, 10.0f);
+        if (isArmed) {
+            g.setColour(juce::Colour(0xffee8822));
+            g.fillEllipse(armRect);
+        } else {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.drawEllipse(armRect.reduced(1.0f), 1.5f);
+        }
 
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)

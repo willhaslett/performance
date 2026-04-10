@@ -9,10 +9,10 @@ namespace Theme {
         constexpr uint32_t bgTrack      = 0xff1c1c1c;
         constexpr uint32_t bgSlot       = 0xff303030;
         constexpr uint32_t bgSlotHover  = 0xff3c3c3c;
-        constexpr uint32_t bgHeader     = 0xff2a6aaa;
-        constexpr uint32_t bgHeaderOff  = 0xff333333;
-        constexpr uint32_t bgHeaderBus  = 0xff4a3a6a;
-        constexpr uint32_t bgHeaderOut  = 0xff3a4a3a;
+        constexpr uint32_t bgHeader     = 0xff1a3a55;  // muted blue
+        constexpr uint32_t bgHeaderOff  = 0xff252525;
+        constexpr uint32_t bgHeaderBus  = 0xff2a2245;  // muted purple
+        constexpr uint32_t bgHeaderOut  = 0xff223022;  // muted green
         constexpr uint32_t border       = 0xff444444;
         constexpr uint32_t textPrimary  = 0xffd8d8d8;
         constexpr uint32_t textSecondary= 0xff999999;

@@ -219,7 +219,7 @@ void TrackStrip::paint(juce::Graphics& g) {
                                          bounds.getWidth(), Theme::headerHeight);
 
     bool isAudioInput = (sourceType == TrackSourceType::AudioInput);
-    constexpr uint32_t bgHeaderAudioInput = 0xff8a6a2a;  // amber/orange
+    constexpr uint32_t bgHeaderAudioInput = 0xff3a2e18;  // muted amber
     constexpr float disabledDarken = 0.35f;  // blend toward black
 
     auto headerColour = isAudioInput ? juce::Colour(bgHeaderAudioInput)
@@ -234,7 +234,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     {
         // Power icon for all track types (controls audioEnabled)
-        auto iconColor = audioEnabled ? Theme::color(Theme::Color::midiActive)
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
                                        : Theme::color(Theme::Color::textDim);
 
         g.setColour(iconColor);
@@ -249,13 +249,17 @@ void TrackStrip::paint(juce::Graphics& g) {
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
 
-    // Record arm dot
-    armDotBounds = juce::Rectangle<int>(midiDotBounds.getRight() + 4,
-                                         headerBounds.getCentreY() - 5, 10, 10);
+    // Record arm dot — larger, ring when disarmed to show clickability
+    armDotBounds = juce::Rectangle<int>(midiDotBounds.getRight() + 3,
+                                         headerBounds.getCentreY() - 6, 12, 12);
     {
-        auto armCol = armed ? juce::Colour(0xffcc3333) : Theme::color(Theme::Color::textDim);
-        g.setColour(armCol);
-        g.fillEllipse(armDotBounds.toFloat());
+        if (armed) {
+            g.setColour(juce::Colour(0xffee8822));  // orange — r/g safe
+            g.fillEllipse(armDotBounds.toFloat());
+        } else {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.drawEllipse(armDotBounds.reduced(1).toFloat(), 1.5f);
+        }
     }
 
     g.setColour(Theme::color(Theme::Color::textWhite));

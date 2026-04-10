@@ -98,7 +98,7 @@ void BusStrip::paint(juce::Graphics& g) {
     powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                             headerBounds.getCentreY() - 7, 14, 14);
     {
-        auto iconColor = audioEnabled ? Theme::color(Theme::Color::midiActive)
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
                                        : Theme::color(Theme::Color::textDim);
         g.setColour(iconColor);
         juce::Path powerIcon;
