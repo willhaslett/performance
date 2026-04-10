@@ -212,6 +212,9 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
                     state.setTrackPlugin(parentId.toStdString(), pluginInfo->id, presetId);
                 }
             } else {
+                // Replace: remove old effect, then add new one in its place
+                if (!effectId.isEmpty())
+                    state.removeEffect(effectId.toStdString());
                 auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
                 if (pluginInfo)
                     state.addEffect(parentId.toStdString(), selectedPlugin.toStdString(), pluginInfo->id);
