@@ -610,14 +610,32 @@ void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
 }
 
 bool ProducePane::keyPressed(const juce::KeyPress& key) {
-    // Spacebar toggles play/stop (only if no text editor has focus)
+    auto* focused = juce::Component::getCurrentlyFocusedComponent();
+    if (focused && dynamic_cast<juce::TextEditor*>(focused) != nullptr)
+        return false;
+
     if (key == juce::KeyPress::spaceKey && sequencer) {
-        auto* focused = juce::Component::getCurrentlyFocusedComponent();
-        if (!focused || dynamic_cast<juce::TextEditor*>(focused) == nullptr) {
-            sequencer->togglePlayStop();
-            repaint();
-            return true;
-        }
+        sequencer->togglePlayStop();
+        repaint();
+        return true;
     }
+
+    // h/l: step playhead by division (1/4 beat)
+    constexpr double divSize = 0.25;
+    if (key.getTextCharacter() == 'h' && sequencer) {
+        double beat = sequencer->getBeatPosition();
+        double snapped = std::floor(beat / divSize) * divSize - divSize;
+        sequencer->setBeatPosition(std::max(0.0, snapped));
+        repaint();
+        return true;
+    }
+    if (key.getTextCharacter() == 'l' && sequencer) {
+        double beat = sequencer->getBeatPosition();
+        double snapped = std::floor(beat / divSize) * divSize + divSize;
+        sequencer->setBeatPosition(snapped);
+        repaint();
+        return true;
+    }
+
     return false;
 }
