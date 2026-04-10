@@ -209,10 +209,9 @@ static bool isSectionHeader(MappingPane::Row::Section s) {
 }
 
 static int sectionHeight(MappingPane::Row::Section s) {
-    // SongHeader is taller — includes title + column header row
-    if (s == MappingPane::Row::SongHeader) return 24 + 24;  // title + columns
+    if (s == MappingPane::Row::SongHeader) return 52;  // title + gap + column headers
     if (isSectionHeader(s)) return 24;
-    return 24;  // rowHeight
+    return 24;
 }
 
 int MappingPane::getRowY(int rowIndex) const {
@@ -288,14 +287,14 @@ void MappingPane::paint(juce::Graphics& g) {
                 // Column headers — below the title, drawn in the next sectionHeaderHeight
                 g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(Theme::fontSizeXs));
-                int colY = bounds.getY() + sectionHeaderHeight;
-                g.drawText("Score",   colScore, colY, colName - colScore, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("MIDI Source", colName, colY, colGroup - colName, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Group",   colGroup, colY, colType - colGroup, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Type",    colType, colY, colCh - colType, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Ch",      colCh, colY, colNum - colCh, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("#",       colNum, colY, colAction - colNum, sectionHeaderHeight, juce::Justification::centredLeft);
-                g.drawText("Action",  colAction, colY, 80, sectionHeaderHeight, juce::Justification::centredLeft);
+                int colY = bounds.getBottom() - 22;  // column headers near bottom of header area
+                g.drawText("MIDI Source", colName, colY, colScore - colName, 20, juce::Justification::centredLeft);
+                g.drawText("Score",   colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
+                g.drawText("Group",   colGroup, colY, colType - colGroup, 20, juce::Justification::centredLeft);
+                g.drawText("Type",    colType, colY, colCh - colType, 20, juce::Justification::centredLeft);
+                g.drawText("Ch",      colCh, colY, colNum - colCh, 20, juce::Justification::centredLeft);
+                g.drawText("#",       colNum, colY, colAction - colNum, 20, juce::Justification::centredLeft);
+                g.drawText("Action",  colAction, colY, 80, 20, juce::Justification::centredLeft);
             } else {
                 // Score header — same style as Mappings header
                 g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
@@ -331,10 +330,10 @@ void MappingPane::paint(juce::Graphics& g) {
 
         g.setFont(Theme::font(Theme::fontSizeSm));
 
-        // Score Step column (song rows)
+        // Score Step column (after MIDI Source)
         if (row.section == Row::SongControl && !row.bindingId.empty()) {
             bool inScore = (row.scorePosition >= 0);
-            float cx = (float)(colScore + 18);
+            float cx = (float)(colScore + 20);
             float cy = (float)bounds.getCentreY();
             if (inScore) {
                 g.setColour(Theme::color(Theme::Color::accent));
@@ -448,7 +447,7 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
 
         // Score Step column click — toggle in/out of score
         if (row.section == Row::SongControl && !row.bindingId.empty()
-            && x >= colScore && x < colName) {
+            && x >= colScore && x < colGroup) {
             if (row.scorePosition >= 0) {
                 // Remove from score
                 state.clearScoreStep(row.bindingId);
@@ -471,7 +470,7 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         }
 
         // Score row: click position number to reorder
-        if (row.section == Row::ScoreControl && x >= colScore && x < colName) {
+        if (row.section == Row::ScoreControl && x >= colScore && x < colGroup) {
             showScoreMenu(i, event.getScreenPosition());
             return;
         }

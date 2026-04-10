@@ -122,14 +122,13 @@ private:
 
     // Column positions
     static constexpr int colActivity = 8;
-    static constexpr int colScore = 24;     // Score Step toggle
-    static constexpr int colName = 74;      // MIDI Source
-    static constexpr int colGroup = 180;
-    static constexpr int colType = 270;
-    static constexpr int colCh = 318;
-    static constexpr int colNum = 346;
-    static constexpr int colAction = 380;
-    static constexpr int titleHeight = 24;  // "Mappings" title above column headers
+    static constexpr int colName = 24;       // MIDI Source
+    static constexpr int colScore = 140;     // Score Step toggle (after MIDI Source)
+    static constexpr int colGroup = 200;
+    static constexpr int colType = 290;
+    static constexpr int colCh = 338;
+    static constexpr int colNum = 366;
+    static constexpr int colAction = 400;
 
     void timerCallback() override;
 };
