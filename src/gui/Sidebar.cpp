@@ -58,7 +58,12 @@ Sidebar::Sidebar() {
                         auto& dm = engineAPI->getDeviceManager();
                         auto setup = dm.getAudioDeviceSetup();
                         setup.bufferSize = newSize;
-                        dm.setAudioDeviceSetup(setup, true);
+                        auto err = dm.setAudioDeviceSetup(setup, true);
+                        if (err.isEmpty())
+                            perfLog("[Sidebar] Buffer size changed to %d\n", newSize);
+                        else
+                            perfLog("[Sidebar] Buffer size change failed: %s\n", err.toRawUTF8());
+                        refreshTree();
                     });
             }
         } else if (type == "debug") {
