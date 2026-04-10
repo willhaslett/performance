@@ -20,9 +20,6 @@ public:
     // Callback for song loading (coordinator-level operation)
     std::function<void(const std::string& songId)> onLoadSong;
 
-    // Callback for MIDI device selection (deviceId set if registered, portName set if unregistered)
-    std::function<void(const std::string& deviceId, const std::string& portName)> onDeviceSelected;
-
     // Callback for Maps device selection
     std::function<void(const std::string& deviceId, const std::string& portName)> onMapSelected;
 
@@ -31,7 +28,6 @@ public:
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
     // Callbacks for pane selection
-    std::function<void()> onBindingsSelected;
     std::function<void()> onDebugSelected;
     std::function<void()> onLogsSelected;
     std::function<void()> onChatSelected;

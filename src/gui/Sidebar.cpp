@@ -17,13 +17,7 @@ Sidebar::Sidebar() {
             selectedDeviceId.clear();
             onLoadSong(id);
         }
-        else if (type == "device" && onDeviceSelected) {
-            selectedDeviceId = id;
-            onDeviceSelected(id, "");
-        } else if (type == "unregistered_device" && onDeviceSelected) {
-            selectedDeviceId = id;
-            onDeviceSelected("", id);  // id is the port name for unregistered devices
-        } else if (type == "audio_device") {
+        else if (type == "audio_device") {
             selectedDeviceId = id;
             // id is "audio_both:DeviceName" — extract device name
             auto devName = id.substr(id.find(':') + 1);
@@ -47,9 +41,6 @@ Sidebar::Sidebar() {
                 else
                     onMapSelected("", id);  // id is port name for unregistered
             }
-        } else if (type == "bindings") {
-            selectedDeviceId = id;
-            if (onBindingsSelected) onBindingsSelected();
         } else if (type == "debug") {
             selectedDeviceId = id;
             if (onDebugSelected) onDebugSelected();
@@ -347,34 +338,6 @@ void Sidebar::refreshTree() {
             devicesNode.children.push_back(audioNode);
         }
 
-        // MIDI devices
-        {
-            TreeNode midiNode;
-            midiNode.label = "MIDI";
-            midiNode.type = "category";
-
-            auto midiDevices = juce::MidiInput::getAvailableDevices();
-            for (auto& midi : midiDevices) {
-                auto portName = midi.name.toStdString();
-                auto* device = state->findDeviceByPortName(portName);
-
-                TreeNode deviceLeaf;
-                if (device) {
-                    deviceLeaf.label = device->name;
-                    deviceLeaf.id = device->id;
-                    deviceLeaf.type = "device";
-                } else {
-                    deviceLeaf.label = portName;
-                    deviceLeaf.id = portName;
-                    deviceLeaf.type = "unregistered_device";
-                }
-                deviceLeaf.isLeaf = true;
-                midiNode.children.push_back(deviceLeaf);
-            }
-
-            devicesNode.children.push_back(midiNode);
-        }
-
         roots.push_back(devicesNode);
     }
 
@@ -393,7 +356,6 @@ void Sidebar::refreshTree() {
             panesNode.children.push_back(leaf);
         };
 
-        addLeaf("Bindings", "bindings", "bindings");
         addLeaf("Debug", "debug", "debug");
         addLeaf("Logs", "logs", "logs");
         addLeaf("Chat", "chat", "chat");

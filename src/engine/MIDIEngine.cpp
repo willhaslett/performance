@@ -89,11 +89,7 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
         if (!deviceId.empty())
             deviceActivityMs[deviceId] = now;
     }
-    // Log dispatch context for note events on ch10 (pad debugging)
-    if (message.isNoteOn() && message.getChannel() == 10) {
-        perfLog("[MIDI] Dispatch: port='%s' deviceId='%s' note=%d\n",
-                sourcePortName.toRawUTF8(), deviceId.c_str(), message.getNoteNumber());
-    }
+
 
     // MIDI Learn: intercept before normal dispatch (single-shot)
     // Match by device ID, or fall back to matching by port name for freshly registered devices

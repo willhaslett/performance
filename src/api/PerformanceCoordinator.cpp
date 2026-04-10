@@ -702,12 +702,7 @@ void PerformanceCoordinator::restoreBindings() {
         MIDIControl control = { parseControlType(juce::String(binding.controlType)),
                                 binding.channel, binding.number, binding.deviceId };
 
-        perfLog("[Coordinator] Binding: %s ch%d #%d dev='%s' -> %s\n",
-                binding.controlType.c_str(), binding.channel, binding.number,
-                binding.deviceId.c_str(), actionNameStr.c_str());
-
         songRuntime->addBinding(control, [this, actionNameStr, argsStr](float value) {
-            perfLog("[Coordinator] Action triggered: %s (value=%.2f)\n", actionNameStr.c_str(), value);
             auto args = juce::JSON::parse(juce::String(argsStr));
             executeAction(actionNameStr, args, value);
         }, juce::String(binding.description));

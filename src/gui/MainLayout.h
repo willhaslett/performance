@@ -3,10 +3,8 @@
 #include "gui/Sidebar.h"
 #include "gui/MixerView.h"
 #include "gui/ChatView.h"
-#include "gui/DeviceEditorPane.h"
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
-#include "gui/BindingsPane.h"
 #include "gui/MappingPane.h"
 #include "gui/PaneContainer.h"
 #include "gui/Divider.h"
@@ -29,18 +27,15 @@ public:
 
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
-    DeviceEditorPane& getDeviceEditor() { return deviceEditor; }
 
-    // Pane switching: left slot (device editor, debug) and right slot (chat, logs)
+    // Pane switching
     void showLeftPane(juce::Component* pane);
     void showRightPane(juce::Component* pane);
 
     std::function<void()> onSave;
 
     // Expose panes for wiring
-    DeviceEditorPane deviceEditor;
     DebugPane debugPane;
-    BindingsPane bindingsPane;
     MappingPane mappingPane;
     ChatView chatView;
     LogPane logPane;
