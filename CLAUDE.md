@@ -244,14 +244,22 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
 - Custom action creation via Claude fails despite API working via direct IPC. Needs investigation (string escaping through chat→tool→IPC pipeline).
 
-**Milestone: Initial sequencer implementation complete.**
-MIDI + audio recording/playback, region management, take folders, persistence, transport controls, auto-scroll, waveform display, multi-track recording.
+**Milestone: Sequencer + production tools complete (v0.0.1).**
+MIDI + audio recording/playback, region management (select/move/copy/delete/mute), take folders, persistence, transport controls, auto-scroll, waveform display, multi-track recording, per-song tempo and time signature, preset morphing, metronome, flexible pane system, CC fader mapping.
+
+**Recent additions:**
+- Per-song tempo and time signature — click BPM or time sig in transport LCD to edit. Persisted in SQLite. Song switching applies automatically.
+- Preset morphing — `morphToPreset(track, preset, duration, easing)` interpolates all plugin parameters from current state to target preset. Parameter snapshots (.params.json) saved alongside preset blobs.
+- Metronome — audible click with accent on beat 1, volume slider in transport bar, 'm' to toggle.
+- Unified Track Volume action — single CC fader action for any track, bus, or output. Cubic curve for fine low-end control.
+- Flexible pane system — four slots (sidebar/left/right/bottom), each with assignable content. Persisted. View menu + sidebar tree with green dots.
+- DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (near-term):**
-- Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp. (Playback stop/seek and recording stop are now handled.)
+- Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
 - Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
-- TempoMap + TimeSignatureMap — runtime evaluation of per-song tempo/time-sig event lists. Data model is ready (`TempoEvent`/`TimeSignatureEvent` vectors on `SongState`, sorted by beat). Runtime needs: (1) TempoMap utility — "what tempo at beat X?", "seconds from beat A to B?" (piecewise integration), "given N samples at beat X, what's the new beat?" Replaces all single-tempo arithmetic in `InternalSequencer::advance()` and `GraphWrapper::processBlock()`. (2) TimeSignatureMap — "what time sig at beat X?", "what bar/beat is beat X?", "where does bar N start?" Replaces `beatsPerBar()` single-value return. (3) GraphWrapper steps through tempo events within each buffer for correct sample offsets across tempo changes. (4) ProducePane grid renders variable-width bars at time sig boundaries. Current code uses single tempo/time-sig everywhere — all callsites are identified and use sequencer queries, so swapping in map lookups is mechanical. No trapdoors.
+- TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
 
 **Feature backlog (longer-term):**
 - MIDI effects (transpose, channel filter, arpeggiator)
@@ -340,4 +348,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~19,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~20,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.

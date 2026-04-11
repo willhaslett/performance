@@ -81,16 +81,32 @@ Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 - `cancelAll()` — cancel all automations
 
 ### Presets
-- `savePreset(track, name)` — save current plugin state to library
+- `savePreset(track, name)` — save current plugin state to library (blob + parameter snapshot)
 - `loadPreset(track, name)` — restore saved plugin state
 - `listPresets(pluginName)` — list saved presets for a plugin
+- `morphToPreset(track, preset, duration, easing)` — smoothly interpolate ALL plugin parameters from the current live state to the target preset over `duration` seconds. Uses the saved `.params.json` snapshot. The plugin's routing/samples stay as-is; only knob positions move. Best results between presets of the same base patch.
+
+Example — morph a synth to a new sound over 20 seconds:
+```lua
+morphToPreset("Track 1", "Warm Pad", 20.0, "cosine")
+```
+
+Example — bind a pad to trigger a morph:
+```lua
+local ctrl = getDeviceControl("KeyLab 88", "Pad 4")
+bind(ctrl.type, ctrl.channel, ctrl.number, "morphToPreset",
+     {"Track 1", "Huge Lead", 20.0, "cosine"},
+     "Pad 4 → morph Track 1 to Huge Lead", ctrl.deviceId)
+```
 
 ### Song Management
 Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
+Each song has its own tempo and time signature.
 
 - `song(name)` — create/set the active song
 - `saveInitialState()` — capture current state as the song's checkpoint
 - `loadInitialState()` — restore the saved checkpoint
+- `setConfig("metronome_volume", "0.3")` — adjust metronome volume (0-1)
 
 ### Query
 - `registryList("song")` — list all songs (returns table with id, name)
@@ -137,9 +153,11 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 | `fadeOut` | `{trackName, duration, "easing"}` | Fade track gain to 0 |
 | `fadeIn` | `{trackName, duration, "easing"}` | Fade track gain to 1 |
 | `crossfade` | `{fromTrackName, toTrackName, duration, "easing"}` | Crossfade between two tracks |
-| `setTrackGain` | `{trackName}` | Set track volume from CC value (0-1) |
+| `trackVolume` | `{channelName}` | CC fader → track/bus/output volume (cubic curve, +6dB max) |
+| `morphToPreset` | `{trackName, presetName, duration, "easing"}` | Morph all plugin parameters from current state to target preset over time |
 
-Track name args are resolved to UUIDs at bind-time. Use exact names from `registryList("track")`.
+Track/channel name args are resolved to UUIDs at bind-time. Use exact names from `registryList("track")`.
+Channel names for `trackVolume` include tracks, busses, and "Output".
 Easing options: "linear", "easein", "easeout", "cosine", "scurve"
 
 #### Binding workflow — ALWAYS follow this exact pattern:
@@ -206,9 +224,11 @@ createAction("big_transition", "Big Transition", [[
 ## Architecture notes
 - In-memory state store (StateAPI) is the SSOT at runtime
 - Engine syncs from state events — createTrack writes to state, engine follows
-- SQLite is the persistence layer — loaded on startup, saved on quit/explicit save
+- SQLite is the persistence layer — loaded on startup, saved on quit/explicit save. DB backed up on every save (state.bak.db).
 - Bindings use entity UUIDs internally — rename-safe
-- Songs have initial state (checkpoint) and score (ordered action list)
+- Songs have initial state (checkpoint), score (ordered action list), own tempo and time signature
+- Preset morphing works by interpolating plugin parameters (not the binary blob). The blob defines "what instrument," parameters define "where the knobs are." Morph moves knobs while keeping the instrument loaded.
+- Audio regions record to WAV files in `~/.config/performance/audio/`. Region playback is sample-accurate via AudioFileNode. 5ms fade in/out at region boundaries prevents clicks.
 
 ## GUI
 The app has a flexible layout: sidebar (songs/library/actions/devices/panes), dual content panes (left: ProducePane by default, right: chat or logs), and bottom mixer.
@@ -221,7 +241,9 @@ The app has a flexible layout: sidebar (songs/library/actions/devices/panes), du
   - Audio tracks can play back regions without an input assigned (playback-only)
   - Auto-scroll: Logic-style page jump at right edge, snaps to bar boundaries
   - Two-finger horizontal scroll for manual timeline navigation
-  - Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division
+  - Metronome volume slider at right end of transport bar
+  - Click BPM or time signature in LCD to edit (per-song, persisted)
+  - Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division, m=toggle metronome
 - Track strips: instrument slot (or input selector for audio input tracks), effect slots, sends, fader, stereo VU meters (IEC-scale), power icon, arm dot
 - Bus/Output strips: effect slots, fader, stereo VU meters, power icon
 - Click plugin pills to pick plugins (submenu with presets)
