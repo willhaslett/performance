@@ -131,6 +131,17 @@ public:
             }
         }
 
+        // Flush all notes if requested (stop/seek)
+        if (needsNoteFlush.exchange(false, std::memory_order_acquire)) {
+            for (auto& [trackId, node] : trackMidiSources) {
+                if (!node) continue;
+                for (int ch = 1; ch <= 16; ++ch) {
+                    node->scheduleSingleMessage(juce::MidiMessage::allNotesOff(ch), 0);
+                    node->scheduleSingleMessage(juce::MidiMessage::allSoundOff(ch), 0);
+                }
+            }
+        }
+
         // Forward to the graph
         graph.processBlock(buffer, midi);
     }
@@ -171,14 +182,10 @@ private:
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
 
-    // Send all-notes-off to every track's MidiSourceNode
+    // Flag: flush all notes on next processBlock
+    std::atomic<bool> needsNoteFlush { false };
+
     void flushAllNotes() {
-        for (auto& [trackId, node] : trackMidiSources) {
-            if (!node) continue;
-            // CC 123 (all notes off) on all 16 channels
-            for (int ch = 1; ch <= 16; ++ch)
-                node->scheduleSingleMessage(
-                    juce::MidiMessage::allNotesOff(ch), 0);
-        }
+        needsNoteFlush.store(true, std::memory_order_release);
     }
 };
