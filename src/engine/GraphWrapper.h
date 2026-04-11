@@ -50,6 +50,10 @@ public:
         arrangement.store(arr, std::memory_order_release);
     }
 
+    // --- Metronome ---
+    void setMetronome(bool on) { metronomeOn.store(on, std::memory_order_release); }
+    void setBeatsPerBar(int bpb) { metronomeBPB.store(bpb, std::memory_order_release); }
+
     // --- Recording ---
     void setRecording(bool r) { recording.store(r, std::memory_order_release); }
     bool isRecording() const { return recording.load(std::memory_order_acquire); }
@@ -209,6 +213,43 @@ public:
 
         // Forward to the graph
         graph.processBlock(buffer, midi);
+
+        // Metronome click — mix into output after graph processing
+        if (metronomeOn.load(std::memory_order_acquire)
+            && playing.load(std::memory_order_acquire) && currentSampleRate > 0) {
+            double bpm = tempo.load(std::memory_order_acquire);
+            double base = baseBeat.load(std::memory_order_acquire);
+            int64_t samples = samplesSinceStart.load(std::memory_order_acquire);
+            int numSamples = buffer.getNumSamples();
+            double beatsPerSample = (bpm / 60.0) / currentSampleRate;
+            double prevBeat = base + (samples - numSamples) * beatsPerSample;
+            double nextBeat = base + samples * beatsPerSample;
+            int bpb = metronomeBPB.load(std::memory_order_acquire);
+
+            // Check if any beat boundary falls in this buffer
+            int prevBeatInt = (int)std::floor(prevBeat);
+            int nextBeatInt = (int)std::floor(nextBeat);
+            if (nextBeatInt > prevBeatInt) {
+                // A beat crossed — find sample offset
+                double beatBoundary = (double)nextBeatInt;
+                int clickOffset = (int)((beatBoundary - prevBeat) / beatsPerSample);
+                clickOffset = juce::jlimit(0, numSamples - 1, clickOffset);
+
+                // Accent on beat 1 of bar
+                bool accent = (bpb > 0 && nextBeatInt % bpb == 0);
+                float freq = accent ? 1000.0f : 700.0f;
+                float clickGain = accent ? 0.4f : 0.25f;
+                int clickLen = (int)(currentSampleRate * 0.015);  // 15ms click
+
+                for (int i = 0; i < clickLen && (clickOffset + i) < numSamples; ++i) {
+                    float env = 1.0f - (float)i / clickLen;  // linear decay
+                    float sample = std::sin(2.0f * juce::MathConstants<float>::pi * freq * i / (float)currentSampleRate)
+                                   * env * clickGain;
+                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                        buffer.addSample(ch, clickOffset + i, sample);
+                }
+            }
+        }
     }
 
     const juce::String getName() const override { return "GraphWrapper"; }
@@ -239,6 +280,10 @@ private:
 
     // Arrangement pointer (atomic — swapped from message thread)
     std::atomic<const Arrangement*> arrangement { nullptr };
+
+    // Metronome
+    std::atomic<bool> metronomeOn { false };
+    std::atomic<int> metronomeBPB { 4 };
 
     // Recording
     std::atomic<bool> recording { false };

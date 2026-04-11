@@ -955,6 +955,13 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // m: toggle metronome
+    if (key.getTextCharacter() == 'm' && sequencer) {
+        sequencer->setMetronomeEnabled(!sequencer->isMetronomeEnabled());
+        repaint();
+        return true;
+    }
+
     // Cmd+D: duplicate selected region (place after original)
     if (key.getTextCharacter() == 'd' && key.getModifiers().isCommandDown()
         && !selectedRegionId.empty() && arrangement) {

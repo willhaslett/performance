@@ -1527,6 +1527,11 @@ void AudioEngine::loadAudioFileForTrack(const juce::String& trackId, const juce:
         perfLog("[Engine] Failed to load audio file: %s\n", filePath.toRawUTF8());
 }
 
+void AudioEngine::setMetronome(bool on, int beatsPerBar) {
+    graphWrapper->setMetronome(on);
+    graphWrapper->setBeatsPerBar(beatsPerBar);
+}
+
 double AudioEngine::getCurrentSampleRate() const {
     auto* device = deviceManager.getCurrentAudioDevice();
     return device ? device->getCurrentSampleRate() : 48000.0;

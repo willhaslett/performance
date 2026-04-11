@@ -147,8 +147,10 @@ void PerformanceCoordinator::timerCallback() {
             double audioBeat = audioEngine->getPlaybackBeatPosition();
             // Keep the UI sequencer in sync with the audio-thread position
             static_cast<InternalSequencer*>(sequencerImpl.get())->setBeatPositionSilent(audioBeat);
-            // Forward tempo to engine (in case it changed from UI)
+            // Forward tempo and metronome state to engine
             audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+            audioEngine->setMetronome(sequencerImpl->isMetronomeEnabled(),
+                                       sequencerImpl->getTimeSignatureNumerator());
             // Drain recorded MIDI events from audio thread
             if (isRecording) {
                 drainRecordFIFO();
