@@ -264,6 +264,7 @@ public:
             setup.outputDeviceName = jName;
             coordinator->state().setConfig("audio_output_device", deviceName);
             dm.setAudioDeviceSetup(setup, true);
+            coordinator->save();  // persist device change immediately
         };
 
         // Wire sidebar audio input device selection
@@ -275,6 +276,7 @@ public:
             setup.inputDeviceName = jName;
             coordinator->state().setConfig("audio_input_device", deviceName);
             dm.setAudioDeviceSetup(setup, true);
+            coordinator->save();  // persist device change immediately
         };
 
         // Wire sidebar pane selection
