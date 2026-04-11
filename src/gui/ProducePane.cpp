@@ -1098,7 +1098,28 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // h/l: step playhead by one division (1/denominator of a beat)
+    // Cmd+h/l/j/k: zoom
+    if (key.getModifiers().isCommandDown()) {
+        auto c = key.getKeyCode();
+        if (c == 'H' || c == 'h') {
+            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat / 1.3);
+            repaint(); return true;
+        }
+        if (c == 'L' || c == 'l') {
+            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat * 1.3);
+            repaint(); return true;
+        }
+        if (c == 'J' || c == 'j') {
+            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight * 1.3));
+            repaint(); return true;
+        }
+        if (c == 'K' || c == 'k') {
+            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight / 1.3));
+            repaint(); return true;
+        }
+    }
+
+    // h/l: step playhead by one division (no Cmd modifier)
     if ((key.getTextCharacter() == 'h' || key.getTextCharacter() == 'l') && sequencer) {
         double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
         double beat = sequencer->getBeatPosition();
@@ -1111,30 +1132,6 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         }
         repaint();
         return true;
-    }
-
-    // Cmd+arrows: zoom
-    if (key.getModifiers().isCommandDown()) {
-        if (key == juce::KeyPress::rightKey) {
-            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat * 1.3);
-            repaint();
-            return true;
-        }
-        if (key == juce::KeyPress::leftKey) {
-            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat / 1.3);
-            repaint();
-            return true;
-        }
-        if (key == juce::KeyPress::downKey) {
-            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight * 1.3));
-            repaint();
-            return true;
-        }
-        if (key == juce::KeyPress::upKey) {
-            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight / 1.3));
-            repaint();
-            return true;
-        }
     }
 
     return false;
