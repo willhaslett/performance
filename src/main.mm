@@ -42,6 +42,14 @@ public:
 
                 if (event.keyCode == 53)
                     key = juce::KeyPress(juce::KeyPress::escapeKey);
+                else if (event.keyCode == 123)
+                    key = juce::KeyPress(juce::KeyPress::leftKey, juce::ModifierKeys::getCurrentModifiers(), 0);
+                else if (event.keyCode == 124)
+                    key = juce::KeyPress(juce::KeyPress::rightKey, juce::ModifierKeys::getCurrentModifiers(), 0);
+                else if (event.keyCode == 125)
+                    key = juce::KeyPress(juce::KeyPress::downKey, juce::ModifierKeys::getCurrentModifiers(), 0);
+                else if (event.keyCode == 126)
+                    key = juce::KeyPress(juce::KeyPress::upKey, juce::ModifierKeys::getCurrentModifiers(), 0);
 
                 if (mainLayout->handleGlobalKey(key))
                     return nil;
