@@ -1113,5 +1113,29 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // Cmd+arrows: zoom
+    if (key.getModifiers().isCommandDown()) {
+        if (key == juce::KeyPress::rightKey) {
+            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat * 1.3);
+            repaint();
+            return true;
+        }
+        if (key == juce::KeyPress::leftKey) {
+            pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat / 1.3);
+            repaint();
+            return true;
+        }
+        if (key == juce::KeyPress::downKey) {
+            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight * 1.3));
+            repaint();
+            return true;
+        }
+        if (key == juce::KeyPress::upKey) {
+            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight / 1.3));
+            repaint();
+            return true;
+        }
+    }
+
     return false;
 }
