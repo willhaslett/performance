@@ -47,7 +47,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         resized();
     };
 
-    // Default pane assignments (or load from config)
+    // Default pane assignments
     paneAssignments[PaneSlot::Sidebar] = PaneContent::SidebarTree;
     paneAssignments[PaneSlot::Left] = PaneContent::Produce;
     paneAssignments[PaneSlot::Right] = PaneContent::Chat;
@@ -55,9 +55,16 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     loadPaneConfig();
 
-    // Apply assignments
-    for (auto& [slot, content] : paneAssignments)
-        setPaneContent(slot, content);
+    // Force-apply all assignments (make components visible)
+    for (auto& [slot, content] : paneAssignments) {
+        auto* comp = componentForContent(content);
+        if (comp) {
+            comp->setVisible(true);
+            if (content == PaneContent::Debug) debugPane.activate();
+            if (content == PaneContent::Logs) logPane.activate();
+        }
+    }
+    sidebarDivider.setVisible(paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
 
     setWantsKeyboardFocus(true);
 
