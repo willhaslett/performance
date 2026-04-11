@@ -214,7 +214,7 @@ void PerformanceCoordinator::stopRecording() {
     double stopBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
     double stopOffset = stopBeat - recordStartBeat;
     for (auto& [key, beatOffset] : openNotes) {
-        RegionState::Event noteOff;
+        MidiEventState noteOff;
         noteOff.beatOffset = stopOffset;
         noteOff.status = 0x80;
         noteOff.channel = key.second;
@@ -239,7 +239,7 @@ void PerformanceCoordinator::drainRecordFIFO() {
         double beatOffset = event.beat - recordStartBeat;
         if (beatOffset < 0.0) continue;
 
-        RegionState::Event re;
+        MidiEventState re;
         re.beatOffset = beatOffset;
         re.status = event.statusByte;
         re.channel = event.channel;

@@ -15,6 +15,14 @@ RegionState* Arrangement::addMidiRegion(const std::string& trackId,
             region.type = "midi";
             region.startBeat = startBeat;
             region.lengthBeats = lengthBeats;
+
+            // Create initial empty take
+            TakeState take;
+            take.id = generateId();
+            take.name = "Take 1";
+            region.activeTakeId = take.id;
+            region.takes.push_back(std::move(take));
+
             t.regions.push_back(std::move(region));
             return &t.regions.back();
         }
@@ -72,7 +80,11 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
             double endBeat = r.startBeat + r.lengthBeats;
             if (endBeat <= prevBeat || r.startBeat >= currentBeat) continue;
 
-            for (auto& event : r.events) {
+            // Scan the active take's events
+            auto* take = r.activeTake();
+            if (!take) continue;
+
+            for (auto& event : take->events) {
                 double absBeat = r.startBeat + event.beatOffset;
                 if (absBeat >= prevBeat && absBeat < currentBeat)
                     callback(t.id, event, absBeat);
@@ -84,34 +96,46 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
 
 RegionState* Arrangement::startRecording(const std::string& trackId, double startBeat) {
     auto* region = addMidiRegion(trackId, startBeat, 0.0);
-    if (region)
-        recordingRegions.push_back(region);
+    if (region && region->activeTake())
+        recordingTakes.push_back(region->activeTake());
     return region;
 }
 
-void Arrangement::addRecordedEvent(const RegionState::Event& event) {
-    for (auto* region : recordingRegions) {
-        region->events.push_back(event);
+void Arrangement::addRecordedEvent(const MidiEventState& event) {
+    for (auto* take : recordingTakes) {
+        take->events.push_back(event);
         double end = event.beatOffset + 0.1;
-        if (end > region->lengthBeats)
-            region->lengthBeats = end;
+        // Find parent region to extend length — walk tracks
+        if (songTracks) {
+            for (auto& t : *songTracks) {
+                for (auto& r : t.regions) {
+                    for (auto& tk : r.takes) {
+                        if (&tk == take && end > r.lengthBeats) {
+                            r.lengthBeats = end;
+                            goto done;
+                        }
+                    }
+                }
+            }
+            done:;
+        }
     }
 }
 
 void Arrangement::stopRecording() {
-    for (auto* region : recordingRegions) {
-        std::sort(region->events.begin(), region->events.end(),
+    for (auto* take : recordingTakes) {
+        std::sort(take->events.begin(), take->events.end(),
                   [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
     }
-    recordingRegions.clear();
+    recordingTakes.clear();
     // TODO: inject synthetic noteOffs for unclosed notes at stop beat
 }
 
-std::vector<NoteView> Arrangement::buildNoteList(const RegionState& region) {
+std::vector<NoteView> Arrangement::buildNoteList(const TakeState& take, double regionLength) {
     std::vector<NoteView> notes;
-    std::map<std::pair<int,int>, int> openNotes;  // {noteNumber, channel} → index in notes
+    std::map<std::pair<int,int>, int> openNotes;
 
-    for (auto& e : region.events) {
+    for (auto& e : take.events) {
         if (e.isNoteOn()) {
             int idx = (int)notes.size();
             notes.push_back({ e.beatOffset, 0.0, e.data1, e.data2, e.channel });
@@ -124,10 +148,15 @@ std::vector<NoteView> Arrangement::buildNoteList(const RegionState& region) {
             }
         }
     }
-    // Close unclosed notes at region end
     for (auto& [key, idx] : openNotes) {
         if (notes[idx].durationBeats <= 0.0)
-            notes[idx].durationBeats = region.lengthBeats - notes[idx].beatOffset;
+            notes[idx].durationBeats = regionLength - notes[idx].beatOffset;
     }
     return notes;
+}
+
+std::vector<NoteView> Arrangement::buildNoteList(const RegionState& region) {
+    auto* take = region.activeTake();
+    if (!take) return {};
+    return buildNoteList(*take, region.lengthBeats);
 }

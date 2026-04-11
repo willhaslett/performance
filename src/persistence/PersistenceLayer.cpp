@@ -155,6 +155,8 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN input_channel_start INTEGER DEFAULT -1", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN input_channel_count INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "DROP TABLE IF EXISTS score_steps", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "DROP TABLE IF EXISTS region_events", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN active_take_id TEXT DEFAULT ''", nullptr, nullptr, nullptr);
 
     // Arrangement tables
     exec(R"(
@@ -164,12 +166,19 @@ void PersistenceLayer::createSchema() {
             type TEXT NOT NULL DEFAULT 'midi',
             name TEXT DEFAULT '',
             start_beat REAL NOT NULL,
-            length_beats REAL NOT NULL
+            length_beats REAL NOT NULL,
+            active_take_id TEXT DEFAULT ''
         );
 
-        CREATE TABLE IF NOT EXISTS region_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+        CREATE TABLE IF NOT EXISTS takes (
+            id TEXT PRIMARY KEY,
             region_id TEXT NOT NULL REFERENCES regions(id) ON DELETE CASCADE,
+            name TEXT DEFAULT ''
+        );
+
+        CREATE TABLE IF NOT EXISTS take_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            take_id TEXT NOT NULL REFERENCES takes(id) ON DELETE CASCADE,
             beat_offset REAL NOT NULL,
             status INTEGER NOT NULL,
             channel INTEGER NOT NULL,
@@ -325,7 +334,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_finalize(ss);
 
             // Regions for this track
-            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats FROM regions WHERE track_id = ? ORDER BY start_beat");
+            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id FROM regions WHERE track_id = ? ORDER BY start_beat");
             sqlite3_bind_text(rs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(rs) == SQLITE_ROW) {
                 RegionState r;
@@ -334,20 +343,33 @@ void PersistenceLayer::readSongs(AppState& out) {
                 r.name = col_str(rs, 2);
                 r.startBeat = sqlite3_column_double(rs, 3);
                 r.lengthBeats = sqlite3_column_double(rs, 4);
+                r.activeTakeId = col_str(rs, 5);
 
-                // Events for this region
-                auto* es = prepare("SELECT beat_offset, status, channel, data1, data2 FROM region_events WHERE region_id = ? ORDER BY beat_offset");
-                sqlite3_bind_text(es, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
-                while (sqlite3_step(es) == SQLITE_ROW) {
-                    RegionState::Event e;
-                    e.beatOffset = sqlite3_column_double(es, 0);
-                    e.status = sqlite3_column_int(es, 1);
-                    e.channel = sqlite3_column_int(es, 2);
-                    e.data1 = sqlite3_column_int(es, 3);
-                    e.data2 = sqlite3_column_int(es, 4);
-                    r.events.push_back(e);
+                // Takes for this region
+                auto* tks = prepare("SELECT id, name FROM takes WHERE region_id = ?");
+                sqlite3_bind_text(tks, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
+                while (sqlite3_step(tks) == SQLITE_ROW) {
+                    TakeState take;
+                    take.id = col_str(tks, 0);
+                    take.name = col_str(tks, 1);
+
+                    // Events for this take
+                    auto* es = prepare("SELECT beat_offset, status, channel, data1, data2 FROM take_events WHERE take_id = ? ORDER BY beat_offset");
+                    sqlite3_bind_text(es, 1, take.id.c_str(), -1, SQLITE_TRANSIENT);
+                    while (sqlite3_step(es) == SQLITE_ROW) {
+                        MidiEventState e;
+                        e.beatOffset = sqlite3_column_double(es, 0);
+                        e.status = sqlite3_column_int(es, 1);
+                        e.channel = sqlite3_column_int(es, 2);
+                        e.data1 = sqlite3_column_int(es, 3);
+                        e.data2 = sqlite3_column_int(es, 4);
+                        take.events.push_back(e);
+                    }
+                    sqlite3_finalize(es);
+
+                    r.takes.push_back(std::move(take));
                 }
-                sqlite3_finalize(es);
+                sqlite3_finalize(tks);
 
                 t.regions.push_back(std::move(r));
             }
@@ -523,7 +545,8 @@ void PersistenceLayer::saveActions(const StateAPI& state) {
 
 void PersistenceLayer::saveSongs(const StateAPI& state) {
     // Delete all existing data
-    exec("DELETE FROM region_events");
+    exec("DELETE FROM take_events");
+    exec("DELETE FROM takes");
     exec("DELETE FROM regions");
     exec("DELETE FROM effects");
     exec("DELETE FROM sends");
@@ -680,32 +703,43 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_finalize(ss);
             }
 
-            // Regions
+            // Regions and takes
             for (auto& r : t.regions) {
                 auto* rs = prepare(
-                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats) "
-                    "VALUES (?, ?, ?, ?, ?, ?)");
+                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(rs, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 3, r.type.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 4, r.name.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_double(rs, 5, r.startBeat);
                 sqlite3_bind_double(rs, 6, r.lengthBeats);
+                sqlite3_bind_text(rs, 7, r.activeTakeId.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_step(rs);
                 sqlite3_finalize(rs);
 
-                for (auto& e : r.events) {
-                    auto* es = prepare(
-                        "INSERT INTO region_events (region_id, beat_offset, status, channel, data1, data2) "
-                        "VALUES (?, ?, ?, ?, ?, ?)");
-                    sqlite3_bind_text(es, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
-                    sqlite3_bind_double(es, 2, e.beatOffset);
-                    sqlite3_bind_int(es, 3, e.status);
-                    sqlite3_bind_int(es, 4, e.channel);
-                    sqlite3_bind_int(es, 5, e.data1);
-                    sqlite3_bind_int(es, 6, e.data2);
-                    sqlite3_step(es);
-                    sqlite3_finalize(es);
+                for (auto& take : r.takes) {
+                    auto* ts2 = prepare(
+                        "INSERT INTO takes (id, region_id, name) VALUES (?, ?, ?)");
+                    sqlite3_bind_text(ts2, 1, take.id.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(ts2, 2, r.id.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(ts2, 3, take.name.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_step(ts2);
+                    sqlite3_finalize(ts2);
+
+                    for (auto& e : take.events) {
+                        auto* es = prepare(
+                            "INSERT INTO take_events (take_id, beat_offset, status, channel, data1, data2) "
+                            "VALUES (?, ?, ?, ?, ?, ?)");
+                        sqlite3_bind_text(es, 1, take.id.c_str(), -1, SQLITE_TRANSIENT);
+                        sqlite3_bind_double(es, 2, e.beatOffset);
+                        sqlite3_bind_int(es, 3, e.status);
+                        sqlite3_bind_int(es, 4, e.channel);
+                        sqlite3_bind_int(es, 5, e.data1);
+                        sqlite3_bind_int(es, 6, e.data2);
+                        sqlite3_step(es);
+                        sqlite3_finalize(es);
+                    }
                 }
             }
         }

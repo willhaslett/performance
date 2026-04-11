@@ -2041,11 +2041,12 @@ public:
         {
             TestContext ctx({"t1"});
             auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
-            r->events.push_back({ 1.0, 0x90, 1, 60, 100 });
-            r->events.push_back({ 1.5, 0x80, 1, 60, 0 });
+            auto* take = r->activeTake();
+            take->events.push_back({ 1.0, 0x90, 1, 60, 100 });
+            take->events.push_back({ 1.5, 0x80, 1, 60, 0 });
 
             std::vector<std::pair<int, int>> scanned;
-            ctx.arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const RegionState::Event& e, double) {
+            ctx.arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const MidiEventState& e, double) {
                 scanned.push_back({ e.status, e.data1 });
             });
 
@@ -2058,19 +2059,21 @@ public:
         {
             TestContext ctx({"t1"});
             auto* r = ctx.arr.addMidiRegion("t1", 8.0, 4.0);
-            r->events.push_back({ 0.0, 0x90, 1, 60, 100 });
+            auto* take = r->activeTake();
+            take->events.push_back({ 0.0, 0x90, 1, 60, 100 });
 
             int eventCount = 0;
             ctx.arr.scanMidiEvents(0.0, 4.0, [&](auto&, auto&, double) { eventCount++; });
             expectEquals(eventCount, 0);
         }
 
-        beginTest("Recording creates region and captures events");
+        beginTest("Recording creates region with take and captures events");
         {
             TestContext ctx({"t1"});
             auto* r = ctx.arr.startRecording("t1", 2.0);
             expect(ctx.arr.isRecording());
             expect(r != nullptr);
+            expect(r->activeTake() != nullptr);
 
             ctx.arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
             ctx.arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
@@ -2078,8 +2081,10 @@ public:
             ctx.arr.stopRecording();
 
             expect(!ctx.arr.isRecording());
-            expectEquals((int)r->events.size(), 3);
+            auto* take = r->activeTake();
+            expectEquals((int)take->events.size(), 3);
             expect(r->lengthBeats > 0.0);
+            expectEquals(take->name, std::string("Take 1"));
 
             auto notes = Arrangement::buildNoteList(*r);
             expectEquals((int)notes.size(), 2);

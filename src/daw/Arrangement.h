@@ -33,24 +33,26 @@ public:
     std::vector<RegionState*> regionsForTrack(const std::string& trackId) const;
     RegionState* findRegion(const std::string& regionId) const;
 
-    // --- Playback scanning ---
+    // --- Playback scanning (reads from active take) ---
     using EventCallback = std::function<void(const std::string& trackId,
-                                              const RegionState::Event& event,
+                                              const MidiEventState& event,
                                               double absoluteBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, EventCallback callback) const;
 
-    // --- Recording ---
+    // --- Recording (creates/appends to a take in the recording region) ---
     RegionState* startRecording(const std::string& trackId, double startBeat);
-    void addRecordedEvent(const RegionState::Event& event);
+    void addRecordedEvent(const MidiEventState& event);
     void stopRecording();
-    bool isRecording() const { return !recordingRegions.empty(); }
+    bool isRecording() const { return !recordingTakes.empty(); }
 
     // --- Derived views ---
+    static std::vector<NoteView> buildNoteList(const TakeState& take, double regionLength);
+    // Convenience: build from region's active take
     static std::vector<NoteView> buildNoteList(const RegionState& region);
 
 private:
     std::vector<TrackState>* songTracks = nullptr;
-    std::vector<RegionState*> recordingRegions;
+    std::vector<TakeState*> recordingTakes;  // active recording targets
 
     static std::string generateId();
 };

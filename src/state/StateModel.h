@@ -75,24 +75,47 @@ struct SendState {
     float gain = 1.0f;
 };
 
+// A single MIDI event (noteOn, noteOff, CC, aftertouch, etc.)
+struct MidiEventState {
+    double beatOffset = 0.0;
+    int status = 0x90;
+    int channel = 1;
+    int data1 = 60;
+    int data2 = 100;
+
+    bool isNoteOn() const  { return (status & 0xF0) == 0x90 && data2 > 0; }
+    bool isNoteOff() const { return (status & 0xF0) == 0x80 || ((status & 0xF0) == 0x90 && data2 == 0); }
+};
+
+// A take within a region. MIDI takes have events, audio takes have a file path.
+struct TakeState {
+    std::string id;
+    std::string name;
+    std::vector<MidiEventState> events;  // MIDI takes
+    std::string filePath;                 // audio takes (future)
+};
+
+// A region is a time-positioned container of takes on a track.
 struct RegionState {
     std::string id;
-    std::string type = "midi";  // "midi" or "audio" (future)
+    std::string type = "midi";  // "midi" or "audio"
     std::string name;
     double startBeat = 0.0;
     double lengthBeats = 4.0;
+    std::string activeTakeId;   // which take plays back
+    std::vector<TakeState> takes;
 
-    struct Event {
-        double beatOffset = 0.0;
-        int status = 0x90;
-        int channel = 1;
-        int data1 = 60;
-        int data2 = 100;
-
-        bool isNoteOn() const  { return (status & 0xF0) == 0x90 && data2 > 0; }
-        bool isNoteOff() const { return (status & 0xF0) == 0x80 || ((status & 0xF0) == 0x90 && data2 == 0); }
-    };
-    std::vector<Event> events;
+    // Convenience: get the active take
+    TakeState* activeTake() {
+        for (auto& t : takes)
+            if (t.id == activeTakeId) return &t;
+        return takes.empty() ? nullptr : &takes[0];
+    }
+    const TakeState* activeTake() const {
+        for (auto& t : takes)
+            if (t.id == activeTakeId) return &t;
+        return takes.empty() ? nullptr : &takes[0];
+    }
 };
 
 struct TrackState {

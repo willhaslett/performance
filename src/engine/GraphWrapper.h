@@ -93,7 +93,7 @@ public:
             auto* arr = arrangement.load(std::memory_order_acquire);
             if (arr) {
                 arr->scanMidiEvents(prevBeat, nextBeat,
-                    [&](const std::string& trackId, const RegionState::Event& event, double eventBeat) {
+                    [&](const std::string& trackId, const MidiEventState& event, double eventBeat) {
                         auto it = trackMidiSources.find(juce::String(trackId));
                         if (it == trackMidiSources.end() || !it->second) return;
 
