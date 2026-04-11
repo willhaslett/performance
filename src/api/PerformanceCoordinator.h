@@ -131,6 +131,7 @@ private:
     void stopRecording();
     void drainRecordFIFO();
     void computeAudioPeaks(TakeState& take);
+    void loadAudioFilesIntoEngine();
 
     void timerCallback() override;
     void populatePluginCatalog();

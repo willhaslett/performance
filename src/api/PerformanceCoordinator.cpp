@@ -302,6 +302,9 @@ void PerformanceCoordinator::stopRecording() {
         }
         audioRecordingTrackId.clear();
         audioRecordRegionId.clear();
+
+        // Load the recorded file into the engine for playback
+        loadAudioFilesIntoEngine();
     }
 
     arrangementImpl.stopRecording();
@@ -334,6 +337,31 @@ void PerformanceCoordinator::drainRecordFIFO() {
             openNotes[{re.data1, re.channel}] = beatOffset;
         } else if (re.isNoteOff()) {
             openNotes.erase({re.data1, re.channel});
+        }
+    }
+}
+
+void PerformanceCoordinator::loadAudioFilesIntoEngine() {
+    if (!stateAPI || !audioEngine) return;
+    auto* song = stateAPI->currentSong();
+    if (!song) return;
+
+    for (auto& track : song->tracks) {
+        if (track.sourceType != TrackSourceType::AudioInput) continue;
+
+        // Find the first audio region with a file on this track
+        for (auto& region : track.regions) {
+            if (region.type != "audio") continue;
+            auto* take = region.activeTake();
+            if (!take || take->filePath.empty()) continue;
+
+            audioEngine->loadAudioFileForTrack(juce::String(track.id),
+                juce::String(take->filePath), take->recordTempo, take->sampleRate);
+
+            // Compute peaks if not cached
+            if (take->peakData.peaks.empty())
+                computeAudioPeaks(*take);
+            break;  // one file per track for now
         }
     }
 }
@@ -452,6 +480,9 @@ bool PerformanceCoordinator::restoreSession() {
     // Point arrangement at restored song's tracks
     if (auto* s = stateAPI->currentSong())
         arrangementImpl.setTracks(&s->tracks);
+
+    // Load audio files for any audio regions
+    loadAudioFilesIntoEngine();
 
     auto* song = stateAPI->currentSong();
     perfLog("[Coordinator] Session restored: %s (%d tracks)\n",

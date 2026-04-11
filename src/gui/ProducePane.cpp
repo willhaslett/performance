@@ -518,6 +518,33 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         }
                     }
                 }
+
+                // Audio waveform preview
+                if (r->type == "audio") {
+                    auto* take = r->activeTake();
+                    if (take && !take->peakData.peaks.empty()) {
+                        auto inner = regionBounds.reduced(1, 3);
+                        float centreY = inner.getCentreY();
+                        float halfH = inner.getHeight() * 0.5f;
+                        auto waveCol = juce::Colour(trackCol).brighter(0.5f).withAlpha(0.7f);
+                        g.setColour(waveCol);
+
+                        // Map peaks to pixels
+                        int numPeaks = (int)take->peakData.peaks.size();
+                        double beatsPerPeak = (take->peakData.samplesPerPeak / (double)take->sampleRate)
+                                              * (take->recordTempo / 60.0);
+                        for (int pi = 0; pi < numPeaks; ++pi) {
+                            float px = (float)rx + (float)(pi * beatsPerPeak * pixelsPerBeat);
+                            float pw = std::max(1.0f, (float)(beatsPerPeak * pixelsPerBeat));
+                            if (px + pw < inner.getX() || px > inner.getRight()) continue;
+
+                            auto [mn, mx] = take->peakData.peaks[pi];
+                            float y1 = centreY - mx * halfH;
+                            float y2 = centreY - mn * halfH;
+                            g.drawLine(px, y1, px, y2, pw > 1.5f ? 1.0f : pw);
+                        }
+                    }
+                }
             }
         }
 

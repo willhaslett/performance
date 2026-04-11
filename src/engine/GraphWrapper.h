@@ -3,6 +3,7 @@
 #include "daw/Arrangement.h"
 #include "state/StateModel.h"
 #include "engine/MidiSourceNode.h"
+#include "engine/AudioFileNode.h"
 #include "engine/RecordFIFO.h"
 #include "engine/AudioRecordFIFO.h"
 #include <atomic>
@@ -74,6 +75,17 @@ public:
         trackMidiSources.clear();
     }
 
+    // --- Per-track audio file playback ---
+    void registerTrackAudioFileNode(const juce::String& trackId, AudioFileNode* node) {
+        trackAudioFileNodes[trackId] = node;
+    }
+    void unregisterTrackAudioFileNode(const juce::String& trackId) {
+        trackAudioFileNodes.erase(trackId);
+    }
+    void clearTrackAudioFileNodes() {
+        trackAudioFileNodes.clear();
+    }
+
     // --- AudioProcessor overrides ---
     void prepareToPlay(double sampleRate, int blockSize) override {
         currentSampleRate = sampleRate;
@@ -120,6 +132,30 @@ public:
                                                       event.data1, event.data2);
                         it->second->scheduleSingleMessage(msg, sampleOffset);
                     });
+
+                // Drive audio file nodes — check which regions cover prevBeat
+                for (auto& [trkId, afNode] : trackAudioFileNodes) {
+                    if (!afNode || !afNode->hasFile()) {
+                        if (afNode) afNode->setActive(false);
+                        continue;
+                    }
+                    // Check if any audio region on this track covers prevBeat
+                    auto regions = arr->regionsForTrack(trkId.toStdString());
+                    bool found = false;
+                    for (auto* r : regions) {
+                        if (r->type != "audio") continue;
+                        double endBeat = r->startBeat + r->lengthBeats;
+                        if (prevBeat >= r->startBeat && prevBeat < endBeat) {
+                            afNode->setRegionStartBeat(r->startBeat);
+                            afNode->setPlaybackBeat(prevBeat);
+                            afNode->setActive(true);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        afNode->setActive(false);
+                }
             }
 
             // Capture incoming live MIDI for recording (all event types)
@@ -211,6 +247,7 @@ private:
 
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
+    std::map<juce::String, AudioFileNode*> trackAudioFileNodes;
 
     // Flag: flush all notes on next processBlock
     std::atomic<bool> needsNoteFlush { false };

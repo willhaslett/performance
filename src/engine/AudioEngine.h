@@ -5,6 +5,7 @@
 #include "engine/RecordFIFO.h"
 #include "engine/AudioRecordFIFO.h"
 #include "engine/AudioWriterThread.h"
+#include "engine/AudioFileNode.h"
 #include "state/StateModel.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -128,6 +129,8 @@ public:
     AudioWriterThread& getAudioWriter() { return audioWriter; }
     void setAudioRecordChannels(int startChannel, int channelCount);
     double getCurrentSampleRate() const;
+    void loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,
+                                double recordTempo, int fileSampleRate);
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }
@@ -161,7 +164,8 @@ private:
         juce::String name;
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
-        juce::AudioProcessorGraph::Node::Ptr midiSourceNode;  // per-track sequencer MIDI
+        juce::AudioProcessorGraph::Node::Ptr midiSourceNode;   // per-track sequencer MIDI
+        juce::AudioProcessorGraph::Node::Ptr audioFileNode;    // per-track sequencer audio playback
         bool midiEnabled = true;
         bool audioEnabled = true;
         TrackSourceType sourceType = TrackSourceType::Instrument;

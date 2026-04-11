@@ -492,9 +492,12 @@ void AudioEngine::createAudioInputTrackWithId(const juce::String& id, const juce
     track.midiEnabled = false;
     track.outputGainNode = graph->addNode(std::make_unique<GainProcessor>());
     track.midiSourceNode = graph->addNode(std::make_unique<MidiSourceNode>());
+    track.audioFileNode = graph->addNode(std::make_unique<AudioFileNode>());
     tracks[id] = std::move(track);
     graphWrapper->registerTrackMidiSource(id,
         dynamic_cast<MidiSourceNode*>(tracks[id].midiSourceNode->getProcessor()));
+    graphWrapper->registerTrackAudioFileNode(id,
+        dynamic_cast<AudioFileNode*>(tracks[id].audioFileNode->getProcessor()));
     rebuildConnections();
     perfLog("[Engine] Created audio input track: %s (id=%s, ch=%d, count=%d)\n",
             name.toRawUTF8(), id.toRawUTF8(), inputChannelStart, inputChannelCount);
@@ -515,6 +518,10 @@ void AudioEngine::removeTrack(const juce::String& trackId) {
     if (it->second.midiSourceNode) {
         graphWrapper->unregisterTrackMidiSource(trackId);
         graph->removeNode(it->second.midiSourceNode->nodeID);
+    }
+    if (it->second.audioFileNode) {
+        graphWrapper->unregisterTrackAudioFileNode(trackId);
+        graph->removeNode(it->second.audioFileNode->nodeID);
     }
 
     tracks.erase(it);
@@ -778,11 +785,14 @@ void AudioEngine::renameBus(const juce::String& busId, const juce::String& newNa
 void AudioEngine::clearAllTracks() {
     editorWindows.clear();
     graphWrapper->clearTrackMidiSources();
+    graphWrapper->clearTrackAudioFileNodes();
     for (auto& [id, track] : tracks) {
         if (track.instrumentNode)
             graph->removeNode(track.instrumentNode->nodeID);
         if (track.midiSourceNode)
             graph->removeNode(track.midiSourceNode->nodeID);
+        if (track.audioFileNode)
+            graph->removeNode(track.audioFileNode->nodeID);
         for (auto& fx : track.effects)
             if (fx.node) graph->removeNode(fx.node->nodeID);
         for (auto& send : track.sends)
@@ -914,11 +924,15 @@ void AudioEngine::rebuildConnections() {
                 graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { firstDestNodeId, 1 }});
             }
 
+            // Also connect AudioFileNode for region playback (sums with live input)
+            if (track.audioFileNode) {
+                for (int ch = 0; ch < 2; ++ch)
+                    graph->addConnection({{ track.audioFileNode->nodeID, ch }, { firstDestNodeId, ch }});
+            }
+
             perfLog("[Engine] Wiring audio input track \"%s\": ch=%d count=%d\n",
                     track.name.toRawUTF8(), track.inputChannelStart, track.inputChannelCount);
 
-            // For the effects/sends chain below, start after the first effect (if any)
-            // since we already connected audio input to it
             hasSource = true;
         } else if (track.instrumentNode) {
             // Instrument track: wire MIDI and instrument audio
@@ -1494,6 +1508,21 @@ AudioRecordFIFO& AudioEngine::getAudioRecordFIFO() {
 
 void AudioEngine::setAudioRecordChannels(int startChannel, int channelCount) {
     graphWrapper->setAudioRecordChannels(startChannel, channelCount);
+}
+
+void AudioEngine::loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,
+                                         double recordTempo, int fileSampleRate) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end() || !it->second.audioFileNode) return;
+
+    auto* afNode = dynamic_cast<AudioFileNode*>(it->second.audioFileNode->getProcessor());
+    if (!afNode) return;
+
+    if (afNode->loadFile(filePath, recordTempo, fileSampleRate))
+        perfLog("[Engine] Loaded audio file for track %s: %s\n",
+                trackId.toRawUTF8(), filePath.toRawUTF8());
+    else
+        perfLog("[Engine] Failed to load audio file: %s\n", filePath.toRawUTF8());
 }
 
 double AudioEngine::getCurrentSampleRate() const {
