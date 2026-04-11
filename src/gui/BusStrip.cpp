@@ -154,15 +154,27 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
         juce::PopupMenu menu;
         menu.addItem(1, "Master", true, outputTargetId.isEmpty());
         menu.addItem(2, "No Output", true, outputTargetId == "none");
-        // Could list other busses here for bus-to-bus routing
+        // List other busses for bus-to-bus routing
+        auto allBusses = state.listBusses();
+        for (int i = 0; i < (int)allBusses.size(); ++i) {
+            if (juce::String(allBusses[i].id) == busId) continue;  // skip self
+            menu.addItem(100 + i, juce::String(allBusses[i].name),
+                         true, outputTargetId == juce::String(allBusses[i].id));
+        }
         auto bId = busId;
+        auto busListCopy = allBusses;
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
-            [this, bId](int result) {
+            [this, bId, busListCopy](int result) {
                 if (result == 1)
                     state.setBusOutputTarget(bId.toStdString(), "");
                 else if (result == 2)
                     state.setBusOutputTarget(bId.toStdString(), "none");
+                else if (result >= 100) {
+                    int idx = result - 100;
+                    if (idx < (int)busListCopy.size())
+                        state.setBusOutputTarget(bId.toStdString(), busListCopy[idx].id);
+                }
             });
         return;
     }
@@ -243,15 +255,19 @@ void BusStrip::resized() {
                         .withTrimmedRight(Theme::trackPadding);
     faderMeter.setBounds(fmArea);
 
-    auto slotArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
-                          .withTrimmedLeft(Theme::trackPadding)
-                          .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
-    int y = slotArea.getY();
+    auto contentArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
+                              .withTrimmedLeft(Theme::trackPadding)
+                              .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2)
+                              .withTrimmedBottom(Theme::trackPadding);
 
+    // Output target at the very bottom
+    outputTargetBounds = contentArea.removeFromBottom(18);
+    contentArea.removeFromBottom(2);
+
+    // Effect slots at top
+    int y = contentArea.getY();
     for (auto& slot : effectSlots) {
-        slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
+        slot->setBounds(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
     }
-
-    outputTargetBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), 18);
 }

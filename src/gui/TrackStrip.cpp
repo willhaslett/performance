@@ -356,15 +356,21 @@ void TrackStrip::resized() {
     // Content area (left of fader)
     auto contentArea = bounds.withTrimmedTop(Theme::headerHeight)
                              .withTrimmedLeft(Theme::trackPadding)
-                             .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2);
+                             .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2)
+                             .withTrimmedBottom(Theme::trackPadding);
 
-    // Sends panel at bottom of content area (dynamic height)
+    // Output target at the very bottom
+    outputTargetBounds = contentArea.removeFromBottom(18);
+    contentArea.removeFromBottom(2);
+
+    // Sends panel above output target
     if (sendsPanel.isVisible()) {
         int sendsHeight = sendsPanel.getDesiredHeight();
         sendsPanel.setBounds(contentArea.removeFromBottom(sendsHeight));
-        contentArea.removeFromBottom(Theme::slotGap);
+        contentArea.removeFromBottom(2);
     }
 
+    // Slots at top
     auto slotArea = contentArea.withTrimmedTop(Theme::trackPadding);
     int y = slotArea.getY();
 
@@ -376,9 +382,6 @@ void TrackStrip::resized() {
         slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
     }
-
-    // Output target label
-    outputTargetBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), 18);
 }
 
 void TrackStrip::mouseDown(const juce::MouseEvent& event) {
