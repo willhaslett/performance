@@ -359,28 +359,27 @@ void TrackStrip::resized() {
                              .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2)
                              .withTrimmedBottom(Theme::trackPadding);
 
-    // Output target at the very bottom
+    // Output target pinned to bottom
     outputTargetBounds = contentArea.removeFromBottom(18);
     contentArea.removeFromBottom(2);
 
-    // Sends panel above output target
-    if (sendsPanel.isVisible()) {
-        int sendsHeight = sendsPanel.getDesiredHeight();
-        sendsPanel.setBounds(contentArea.removeFromBottom(sendsHeight));
-        contentArea.removeFromBottom(2);
-    }
+    // Slots at top, then sends below with padding
+    int y = contentArea.getY() + Theme::trackPadding;
 
-    // Slots at top
-    auto slotArea = contentArea.withTrimmedTop(Theme::trackPadding);
-    int y = slotArea.getY();
-
-    instrumentSlot.setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
-    inputSlotBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
+    instrumentSlot.setBounds(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
+    inputSlotBounds = juce::Rectangle<int>(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
     y += Theme::slotHeight + Theme::slotGap;
 
     for (auto& slot : effectSlots) {
-        slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
+        slot->setBounds(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
+    }
+
+    // Sends panel top-aligned after slots with extra padding
+    if (sendsPanel.isVisible()) {
+        y += Theme::slotGap;  // extra gap to visually separate sends from slots
+        int sendsHeight = sendsPanel.getDesiredHeight();
+        sendsPanel.setBounds(contentArea.getX(), y, contentArea.getWidth(), sendsHeight);
     }
 }
 
