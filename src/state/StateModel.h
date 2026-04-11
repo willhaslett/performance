@@ -147,6 +147,7 @@ struct TrackState {
     ChannelMode channelMode = ChannelMode::Stereo;
     int inputChannelStart = -1;  // physical input channel index (-1 = none)
     int inputChannelCount = 0;   // 1 = mono, 2 = stereo
+    std::string outputTarget;  // output routing: "" = master, "none" = disconnected, UUID = bus
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
     std::vector<RegionState> regions;
@@ -158,6 +159,7 @@ struct BusState {
     float outputGain = 1.0f;
     bool audioEnabled = true;
     int position = 0;
+    std::string outputTarget;  // "" = master, "none" = disconnected, UUID = another bus
     std::vector<EffectState> effects;
 };
 

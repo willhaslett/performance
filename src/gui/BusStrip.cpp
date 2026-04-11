@@ -142,12 +142,46 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
     }
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
         juce::PopupMenu menu;
+
+        // Preset submenu
+        juce::PopupMenu presetMenu;
+        presetMenu.addItem(10, "Save Bus Preset...");
+        if (onListBusPresets) {
+            auto presets = onListBusPresets();
+            if (!presets.empty()) {
+                presetMenu.addSeparator();
+                for (int i = 0; i < (int)presets.size(); ++i)
+                    presetMenu.addItem(100 + i, "Load: " + presets[i]);
+            }
+        }
+        menu.addSubMenu("Presets", presetMenu);
+        menu.addSeparator();
         menu.addItem(1, "Delete Bus");
+
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this](int result) {
                 if (result == 1)
                     state.removeBus(busId.toStdString());
+                else if (result == 10 && onSaveBusPreset) {
+                    auto* dlg = new juce::AlertWindow("Save Bus Preset", "", juce::MessageBoxIconType::NoIcon);
+                    dlg->addTextEditor("name", busName, "Preset Name");
+                    dlg->addButton("Save", 1);
+                    dlg->addButton("Cancel", 0);
+                    auto id = busId;
+                    auto saveCb = onSaveBusPreset;
+                    dlg->enterModalState(true, juce::ModalCallbackFunction::create(
+                        [dlg, id, saveCb](int r) {
+                            if (r == 1) saveCb(id, dlg->getTextEditorContents("name"));
+                            delete dlg;
+                        }));
+                }
+                else if (result >= 100 && onLoadBusPreset && onListBusPresets) {
+                    auto presets = onListBusPresets();
+                    int idx = result - 100;
+                    if (idx < (int)presets.size())
+                        onLoadBusPreset(busId, presets[idx]);
+                }
             });
     }
 }

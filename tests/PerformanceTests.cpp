@@ -1412,6 +1412,9 @@ public:
     void renameTrack(const juce::String& id, const juce::String& name) override {
         calls.push_back({"renameTrack", id.toStdString(), name.toStdString()});
     }
+    void setTrackOutputTarget(const juce::String& id, const juce::String& target) override {
+        calls.push_back({"setTrackOutputTarget", id.toStdString(), target.toStdString()});
+    }
     void clearAllTracks() override { calls.push_back({"clearAllTracks"}); }
 
     void createBusWithId(const juce::String& id, const juce::String& name) override {
@@ -1428,6 +1431,9 @@ public:
     }
     void renameBus(const juce::String& id, const juce::String& name) override {
         calls.push_back({"renameBus", id.toStdString(), name.toStdString()});
+    }
+    void setBusOutputTarget(const juce::String& id, const juce::String& target) override {
+        calls.push_back({"setBusOutputTarget", id.toStdString(), target.toStdString()});
     }
     void clearAllBusses() override { calls.push_back({"clearAllBusses"}); }
 

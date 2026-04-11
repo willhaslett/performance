@@ -51,6 +51,7 @@ public:
     void setTrackGain(const juce::String& trackId, float gain) override;
     float getTrackGain(const juce::String& trackId) const;
     void renameTrack(const juce::String& trackId, const juce::String& newName) override;
+    void setTrackOutputTarget(const juce::String& trackId, const juce::String& target) override;
     void clearAllTracks() override;
 
     // Bus management
@@ -58,6 +59,7 @@ public:
     void createBusWithId(const juce::String& id, const juce::String& busName) override;
     void removeBus(const juce::String& busId) override;
     void renameBus(const juce::String& busId, const juce::String& newName) override;
+    void setBusOutputTarget(const juce::String& busId, const juce::String& target) override;
     void setBusGain(const juce::String& busId, float gain) override;
     void setBusAudioEnabled(const juce::String& busId, bool enabled) override;
 
@@ -164,10 +166,11 @@ private:
         juce::String name;
         juce::String instrumentPluginName;
         juce::AudioProcessorGraph::Node::Ptr instrumentNode;
-        juce::AudioProcessorGraph::Node::Ptr midiSourceNode;   // per-track sequencer MIDI
-        juce::AudioProcessorGraph::Node::Ptr audioFileNode;    // per-track sequencer audio playback
+        juce::AudioProcessorGraph::Node::Ptr midiSourceNode;
+        juce::AudioProcessorGraph::Node::Ptr audioFileNode;
         bool midiEnabled = true;
         bool audioEnabled = true;
+        juce::String outputTarget;  // "" = master, "none" = disconnected, UUID = bus
         TrackSourceType sourceType = TrackSourceType::Instrument;
         int inputChannelStart = -1;
         int inputChannelCount = 0;
@@ -186,6 +189,7 @@ private:
     struct Bus {
         juce::String name;
         bool audioEnabled = true;
+        juce::String outputTarget;
         std::vector<EffectNode> effects;
         juce::AudioProcessorGraph::Node::Ptr outputGainNode;
     };

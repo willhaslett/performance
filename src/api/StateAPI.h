@@ -50,6 +50,8 @@ public:
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);
     void setTrackInputChannels(const std::string& id, int start, int count);
+    void setTrackOutputTarget(const std::string& id, const std::string& target);
+    std::string getTrackOutputTarget(const std::string& id) const;
     void setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status);
     TrackState* findTrack(const std::string& id);
     const TrackState* findTrack(const std::string& id) const;
@@ -62,6 +64,8 @@ public:
     float getBusGain(const std::string& id) const;
     void setBusAudioEnabled(const std::string& id, bool enabled);
     bool isBusAudioEnabled(const std::string& id) const;
+    void setBusOutputTarget(const std::string& id, const std::string& target);
+    std::string getBusOutputTarget(const std::string& id) const;
     BusState* findBus(const std::string& id);
     const BusState* findBus(const std::string& id) const;
 

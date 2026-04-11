@@ -773,6 +773,22 @@ void AudioEngine::renameTrack(const juce::String& trackId, const juce::String& n
     perfLog("[Engine] Renamed track \"%s\" -> \"%s\"\n", oldName.toRawUTF8(), newName.toRawUTF8());
 }
 
+void AudioEngine::setTrackOutputTarget(const juce::String& trackId, const juce::String& target) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    if (it->second.outputTarget == target) return;
+    it->second.outputTarget = target;
+    rebuildConnections();
+}
+
+void AudioEngine::setBusOutputTarget(const juce::String& busId, const juce::String& target) {
+    auto it = busses.find(busId);
+    if (it == busses.end()) return;
+    if (it->second.outputTarget == target) return;
+    it->second.outputTarget = target;
+    rebuildConnections();
+}
+
 void AudioEngine::renameBus(const juce::String& busId, const juce::String& newName) {
     auto it = busses.find(busId);
     if (it == busses.end()) return;
@@ -999,10 +1015,19 @@ void AudioEngine::rebuildConnections() {
                 for (int ch = 0; ch < prevNumOut; ++ch)
                     graph->addConnection({ { prevNodeId, ch }, { track.outputGainNode->nodeID, ch } });
             }
-            // outputGainNode -> master gain (only if audio enabled)
-            if (track.audioEnabled) {
+            // outputGainNode -> output target (master, bus, or none)
+            if (track.audioEnabled && track.outputTarget != "none") {
+                auto destNodeId = masterGainNode->nodeID;
+                if (!track.outputTarget.isEmpty()) {
+                    // Route to a bus instead of master
+                    auto busIt = busses.find(track.outputTarget);
+                    if (busIt != busses.end() && !busIt->second.effects.empty() && busIt->second.effects[0].node)
+                        destNodeId = busIt->second.effects[0].node->nodeID;
+                    else if (busIt != busses.end() && busIt->second.outputGainNode)
+                        destNodeId = busIt->second.outputGainNode->nodeID;
+                }
                 for (int ch = 0; ch < 2; ++ch)
-                    graph->addConnection({ { track.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+                    graph->addConnection({ { track.outputGainNode->nodeID, ch }, { destNodeId, ch } });
             }
         }
 
@@ -1072,15 +1097,24 @@ void AudioEngine::rebuildConnections() {
             prevNodeId = fx.node->nodeID;
         }
 
-        // Last effect -> bus outputGainNode -> master (only if audio enabled)
+        // Last effect -> bus outputGainNode -> output target
         if (bus.outputGainNode) {
             if (prevNodeId != bus.outputGainNode->nodeID) {
                 for (int ch = 0; ch < 2; ++ch)
                     graph->addConnection({ { prevNodeId, ch }, { bus.outputGainNode->nodeID, ch } });
             }
-            if (bus.audioEnabled) {
+            if (bus.audioEnabled && bus.outputTarget != "none") {
+                auto destNodeId = masterGainNode->nodeID;
+                if (!bus.outputTarget.isEmpty()) {
+                    // Route to another bus
+                    auto targetIt = busses.find(bus.outputTarget);
+                    if (targetIt != busses.end() && !targetIt->second.effects.empty() && targetIt->second.effects[0].node)
+                        destNodeId = targetIt->second.effects[0].node->nodeID;
+                    else if (targetIt != busses.end() && targetIt->second.outputGainNode)
+                        destNodeId = targetIt->second.outputGainNode->nodeID;
+                }
                 for (int ch = 0; ch < 2; ++ch)
-                    graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { masterGainNode->nodeID, ch } });
+                    graph->addConnection({ { bus.outputGainNode->nodeID, ch }, { destNodeId, ch } });
             }
         }
     }

@@ -25,6 +25,7 @@ public:
     virtual void setTrackAudioEnabled(const juce::String& trackId, bool enabled) = 0;
     virtual void setTrackInputChannels(const juce::String& trackId, int start, int count) = 0;
     virtual void renameTrack(const juce::String& trackId, const juce::String& newName) = 0;
+    virtual void setTrackOutputTarget(const juce::String& trackId, const juce::String& target) = 0;
     virtual void clearAllTracks() = 0;
 
     // Bus management
@@ -33,6 +34,7 @@ public:
     virtual void setBusGain(const juce::String& busId, float gain) = 0;
     virtual void setBusAudioEnabled(const juce::String& busId, bool enabled) = 0;
     virtual void renameBus(const juce::String& busId, const juce::String& newName) = 0;
+    virtual void setBusOutputTarget(const juce::String& busId, const juce::String& target) = 0;
     virtual void clearAllBusses() = 0;
 
     // Effects

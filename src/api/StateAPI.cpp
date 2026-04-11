@@ -365,6 +365,19 @@ bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
     return track ? track->audioEnabled : true;
 }
 
+void StateAPI::setTrackOutputTarget(const std::string& id, const std::string& target) {
+    auto* track = findTrack(id);
+    if (!track) return;
+    track->outputTarget = target;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+std::string StateAPI::getTrackOutputTarget(const std::string& id) const {
+    auto* track = findTrack(id);
+    return track ? track->outputTarget : "";
+}
+
 void StateAPI::setTrackArmed(const std::string& id, bool armed) {
     auto* track = findTrack(id);
     if (!track) return;
@@ -480,6 +493,19 @@ void StateAPI::setBusAudioEnabled(const std::string& id, bool enabled) {
 bool StateAPI::isBusAudioEnabled(const std::string& id) const {
     auto* bus = findBus(id);
     return bus ? bus->audioEnabled : true;
+}
+
+void StateAPI::setBusOutputTarget(const std::string& id, const std::string& target) {
+    auto* bus = findBus(id);
+    if (!bus) return;
+    bus->outputTarget = target;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+}
+
+std::string StateAPI::getBusOutputTarget(const std::string& id) const {
+    auto* bus = findBus(id);
+    return bus ? bus->outputTarget : "";
 }
 
 // --- Effects ---

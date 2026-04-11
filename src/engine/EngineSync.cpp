@@ -252,6 +252,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         if (!t) return;
         engine.setTrackGain(id, t->outputGain);
         engine.setTrackAudioEnabled(id, t->audioEnabled);
+        engine.setTrackOutputTarget(id, juce::String(t->outputTarget));
         engine.renameTrack(id, juce::String(t->name));
 
         if (t->sourceType == TrackSourceType::AudioInput) {
@@ -287,6 +288,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         if (!b) return;
         engine.setBusGain(id, b->outputGain);
         engine.setBusAudioEnabled(id, b->audioEnabled);
+        engine.setBusOutputTarget(id, juce::String(b->outputTarget));
         engine.renameBus(id, juce::String(b->name));
     }
     else if (entityType == "send") {

@@ -31,6 +31,11 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
+    // Bus preset callbacks (set by MixerView, implemented by coordinator)
+    std::function<void(const juce::String& busId, const juce::String& presetName)> onSaveBusPreset;
+    std::function<void(const juce::String& busId, const juce::String& presetName)> onLoadBusPreset;
+    std::function<std::vector<juce::String>()> onListBusPresets;
+
 private:
     StateAPI& state;
     EngineAPI& engine;
