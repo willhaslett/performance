@@ -147,7 +147,7 @@ public:
                     auto regions = arr->regionsForTrack(trkId.toStdString());
                     bool found = false;
                     for (auto* r : regions) {
-                        if (r->type != "audio") continue;
+                        if (r->type != "audio" || r->muted) continue;
                         double endBeat = r->startBeat + r->lengthBeats;
                         if (prevBeat >= r->startBeat && prevBeat < endBeat) {
                             afNode->setActiveRegion(juce::String(r->id), r->startBeat, prevBeat);

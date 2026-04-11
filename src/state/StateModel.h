@@ -113,6 +113,7 @@ struct RegionState {
     double startBeat = 0.0;
     double lengthBeats = 4.0;
     std::string activeTakeId;   // which take plays back
+    bool muted = false;         // region-level mute (skipped during playback)
     std::vector<TakeState> takes;
 
     // Convenience: get the active take

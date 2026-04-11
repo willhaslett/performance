@@ -158,7 +158,7 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
 
     for (auto& t : *songTracks) {
         for (auto& r : t.regions) {
-            if (r.type != "midi") continue;
+            if (r.type != "midi" || r.muted) continue;
             double endBeat = r.startBeat + r.lengthBeats;
             if (endBeat <= prevBeat || r.startBeat >= currentBeat) continue;
 

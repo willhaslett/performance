@@ -27,7 +27,23 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
 }
 
 void ProducePane::timerCallback() {
-    if (sequencer && sequencer->isPlaying()) repaint();
+    if (sequencer && sequencer->isPlaying()) {
+        // Auto-scroll (Logic-style page scroll):
+        // When playhead reaches ~1 bar before the right edge, jump forward
+        // by the full visible beat range so bar positions stay stable.
+        double beat = sequencer->getBeatPosition();
+        int gridWidth = getWidth() - trackHeaderWidth;
+        double visibleBeats = gridWidth / pixelsPerBeat;
+        double rightEdgeBeat = scrollBeat + visibleBeats;
+        double threshold = rightEdgeBeat - beatsPerBar();
+        if (beat >= threshold) {
+            // Snap scroll position to bar boundary for visual stability
+            int bpb = beatsPerBar();
+            double newScroll = std::floor(beat / bpb) * bpb;
+            scrollBeat = std::max(0.0, newScroll);
+        }
+        repaint();
+    }
 }
 
 int ProducePane::beatsPerBar() const {
@@ -449,6 +465,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             // Resolve track color — matches header color
             auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
             bool isAudioTrk = trkState && trkState->sourceType == TrackSourceType::AudioInput;
+            bool trackEnabled = trkState ? trkState->audioEnabled : true;
             uint32_t trackCol = (trkState && trkState->color != 0) ? trkState->color
                               : isAudioTrk ? 0xff3a2e18
                               : Theme::Color::bgHeader;
@@ -467,6 +484,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 bool selected = (r->id == selectedRegionId);
                 bool beingDragged = (draggingRegion && selected);
                 auto fillCol = juce::Colour(trackCol);
+                if (!trackEnabled || r->muted)
+                    fillCol = fillCol.interpolatedWith(juce::Colour(0xff181818), 0.65f);
                 float baseAlpha = beingDragged ? 0.45f : 0.82f;
                 g.setColour(fillCol.withAlpha(baseAlpha));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
@@ -539,8 +558,11 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             if (px + pw < inner.getX() || px > inner.getRight()) continue;
 
                             auto [mn, mx] = take->peakData.peaks[pi];
-                            float y1 = centreY - mx * halfH;
-                            float y2 = centreY - mn * halfH;
+                            // Nonlinear scaling: sqrt boosts quiet signals
+                            float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
+                            float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
+                            float y1 = centreY - scaledMx * halfH;
+                            float y2 = centreY - scaledMn * halfH;
                             g.drawLine(px, y1, px, y2, pw > 1.5f ? 1.0f : pw);
                         }
                     }
@@ -752,6 +774,36 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         return;
     }
     draggingRegion = false;
+
+    // Right-click on region — context menu
+    if (event.mods.isPopupMenu() && !selectedRegionId.empty() && arrangement) {
+        auto* region = arrangement->findRegion(selectedRegionId);
+        if (region) {
+            for (auto& hit : regionHitRects) {
+                if (hit.regionId == selectedRegionId && hit.bounds.contains(event.getPosition())) {
+                    juce::PopupMenu menu;
+                    menu.addItem(1, region->muted ? "Unmute Region" : "Mute Region");
+                    menu.addItem(2, "Delete Region");
+                    auto regionId = selectedRegionId;
+                    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                        juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                        [this, regionId](int result) {
+                            if (!arrangement) return;
+                            if (result == 1) {
+                                auto* r = arrangement->findRegion(regionId);
+                                if (r) r->muted = !r->muted;
+                            } else if (result == 2) {
+                                arrangement->removeRegion(regionId);
+                                if (selectedRegionId == regionId) selectedRegionId.clear();
+                                if (onRegionsChanged) onRegionsChanged();
+                            }
+                            repaint();
+                        });
+                    return;
+                }
+            }
+        }
+    }
 
     // Track header controls (power icon, arm dot)
     if (state && event.getPosition().getX() < trackHeaderWidth) {
