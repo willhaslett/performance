@@ -190,8 +190,11 @@ void PerformanceCoordinator::startRecording() {
     openNotes.clear();
 
     // Start a recording region for each armed track
-    for (auto& trackId : recordingTrackIds)
-        arrangementImpl.startRecording(trackId, recordStartBeat);
+    for (auto& trackId : recordingTrackIds) {
+        auto* region = arrangementImpl.startRecording(trackId, recordStartBeat);
+        perfLog("[Coordinator] Started recording region %s on track %s\n",
+                region ? region->id.c_str() : "NULL", trackId.c_str());
+    }
 
     audioEngine->setRecording(true);
     isRecording = true;
@@ -224,7 +227,8 @@ void PerformanceCoordinator::stopRecording() {
     arrangementImpl.stopRecording();
     isRecording = false;
     recordingTrackIds.clear();
-    perfLog("[Coordinator] Recording stopped at beat %.1f\n", stopBeat);
+    perfLog("[Coordinator] Recording stopped at beat %.1f, total regions: %d\n",
+            stopBeat, (int)arrangementImpl.allRegions().size());
 }
 
 void PerformanceCoordinator::drainRecordFIFO() {
@@ -242,6 +246,8 @@ void PerformanceCoordinator::drainRecordFIFO() {
         re.data1 = event.data1;
         re.data2 = event.data2;
         arrangementImpl.addRecordedEvent(re);
+        perfLog("[Coordinator] Recorded event: status=0x%02x data1=%d beat=%.3f\n",
+                re.status, re.data1, re.beatOffset);
 
         // Track open notes for synthetic noteOff at stop
         if (re.isNoteOn()) {
