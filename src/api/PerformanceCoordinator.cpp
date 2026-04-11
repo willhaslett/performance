@@ -316,6 +316,8 @@ bool PerformanceCoordinator::restoreSession() {
     if (songs.empty()) {
         auto songId = stateAPI->createSong("Sandbox");
         stateAPI->setCurrentSong(songId);
+        if (auto* s = stateAPI->currentSong())
+            arrangementImpl.setTracks(&s->tracks);
         perfLog("[Coordinator] Created default session\n");
         return true;
     }
@@ -327,6 +329,10 @@ bool PerformanceCoordinator::restoreSession() {
 
     stateAPI->setCurrentSong(lastSongId);
     restoreBindings();
+
+    // Point arrangement at restored song's tracks
+    if (auto* s = stateAPI->currentSong())
+        arrangementImpl.setTracks(&s->tracks);
 
     auto* song = stateAPI->currentSong();
     perfLog("[Coordinator] Session restored: %s (%d tracks)\n",
