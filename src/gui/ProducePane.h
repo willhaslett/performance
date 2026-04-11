@@ -46,6 +46,7 @@ private:
     int beatsPerBar() const;
 
     double pixelsPerBeat = 30.0;
+    bool snapToGrid = true;  // TODO: toolbar toggle
     double scrollBeat = 0.0;  // horizontal scroll position in beats
     int scrollTrack = 0;       // vertical scroll (future)
 

@@ -636,9 +636,11 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
         if (draggingRegion) {
             dragIsOption = event.mods.isAltDown();  // live update during drag
             double beatDelta = xToBeat(event.getPosition().getX()) - xToBeat(event.getMouseDownPosition().getX());
-            double divSize = sequencer ? 1.0 / sequencer->getTimeSignatureDenominator() : 0.25;
             double newBeat = std::max(0.0, dragStartBeat + beatDelta);
-            newBeat = std::round(newBeat / divSize) * divSize;
+            if (snapToGrid) {
+                double divSize = sequencer ? 1.0 / sequencer->getTimeSignatureDenominator() : 0.25;
+                newBeat = std::round(newBeat / divSize) * divSize;
+            }
             dragCurrentBeat = newBeat;
 
             int trackIdx = getTrackIndexAtY(event.getPosition().getY());
