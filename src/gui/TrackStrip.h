@@ -30,6 +30,7 @@ public:
     void setGain(float gain);
     void setSends(const std::vector<SendsPanel::SendInfo>& sends);
     void setAvailableBusses(const std::vector<SendsPanel::BusOption>& busOptions);
+    void setOutputTarget(const juce::String& target, const juce::String& displayName);
 
     void setSourceType(TrackSourceType type);
     void setInputChannels(int start, int count, const std::vector<juce::String>& availableInputs);
@@ -84,6 +85,10 @@ private:
     juce::Rectangle<int> midiDotBounds;
     juce::Rectangle<int> armDotBounds;
     juce::Rectangle<int> menuDotsBounds;
+    juce::Rectangle<int> outputTargetBounds;
+    juce::String outputTargetId;
+    juce::String outputTargetDisplay;
+    void showOutputTargetMenu(juce::Point<int> screenPos);
 
     void showTrackMenu(juce::Point<int> screenPos);
 

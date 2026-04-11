@@ -23,6 +23,7 @@ public:
         juce::String name;
     };
     void setAvailableBusses(const std::vector<BusOption>& busOptions);
+    const std::vector<BusOption>& getAvailableBusses() const { return availableBusses; }
 
     int getDesiredHeight() const;
 

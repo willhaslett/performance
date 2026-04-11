@@ -136,6 +136,16 @@ void MixerView::timerCallback() {
             trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(id.toStdString()));
             trackStrips[i]->setArmed(state.isTrackArmed(id.toStdString()));
             trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
+            {
+                auto target = state.getTrackOutputTarget(id.toStdString());
+                juce::String displayName = "Master";
+                if (target == "none") displayName = "No Output";
+                else if (!target.empty()) {
+                    auto* bus = state.findBus(target);
+                    if (bus) displayName = juce::String(bus->name);
+                }
+                trackStrips[i]->setOutputTarget(juce::String(target), displayName);
+            }
             { auto [l, r] = engine.getTrackPeakLevelStereo(id); trackStrips[i]->setPeakLevelStereo(l, r); }
 
             // Sends
@@ -158,6 +168,16 @@ void MixerView::timerCallback() {
 
             busStrips[i]->setGain(state.getBusGain(id.toStdString()));
             busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(id.toStdString()));
+            {
+                auto target = state.getBusOutputTarget(id.toStdString());
+                juce::String displayName = "Master";
+                if (target == "none") displayName = "No Output";
+                else if (!target.empty()) {
+                    auto* bus = state.findBus(target);
+                    if (bus) displayName = juce::String(bus->name);
+                }
+                busStrips[i]->setOutputTarget(juce::String(target), displayName);
+            }
             { auto [l, r] = engine.getBusPeakLevelStereo(id); busStrips[i]->setPeakLevelStereo(l, r); }
         }
     }

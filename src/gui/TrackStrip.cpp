@@ -115,6 +115,39 @@ void TrackStrip::setInputChannels(int start, int count, const std::vector<juce::
     repaint();
 }
 
+void TrackStrip::setOutputTarget(const juce::String& target, const juce::String& displayName) {
+    outputTargetId = target;
+    outputTargetDisplay = displayName;
+    repaint();
+}
+
+void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Master", true, outputTargetId.isEmpty());
+    menu.addItem(2, "No Output", true, outputTargetId == "none");
+
+    // List available busses
+    auto busOptions = sendsPanel.getAvailableBusses();
+    for (int i = 0; i < (int)busOptions.size(); ++i) {
+        menu.addItem(100 + i, busOptions[i].name,
+                     true, outputTargetId == busOptions[i].id);
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+        juce::Rectangle<int>(screenPos.getX(), screenPos.getY(), 1, 1)),
+        [this, busOptions](int result) {
+            if (result == 1)
+                state.setTrackOutputTarget(trackId.toStdString(), "");
+            else if (result == 2)
+                state.setTrackOutputTarget(trackId.toStdString(), "none");
+            else if (result >= 100) {
+                int idx = result - 100;
+                if (idx < (int)busOptions.size())
+                    state.setTrackOutputTarget(trackId.toStdString(), busOptions[idx].id.toStdString());
+            }
+        });
+}
+
 void TrackStrip::paintInputSlot(juce::Graphics& g) {
     g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSlotHover : Theme::Color::bgSlot));
     g.fillRoundedRectangle(inputSlotBounds.toFloat(), Theme::cornerRadiusSm);
@@ -284,6 +317,16 @@ void TrackStrip::paint(juce::Graphics& g) {
     // Input slot for audio input tracks
     if (sourceType == TrackSourceType::AudioInput)
         paintInputSlot(g);
+
+    // Output target label (bottom of strip, above fader)
+    if (outputTargetBounds.getHeight() > 0) {
+        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
+        g.setFont(Theme::font(9.0f));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        auto label = outputTargetDisplay.isEmpty() ? "Master" : outputTargetDisplay;
+        g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
+    }
 }
 
 int TrackStrip::getMinimumHeight() const {
@@ -333,6 +376,9 @@ void TrackStrip::resized() {
         slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
     }
+
+    // Output target label
+    outputTargetBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), 18);
 }
 
 void TrackStrip::mouseDown(const juce::MouseEvent& event) {
@@ -393,6 +439,12 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
             state.setTrackArmed(trackId.toStdString(), false);
         }
         repaint();
+        return;
+    }
+
+    // Output target click
+    if (outputTargetBounds.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        showOutputTargetMenu(event.getScreenPosition());
         return;
     }
 

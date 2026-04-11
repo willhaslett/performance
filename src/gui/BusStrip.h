@@ -27,6 +27,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void setAudioEnabled(bool enabled);
+    void setOutputTarget(const juce::String& target, const juce::String& displayName);
 
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
@@ -48,6 +49,9 @@ private:
     FaderMeter faderMeter;
 
     juce::Rectangle<int> headerBounds;
+    juce::Rectangle<int> outputTargetBounds;
+    juce::String outputTargetId;
+    juce::String outputTargetDisplay;
     InlineEditor nameEditor;
 
     void rebuildEffectSlots();

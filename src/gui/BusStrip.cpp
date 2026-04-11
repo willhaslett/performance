@@ -116,6 +116,16 @@ void BusStrip::paint(juce::Graphics& g) {
     g.setFont(Theme::font(Theme::fontSize));
     g.drawText(busName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
                juce::Justification::centredLeft);
+
+    // Output target label
+    if (outputTargetBounds.getHeight() > 0) {
+        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
+        g.setFont(Theme::font(9.0f));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        auto label = outputTargetDisplay.isEmpty() ? "Master" : outputTargetDisplay;
+        g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
+    }
 }
 
 int BusStrip::getMinimumHeight() const {
@@ -132,7 +142,31 @@ void BusStrip::setAudioEnabled(bool enabled) {
     }
 }
 
+void BusStrip::setOutputTarget(const juce::String& target, const juce::String& displayName) {
+    outputTargetId = target;
+    outputTargetDisplay = displayName;
+    repaint();
+}
+
 void BusStrip::mouseUp(const juce::MouseEvent& event) {
+    // Output target click
+    if (outputTargetBounds.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Master", true, outputTargetId.isEmpty());
+        menu.addItem(2, "No Output", true, outputTargetId == "none");
+        // Could list other busses here for bus-to-bus routing
+        auto bId = busId;
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+            [this, bId](int result) {
+                if (result == 1)
+                    state.setBusOutputTarget(bId.toStdString(), "");
+                else if (result == 2)
+                    state.setBusOutputTarget(bId.toStdString(), "none");
+            });
+        return;
+    }
+
     // Power icon toggle
     if (!event.mods.isPopupMenu() && powerIconBounds.expanded(6).contains(event.getPosition())) {
         audioEnabled = !audioEnabled;
@@ -218,4 +252,6 @@ void BusStrip::resized() {
         slot->setBounds(slotArea.getX(), y, slotArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
     }
+
+    outputTargetBounds = juce::Rectangle<int>(slotArea.getX(), y, slotArea.getWidth(), 18);
 }
