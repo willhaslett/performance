@@ -501,9 +501,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         int span = std::max(1, hi - lo);
 
                         auto inner = regionBounds.reduced(1, 3);
-                        float noteH = std::max(1.0f, (float)inner.getHeight() / span);
-                        // Cap note height so dense regions stay readable
-                        noteH = std::min(noteH, (float)inner.getHeight() / 10.0f);
+                        constexpr float noteH = 2.0f;
 
                         for (auto& note : noteList) {
                             float nx = (float)rx + (float)(note.beatOffset * pixelsPerBeat);
