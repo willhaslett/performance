@@ -812,7 +812,7 @@ static MIDIControl::Type parseControlType(const juce::String& type) {
 void PerformanceCoordinator::executeAction(const std::string& actionName,
                                             const juce::var& args, float value) {
     // Skip value=0 for trigger actions (note-off), but allow for continuous (CC faders)
-    static const std::set<std::string> continuousActions = { "setTrackGain", "setBusGain", "setMasterGain" };
+    static const std::set<std::string> continuousActions = { "trackVolume" };
     if (value == 0.0f && !continuousActions.count(actionName)) return;
 
     // Check for custom Lua action first
@@ -889,17 +889,16 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         automationEngine->interpolate(0.0f, 1.0f, dur,
             [this, to](float v) { stateAPI->setTrackGain(to, v); }, easing);
     }
-    else if (actionName == "setTrackGain") {
-        auto id = resolveTrack(getArg(0));
-        // Cubic curve: fine control at low end, reaches +6dB (gain 2.0) at top
-        stateAPI->setTrackGain(id, value * value * value * 2.0f);
-    }
-    else if (actionName == "setBusGain") {
-        auto busId = getArg(0).toStdString();
-        stateAPI->setBusGain(busId, value * value * value * 2.0f);
-    }
-    else if (actionName == "setMasterGain") {
-        stateAPI->setMasterGain(value * value * value * 2.0f);
+    else if (actionName == "trackVolume") {
+        auto channelId = getArg(0).toStdString();
+        float gain = value * value * value * 2.0f;  // cubic curve, +6dB max
+        if (channelId == "output") {
+            stateAPI->setMasterGain(gain);
+        } else if (stateAPI->findTrack(channelId)) {
+            stateAPI->setTrackGain(channelId, gain);
+        } else if (stateAPI->findBus(channelId)) {
+            stateAPI->setBusGain(channelId, gain);
+        }
     }
     else if (actionName == "morphToPreset") {
         auto trackId = resolveTrack(getArg(0));
@@ -1075,12 +1074,8 @@ void PerformanceCoordinator::registerBuiltinActions() {
         R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
     stateAPI->registerAction("crossfade", "Crossfade",
         R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
-    stateAPI->registerAction("setTrackGain", "Set track volume",
-        R"([{"name":"trackName","type":"string"}])");
-    stateAPI->registerAction("setBusGain", "Set bus volume",
-        R"([{"name":"busName","type":"string"}])");
-    stateAPI->registerAction("setMasterGain", "Set master volume",
-        R"([])");
+    stateAPI->registerAction("trackVolume", "Track Volume",
+        R"([{"name":"channel","type":"channel"}])");
     stateAPI->registerAction("morphToPreset", "Morph to preset",
         R"([{"name":"trackName","type":"string"},{"name":"presetName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
 

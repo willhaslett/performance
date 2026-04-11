@@ -652,7 +652,15 @@ void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action) {
             auto type = param.getProperty("type", "string").toString().toStdString();
             fields->push_back({ name, type });
 
-            if (name.find("track") != std::string::npos || name.find("Track") != std::string::npos)
+            if (type == "channel") {
+                // All mixer channels: tracks, busses, output — in mixer order
+                juce::StringArray channelNames;
+                for (auto& t : state.listTracks()) channelNames.add(juce::String(t.name));
+                for (auto& b : state.listBusses()) channelNames.add(juce::String(b.name));
+                channelNames.add("Output");
+                dialog->addComboBox(juce::String(name), channelNames, "Channel");
+            }
+            else if (name.find("track") != std::string::npos || name.find("Track") != std::string::npos)
                 dialog->addComboBox(juce::String(name), trackNames, juce::String(name));
             else if (name == "easing") {
                 dialog->addComboBox("easing", easingOptions, "Easing");
@@ -687,7 +695,22 @@ void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action) {
                 bool isTrack = (field.name.find("track") != std::string::npos ||
                                 field.name.find("Track") != std::string::npos);
 
-                if (isTrack) {
+                if (field.type == "channel") {
+                    if (auto* cb = dialog->getComboBoxComponent(jName)) {
+                        auto chName = cb->getText();
+                        juce::String chId;
+                        if (chName == "Output") {
+                            chId = "output";
+                        } else {
+                            for (auto& t : statePtr->listTracks())
+                                if (juce::String(t.name) == chName) { chId = juce::String(t.id); break; }
+                            if (chId.isEmpty())
+                                for (auto& b : statePtr->listBusses())
+                                    if (juce::String(b.name) == chName) { chId = juce::String(b.id); break; }
+                        }
+                        argsArray.append(juce::var(chId.isNotEmpty() ? chId : chName));
+                    }
+                } else if (isTrack) {
                     if (auto* cb = dialog->getComboBoxComponent(jName)) {
                         auto trackName = cb->getText();
                         juce::String trackId;
