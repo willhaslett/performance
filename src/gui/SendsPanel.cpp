@@ -1,11 +1,12 @@
 #include "gui/SendsPanel.h"
 #include "api/StateAPI.h"
+#include <set>
 
 SendsPanel::SendsPanel(const juce::String& trackId, StateAPI& state)
     : state(state), trackId(trackId) {}
 
 void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
-    // Rebuild rows: one per existing send + one empty "add send" row
+    // Always: existing sends + one empty "add send" row
     bool changed = (sends.size() + 1 != rows.size());
     if (!changed) {
         for (size_t i = 0; i < sends.size(); ++i) {
@@ -152,8 +153,36 @@ void SendsPanel::mouseDown(const juce::MouseEvent& event) {
         }
 
         if (getPillBounds((int)i).contains(event.getPosition())) {
-            if (rows[i].busName.isEmpty())
+            if (event.mods.isPopupMenu() && rows[i].busName.isNotEmpty()) {
+                // Right-click on existing send — delete
+                auto sendId = rows[i].busId;
+                auto tId = trackId;
+                juce::PopupMenu menu;
+                menu.addItem(1, "Remove Send");
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                    juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                    [this, sendId, tId](int result) {
+                        if (result == 1) {
+                            // Find the send entity by bus ID and remove it
+                            auto* song = state.currentSong();
+                            if (song) {
+                                for (auto& t : song->tracks) {
+                                    if (t.id == tId.toStdString()) {
+                                        for (auto& s : t.sends) {
+                                            if (s.busId == sendId.toStdString()) {
+                                                state.removeSend(s.id);
+                                                break;
+                                            }
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    });
+            } else if (rows[i].busName.isEmpty()) {
                 showBusPicker((int)i, event.getScreenPosition());
+            }
             return;
         }
     }

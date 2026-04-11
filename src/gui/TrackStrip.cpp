@@ -375,9 +375,9 @@ void TrackStrip::resized() {
         y += Theme::slotHeight + Theme::slotGap;
     }
 
-    // Sends panel top-aligned after slots with extra padding
+    // Sends panel top-aligned after slots with generous padding
     if (sendsPanel.isVisible()) {
-        y += Theme::slotGap;  // extra gap to visually separate sends from slots
+        y += Theme::slotGap * 3;  // generous gap to visually separate sends from slots
         int sendsHeight = sendsPanel.getDesiredHeight();
         sendsPanel.setBounds(contentArea.getX(), y, contentArea.getWidth(), sendsHeight);
     }
