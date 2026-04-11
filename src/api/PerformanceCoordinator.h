@@ -100,6 +100,7 @@ public:
     // --- Recording ---
     void startRecordMode();   // enter record mode and start playback
     void stopRecordMode();    // exit record mode (keeps playing)
+    void reloadAudioFiles();  // re-scan regions and load audio files into engine
     bool isInRecordMode() const { return recordModeActive; }
 
     // --- Logging ---

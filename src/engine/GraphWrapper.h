@@ -192,7 +192,7 @@ public:
             }
         }
 
-        // Flush all notes if requested (stop/seek)
+        // Flush all notes and deactivate audio nodes if requested (stop/seek)
         if (needsNoteFlush.exchange(false, std::memory_order_acquire)) {
             for (auto& [trackId, node] : trackMidiSources) {
                 if (!node) continue;
@@ -200,6 +200,9 @@ public:
                     node->scheduleSingleMessage(juce::MidiMessage::allNotesOff(ch), 0);
                     node->scheduleSingleMessage(juce::MidiMessage::allSoundOff(ch), 0);
                 }
+            }
+            for (auto& [trackId, afNode] : trackAudioFileNodes) {
+                if (afNode) afNode->setActive(false);
             }
         }
 

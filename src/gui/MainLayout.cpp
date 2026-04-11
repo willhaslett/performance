@@ -19,6 +19,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onStartRecordMode = [&coordinator]() { coordinator.startRecordMode(); };
     producePane.onStopRecordMode = [&coordinator]() { coordinator.stopRecordMode(); };
     producePane.onIsRecordMode = [&coordinator]() { return coordinator.isInRecordMode(); };
+    producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
 
     // Register all panes with PaneContainer (left slot 60%, right slot 40%)
     paneContainer.addPane(&mappingPane, 0.6f);

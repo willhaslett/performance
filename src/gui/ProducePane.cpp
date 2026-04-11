@@ -745,6 +745,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 // Normal drag = move
                 arrangement->moveRegion(selectedRegionId, targetTrackId, dragCurrentBeat);
             }
+            if (onRegionsChanged) onRegionsChanged();
         }
         draggingRegion = false;
         repaint();
@@ -881,6 +882,7 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         && !selectedRegionId.empty() && arrangement) {
         arrangement->removeRegion(selectedRegionId);
         selectedRegionId.clear();
+        if (onRegionsChanged) onRegionsChanged();
         repaint();
         return true;
     }
@@ -908,6 +910,7 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
                 if (dup) selectedRegionId = dup->id;
             }
         }
+        if (onRegionsChanged) onRegionsChanged();
         repaint();
         return true;
     }

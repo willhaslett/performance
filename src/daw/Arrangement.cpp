@@ -104,6 +104,10 @@ RegionState* Arrangement::duplicateRegion(const std::string& regionId,
                 takeCopy.name = srcTake.name;
                 takeCopy.events = srcTake.events;
                 takeCopy.filePath = srcTake.filePath;
+                takeCopy.recordTempo = srcTake.recordTempo;
+                takeCopy.sampleRate = srcTake.sampleRate;
+                takeCopy.channelCount = srcTake.channelCount;
+                takeCopy.peakData = srcTake.peakData;
                 if (srcTake.id == source->activeTakeId)
                     copy.activeTakeId = takeCopy.id;
                 copy.takes.push_back(std::move(takeCopy));

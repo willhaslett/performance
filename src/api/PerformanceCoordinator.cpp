@@ -149,8 +149,27 @@ void PerformanceCoordinator::timerCallback() {
             // Forward tempo to engine (in case it changed from UI)
             audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
             // Drain recorded MIDI events from audio thread
-            if (isRecording)
+            if (isRecording) {
                 drainRecordFIFO();
+
+                // Update audio region length and peaks during recording
+                if (!audioRecordRegionId.empty()) {
+                    auto* region = arrangementImpl.findRegion(audioRecordRegionId);
+                    if (region && region->activeTake()) {
+                        auto* take = region->activeTake();
+                        int64_t frames = audioEngine->getAudioWriter().getTotalFramesWritten();
+                        double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
+                        region->lengthBeats = seconds * (take->recordTempo / 60.0);
+
+                        // Recompute peaks every ~0.5 sec (30 ticks at 60Hz)
+                        static int peakCounter = 0;
+                        if (++peakCounter >= 30) {
+                            peakCounter = 0;
+                            computeAudioPeaks(*take);
+                        }
+                    }
+                }
+            }
         } else {
             // When stopped, the UI is authoritative — forward position to engine
             // so that when play starts, the engine begins from the right place
@@ -182,6 +201,10 @@ void PerformanceCoordinator::startRecordMode() {
         sequencerImpl->play();  // transport callback will call startRecording()
     else
         startRecording();  // already playing, start recording now
+}
+
+void PerformanceCoordinator::reloadAudioFiles() {
+    loadAudioFilesIntoEngine();
 }
 
 void PerformanceCoordinator::stopRecordMode() {

@@ -20,6 +20,7 @@ public:
     std::function<void()> onStartRecordMode;
     std::function<void()> onStopRecordMode;
     std::function<bool()> onIsRecordMode;
+    std::function<void()> onRegionsChanged;  // reload audio files after move/duplicate/delete
 
     void paint(juce::Graphics& g) override;
     void resized() override;
