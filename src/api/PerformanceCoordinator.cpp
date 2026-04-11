@@ -812,7 +812,7 @@ static MIDIControl::Type parseControlType(const juce::String& type) {
 void PerformanceCoordinator::executeAction(const std::string& actionName,
                                             const juce::var& args, float value) {
     // Skip value=0 for trigger actions (note-off), but allow for continuous (CC faders)
-    static const std::set<std::string> continuousActions = { "setTrackGain" };
+    static const std::set<std::string> continuousActions = { "setTrackGain", "setBusGain", "setMasterGain" };
     if (value == 0.0f && !continuousActions.count(actionName)) return;
 
     // Check for custom Lua action first
@@ -891,8 +891,14 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     }
     else if (actionName == "setTrackGain") {
         auto id = resolveTrack(getArg(0));
-        // value is CC normalized 0-1, use directly as linear gain
         stateAPI->setTrackGain(id, value);
+    }
+    else if (actionName == "setBusGain") {
+        auto busId = getArg(0).toStdString();
+        stateAPI->setBusGain(busId, value);
+    }
+    else if (actionName == "setMasterGain") {
+        stateAPI->setMasterGain(value);
     }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());
@@ -1045,6 +1051,10 @@ void PerformanceCoordinator::registerBuiltinActions() {
         R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
     stateAPI->registerAction("setTrackGain", "Set track volume",
         R"([{"name":"trackName","type":"string"}])");
+    stateAPI->registerAction("setBusGain", "Set bus volume",
+        R"([{"name":"busName","type":"string"}])");
+    stateAPI->registerAction("setMasterGain", "Set master volume",
+        R"([])");
 
     perfLog("[Coordinator] Registered %d built-in actions\n", (int)stateAPI->allActions().size());
 }
