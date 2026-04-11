@@ -150,11 +150,18 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     double bpm = sequencer->getTempo();
     double beat = sequencer->getBeatPosition();
 
-    // Layout: buttons on left, position display centered, tempo on right
+    // Layout: buttons + LCD grouped and centered
     int btnSize = 28;
-    int btnY = area.getCentreY() - btnSize / 2;
-    int btnX = area.getX() + 10;
     int btnGap = 4;
+    int lcdWidth = 520;
+    int lcdGap = 12;  // gap between last button and LCD
+    int numButtons = 5;  // rewind, stop, play, record, cycle
+    int totalButtonsW = numButtons * btnSize + (numButtons - 1) * btnGap;
+    int groupWidth = totalButtonsW + lcdGap + lcdWidth;
+    int groupX = area.getCentreX() - groupWidth / 2;
+
+    int btnY = area.getCentreY() - btnSize / 2;
+    int btnX = groupX;
 
     // --- Transport buttons ---
 
@@ -234,9 +241,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
         g.fillPath(arrow);
     }
 
-    // --- Position display (LCD-style, centered) ---
-    int lcdWidth = 520;
-    int lcdX = area.getCentreX() - lcdWidth / 2;
+    // --- Position display (LCD, follows buttons in centered group) ---
+    int lcdX = groupX + totalButtonsW + lcdGap;
     int lcdY = area.getY() + 8;
     int lcdHeight = area.getHeight() - 16;
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
