@@ -210,16 +210,15 @@ createAction("big_transition", "Big Transition", [[
 - Songs have initial state (checkpoint) and score (ordered action list)
 
 ## GUI
-The app has a flexible layout: sidebar (songs/library/actions/devices/panes), dual content panes (left: device editor or debug, right: chat or logs), and bottom mixer.
+The app has a flexible layout: sidebar (songs/library/actions/devices/panes), dual content panes (left: ProducePane by default, right: chat or logs), and bottom mixer.
 - Track menu: New Virtual Instrument Track, New Audio Input Track, New Effects Bus
-- Track strips: instrument slot (or input selector for audio input tracks), effect slots, sends, fader, stereo VU meters (IEC-scale), power icon (toggles audioEnabled)
-- Bus strips: effect slots, fader, stereo VU meters
-- Output strip: master effects, fader, stereo VU meters
+- **ProducePane** (DAW arrange view): transport bar (rewind/stop/play/record/cycle + LCD position display), track headers with power/arm controls, timeline grid with regions (mini piano roll), playhead
+  - Region management: click to select, delete to remove, drag to move (cross-track), option+drag to duplicate
+  - Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division
+- Track strips: instrument slot (or input selector for audio input tracks), effect slots, sends, fader, stereo VU meters (IEC-scale), power icon, arm dot
+- Bus/Output strips: effect slots, fader, stereo VU meters, power icon
 - Click plugin pills to pick plugins (submenu with presets)
-- Right-click populated pills: No Plugin / Replace
 - Sidebar Devices section: Audio (click to switch device), MIDI (click to edit mappings)
-- Sidebar Panes section: Debug, Logs, Chat — switch content panes
-- Keyboard: Cmd+1=sidebar, Cmd+X=mixer, Cmd+S=save, Escape=close editor. All shortcuts use modifier keys — no conflict with text input.
 - App log: /tmp/performance.log (UTC timestamps, tail -f friendly)
 
 ## Guidelines

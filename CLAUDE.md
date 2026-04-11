@@ -44,7 +44,10 @@ AppState
 ├── songs: vector<SongState>
 │   ├── tracks: vector<TrackState>
 │   │   ├── effects: vector<EffectState>
-│   │   └── sends: vector<SendState>
+│   │   ├── sends: vector<SendState>
+│   │   └── regions: vector<RegionState>
+│   │       └── takes: vector<TakeState>  (take folders — MIDI events or audio file ref)
+│   │           └── events: vector<MidiEventState>  (raw MIDI stream — SOT for notes)
 │   ├── busses: vector<BusState>
 │   │   └── effects: vector<EffectState>
 │   ├── masterEffects: vector<EffectState>
@@ -70,6 +73,9 @@ Key model features:
 - `isInstrument` on PluginInfo (GUI builds plugin menus from state)
 - `PresetKind` enum (Instrument/Effect/Track)
 - `TempoEvent`/`TimeSignatureEvent` — per-song tempo and time sig changes at specific beat positions (data model ready, runtime evaluation deferred)
+- Regions are take folders: each `RegionState` contains `vector<TakeState>` with `activeTakeId`. Supports multi-take recording — each pass creates a new take, preserving previous ones. `MidiEventState` is the raw MIDI event (noteOn, noteOff, CC, aftertouch, etc.) — notes are derived via `buildNoteList()`, not stored.
+- `TrackState.color` (uint32, 0 = type default) — user-definable track color. Instrument tracks default to `bgHeader`, audio input to amber. Regions and track headers both use this color.
+- Recording is explicit via `recordModeActive` — press 'r' or click record button to enter record mode. Armed tracks record only when record mode is active.
 - Selection state on SongState (observable, not persisted)
 
 ### Persistence (`src/persistence/PersistenceLayer.h/.cpp`)
@@ -78,7 +84,7 @@ SQLite normalized relational schema. `loadInto()` builds a plain `AppState` stru
 
 Database: `~/.config/performance/state.db`
 
-Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks`, `busses`, `effects`, `sends`, `bindings` (nullable `song_id` for global/song scope), `score_steps`, `config`.
+Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks` (with `color`), `busses`, `effects`, `sends`, `regions`, `takes`, `take_events`, `bindings` (nullable `song_id` for global/song scope), `config`, `devices`, `device_controls`, `song_devices`.
 
 ### Identity
 
@@ -102,7 +108,7 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
 - **InternalSequencer** (`src/daw/InternalSequencer.h/.cpp`) — own transport, tempo, beat clock. Thread-safe atomics. Transport callback notifies coordinator on play/stop.
-- **Arrangement** (`src/daw/Arrangement.h/.cpp`) — owns regions (MidiRegion, AudioRegion). Provides `scanMidiEvents()` for playback and recording API (`startRecording`/`addRecordedNote`/`finalizeRecordedNote`/`stopRecording`).
+- **Arrangement** (`src/daw/Arrangement.h/.cpp`) — view over `TrackState.regions` in the current song. Provides `scanMidiEvents()` for playback, recording API (`startRecording`/`addRecordedEvent`/`stopRecording`), and region management (`moveRegion`, `duplicateRegion`, `removeRegion`). Does not own data — regions live in `TrackState`.
 - **LuaEngine** (`src/scripting/LuaEngine.h/.cpp`) — embedded Lua via sol2. Takes StateAPI+EngineAPI+Coordinator.
 - **IPCServer** (`src/ipc/IPCServer.h/.cpp`) — Unix domain socket `/tmp/performance.sock`. `bin/perf` shell command.
 - **SongRuntime** (`src/song/SongRuntime.h/.cpp`) — MIDI control dispatch map.
@@ -112,7 +118,7 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
 - **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (ProducePane by default, also Debug or Mappings) and right pane (Chat or Logs) switchable via sidebar.
-- **ProducePane** — DAW arrange view: transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record indicator/cycle), track headers with power icons and arm dots, timeline grid with regions, playhead. Click grid to set position. Drag track headers to reorder. Spacebar play/stop, h/l step by division. Track reordering syncs with mixer via shared state.
+- **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with power icons and arm dots, timeline grid with regions (mini piano roll note preview, semi-transparent for overlap visibility), playhead. Click grid to set position. Drag track headers to reorder. Region management: click to select, delete/backspace to remove, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate with "+" indicator, Cmd+D to duplicate inline. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division. Track reordering syncs with mixer via shared state.
 - **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges).
 - **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Red arm dot toggles `armed` for recording. Track preset callbacks from coordinator.
 - **BusStrip** — effect slots, fader+stereo meters. Power icon toggles bus `audioEnabled`.
@@ -154,7 +160,8 @@ GraphWrapper wraps the entire graph. In processBlock:
   2. Scans Arrangement for MIDI events in this buffer's beat range
   3. Routes events to per-track MidiSourceNodes with exact sample offsets
   4. Captures incoming live MIDI to RecordFIFO when recording
-  5. Delegates to graph.processBlock()
+  5. Flushes all notes (CC 123 + CC 120) on stop/seek (deferred via atomic flag)
+  6. Delegates to graph.processBlock()
 ```
 
 Audio device switching: `AudioEngine` implements `ChangeListener` on `AudioDeviceManager`. On device change, `rebuildGraph()` tears down IO nodes, reconfigures graph for new device's channel count, recreates IO nodes, rewires connections. If device goes null (mid-transition), processing stops cleanly and recovers on next notification. `InputMeter` callback provides per-channel peak levels for the debug pane.
@@ -325,4 +332,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~17,500 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~18,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
