@@ -1,6 +1,7 @@
 #include "gui/MainLayout.h"
 #include "gui/KeyBindings.h"
 #include "gui/Theme.h"
+#include <set>
 #include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
@@ -194,20 +195,33 @@ PaneContent MainLayout::getPaneContent(PaneSlot slot) const {
     return it != paneAssignments.end() ? it->second : PaneContent::Hidden;
 }
 
+// Allowed content per slot (opinionated defaults)
+static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
+    switch (slot) {
+        case PaneSlot::Sidebar: return { PaneContent::Hidden, PaneContent::SidebarTree };
+        case PaneSlot::Left:    return { PaneContent::Hidden, PaneContent::Produce, PaneContent::Mappings, PaneContent::Debug };
+        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs };
+        case PaneSlot::Bottom:  return { PaneContent::Hidden, PaneContent::Mixer };
+    }
+    return { PaneContent::Hidden };
+}
+
 juce::PopupMenu MainLayout::buildPaneMenu(PaneSlot slot) {
     auto current = getPaneContent(slot);
+    auto allowed = allowedContentForSlot(slot);
     juce::PopupMenu menu;
 
-    // All content options
-    PaneContent options[] = {
-        PaneContent::Hidden, PaneContent::SidebarTree, PaneContent::Produce,
-        PaneContent::Mappings, PaneContent::Debug, PaneContent::Chat,
-        PaneContent::Logs, PaneContent::Mixer
-    };
+    // Collect content assigned to other slots (for exclusivity)
+    std::set<PaneContent> assignedElsewhere;
+    for (auto& [s, c] : paneAssignments)
+        if (s != slot && c != PaneContent::Hidden) assignedElsewhere.insert(c);
 
-    for (auto opt : options) {
+    for (auto opt : allowed) {
+        bool taken = (opt != PaneContent::Hidden && opt != current
+                      && assignedElsewhere.count(opt));
         menu.addItem(juce::PopupMenu::Item(contentLabel(opt))
             .setTicked(current == opt)
+            .setEnabled(!taken)
             .setAction([this, slot, opt]() { setPaneContent(slot, opt); }));
     }
     return menu;

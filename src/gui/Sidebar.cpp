@@ -1,4 +1,5 @@
 #include "gui/Sidebar.h"
+#include <set>
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -395,25 +396,39 @@ void Sidebar::refreshTree() {
         panesNode.label = "Panes";
         panesNode.type = "category";
 
-        struct SlotDef { const char* label; const char* slotKey; };
+        struct SlotDef {
+            const char* label;
+            const char* slotKey;
+            std::vector<std::string> allowedContent;
+        };
         SlotDef slots[] = {
-            { "Sidebar", "sidebar" },
-            { "Left Pane", "left" },
-            { "Right Pane", "right" },
-            { "Bottom Pane", "bottom" }
+            { "Sidebar", "sidebar", { "hidden", "sidebar_tree" } },
+            { "Left Pane", "left", { "hidden", "produce", "mappings", "debug" } },
+            { "Right Pane", "right", { "hidden", "chat", "logs" } },
+            { "Bottom Pane", "bottom", { "hidden", "mixer" } }
         };
 
-        struct ContentDef { const char* label; const char* contentKey; };
-        ContentDef contents[] = {
-            { "Hide", "hidden" },
-            { "Sidebar", "sidebar_tree" },
-            { "Produce", "produce" },
-            { "Mappings", "mappings" },
-            { "Debug", "debug" },
-            { "Chat", "chat" },
-            { "Logs", "logs" },
-            { "Mixer", "mixer" }
+        // Content display names
+        auto contentLabel = [](const std::string& key) -> std::string {
+            if (key == "hidden") return "Hide";
+            if (key == "sidebar_tree") return "Sidebar";
+            if (key == "produce") return "Produce";
+            if (key == "mappings") return "Mappings";
+            if (key == "debug") return "Debug";
+            if (key == "chat") return "Chat";
+            if (key == "logs") return "Logs";
+            if (key == "mixer") return "Mixer";
+            return key;
         };
+
+        // Collect all currently assigned content (for exclusivity)
+        std::set<std::string> assignedContent;
+        for (auto& slot : slots) {
+            if (getPaneContent) {
+                auto c = getPaneContent(slot.slotKey);
+                if (c != "hidden") assignedContent.insert(c);
+            }
+        }
 
         for (auto& slot : slots) {
             TreeNode slotNode;
@@ -421,19 +436,22 @@ void Sidebar::refreshTree() {
             slotNode.type = "pane_slot";
             slotNode.id = slot.slotKey;
 
-            // Get current content for this slot
             std::string currentContent;
             if (getPaneContent)
                 currentContent = getPaneContent(slot.slotKey);
 
-            for (auto& content : contents) {
+            for (auto& contentKey : slot.allowedContent) {
                 TreeNode leaf;
-                leaf.label = content.label;
-                leaf.id = std::string(slot.slotKey) + ":" + content.contentKey;
+                leaf.label = contentLabel(contentKey);
+                leaf.id = std::string(slot.slotKey) + ":" + contentKey;
                 leaf.type = "pane_content";
                 leaf.isLeaf = true;
-                leaf.active = (currentContent == content.contentKey);
+                leaf.active = (currentContent == contentKey);
                 leaf.indent = 1;
+                // Disable if this content is assigned to another slot
+                if (contentKey != "hidden" && contentKey != currentContent
+                    && assignedContent.count(contentKey))
+                    leaf.type = "pane_content_disabled";
                 slotNode.children.push_back(leaf);
             }
 

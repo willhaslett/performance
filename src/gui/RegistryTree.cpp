@@ -97,8 +97,10 @@ void RegistryTree::paint(juce::Graphics& g) {
                 g.fillEllipse((float)(x + extraIndent + 4), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
             }
 
-            g.setColour(isActive ? Theme::color(Theme::Color::textWhite)
-                                 : Theme::color(Theme::Color::textPrimary));
+            bool disabled = (row.type == "pane_content_disabled");
+            g.setColour(disabled ? Theme::color(Theme::Color::textDim)
+                        : isActive ? Theme::color(Theme::Color::textWhite)
+                                   : Theme::color(Theme::Color::textPrimary));
             g.drawText(juce::String(row.label),
                        x + extraIndent + 14, y, getWidth() - x - extraIndent - 20, rowHeight,
                        juce::Justification::centredLeft);
