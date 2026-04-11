@@ -47,6 +47,11 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // EngineSync reacts to creation events, building the engine graph
     persistence->loadInto(*stateAPI);
 
+    // Load arrangement for the current song
+    auto currentSongId = stateAPI->getConfig("current_song");
+    if (!currentSongId.empty())
+        persistence->loadArrangement(arrangementImpl, currentSongId);
+
     // Restore saved audio devices (must be after loadInto so config is available)
     {
         auto& dm = audioEngine->getDeviceManager();
@@ -289,9 +294,17 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     // Capture processor state from current song before switching
     captureProcessorState();
 
+    // Save arrangement for current song before switching
+    if (persistence)
+        persistence->saveArrangement(arrangementImpl);
+
     songRuntime->clearBindings();
     stateAPI->setCurrentSong(songId);  // triggers EngineSync via config event
     restoreBindings();
+
+    // Load arrangement for new song
+    if (persistence)
+        persistence->loadArrangement(arrangementImpl, songId);
 
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
 }
@@ -420,6 +433,7 @@ void PerformanceCoordinator::save() {
     captureProcessorState();
     if (persistence && stateAPI) {
         persistence->saveFrom(*stateAPI);
+        persistence->saveArrangement(arrangementImpl);
         perfLog("[Coordinator] Saved\n");
     }
 }

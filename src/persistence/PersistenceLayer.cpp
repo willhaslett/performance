@@ -1,5 +1,6 @@
 #include "persistence/PersistenceLayer.h"
 #include "api/StateAPI.h"
+#include "daw/Arrangement.h"
 #include "engine/Log.h"
 
 PersistenceLayer::PersistenceLayer() {}
@@ -155,6 +156,28 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN input_channel_start INTEGER DEFAULT -1", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN input_channel_count INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "DROP TABLE IF EXISTS score_steps", nullptr, nullptr, nullptr);
+
+    // Arrangement tables
+    exec(R"(
+        CREATE TABLE IF NOT EXISTS regions (
+            id TEXT PRIMARY KEY,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            type TEXT NOT NULL DEFAULT 'midi',
+            name TEXT DEFAULT '',
+            start_beat REAL NOT NULL,
+            length_beats REAL NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS region_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            region_id TEXT NOT NULL REFERENCES regions(id) ON DELETE CASCADE,
+            beat_offset REAL NOT NULL,
+            status INTEGER NOT NULL,
+            channel INTEGER NOT NULL,
+            data1 INTEGER NOT NULL,
+            data2 INTEGER NOT NULL
+        );
+    )");
 
     // Device tables
     exec(R"(
@@ -716,4 +739,93 @@ void PersistenceLayer::saveConfig(const StateAPI& state) {
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
     }
+}
+
+// ============================================================================
+// Arrangement persistence
+// ============================================================================
+
+void PersistenceLayer::saveArrangement(const Arrangement& arrangement) {
+    // Delete all existing regions and events (cascade handles events)
+    exec("DELETE FROM regions");
+
+    for (auto& r : arrangement.allRegions()) {
+        auto* stmt = prepare(
+            "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats) "
+            "VALUES (?, ?, ?, ?, ?, ?)");
+        sqlite3_bind_text(stmt, 1, r->id.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, r->trackId.c_str(), -1, SQLITE_TRANSIENT);
+        auto typeStr = r->type() == Region::Type::Midi ? "midi" : "audio";
+        sqlite3_bind_text(stmt, 3, typeStr, -1, SQLITE_STATIC);
+        sqlite3_bind_text(stmt, 4, r->name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_double(stmt, 5, r->startBeat);
+        sqlite3_bind_double(stmt, 6, r->lengthBeats);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+
+        // Save events for MIDI regions
+        if (r->type() == Region::Type::Midi) {
+            auto* midi = static_cast<MidiRegion*>(r.get());
+            for (auto& e : midi->events) {
+                auto* es = prepare(
+                    "INSERT INTO region_events (region_id, beat_offset, status, channel, data1, data2) "
+                    "VALUES (?, ?, ?, ?, ?, ?)");
+                sqlite3_bind_text(es, 1, r->id.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_double(es, 2, e.beatOffset);
+                sqlite3_bind_int(es, 3, e.status);
+                sqlite3_bind_int(es, 4, e.channel);
+                sqlite3_bind_int(es, 5, e.data1);
+                sqlite3_bind_int(es, 6, e.data2);
+                sqlite3_step(es);
+                sqlite3_finalize(es);
+            }
+        }
+    }
+}
+
+void PersistenceLayer::loadArrangement(Arrangement& arrangement, const std::string& songId) {
+    arrangement.clearAll();
+
+    // Load regions for tracks belonging to this song
+    auto* stmt = prepare(
+        "SELECT r.id, r.track_id, r.type, r.name, r.start_beat, r.length_beats "
+        "FROM regions r JOIN tracks t ON r.track_id = t.id "
+        "WHERE t.song_id = ?");
+    sqlite3_bind_text(stmt, 1, songId.c_str(), -1, SQLITE_TRANSIENT);
+
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        auto id = std::string((const char*)sqlite3_column_text(stmt, 0));
+        auto trackId = std::string((const char*)sqlite3_column_text(stmt, 1));
+        auto type = std::string((const char*)sqlite3_column_text(stmt, 2));
+        auto name = std::string((const char*)sqlite3_column_text(stmt, 3));
+        double startBeat = sqlite3_column_double(stmt, 4);
+        double lengthBeats = sqlite3_column_double(stmt, 5);
+
+        if (type == "midi") {
+            auto* region = arrangement.addMidiRegion(trackId, startBeat, lengthBeats);
+            region->id = id;  // preserve original UUID
+            region->name = name;
+
+            // Load events for this region
+            auto* es = prepare(
+                "SELECT beat_offset, status, channel, data1, data2 "
+                "FROM region_events WHERE region_id = ? ORDER BY beat_offset");
+            sqlite3_bind_text(es, 1, id.c_str(), -1, SQLITE_TRANSIENT);
+
+            while (sqlite3_step(es) == SQLITE_ROW) {
+                MidiEvent event;
+                event.beatOffset = sqlite3_column_double(es, 0);
+                event.status = sqlite3_column_int(es, 1);
+                event.channel = sqlite3_column_int(es, 2);
+                event.data1 = sqlite3_column_int(es, 3);
+                event.data2 = sqlite3_column_int(es, 4);
+                region->events.push_back(event);
+            }
+            sqlite3_finalize(es);
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    perfLog("[Persistence] Loaded arrangement: %d regions for song %s\n",
+            (int)arrangement.allRegions().size(), songId.c_str());
 }
