@@ -908,30 +908,32 @@ void AudioEngine::rebuildConnections() {
         int prevNumOut = 2;
         bool hasSource = false;
 
-        if (track.sourceType == TrackSourceType::AudioInput && track.inputChannelStart >= 0 && track.audioEnabled) {
-            // Audio input track: wire from audio input node
+        if (track.sourceType == TrackSourceType::AudioInput && track.audioEnabled) {
+            // Audio track: wire live input (if assigned) and AudioFileNode for playback
             auto firstDestNodeId = track.outputGainNode->nodeID;
             if (!track.effects.empty() && track.effects[0].node)
                 firstDestNodeId = track.effects[0].node->nodeID;
 
-            if (track.inputChannelCount == 1) {
-                // Mono: duplicate single input to both stereo channels
-                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
-                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 1 }});
-            } else {
-                // Stereo: connect L and R
-                graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
-                graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { firstDestNodeId, 1 }});
+            // Live audio input (only if channels are assigned)
+            if (track.inputChannelStart >= 0 && track.inputChannelCount > 0) {
+                if (track.inputChannelCount == 1) {
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 1 }});
+                } else {
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
+                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { firstDestNodeId, 1 }});
+                }
             }
 
-            // Also connect AudioFileNode for region playback (sums with live input)
+            // AudioFileNode for region playback (always connected)
             if (track.audioFileNode) {
                 for (int ch = 0; ch < 2; ++ch)
                     graph->addConnection({{ track.audioFileNode->nodeID, ch }, { firstDestNodeId, ch }});
             }
 
-            perfLog("[Engine] Wiring audio input track \"%s\": ch=%d count=%d\n",
-                    track.name.toRawUTF8(), track.inputChannelStart, track.inputChannelCount);
+            perfLog("[Engine] Wiring audio track \"%s\": input ch=%d count=%d, fileNode=%s\n",
+                    track.name.toRawUTF8(), track.inputChannelStart, track.inputChannelCount,
+                    track.audioFileNode ? "yes" : "no");
 
             hasSource = true;
         } else if (track.instrumentNode) {

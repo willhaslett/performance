@@ -909,11 +909,14 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
 void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
                                    const juce::MouseWheelDetails& wheel) {
     if (event.mods.isCommandDown()) {
-        // Zoom
+        // Zoom (pinch or Cmd+scroll)
         pixelsPerBeat = juce::jlimit(5.0, 100.0, pixelsPerBeat + wheel.deltaY * 10);
     } else {
-        // Scroll
-        scrollBeat = std::max(0.0, scrollBeat - wheel.deltaY * 4);
+        // Horizontal scroll (two-finger swipe or deltaX)
+        if (std::abs(wheel.deltaX) > std::abs(wheel.deltaY))
+            scrollBeat = std::max(0.0, scrollBeat - wheel.deltaX * 4);
+        else
+            scrollBeat = std::max(0.0, scrollBeat - wheel.deltaY * 4);
     }
     repaint();
 }
