@@ -336,13 +336,14 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
 
-        // Track header background — matches mixer header colors
+        // Track header background — uses track's palette color
         bool enabled = trackState ? trackState->audioEnabled : true;
-        bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         constexpr float disabledDarken = 0.35f;
 
-        auto headerCol = isAudioInput ? juce::Colour(0xff3a2e18)  // muted amber for audio input
-                                       : Theme::color(Theme::Color::bgHeader);
+        uint32_t tCol = trackState ? trackState->color : 0;
+        if (tCol == 0)
+            tCol = Theme::Color::trackColors[(int)i % Theme::Color::trackColorCount];
+        auto headerCol = juce::Colour(tCol);
         if (!enabled)
             headerCol = headerCol.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
 
