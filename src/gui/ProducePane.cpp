@@ -336,14 +336,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
 
-        // Track header background — uses track's palette color
+        // Track header background
         bool enabled = trackState ? trackState->audioEnabled : true;
+        bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         constexpr float disabledDarken = 0.35f;
 
-        uint32_t tCol = trackState ? trackState->color : 0;
-        if (tCol == 0)
-            tCol = Theme::Color::trackColors[(int)i % Theme::Color::trackColorCount];
-        auto headerCol = juce::Colour(tCol);
+        auto headerCol = isAudioInput ? juce::Colour(0xff3a2e18)
+                                       : Theme::color(Theme::Color::bgHeader);
+        // User-defined color overrides default
+        if (trackState && trackState->color != 0)
+            headerCol = juce::Colour(trackState->color);
         if (!enabled)
             headerCol = headerCol.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
 
@@ -444,11 +446,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                       [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
-            // Resolve track color
-            auto* trackState = state ? state->findTrack(tracks[ti].id) : nullptr;
-            uint32_t trackCol = trackState ? trackState->color : 0;
-            if (trackCol == 0)
-                trackCol = Theme::Color::trackColors[(int)ti % Theme::Color::trackColorCount];
+            // Resolve track color — matches header color
+            auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
+            bool isAudioTrk = trkState && trkState->sourceType == TrackSourceType::AudioInput;
+            uint32_t trackCol = (trkState && trkState->color != 0) ? trkState->color
+                              : isAudioTrk ? 0xff3a2e18
+                              : Theme::Color::bgHeader;
 
             for (auto* r : regions) {
                 int rx = beatToX(r->startBeat);
@@ -529,14 +532,15 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
                 auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
                 // Use target track's color for ghost
-                uint32_t ghostTrackCol = 0;
+                uint32_t ghostTrackCol = Theme::Color::bgHeader;
                 if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
                     auto* ts = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
-                    ghostTrackCol = ts ? ts->color : 0;
-                    if (ghostTrackCol == 0)
-                        ghostTrackCol = Theme::Color::trackColors[dragCurrentTrackIdx % Theme::Color::trackColorCount];
+                    if (ts && ts->color != 0)
+                        ghostTrackCol = ts->color;
+                    else if (ts && ts->sourceType == TrackSourceType::AudioInput)
+                        ghostTrackCol = 0xff3a2e18;
                 }
-                auto ghostCol = ghostTrackCol ? juce::Colour(ghostTrackCol) : juce::Colour(0xff2a5a3a);
+                auto ghostCol = juce::Colour(ghostTrackCol);
                 g.setColour(ghostCol.withAlpha(0.35f));
                 g.fillRoundedRectangle(ghostBounds.toFloat(), 5.0f);
                 g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));
