@@ -16,6 +16,9 @@ public:
 
     void setState(StateAPI* state, SequencerAPI* sequencer, Arrangement* arrangement);
 
+    // Callback for record mode (set by coordinator via MainLayout)
+    std::function<void()> onStartRecordMode;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;

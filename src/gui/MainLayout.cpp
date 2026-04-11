@@ -16,6 +16,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     addAndMakeVisible(sidebar);
 
     producePane.setState(&state, coordinator.sequencer(), &coordinator.arrangement());
+    producePane.onStartRecordMode = [&coordinator]() { coordinator.startRecordMode(); };
 
     // Register all panes with PaneContainer (left slot 60%, right slot 40%)
     paneContainer.addPane(&mappingPane, 0.6f);

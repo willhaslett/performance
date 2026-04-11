@@ -110,9 +110,11 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         audioEngine->setPlaybackState(playing, sequencerImpl->getTempo());
         if (playing) {
             audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
-            startRecording();  // starts if any track is armed
+            if (recordModeActive)
+                startRecording();
         } else {
             stopRecording();
+            recordModeActive = false;
         }
     });
 
@@ -170,6 +172,15 @@ void PerformanceCoordinator::timerCallback() {
             perfLog("[Coordinator] Auto-saved\n");
         }
     }
+}
+
+void PerformanceCoordinator::startRecordMode() {
+    if (!sequencerImpl) return;
+    recordModeActive = true;
+    if (!sequencerImpl->isPlaying())
+        sequencerImpl->play();  // transport callback will call startRecording()
+    else
+        startRecording();  // already playing, start recording now
 }
 
 void PerformanceCoordinator::startRecording() {

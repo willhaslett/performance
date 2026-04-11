@@ -97,6 +97,10 @@ public:
     SequencerAPI* sequencer();  // may return nullptr
     Arrangement& arrangement() { return arrangementImpl; }
 
+    // --- Recording ---
+    void startRecordMode();  // enter record mode and start playback
+    bool isInRecordMode() const { return recordModeActive; }
+
     // --- Logging ---
     void log(const juce::String& message);
 
@@ -115,6 +119,7 @@ private:
     double lastSequencerBeat = 0.0;
 
     // Recording state
+    bool recordModeActive = false;  // user explicitly requested recording
     bool isRecording = false;
     std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
     std::vector<std::string> recordingTrackIds;         // tracks being recorded into

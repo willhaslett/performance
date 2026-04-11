@@ -680,6 +680,20 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // r: start recording
+    if (key.getTextCharacter() == 'r' && onStartRecordMode) {
+        onStartRecordMode();
+        repaint();
+        return true;
+    }
+
+    // Return: snap playhead to beginning
+    if (key == juce::KeyPress::returnKey && sequencer) {
+        sequencer->setBeatPosition(0.0);
+        repaint();
+        return true;
+    }
+
     // h/l: step playhead by one division (1/denominator of a beat)
     if ((key.getTextCharacter() == 'h' || key.getTextCharacter() == 'l') && sequencer) {
         double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
