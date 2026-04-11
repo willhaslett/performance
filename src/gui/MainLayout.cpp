@@ -1,5 +1,6 @@
 #include "gui/MainLayout.h"
 #include "gui/KeyBindings.h"
+#include "gui/Theme.h"
 #include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
@@ -13,7 +14,6 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
     sidebar.setCoordinator(&coordinator);
-    addAndMakeVisible(sidebar);
 
     producePane.setState(&state, coordinator.sequencer(), &coordinator.arrangement());
     producePane.onStartRecordMode = [&coordinator]() { coordinator.startRecordMode(); };
@@ -21,24 +21,24 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onIsRecordMode = [&coordinator]() { return coordinator.isInRecordMode(); };
     producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
 
-    // Register all panes with PaneContainer (left slot 60%, right slot 40%)
-    paneContainer.addPane(&mappingPane, 0.6f);
-    paneContainer.addPane(&producePane, 0.6f);
-    paneContainer.addPane(&debugPane, 0.6f);
-    paneContainer.addPane(&chatView, 0.4f);
-    paneContainer.addPane(&logPane, 0.4f);
+    // All components start hidden — setPaneContent will show the right ones
+    sidebar.setVisible(false);
+    producePane.setVisible(false);
+    mappingPane.setVisible(false);
+    debugPane.setVisible(false);
+    chatView.setVisible(false);
+    logPane.setVisible(false);
+    mixerView.setVisible(false);
 
-    // Default: produce pane (left), chat (right)
-    activeLeftPane = &producePane;
-    activeRightPane = &chatView;
-    paneContainer.setPaneVisible(&mappingPane, false);
-    paneContainer.setPaneVisible(&debugPane, false);
-    paneContainer.setPaneVisible(&logPane, false);
+    addChildComponent(sidebar);
+    addChildComponent(producePane);
+    addChildComponent(mappingPane);
+    addChildComponent(debugPane);
+    addChildComponent(chatView);
+    addChildComponent(logPane);
+    addChildComponent(mixerView);
 
-    addAndMakeVisible(paneContainer);
-    addAndMakeVisible(mixerView);
-
-    // Sidebar divider (vertical)
+    // Sidebar divider
     addAndMakeVisible(sidebarDivider);
     sidebarDivider.onDragStart = [this]() { dragStartSidebarWidth = sidebarWidth; };
     sidebarDivider.onDrag = [this](int delta) {
@@ -46,7 +46,25 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         resized();
     };
 
+    // Default pane assignments (or load from config)
+    paneAssignments[PaneSlot::Sidebar] = PaneContent::SidebarTree;
+    paneAssignments[PaneSlot::Left] = PaneContent::Produce;
+    paneAssignments[PaneSlot::Right] = PaneContent::Chat;
+    paneAssignments[PaneSlot::Bottom] = PaneContent::Mixer;
+
+    loadPaneConfig();
+
+    // Apply assignments
+    for (auto& [slot, content] : paneAssignments)
+        setPaneContent(slot, content);
+
     setWantsKeyboardFocus(true);
+
+    // Wire sidebar pane selection to the new system
+    sidebar.onProduceSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Produce); };
+    sidebar.onDebugSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Debug); };
+    sidebar.onChatSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Chat); };
+    sidebar.onLogsSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Logs); };
 
     // Load system prompt for Claude
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
@@ -68,6 +86,141 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     }
 }
 
+// --- Pane content management ---
+
+juce::Component* MainLayout::componentForContent(PaneContent content) {
+    switch (content) {
+        case PaneContent::SidebarTree: return &sidebar;
+        case PaneContent::Produce:     return &producePane;
+        case PaneContent::Mappings:    return &mappingPane;
+        case PaneContent::Debug:       return &debugPane;
+        case PaneContent::Chat:        return &chatView;
+        case PaneContent::Logs:        return &logPane;
+        case PaneContent::Mixer:       return &mixerView;
+        default:                       return nullptr;
+    }
+}
+
+std::string MainLayout::contentToString(PaneContent content) {
+    switch (content) {
+        case PaneContent::Hidden:      return "hidden";
+        case PaneContent::SidebarTree: return "sidebar_tree";
+        case PaneContent::Produce:     return "produce";
+        case PaneContent::Mappings:    return "mappings";
+        case PaneContent::Debug:       return "debug";
+        case PaneContent::Chat:        return "chat";
+        case PaneContent::Logs:        return "logs";
+        case PaneContent::Mixer:       return "mixer";
+    }
+    return "hidden";
+}
+
+PaneContent MainLayout::stringToContent(const std::string& s) {
+    if (s == "sidebar_tree") return PaneContent::SidebarTree;
+    if (s == "produce")      return PaneContent::Produce;
+    if (s == "mappings")     return PaneContent::Mappings;
+    if (s == "debug")        return PaneContent::Debug;
+    if (s == "chat")         return PaneContent::Chat;
+    if (s == "logs")         return PaneContent::Logs;
+    if (s == "mixer")        return PaneContent::Mixer;
+    return PaneContent::Hidden;
+}
+
+const char* MainLayout::contentLabel(PaneContent content) {
+    switch (content) {
+        case PaneContent::Hidden:      return "Hide";
+        case PaneContent::SidebarTree: return "Sidebar";
+        case PaneContent::Produce:     return "Produce";
+        case PaneContent::Mappings:    return "Mappings";
+        case PaneContent::Debug:       return "Debug";
+        case PaneContent::Chat:        return "Chat";
+        case PaneContent::Logs:        return "Logs";
+        case PaneContent::Mixer:       return "Mixer";
+    }
+    return "?";
+}
+
+void MainLayout::setPaneContent(PaneSlot slot, PaneContent content) {
+    auto oldContent = paneAssignments[slot];
+    if (oldContent == content) return;
+
+    // Hide old content component
+    auto* oldComp = componentForContent(oldContent);
+    if (oldComp) {
+        oldComp->setVisible(false);
+        if (oldContent == PaneContent::Debug) debugPane.deactivate();
+        if (oldContent == PaneContent::Logs) logPane.deactivate();
+    }
+
+    paneAssignments[slot] = content;
+
+    // Show new content component
+    auto* newComp = componentForContent(content);
+    if (newComp) {
+        newComp->setVisible(true);
+        if (content == PaneContent::Debug) debugPane.activate();
+        if (content == PaneContent::Logs) logPane.activate();
+    }
+
+    // Update sidebar divider visibility
+    sidebarDivider.setVisible(paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
+
+    savePaneConfig();
+    resized();
+    repaint();
+}
+
+PaneContent MainLayout::getPaneContent(PaneSlot slot) const {
+    auto it = paneAssignments.find(slot);
+    return it != paneAssignments.end() ? it->second : PaneContent::Hidden;
+}
+
+juce::PopupMenu MainLayout::buildPaneMenu(PaneSlot slot) {
+    auto current = getPaneContent(slot);
+    juce::PopupMenu menu;
+
+    // All content options
+    PaneContent options[] = {
+        PaneContent::Hidden, PaneContent::SidebarTree, PaneContent::Produce,
+        PaneContent::Mappings, PaneContent::Debug, PaneContent::Chat,
+        PaneContent::Logs, PaneContent::Mixer
+    };
+
+    for (auto opt : options) {
+        menu.addItem(juce::PopupMenu::Item(contentLabel(opt))
+            .setTicked(current == opt)
+            .setAction([this, slot, opt]() { setPaneContent(slot, opt); }));
+    }
+    return menu;
+}
+
+void MainLayout::savePaneConfig() {
+    for (auto& [slot, content] : paneAssignments) {
+        std::string key;
+        switch (slot) {
+            case PaneSlot::Sidebar: key = "pane_sidebar"; break;
+            case PaneSlot::Left:    key = "pane_left"; break;
+            case PaneSlot::Right:   key = "pane_right"; break;
+            case PaneSlot::Bottom:  key = "pane_bottom"; break;
+        }
+        state.setConfig(key, contentToString(content));
+    }
+}
+
+void MainLayout::loadPaneConfig() {
+    auto loadSlot = [&](PaneSlot slot, const std::string& key) {
+        auto val = state.getConfig(key);
+        if (!val.empty())
+            paneAssignments[slot] = stringToContent(val);
+    };
+    loadSlot(PaneSlot::Sidebar, "pane_sidebar");
+    loadSlot(PaneSlot::Left, "pane_left");
+    loadSlot(PaneSlot::Right, "pane_right");
+    loadSlot(PaneSlot::Bottom, "pane_bottom");
+}
+
+// --- Layout ---
+
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
@@ -83,6 +236,7 @@ void MainLayout::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(toggleBounds.toFloat(), Theme::cornerRadiusSm);
 
+    bool sidebarOpen = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     juce::Path arrow;
     auto a = toggleBounds.reduced(7).toFloat();
     if (sidebarOpen) {
@@ -96,59 +250,76 @@ void MainLayout::paint(juce::Graphics& g) {
     }
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.fillPath(arrow);
-
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-
     area.removeFromTop(toolbarHeight);
 
-    // Sidebar + divider
-    if (sidebarOpen) {
-        sidebar.setBounds(area.removeFromLeft(sidebarWidth));
-        sidebarDivider.setBounds(sidebarWidth, area.getY(),
-                                  Divider::thickness, area.getHeight());
-        sidebarDivider.setVisible(true);
+    bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
+    bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);
+    bool hasLeft = (paneAssignments[PaneSlot::Left] != PaneContent::Hidden);
+    bool hasRight = (paneAssignments[PaneSlot::Right] != PaneContent::Hidden);
+
+    // Sidebar
+    if (hasSidebar) {
+        auto* sideComp = componentForContent(paneAssignments[PaneSlot::Sidebar]);
+        if (sideComp) sideComp->setBounds(area.removeFromLeft(sidebarWidth));
+        sidebarDivider.setBounds(area.getX() - Divider::thickness, area.getY(),
+                                  Divider::thickness * 2, area.getHeight());
         sidebarDivider.toFront(false);
-    } else {
-        sidebarDivider.setVisible(false);
     }
 
-    // Mixer — height driven by content
-    if (mixerVisible) {
-        int contentHeight = mixerView.getDesiredHeight();
-        auto mh = std::max(minPaneSize, std::min(contentHeight, area.getHeight() - minPaneSize));
-        mixerView.setBounds(area.removeFromBottom(mh));
+    // Bottom pane
+    if (hasBottom) {
+        auto* botComp = componentForContent(paneAssignments[PaneSlot::Bottom]);
+        if (botComp) {
+            int botHeight = minPaneSize;
+            // MixerView has dynamic height
+            if (paneAssignments[PaneSlot::Bottom] == PaneContent::Mixer)
+                botHeight = std::max(minPaneSize, std::min(mixerView.getDesiredHeight(),
+                                                            area.getHeight() - minPaneSize));
+            botComp->setBounds(area.removeFromBottom(botHeight));
+        }
     }
 
-    // Pane container fills remaining
-    paneContainer.setBounds(area);
+    // Left and right panes split the remaining area
+    if (hasLeft && hasRight) {
+        auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
+        auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
+        int leftWidth = (int)(area.getWidth() * 0.6f);
+        if (leftComp) leftComp->setBounds(area.removeFromLeft(leftWidth));
+        if (rightComp) rightComp->setBounds(area);
+    } else if (hasLeft) {
+        auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
+        if (leftComp) leftComp->setBounds(area);
+    } else if (hasRight) {
+        auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
+        if (rightComp) rightComp->setBounds(area);
+    }
 }
 
 void MainLayout::mouseUp(const juce::MouseEvent& event) {
     auto toggleBounds = juce::Rectangle<int>(4, 4, 24, 24);
     if (toggleBounds.contains(event.getPosition())) {
-        sidebarOpen = !sidebarOpen;
-        sidebar.setVisible(sidebarOpen);
-        resized();
-        repaint();
+        auto current = getPaneContent(PaneSlot::Sidebar);
+        setPaneContent(PaneSlot::Sidebar,
+                       current == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
     }
 }
 
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     if (key == KeyBindings::toggleSidebar) {
-        sidebarOpen = !sidebarOpen;
-        sidebar.setVisible(sidebarOpen);
-        resized();
-        repaint();
+        auto current = getPaneContent(PaneSlot::Sidebar);
+        setPaneContent(PaneSlot::Sidebar,
+                       current == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
         return true;
     }
 
     if (key == KeyBindings::toggleMixer) {
-        mixerVisible = !mixerVisible;
-        mixerView.setVisible(mixerVisible);
-        resized();
+        auto current = getPaneContent(PaneSlot::Bottom);
+        setPaneContent(PaneSlot::Bottom,
+                       current == PaneContent::Hidden ? PaneContent::Mixer : PaneContent::Hidden);
         return true;
     }
 
@@ -170,32 +341,6 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     return false;
 }
 
-void MainLayout::showLeftPane(juce::Component* pane) {
-    if (pane == activeLeftPane) return;
-
-    // Deactivate old left pane
-    if (activeLeftPane == &debugPane) debugPane.deactivate();
-    paneContainer.setPaneVisible(activeLeftPane, false);
-
-    // Activate new left pane
-    activeLeftPane = pane;
-    paneContainer.setPaneVisible(pane, true);
-    if (pane == &debugPane) debugPane.activate();
-}
-
-void MainLayout::showRightPane(juce::Component* pane) {
-    if (pane == activeRightPane) return;
-
-    // Deactivate old right pane
-    if (activeRightPane == &logPane) logPane.deactivate();
-    paneContainer.setPaneVisible(activeRightPane, false);
-
-    // Activate new right pane
-    activeRightPane = pane;
-    paneContainer.setPaneVisible(pane, true);
-    if (pane == &logPane) logPane.activate();
-}
-
 void MainLayout::showOverlay(const juce::String& message) {
     overlay.message = message;
     overlay.setBounds(getLocalBounds());
@@ -206,5 +351,4 @@ void MainLayout::showOverlay(const juce::String& message) {
 
 void MainLayout::hideOverlay() {
     removeChildComponent(&overlay);
-    repaint();
 }

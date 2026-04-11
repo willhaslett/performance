@@ -8,13 +8,29 @@
 #include "gui/MappingPane.h"
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
-#include "gui/PaneContainer.h"
 #include "gui/Divider.h"
+#include <map>
+#include <string>
 
 class StateAPI;
 class EngineAPI;
 class LuaEngine;
 class PerformanceCoordinator;
+
+// Pane slots — the four areas of the layout
+enum class PaneSlot { Sidebar, Left, Right, Bottom };
+
+// Pane content types
+enum class PaneContent {
+    Hidden,
+    SidebarTree,
+    Produce,
+    Mappings,
+    Debug,
+    Chat,
+    Logs,
+    Mixer
+};
 
 class MainLayout : public juce::Component {
 public:
@@ -30,9 +46,12 @@ public:
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
 
-    // Pane switching
-    void showLeftPane(juce::Component* pane);
-    void showRightPane(juce::Component* pane);
+    // Pane assignment — the core abstraction
+    void setPaneContent(PaneSlot slot, PaneContent content);
+    PaneContent getPaneContent(PaneSlot slot) const;
+
+    // Build a popup menu for a specific slot
+    juce::PopupMenu buildPaneMenu(PaneSlot slot);
 
     std::function<void()> onSave;
     std::function<void()> onOpenSettings;
@@ -54,17 +73,22 @@ private:
 
     Sidebar sidebar;
     TransportBar transportBar;
-    PaneContainer paneContainer;
     MixerView mixerView;
 
-    // Track which pane is active in each slot
-    juce::Component* activeLeftPane = nullptr;
-    juce::Component* activeRightPane = nullptr;
+    // Pane assignments — source of truth
+    std::map<PaneSlot, PaneContent> paneAssignments;
+
+    // Resolve content enum to component pointer
+    juce::Component* componentForContent(PaneContent content);
+    static std::string contentToString(PaneContent content);
+    static PaneContent stringToContent(const std::string& s);
+    static const char* contentLabel(PaneContent content);
+
+    // Save/restore pane config
+    void savePaneConfig();
+    void loadPaneConfig();
 
     Divider sidebarDivider { Divider::Vertical };
-
-    bool sidebarOpen = true;
-    bool mixerVisible = true;
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;

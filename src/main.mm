@@ -112,8 +112,10 @@ public:
             menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
         }
         else if (index == 2) {  // View
-            menu.addItem(CommandIDs::toggleSidebar, "Toggle Sidebar");
-            menu.addItem(CommandIDs::toggleMixer, "Toggle Mixer");
+            menu.addSubMenu("Sidebar", layout.buildPaneMenu(PaneSlot::Sidebar));
+            menu.addSubMenu("Left Pane", layout.buildPaneMenu(PaneSlot::Left));
+            menu.addSubMenu("Right Pane", layout.buildPaneMenu(PaneSlot::Right));
+            menu.addSubMenu("Bottom Pane", layout.buildPaneMenu(PaneSlot::Bottom));
         }
         return menu;
     }
@@ -145,12 +147,6 @@ public:
             auto busses = state.listBusses();
             auto name = "Bus " + juce::String((int)busses.size() + 1);
             state.createBus(name.toStdString());
-        }
-        else if (menuItemID == CommandIDs::toggleSidebar) {
-            layout.handleGlobalKey(KeyBindings::toggleSidebar);
-        }
-        else if (menuItemID == CommandIDs::toggleMixer) {
-            layout.handleGlobalKey(KeyBindings::toggleMixer);
         }
         else if (menuItemID == CommandIDs::openSettings) {
             layout.handleGlobalKey(KeyBindings::settings);
@@ -251,7 +247,7 @@ public:
 
         // Wire sidebar Maps device selection
         layout->getSidebar().onMapSelected = [layout](const std::string& deviceId, const std::string& portName) {
-            layout->showLeftPane(&layout->mappingPane);
+            layout->setPaneContent(PaneSlot::Left, PaneContent::Mappings);
             layout->mappingPane.setDevice(deviceId, portName);
         };
 
@@ -279,19 +275,7 @@ public:
             coordinator->save();  // persist device change immediately
         };
 
-        // Wire sidebar pane selection
-        layout->getSidebar().onProduceSelected = [layout]() {
-            layout->showLeftPane(&layout->producePane);
-        };
-        layout->getSidebar().onDebugSelected = [layout]() {
-            layout->showLeftPane(&layout->debugPane);
-        };
-        layout->getSidebar().onLogsSelected = [layout]() {
-            layout->showRightPane(&layout->logPane);
-        };
-        layout->getSidebar().onChatSelected = [layout]() {
-            layout->showRightPane(&layout->chatView);
-        };
+        // Sidebar pane selection is wired in MainLayout constructor
 
         // Wire track preset callbacks — MixerView applies these to each new TrackStrip
         layout->getMixer().onSaveTrackPreset = [this](const juce::String& trackId, const juce::String& name) {
