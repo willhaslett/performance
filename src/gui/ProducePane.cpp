@@ -727,8 +727,21 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
             dragCurrentBeat = newBeat;
 
             int trackIdx = getTrackIndexAtY(event.getPosition().getY());
-            if (trackIdx >= 0)
-                dragCurrentTrackIdx = trackIdx;
+            if (trackIdx >= 0 && state) {
+                // Only allow drop on compatible track type
+                auto tracks = state->listTracks();
+                if (trackIdx < (int)tracks.size()) {
+                    auto* targetTrack = state->findTrack(tracks[trackIdx].id);
+                    auto* region = arrangement ? arrangement->findRegion(selectedRegionId) : nullptr;
+                    if (targetTrack && region) {
+                        bool isMidiRegion = (region->type == "midi");
+                        bool isInstrumentTrack = (targetTrack->sourceType == TrackSourceType::Instrument);
+                        if (isMidiRegion == isInstrumentTrack)
+                            dragCurrentTrackIdx = trackIdx;
+                        // else: keep previous valid track index (snap back visually)
+                    }
+                }
+            }
 
             repaint();
         }
