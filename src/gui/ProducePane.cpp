@@ -235,7 +235,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // --- Position display (LCD-style, centered) ---
-    int lcdWidth = 420;
+    int lcdWidth = 520;
     int lcdX = area.getCentreX() - lcdWidth / 2;
     int lcdY = area.getY() + 8;
     int lcdHeight = area.getHeight() - 16;
@@ -254,8 +254,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     int digitTop = lcdBounds.getY() + 2;
     int digitH = lcdBounds.getHeight() - 14;
     int labelY = lcdBounds.getBottom() - 13;
-    auto monoLg = Theme::fontMono(22.0f);
-    auto monoMd = Theme::fontMono(18.0f);
+    auto monoLg = Theme::fontMono(29.0f);
+    auto monoMd = Theme::fontMono(23.0f);
     auto labelFont = Theme::font(8.0f);
     char buf[16];
 
@@ -287,13 +287,13 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     };
 
     snprintf(buf, sizeof(buf), "%3d", bar);
-    drawCol(buf, "BAR", 46, monoLg);
+    drawCol(buf, "BAR", 58, monoLg);
     snprintf(buf, sizeof(buf), "%d", beatInBar);
-    drawCol(buf, "BEAT", 30, monoLg);
+    drawCol(buf, "BEAT", 38, monoLg);
     snprintf(buf, sizeof(buf), "%d", div);
-    drawCol(buf, "DIV", 26, monoLg);
+    drawCol(buf, "DIV", 32, monoLg);
     snprintf(buf, sizeof(buf), "%03d", tick);
-    drawCol(buf, "TICK", 42, monoLg);
+    drawCol(buf, "TICK", 52, monoLg);
 
     drawSep();
 
@@ -305,20 +305,20 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     int ms = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
 
     snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
-    drawCol(buf, "TIME", 150, monoMd);
+    drawCol(buf, "TIME", 180, monoMd);
 
     drawSep();
 
     // --- Tempo + Time Signature (clickable) ---
     bpmClickBounds = juce::Rectangle<int>(colX, lcdBounds.getY(), 52, lcdBounds.getHeight());
     snprintf(buf, sizeof(buf), "%.1f", bpm);
-    drawCol(buf, "BPM", 52, monoMd);
+    drawCol(buf, "BPM", 64, monoMd);
 
     colX += 2;
     timeSigClickBounds = juce::Rectangle<int>(colX, lcdBounds.getY(), 48, lcdBounds.getHeight());
     snprintf(buf, sizeof(buf), "%d/%d",
              sequencer->getTimeSignatureNumerator(), tsDen);
-    drawCol(buf, "TIME SIG", 48, monoMd);
+    drawCol(buf, "TIME SIG", 58, monoMd);
 }
 
 void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {

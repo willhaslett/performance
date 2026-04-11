@@ -40,7 +40,7 @@ private:
     void timerCallback() override;
 
     // Layout
-    static constexpr int transportHeight = 52;
+    static constexpr int transportHeight = 60;
     static constexpr int trackHeaderWidth = 120;
     static constexpr int trackRowHeight = 48;
     static constexpr int rulerHeight = 20;
