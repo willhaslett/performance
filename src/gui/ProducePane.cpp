@@ -505,16 +505,11 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));
                 g.drawRoundedRectangle(ghostBounds.toFloat(), 3.0f, 1.5f);
 
-                // "+" badge when option is held (duplicate mode)
+                // "+" when option is held (duplicate mode)
                 if (dragIsOption) {
-                    int badgeSize = 14;
-                    auto badge = juce::Rectangle<int>(ghostBounds.getRight() - badgeSize - 2,
-                                                       ghostBounds.getY() + 2, badgeSize, badgeSize);
-                    g.setColour(Theme::color(Theme::Color::accent));
-                    g.fillEllipse(badge.toFloat());
-                    g.setColour(Theme::color(Theme::Color::textWhite));
-                    g.setFont(Theme::font(11.0f));
-                    g.drawText("+", badge, juce::Justification::centred);
+                    g.setColour(juce::Colour(0x55ffffff));
+                    g.setFont(Theme::fontMono(22.0f));
+                    g.drawText("+", ghostBounds, juce::Justification::centred);
                 }
             }
         }
