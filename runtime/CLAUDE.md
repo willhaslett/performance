@@ -137,6 +137,7 @@ Songs persist in SQLite. "Sandbox" always exists and cannot be deleted.
 | `fadeOut` | `{trackName, duration, "easing"}` | Fade track gain to 0 |
 | `fadeIn` | `{trackName, duration, "easing"}` | Fade track gain to 1 |
 | `crossfade` | `{fromTrackName, toTrackName, duration, "easing"}` | Crossfade between two tracks |
+| `setTrackGain` | `{trackName}` | Set track volume from CC value (0-1) |
 
 Track name args are resolved to UUIDs at bind-time. Use exact names from `registryList("track")`.
 Easing options: "linear", "easein", "easeout", "cosine", "scurve"
