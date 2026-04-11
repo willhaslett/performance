@@ -183,6 +183,12 @@ void PerformanceCoordinator::startRecordMode() {
         startRecording();  // already playing, start recording now
 }
 
+void PerformanceCoordinator::stopRecordMode() {
+    if (!recordModeActive) return;
+    recordModeActive = false;
+    stopRecording();
+}
+
 void PerformanceCoordinator::startRecording() {
     if (!stateAPI || !audioEngine) return;
 

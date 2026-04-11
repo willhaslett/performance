@@ -132,19 +132,21 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     // Stop (■)
     stopButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     {
-        auto col = !playing ? Theme::color(Theme::Color::textWhite)
-                             : Theme::color(Theme::Color::textSecondary);
-        g.setColour(col);
+        g.setColour(Theme::color(Theme::Color::textSecondary));
         g.fillRect(stopButtonBounds.reduced(8));
     }
     btnX += btnSize + btnGap;
 
-    // Play (▶)
+    // Play (▶) — green background when playing (Logic style)
     playButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     {
-        auto col = playing ? Theme::color(Theme::Color::midiActive)
-                            : Theme::color(Theme::Color::textSecondary);
-        g.setColour(col);
+        if (playing) {
+            g.setColour(juce::Colour(0xff2a6a2a));  // dark green bg
+            g.fillRoundedRectangle(playButtonBounds.toFloat(), 4.0f);
+            g.setColour(Theme::color(Theme::Color::textWhite));
+        } else {
+            g.setColour(Theme::color(Theme::Color::textSecondary));
+        }
         juce::Path tri;
         auto r = playButtonBounds.reduced(7).toFloat();
         tri.addTriangle(r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
@@ -152,21 +154,19 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     }
     btnX += btnSize + btnGap;
 
-    // Recording indicator (red dot — lit when any track is armed)
+    // Record (●) — red/brown background when recording (Logic style)
+    bool inRecordMode = onIsRecordMode ? onIsRecordMode() : false;
+    recordButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     {
-        bool anyArmed = false;
-        if (state) {
-            auto tracks = state->listTracks();
-            for (auto& t : tracks) {
-                auto* ts = state->findTrack(t.id);
-                if (ts && ts->armed) { anyArmed = true; break; }
-            }
+        if (inRecordMode) {
+            g.setColour(juce::Colour(0xff6a2a2a));  // dark red bg
+            g.fillRoundedRectangle(recordButtonBounds.toFloat(), 4.0f);
+            g.setColour(Theme::color(Theme::Color::textWhite));
+        } else {
+            g.setColour(juce::Colour(0xffcc4444));  // red circle
         }
-        auto recCol = (anyArmed && playing) ? juce::Colour(0xffee8822)
-                     : anyArmed ? juce::Colour(0xffcc7720)
-                     : Theme::color(Theme::Color::textDim);
-        g.setColour(recCol);
-        g.fillEllipse((float)(btnX + 6), (float)(btnY + 6), (float)(btnSize - 12), (float)(btnSize - 12));
+        auto rb = recordButtonBounds.reduced(7).toFloat();
+        g.fillEllipse(rb);
     }
     btnX += btnSize + btnGap + 4;
 
@@ -620,6 +620,16 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     }
     if (playButtonBounds.contains(event.getPosition())) {
         sequencer->togglePlayStop();
+        repaint();
+        return;
+    }
+    if (recordButtonBounds.contains(event.getPosition())) {
+        bool inRec = onIsRecordMode ? onIsRecordMode() : false;
+        if (inRec) {
+            if (onStopRecordMode) onStopRecordMode();
+        } else {
+            if (onStartRecordMode) onStartRecordMode();
+        }
         repaint();
         return;
     }

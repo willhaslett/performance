@@ -16,8 +16,10 @@ public:
 
     void setState(StateAPI* state, SequencerAPI* sequencer, Arrangement* arrangement);
 
-    // Callback for record mode (set by coordinator via MainLayout)
+    // Record mode callbacks (set by coordinator via MainLayout)
     std::function<void()> onStartRecordMode;
+    std::function<void()> onStopRecordMode;
+    std::function<bool()> onIsRecordMode;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -62,6 +64,7 @@ private:
     juce::Rectangle<int> rewindButtonBounds;
     juce::Rectangle<int> stopButtonBounds;
     juce::Rectangle<int> playButtonBounds;
+    juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
 
     // Per-track power icon bounds (rebuilt each paint)

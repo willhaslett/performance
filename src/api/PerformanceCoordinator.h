@@ -98,7 +98,8 @@ public:
     Arrangement& arrangement() { return arrangementImpl; }
 
     // --- Recording ---
-    void startRecordMode();  // enter record mode and start playback
+    void startRecordMode();   // enter record mode and start playback
+    void stopRecordMode();    // exit record mode (keeps playing)
     bool isInRecordMode() const { return recordModeActive; }
 
     // --- Logging ---
