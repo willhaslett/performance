@@ -477,17 +477,41 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.drawText(juce::String(r->name), regionBounds.reduced(4, 0),
                            juce::Justification::centredLeft);
 
-                // MIDI note preview
+                // MIDI note preview — mini piano roll
                 if (r->type == "midi") {
                     auto noteList = Arrangement::buildNoteList(*r);
-                    g.setColour(juce::Colour(0xff44cc44).withAlpha(0.6f));
-                    int maxH = regionBounds.getHeight() / 2;
-                    for (auto& note : noteList) {
-                        int nx = rx + (int)(note.beatOffset * pixelsPerBeat);
-                        float velNorm = note.velocity / 127.0f;
-                        int spikeH = std::max(2, (int)(velNorm * maxH));
-                        int noteY = regionBounds.getBottom() - 1 - spikeH;
-                        g.drawLine((float)nx, (float)noteY, (float)nx, (float)(regionBounds.getBottom() - 1), 1.0f);
+                    if (!noteList.empty()) {
+                        // Find pitch range for vertical scaling
+                        int minNote = 127, maxNote = 0;
+                        for (auto& n : noteList) {
+                            minNote = std::min(minNote, n.noteNumber);
+                            maxNote = std::max(maxNote, n.noteNumber);
+                        }
+                        int noteRange = std::max(1, maxNote - minNote);
+                        // Pad range for visual breathing room
+                        int pad = std::max(2, noteRange / 4);
+                        int lo = std::max(0, minNote - pad);
+                        int hi = std::min(127, maxNote + pad);
+                        int span = std::max(1, hi - lo);
+
+                        auto inner = regionBounds.reduced(1, 3);
+                        float noteH = std::max(1.0f, (float)inner.getHeight() / span);
+                        // Cap note height so dense regions stay readable
+                        noteH = std::min(noteH, (float)inner.getHeight() / 4.0f);
+
+                        for (auto& note : noteList) {
+                            float nx = (float)rx + (float)(note.beatOffset * pixelsPerBeat);
+                            float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
+                            float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
+
+                            // Velocity → brightness: dim green to bright green
+                            float velNorm = note.velocity / 127.0f;
+                            auto noteCol = juce::Colour(0xff44cc44)
+                                .interpolatedWith(juce::Colours::white, velNorm * 0.35f)
+                                .withAlpha(0.4f + velNorm * 0.5f);
+                            g.setColour(noteCol);
+                            g.fillRect(nx, ny - noteH * 0.5f, nw, std::max(1.0f, noteH));
+                        }
                     }
                 }
             }
