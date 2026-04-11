@@ -509,7 +509,7 @@ void PersistenceLayer::saveFrom(const StateAPI& state) {
     // Backup DB before save
     if (!dbPath.empty()) {
         auto src = juce::File(dbPath);
-        auto bak = src.getSiblingFile(src.getFileNameWithoutExtension() + ".bak." + src.getFileExtension());
+        auto bak = src.getSiblingFile(src.getFileNameWithoutExtension() + ".bak.db");
         src.copyFileTo(bak);
     }
 
