@@ -456,13 +456,13 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 // Cache for hit testing
                 regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region block — semi-transparent during drag
+                // Region block — always slightly transparent so overlaps show through
                 bool selected = (r->id == selectedRegionId);
                 bool beingDragged = (draggingRegion && selected);
                 auto fillCol = r->type == "midi"
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
-                if (beingDragged) fillCol = fillCol.withAlpha(0.45f);
-                g.setColour(fillCol);
+                float baseAlpha = beingDragged ? 0.45f : 0.82f;
+                g.setColour(fillCol.withAlpha(baseAlpha));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
 
                 // Border — darker shade of region color (visible at overlaps)
