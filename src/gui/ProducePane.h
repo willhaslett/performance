@@ -69,6 +69,10 @@ private:
     juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
 
+    // Metronome volume slider
+    juce::Slider metronomeSlider;
+    juce::Label metronomeLabel;
+
     // Per-track power icon bounds (rebuilt each paint)
     std::vector<juce::Rectangle<int>> powerIconBounds;
 

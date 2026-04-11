@@ -5,6 +5,28 @@
 
 ProducePane::ProducePane() {
     setWantsKeyboardFocus(true);
+
+    // Metronome volume slider
+    metronomeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    metronomeSlider.setRange(0.0, 1.0, 0.01);
+    metronomeSlider.setValue(0.5);
+    metronomeSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
+    metronomeSlider.setColour(juce::Slider::trackColourId, Theme::color(Theme::Color::bgSlot));
+    metronomeSlider.setColour(juce::Slider::thumbColourId, Theme::color(Theme::Color::textSecondary));
+    metronomeSlider.setColour(juce::Slider::backgroundColourId, Theme::color(Theme::Color::bgPanel));
+    metronomeSlider.onValueChange = [this]() {
+        if (state) {
+            state->setConfig("metronome_volume", std::to_string(metronomeSlider.getValue()));
+        }
+    };
+    addAndMakeVisible(metronomeSlider);
+
+    metronomeLabel.setText("Met", juce::dontSendNotification);
+    metronomeLabel.setFont(Theme::font(9.0f));
+    metronomeLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
+    metronomeLabel.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(metronomeLabel);
+
     startTimerHz(30);
 }
 
@@ -19,6 +41,11 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
     arrangement = arr;
 
     if (state) {
+        // Load saved metronome volume
+        auto metVol = state->getConfig("metronome_volume");
+        if (!metVol.empty())
+            metronomeSlider.setValue(std::stof(metVol), juce::dontSendNotification);
+
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
                 juce::MessageManager::callAsync([this] { repaint(); });
@@ -627,7 +654,16 @@ void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
     g.fillPath(tri);
 }
 
-void ProducePane::resized() {}
+void ProducePane::resized() {
+    // Position metronome slider at the right end of the transport bar
+    int sliderW = 70;
+    int labelW = 24;
+    int y = 14;
+    int h = 24;
+    int x = getWidth() - sliderW - labelW - 8;
+    metronomeLabel.setBounds(x, y, labelW, h);
+    metronomeSlider.setBounds(x + labelW, y, sliderW, h);
+}
 
 int ProducePane::getTrackIndexAtY(int y) const {
     int gridTop = transportHeight + rulerHeight;
