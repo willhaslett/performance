@@ -105,6 +105,8 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 - **GraphWrapper** (`src/engine/GraphWrapper.h`) — AudioProcessor wrapping the graph. Advances a sample-accurate beat clock, scans the `Arrangement` for MIDI events per buffer, routes to per-track `MidiSourceNode`s. Captures live MIDI to `RecordFIFO` when recording.
 - **MidiSourceNode** (`src/engine/MidiSourceNode.h`) — per-track AudioProcessor for sequencer MIDI. Filled by GraphWrapper before graph processes, drained during processBlock. Connected to instrument alongside live MIDI input.
 - **RecordFIFO** (`src/engine/RecordFIFO.h`) — lock-free SPSC ring buffer (1024 slots). Audio thread pushes beat-timestamped MIDI events, coordinator timer drains into Arrangement.
+- **AudioRecordFIFO** (`src/engine/AudioRecordFIFO.h`) — lock-free SPSC ring buffer for audio samples (~5 sec at 48kHz stereo, interleaved floats). Audio thread pushes, writer thread drains.
+- **AudioWriterThread** (`src/engine/AudioWriterThread.h`) — background thread draining AudioRecordFIFO to WAV file. De-interleaves and writes via JUCE AudioFormatWriter.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
 - **InternalSequencer** (`src/daw/InternalSequencer.h/.cpp`) — own transport, tempo, beat clock. Thread-safe atomics. Transport callback notifies coordinator on play/stop.
@@ -238,6 +240,9 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 **Known issues with embedded Claude:**
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
 - Custom action creation via Claude fails despite API working via direct IPC. Needs investigation (string escaping through chat→tool→IPC pipeline).
+
+**In progress:**
+- Audio track sequencer support — recording pipeline is complete (AudioRecordFIFO, AudioWriterThread, GraphWrapper audio capture, coordinator lifecycle, peak computation). Remaining: (1) AudioFileNode for playback (AudioProcessor that reads buffered WAV, outputs audio based on beat position), (2) graph wiring to connect AudioFileNode in place of/alongside live audio input during region playback, (3) waveform display in ProducePane regions using cached peak data. TakeState has recordTempo/sampleRate/channelCount for beat↔sample conversion. WAV files stored in `~/.config/performance/audio/<takeId>.wav`.
 
 **Feature backlog (near-term):**
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp. (Playback stop/seek and recording stop are now handled.)
