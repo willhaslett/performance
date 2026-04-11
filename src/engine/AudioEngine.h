@@ -125,9 +125,8 @@ public:
     // Recording
     void setRecording(bool recording);
     RecordFIFO& getRecordFIFO();
-    AudioRecordFIFO& getAudioRecordFIFO();
-    AudioWriterThread& getAudioWriter() { return audioWriter; }
-    void setAudioRecordChannels(int startChannel, int channelCount);
+    void setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets);
+    void clearAudioRecordTargets();
     double getCurrentSampleRate() const;
     void loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,
                                 double recordTempo, int fileSampleRate);
@@ -249,8 +248,6 @@ private:
         void audioDeviceStopped() override {}
     };
     InputMeter inputMeter;
-
-    AudioWriterThread audioWriter;
 
     void setupGraph();
     void rebuildGraph();

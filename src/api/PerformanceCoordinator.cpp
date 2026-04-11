@@ -152,22 +152,20 @@ void PerformanceCoordinator::timerCallback() {
             if (isRecording) {
                 drainRecordFIFO();
 
-                // Update audio region length and peaks during recording
-                if (!audioRecordRegionId.empty()) {
-                    auto* region = arrangementImpl.findRegion(audioRecordRegionId);
-                    if (region && region->activeTake()) {
-                        auto* take = region->activeTake();
-                        int64_t frames = audioEngine->getAudioWriter().getTotalFramesWritten();
-                        double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
-                        region->lengthBeats = seconds * (take->recordTempo / 60.0);
+                // Update audio region lengths and peaks during recording
+                for (auto& session : audioRecordSessions) {
+                    auto* region = arrangementImpl.findRegion(session.regionId);
+                    if (!region || !region->activeTake()) continue;
+                    auto* take = region->activeTake();
+                    int64_t frames = session.writer->getTotalFramesWritten();
+                    double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
+                    region->lengthBeats = seconds * (take->recordTempo / 60.0);
 
-                        // Recompute peaks every ~0.5 sec (30 ticks at 60Hz)
-                        static int peakCounter = 0;
-                        if (++peakCounter >= 30) {
-                            peakCounter = 0;
-                            computeAudioPeaks(*take);
-                        }
-                    }
+                    auto writerPeaks = session.writer->getPeaks();
+                    take->peakData.samplesPerPeak = 256;
+                    take->peakData.peaks.clear();
+                    for (auto& p : writerPeaks)
+                        take->peakData.peaks.push_back({ p.min, p.max });
                 }
             }
         } else {
@@ -216,20 +214,26 @@ void PerformanceCoordinator::stopRecordMode() {
 void PerformanceCoordinator::startRecording() {
     if (!stateAPI || !audioEngine) return;
 
-    // Find armed tracks — separate MIDI and audio
+    // Find armed MIDI tracks
     recordingTrackIds.clear();
-    audioRecordingTrackId.clear();
+    audioRecordSessions.clear();
     auto tracks = stateAPI->listTracks();
     for (auto& t : tracks) {
         auto* ts = stateAPI->findTrack(t.id);
         if (!ts || !ts->armed) continue;
         if (ts->sourceType == TrackSourceType::Instrument)
             recordingTrackIds.push_back(t.id);
-        else if (ts->sourceType == TrackSourceType::AudioInput && audioRecordingTrackId.empty())
-            audioRecordingTrackId = t.id;  // first armed audio track
     }
 
-    if (recordingTrackIds.empty() && audioRecordingTrackId.empty()) return;
+    // Check if any audio tracks are armed (handled below)
+    bool hasArmedAudio = false;
+    for (auto& t : tracks) {
+        auto* ts = stateAPI->findTrack(t.id);
+        if (ts && ts->armed && ts->sourceType == TrackSourceType::AudioInput)
+            hasArmedAudio = true;
+    }
+
+    if (recordingTrackIds.empty() && !hasArmedAudio) return;
 
     recordStartBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
     openNotes.clear();
@@ -240,46 +244,53 @@ void PerformanceCoordinator::startRecording() {
         perfLog("[Coordinator] Started MIDI recording on track %s\n", trackId.c_str());
     }
 
-    // Start audio recording
-    if (!audioRecordingTrackId.empty()) {
-        auto* ts = stateAPI->findTrack(audioRecordingTrackId);
-        if (ts) {
-            // Create region and take
-            auto* region = arrangementImpl.addMidiRegion(audioRecordingTrackId, recordStartBeat, 0.0);
-            if (region) {
-                region->type = "audio";
-                auto* take = region->activeTake();
-                if (take) {
-                    double sr = audioEngine->getCurrentSampleRate();
-                    take->recordTempo = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
-                    take->sampleRate = (int)sr;
-                    take->channelCount = std::max(1, ts->inputChannelCount);
+    // Start audio recording for all armed audio tracks
+    {
+        std::vector<GraphWrapper::AudioRecordTarget> targets;
+        auto allTracks = stateAPI->listTracks();
+        for (auto& t : allTracks) {
+            auto* ts = stateAPI->findTrack(t.id);
+            if (!ts || !ts->armed || ts->sourceType != TrackSourceType::AudioInput) continue;
 
-                    // WAV file path
-                    auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-                                        .getChildFile(".config/performance/audio");
-                    audioDir.createDirectory();
-                    auto wavFile = audioDir.getChildFile(juce::String(take->id) + ".wav");
-                    take->filePath = wavFile.getFullPathName().toStdString();
+            auto* region = arrangementImpl.addMidiRegion(t.id, recordStartBeat, 0.0);
+            if (!region) continue;
+            region->type = "audio";
+            auto* take = region->activeTake();
+            if (!take) continue;
 
-                    // Start writer thread
-                    audioEngine->setAudioRecordChannels(ts->inputChannelStart, ts->inputChannelCount);
-                    audioEngine->getAudioWriter().startWriting(
-                        audioEngine->getAudioRecordFIFO(), wavFile, sr, take->channelCount);
+            double sr = audioEngine->getCurrentSampleRate();
+            take->recordTempo = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
+            take->sampleRate = (int)sr;
+            take->channelCount = std::max(1, ts->inputChannelCount);
 
-                    audioRecordRegionId = region->id;
-                    perfLog("[Coordinator] Started audio recording on track %s → %s\n",
-                            audioRecordingTrackId.c_str(), take->filePath.c_str());
-                }
-            }
+            auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                                .getChildFile(".config/performance/audio");
+            audioDir.createDirectory();
+            auto wavFile = audioDir.getChildFile(juce::String(take->id) + ".wav");
+            take->filePath = wavFile.getFullPathName().toStdString();
+
+            auto session = AudioRecordSession();
+            session.trackId = t.id;
+            session.regionId = region->id;
+            session.fifo = std::make_unique<AudioRecordFIFO>();
+            session.writer = std::make_unique<AudioWriterThread>();
+            session.writer->startWriting(*session.fifo, wavFile, sr, take->channelCount);
+
+            targets.push_back({ ts->inputChannelStart, ts->inputChannelCount, session.fifo.get() });
+            audioRecordSessions.push_back(std::move(session));
+
+            perfLog("[Coordinator] Started audio recording on track %s → %s\n",
+                    t.id.c_str(), take->filePath.c_str());
         }
+        if (!targets.empty())
+            audioEngine->setAudioRecordTargets(targets);
     }
 
     audioEngine->setRecording(true);
     isRecording = true;
-    perfLog("[Coordinator] Recording started (%d MIDI, %s audio) at beat %.1f\n",
+    perfLog("[Coordinator] Recording started (%d MIDI, %d audio) at beat %.1f\n",
             (int)recordingTrackIds.size(),
-            audioRecordingTrackId.empty() ? "no" : "1", recordStartBeat);
+            (int)audioRecordSessions.size(), recordStartBeat);
 }
 
 void PerformanceCoordinator::stopRecording() {
@@ -304,29 +315,32 @@ void PerformanceCoordinator::stopRecording() {
     }
     openNotes.clear();
 
-    // Stop audio recording
-    if (!audioRecordingTrackId.empty()) {
-        audioEngine->getAudioWriter().stopWriting();
-        audioEngine->setAudioRecordChannels(-1, 0);
+    // Stop audio recording (all tracks)
+    if (!audioRecordSessions.empty()) {
+        audioEngine->clearAudioRecordTargets();
 
-        // Set the region length based on recorded frames
-        auto* region = arrangementImpl.findRegion(audioRecordRegionId);
-        if (region && region->activeTake()) {
-            auto* take = region->activeTake();
-            int64_t frames = audioEngine->getAudioWriter().getTotalFramesWritten();
-            double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
-            double beats = seconds * (take->recordTempo / 60.0);
-            region->lengthBeats = beats;
+        for (auto& session : audioRecordSessions) {
+            session.writer->stopWriting();
 
-            // Compute waveform peaks for display
-            computeAudioPeaks(*take);
+            auto* region = arrangementImpl.findRegion(session.regionId);
+            if (region && region->activeTake()) {
+                auto* take = region->activeTake();
+                int64_t frames = session.writer->getTotalFramesWritten();
+                double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
+                region->lengthBeats = seconds * (take->recordTempo / 60.0);
 
-            perfLog("[Coordinator] Audio recording: %lld frames, %.1f beats\n", frames, beats);
+                // Get peaks from writer thread (already computed during write)
+                auto writerPeaks = session.writer->getPeaks();
+                take->peakData.samplesPerPeak = 256;
+                take->peakData.peaks.clear();
+                for (auto& p : writerPeaks)
+                    take->peakData.peaks.push_back({ p.min, p.max });
+
+                perfLog("[Coordinator] Audio recording on %s: %lld frames, %.1f beats\n",
+                        session.trackId.c_str(), frames, region->lengthBeats);
+            }
         }
-        audioRecordingTrackId.clear();
-        audioRecordRegionId.clear();
-
-        // Load the recorded file into the engine for playback
+        audioRecordSessions.clear();
         loadAudioFilesIntoEngine();
     }
 

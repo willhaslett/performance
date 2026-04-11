@@ -1502,12 +1502,12 @@ RecordFIFO& AudioEngine::getRecordFIFO() {
     return graphWrapper->getRecordFIFO();
 }
 
-AudioRecordFIFO& AudioEngine::getAudioRecordFIFO() {
-    return graphWrapper->getAudioRecordFIFO();
+void AudioEngine::setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets) {
+    graphWrapper->setAudioRecordTargets(targets);
 }
 
-void AudioEngine::setAudioRecordChannels(int startChannel, int channelCount) {
-    graphWrapper->setAudioRecordChannels(startChannel, channelCount);
+void AudioEngine::clearAudioRecordTargets() {
+    graphWrapper->clearAudioRecordTargets();
 }
 
 void AudioEngine::loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,

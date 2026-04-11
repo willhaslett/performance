@@ -5,6 +5,8 @@
 #include "state/StateModel.h"
 #include "daw/SequencerAPI.h"
 #include "daw/Arrangement.h"
+#include "engine/AudioRecordFIFO.h"
+#include "engine/AudioWriterThread.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -125,8 +127,13 @@ private:
     bool isRecording = false;
     std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
     std::vector<std::string> recordingTrackIds;         // MIDI tracks being recorded into
-    std::string audioRecordingTrackId;                    // audio track being recorded
-    std::string audioRecordRegionId;                      // region for current audio recording
+    struct AudioRecordSession {
+        std::string trackId;
+        std::string regionId;
+        std::unique_ptr<AudioRecordFIFO> fifo;
+        std::unique_ptr<AudioWriterThread> writer;
+    };
+    std::vector<AudioRecordSession> audioRecordSessions;
     double recordStartBeat = 0.0;
     void startRecording();
     void stopRecording();
