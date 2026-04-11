@@ -79,4 +79,21 @@ private:
     // Inline name editing
     InlineEditor nameEditor;
     void paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled);
+
+    // Region interaction
+    std::string selectedRegionId;
+    struct RegionHitInfo {
+        std::string regionId;
+        std::string trackId;
+        juce::Rectangle<int> bounds;
+    };
+    std::vector<RegionHitInfo> regionHitRects;  // rebuilt each paint
+
+    // Region drag state
+    bool draggingRegion = false;
+    bool dragIsOption = false;  // option+drag = duplicate
+    double dragStartBeat = 0.0;
+    int dragStartTrackIdx = -1;
+    double dragCurrentBeat = 0.0;
+    int dragCurrentTrackIdx = -1;
 };

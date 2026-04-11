@@ -434,23 +434,47 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // Regions
+    // Regions — cache hit rects for mouse interaction
+    regionHitRects.clear();
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
             for (auto* r : regions) {
-                int rx = beatToX(r->startBeat);
-                int rw = (int)(r->lengthBeats * pixelsPerBeat);
-                auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, trackRowHeight - 4);
+                // If dragging this region, paint it at the drag position instead
+                bool isDragged = (draggingRegion && r->id == selectedRegionId);
+                double drawBeat = isDragged ? dragCurrentBeat : r->startBeat;
+                int drawTrack = isDragged ? dragCurrentTrackIdx : (int)ti;
+                int drawY = area.getY() + drawTrack * trackRowHeight;
+
+                int rx = beatToX(drawBeat);
+                int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
+                auto regionBounds = juce::Rectangle<int>(rx, drawY + 2, rw, trackRowHeight - 4);
 
                 if (regionBounds.getRight() < area.getX() || regionBounds.getX() > area.getRight())
                     continue;
 
+                // Cache for hit testing (use actual position, not drag position)
+                if (!isDragged) {
+                    int actualRx = beatToX(r->startBeat);
+                    auto actualBounds = juce::Rectangle<int>(actualRx, rowY + 2, rw, trackRowHeight - 4);
+                    regionHitRects.push_back({ r->id, tracks[ti].id, actualBounds });
+                }
+
                 // Region block
-                g.setColour(r->type == "midi"
-                    ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a));
+                bool selected = (r->id == selectedRegionId);
+                auto fillCol = r->type == "midi"
+                    ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
+                if (isDragged) fillCol = fillCol.withAlpha(0.7f);
+                g.setColour(fillCol);
                 g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
+
+                // Selection highlight
+                if (selected) {
+                    g.setColour(Theme::color(Theme::Color::accent));
+                    g.drawRoundedRectangle(regionBounds.toFloat(), 3.0f, 2.0f);
+                }
 
                 // Region name
                 g.setColour(Theme::color(Theme::Color::textPrimary));
@@ -458,7 +482,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.drawText(juce::String(r->name), regionBounds.reduced(4, 0),
                            juce::Justification::centredLeft);
 
-                // MIDI note preview — velocity-scaled vertical lines
+                // MIDI note preview
                 if (r->type == "midi") {
                     auto noteList = Arrangement::buildNoteList(*r);
                     g.setColour(juce::Colour(0xff44cc44).withAlpha(0.6f));
@@ -471,6 +495,21 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         g.drawLine((float)nx, (float)noteY, (float)nx, (float)(regionBounds.getBottom() - 1), 1.0f);
                     }
                 }
+            }
+        }
+
+        // Ghost region during option+drag (duplicate preview)
+        if (draggingRegion && dragIsOption) {
+            auto* srcRegion = arrangement->findRegion(selectedRegionId);
+            if (srcRegion) {
+                int rx = beatToX(dragCurrentBeat);
+                int rw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
+                int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
+                auto ghostBounds = juce::Rectangle<int>(rx, drawY + 2, rw, trackRowHeight - 4);
+                g.setColour(juce::Colour(0xff2a5a3a).withAlpha(0.4f));
+                g.fillRoundedRectangle(ghostBounds.toFloat(), 3.0f);
+                g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.6f));
+                g.drawRoundedRectangle(ghostBounds.toFloat(), 3.0f, 1.5f);
             }
         }
     }
@@ -525,7 +564,36 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
         return;
     }
 
-    // Click on ruler or grid to set playhead position (immediate on mouseDown)
+    // Check for region click (grid area, below ruler)
+    if (event.getPosition().getY() > transportHeight + rulerHeight
+        && event.getPosition().getX() > trackHeaderWidth) {
+
+        // Hit test against cached region bounds
+        for (auto& hit : regionHitRects) {
+            if (hit.bounds.contains(event.getPosition())) {
+                selectedRegionId = hit.regionId;
+                draggingRegion = false;  // will start on mouseDrag
+                dragIsOption = event.mods.isAltDown();
+                dragStartBeat = xToBeat(event.getPosition().getX());
+                dragStartTrackIdx = getTrackIndexAtY(event.getPosition().getY());
+                dragCurrentBeat = dragStartBeat;
+                dragCurrentTrackIdx = dragStartTrackIdx;
+                repaint();
+                return;
+            }
+        }
+
+        // Clicked empty grid — deselect and set playhead
+        selectedRegionId.clear();
+        if (sequencer) {
+            double beat = xToBeat(event.getPosition().getX());
+            if (beat >= 0.0) sequencer->setBeatPosition(beat);
+        }
+        repaint();
+        return;
+    }
+
+    // Click on ruler to set playhead
     if (sequencer && event.getPosition().getY() > transportHeight
         && event.getPosition().getX() > trackHeaderWidth) {
         double beat = xToBeat(event.getPosition().getX());
@@ -537,13 +605,42 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseDrag(const juce::MouseEvent& event) {
-    if (dragTrackIndex < 0) return;
+    // Track header reorder drag
+    if (dragTrackIndex >= 0) {
+        int newTarget = getTrackIndexAtY(event.getPosition().getY());
+        if (newTarget < 0) return;
+        if (newTarget != dragTargetIndex) {
+            dragTargetIndex = newTarget;
+            repaint();
+        }
+        return;
+    }
 
-    int newTarget = getTrackIndexAtY(event.getPosition().getY());
-    if (newTarget < 0) return;
-    if (newTarget != dragTargetIndex) {
-        dragTargetIndex = newTarget;
-        repaint();
+    // Region drag (starts after 5px threshold)
+    if (!selectedRegionId.empty() && sequencer) {
+        if (!draggingRegion && event.getDistanceFromDragStart() > 5) {
+            draggingRegion = true;
+            // Capture the region's original beat for offset calculation
+            auto* region = arrangement ? arrangement->findRegion(selectedRegionId) : nullptr;
+            if (region) {
+                dragStartBeat = region->startBeat;
+                dragCurrentBeat = region->startBeat;
+            }
+        }
+        if (draggingRegion) {
+            double beatDelta = xToBeat(event.getPosition().getX()) - xToBeat(event.getMouseDownPosition().getX());
+            double divSize = sequencer ? 1.0 / sequencer->getTimeSignatureDenominator() : 0.25;
+            double newBeat = std::max(0.0, dragStartBeat + beatDelta);
+            // Snap to division
+            newBeat = std::round(newBeat / divSize) * divSize;
+            dragCurrentBeat = newBeat;
+
+            int trackIdx = getTrackIndexAtY(event.getPosition().getY());
+            if (trackIdx >= 0)
+                dragCurrentTrackIdx = trackIdx;
+
+            repaint();
+        }
     }
 }
 
@@ -565,6 +662,26 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     }
     dragTrackIndex = -1;
     dragTargetIndex = -1;
+
+    // Complete region drag (move or duplicate)
+    if (draggingRegion && arrangement && state) {
+        auto tracks = state->listTracks();
+        if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
+            auto targetTrackId = tracks[dragCurrentTrackIdx].id;
+            if (dragIsOption) {
+                // Option+drag = duplicate
+                auto* newRegion = arrangement->duplicateRegion(selectedRegionId, targetTrackId, dragCurrentBeat);
+                if (newRegion) selectedRegionId = newRegion->id;
+            } else {
+                // Normal drag = move
+                arrangement->moveRegion(selectedRegionId, targetTrackId, dragCurrentBeat);
+            }
+        }
+        draggingRegion = false;
+        repaint();
+        return;
+    }
+    draggingRegion = false;
 
     // Track header controls (power icon, arm dot)
     if (state && event.getPosition().getX() < trackHeaderWidth) {
@@ -686,6 +803,42 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
 
     if (key == juce::KeyPress::spaceKey && sequencer) {
         sequencer->togglePlayStop();
+        repaint();
+        return true;
+    }
+
+    // Delete/Backspace: delete selected region
+    if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+        && !selectedRegionId.empty() && arrangement) {
+        arrangement->removeRegion(selectedRegionId);
+        selectedRegionId.clear();
+        repaint();
+        return true;
+    }
+
+    // Cmd+D: duplicate selected region (place after original)
+    if (key.getTextCharacter() == 'd' && key.getModifiers().isCommandDown()
+        && !selectedRegionId.empty() && arrangement) {
+        auto* region = arrangement->findRegion(selectedRegionId);
+        if (region) {
+            // Find which track owns this region
+            std::string ownerTrackId;
+            if (state) {
+                auto tracks = state->listTracks();
+                for (auto& t : tracks) {
+                    auto regs = arrangement->regionsForTrack(t.id);
+                    for (auto* r : regs) {
+                        if (r->id == selectedRegionId) { ownerTrackId = t.id; break; }
+                    }
+                    if (!ownerTrackId.empty()) break;
+                }
+            }
+            if (!ownerTrackId.empty()) {
+                auto* dup = arrangement->duplicateRegion(selectedRegionId, ownerTrackId,
+                                                          region->startBeat + region->lengthBeats);
+                if (dup) selectedRegionId = dup->id;
+            }
+        }
         repaint();
         return true;
     }

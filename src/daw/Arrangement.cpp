@@ -40,6 +40,84 @@ void Arrangement::removeRegion(const std::string& regionId) {
     }
 }
 
+void Arrangement::moveRegion(const std::string& regionId,
+                              const std::string& newTrackId, double newStartBeat) {
+    if (!songTracks) return;
+
+    // Find the region and its current track
+    RegionState found;
+    bool removed = false;
+    for (auto& t : *songTracks) {
+        for (int i = 0; i < (int)t.regions.size(); ++i) {
+            if (t.regions[i].id == regionId) {
+                found = std::move(t.regions[i]);
+                t.regions.erase(t.regions.begin() + i);
+                removed = true;
+                break;
+            }
+        }
+        if (removed) break;
+    }
+    if (!removed) return;
+
+    found.startBeat = newStartBeat;
+
+    // Insert into target track
+    for (auto& t : *songTracks) {
+        if (t.id == newTrackId) {
+            t.regions.push_back(std::move(found));
+            return;
+        }
+    }
+    // Target track not found — shouldn't happen, but put it back somewhere
+}
+
+RegionState* Arrangement::duplicateRegion(const std::string& regionId,
+                                           const std::string& targetTrackId,
+                                           double startBeat) {
+    if (!songTracks) return nullptr;
+
+    // Find source region
+    const RegionState* source = nullptr;
+    for (auto& t : *songTracks) {
+        for (auto& r : t.regions) {
+            if (r.id == regionId) { source = &r; break; }
+        }
+        if (source) break;
+    }
+    if (!source) return nullptr;
+
+    // Find target track
+    for (auto& t : *songTracks) {
+        if (t.id == targetTrackId) {
+            RegionState copy;
+            copy.id = generateId();
+            copy.type = source->type;
+            copy.name = source->name;
+            copy.startBeat = startBeat;
+            copy.lengthBeats = source->lengthBeats;
+
+            // Deep-copy takes
+            for (auto& srcTake : source->takes) {
+                TakeState takeCopy;
+                takeCopy.id = generateId();
+                takeCopy.name = srcTake.name;
+                takeCopy.events = srcTake.events;
+                takeCopy.filePath = srcTake.filePath;
+                if (srcTake.id == source->activeTakeId)
+                    copy.activeTakeId = takeCopy.id;
+                copy.takes.push_back(std::move(takeCopy));
+            }
+            if (copy.activeTakeId.empty() && !copy.takes.empty())
+                copy.activeTakeId = copy.takes[0].id;
+
+            t.regions.push_back(std::move(copy));
+            return &t.regions.back();
+        }
+    }
+    return nullptr;
+}
+
 std::vector<RegionState*> Arrangement::allRegions() const {
     std::vector<RegionState*> result;
     if (!songTracks) return result;

@@ -27,6 +27,8 @@ public:
     // --- Region management ---
     RegionState* addMidiRegion(const std::string& trackId, double startBeat, double lengthBeats);
     void removeRegion(const std::string& regionId);
+    void moveRegion(const std::string& regionId, const std::string& newTrackId, double newStartBeat);
+    RegionState* duplicateRegion(const std::string& regionId, const std::string& targetTrackId, double startBeat);
 
     // --- Queries ---
     std::vector<RegionState*> allRegions() const;
