@@ -955,7 +955,7 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // m: toggle metronome
+    // m: toggle metronome, Shift+M increases vol, (future: decrease)
     if (key.getTextCharacter() == 'm' && sequencer) {
         sequencer->setMetronomeEnabled(!sequencer->isMetronomeEnabled());
         repaint();

@@ -53,6 +53,7 @@ public:
     // --- Metronome ---
     void setMetronome(bool on) { metronomeOn.store(on, std::memory_order_release); }
     void setBeatsPerBar(int bpb) { metronomeBPB.store(bpb, std::memory_order_release); }
+    void setMetronomeVolume(float vol) { metronomeVol.store(vol, std::memory_order_release); }
 
     // --- Recording ---
     void setRecording(bool r) { recording.store(r, std::memory_order_release); }
@@ -225,24 +226,22 @@ public:
             double prevBeat = base + (samples - numSamples) * beatsPerSample;
             double nextBeat = base + samples * beatsPerSample;
             int bpb = metronomeBPB.load(std::memory_order_acquire);
+            float vol = metronomeVol.load(std::memory_order_acquire);
 
-            // Check if any beat boundary falls in this buffer
-            int prevBeatInt = (int)std::floor(prevBeat);
-            int nextBeatInt = (int)std::floor(nextBeat);
-            if (nextBeatInt > prevBeatInt) {
-                // A beat crossed — find sample offset
-                double beatBoundary = (double)nextBeatInt;
+            // Find the next integer beat at or after prevBeat
+            int nextIntBeat = (int)std::ceil(prevBeat - 0.0001);  // small epsilon for floating point
+            if ((double)nextIntBeat >= prevBeat && (double)nextIntBeat < nextBeat) {
+                double beatBoundary = (double)nextIntBeat;
                 int clickOffset = (int)((beatBoundary - prevBeat) / beatsPerSample);
                 clickOffset = juce::jlimit(0, numSamples - 1, clickOffset);
 
-                // Accent on beat 1 of bar
-                bool accent = (bpb > 0 && nextBeatInt % bpb == 0);
+                bool accent = (bpb > 0 && nextIntBeat % bpb == 0);
                 float freq = accent ? 1000.0f : 700.0f;
-                float clickGain = accent ? 0.4f : 0.25f;
-                int clickLen = (int)(currentSampleRate * 0.015);  // 15ms click
+                float clickGain = (accent ? 0.4f : 0.25f) * vol;
+                int clickLen = (int)(currentSampleRate * 0.015);
 
                 for (int i = 0; i < clickLen && (clickOffset + i) < numSamples; ++i) {
-                    float env = 1.0f - (float)i / clickLen;  // linear decay
+                    float env = 1.0f - (float)i / clickLen;
                     float sample = std::sin(2.0f * juce::MathConstants<float>::pi * freq * i / (float)currentSampleRate)
                                    * env * clickGain;
                     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
@@ -284,6 +283,7 @@ private:
     // Metronome
     std::atomic<bool> metronomeOn { false };
     std::atomic<int> metronomeBPB { 4 };
+    std::atomic<float> metronomeVol { 0.5f };
 
     // Recording
     std::atomic<bool> recording { false };

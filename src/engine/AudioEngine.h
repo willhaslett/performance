@@ -127,7 +127,7 @@ public:
     RecordFIFO& getRecordFIFO();
     void setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets);
     void clearAudioRecordTargets();
-    void setMetronome(bool on, int beatsPerBar);
+    void setMetronome(bool on, int beatsPerBar, float volume = -1.0f);
     double getCurrentSampleRate() const;
     void loadAudioFileForTrack(const juce::String& trackId, const juce::String& regionId,
                                 const juce::String& filePath, double recordTempo, int fileSampleRate);

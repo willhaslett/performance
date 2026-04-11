@@ -149,8 +149,11 @@ void PerformanceCoordinator::timerCallback() {
             static_cast<InternalSequencer*>(sequencerImpl.get())->setBeatPositionSilent(audioBeat);
             // Forward tempo and metronome state to engine
             audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+            float metVol = 0.5f;
+            auto metVolStr = stateAPI->getConfig("metronome_volume");
+            if (!metVolStr.empty()) metVol = std::stof(metVolStr);
             audioEngine->setMetronome(sequencerImpl->isMetronomeEnabled(),
-                                       sequencerImpl->getTimeSignatureNumerator());
+                                       sequencerImpl->getTimeSignatureNumerator(), metVol);
             // Drain recorded MIDI events from audio thread
             if (isRecording) {
                 drainRecordFIFO();
