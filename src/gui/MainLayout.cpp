@@ -378,8 +378,8 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
-    // Forward Cmd+arrows to ProducePane for zoom (if it's visible)
-    if (key.getModifiers().isCommandDown() && getPaneContent(PaneSlot::Left) == PaneContent::Produce) {
+    // Forward Cmd+arrows to ProducePane for zoom (global scope)
+    if (key.getModifiers().isCommandDown()) {
         if (producePane.keyPressed(key))
             return true;
     }
