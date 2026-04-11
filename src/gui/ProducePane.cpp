@@ -453,10 +453,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 // Cache for hit testing
                 regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region block
+                // Region block — semi-transparent during drag
                 bool selected = (r->id == selectedRegionId);
+                bool beingDragged = (draggingRegion && selected);
                 auto fillCol = r->type == "midi"
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
+                if (beingDragged) fillCol = fillCol.withAlpha(0.45f);
                 g.setColour(fillCol);
                 g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
 
