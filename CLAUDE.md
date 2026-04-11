@@ -255,10 +255,12 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Flexible pane system — four slots (sidebar/left/right/bottom), each with assignable content. Persisted. View menu + sidebar tree with green dots.
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
+**Feature backlog (high priority):**
+- Undo/redo — snapshot-based, using existing `replaceState()`. Architecture is ready: AppState is fully copyable (all std containers, no pointers), replaceState fires one event, EngineSync rebuilds correctly. Implementation: `UndoHistory` with `deque<AppState>`, push before each user mutation, Cmd+Z restores. After restore: update arrangement pointer + reload audio files. Concerns: (1) mutation grouping (begin/end transaction for multi-step operations like track preset load), (2) audio recording undo needs WAV file cleanup side-channel, (3) morph undo needs automation cancellation, (4) cap at ~50 steps to limit memory (1-10MB per snapshot). NOT undoable: per-parameter tweaks, transport state, mid-recording mutations. ~50ms restore time for large songs.
+
 **Feature backlog (near-term):**
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
-- Undo/redo via state history — state model is clean structs, snapshot-based undo feasible.
 - TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
 
 **Feature backlog (longer-term):**
