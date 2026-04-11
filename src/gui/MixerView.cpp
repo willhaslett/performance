@@ -138,7 +138,7 @@ void MixerView::timerCallback() {
             trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
             {
                 auto target = state.getTrackOutputTarget(id.toStdString());
-                juce::String displayName = "Master";
+                juce::String displayName = "Main";
                 if (target == "none") displayName = "No Output";
                 else if (!target.empty()) {
                     auto* bus = state.findBus(target);
@@ -170,7 +170,7 @@ void MixerView::timerCallback() {
             busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(id.toStdString()));
             {
                 auto target = state.getBusOutputTarget(id.toStdString());
-                juce::String displayName = "Master";
+                juce::String displayName = "Main";
                 if (target == "none") displayName = "No Output";
                 else if (!target.empty()) {
                     auto* bus = state.findBus(target);

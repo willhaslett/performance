@@ -123,7 +123,7 @@ void BusStrip::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(9.0f));
         g.setColour(Theme::color(Theme::Color::textSecondary));
-        auto label = outputTargetDisplay.isEmpty() ? "Master" : outputTargetDisplay;
+        auto label = outputTargetDisplay.isEmpty() ? "Main" : outputTargetDisplay;
         g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
     }
 }
@@ -152,7 +152,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
     // Output target click
     if (outputTargetBounds.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         juce::PopupMenu menu;
-        menu.addItem(1, "Master", true, outputTargetId.isEmpty());
+        menu.addItem(1, "Main", true, outputTargetId.isEmpty());
         menu.addItem(2, "No Output", true, outputTargetId == "none");
         // List other busses for bus-to-bus routing
         auto allBusses = state.listBusses();

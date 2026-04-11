@@ -123,7 +123,7 @@ void TrackStrip::setOutputTarget(const juce::String& target, const juce::String&
 
 void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
     juce::PopupMenu menu;
-    menu.addItem(1, "Master", true, outputTargetId.isEmpty());
+    menu.addItem(1, "Main", true, outputTargetId.isEmpty());
     menu.addItem(2, "No Output", true, outputTargetId == "none");
 
     // List available busses
@@ -324,7 +324,7 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(9.0f));
         g.setColour(Theme::color(Theme::Color::textSecondary));
-        auto label = outputTargetDisplay.isEmpty() ? "Master" : outputTargetDisplay;
+        auto label = outputTargetDisplay.isEmpty() ? "Main" : outputTargetDisplay;
         g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
     }
 }
