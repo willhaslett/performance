@@ -504,6 +504,18 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.fillRoundedRectangle(ghostBounds.toFloat(), 3.0f);
                 g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));
                 g.drawRoundedRectangle(ghostBounds.toFloat(), 3.0f, 1.5f);
+
+                // "+" badge when option is held (duplicate mode)
+                if (dragIsOption) {
+                    int badgeSize = 14;
+                    auto badge = juce::Rectangle<int>(ghostBounds.getRight() - badgeSize - 2,
+                                                       ghostBounds.getY() + 2, badgeSize, badgeSize);
+                    g.setColour(Theme::color(Theme::Color::accent));
+                    g.fillEllipse(badge.toFloat());
+                    g.setColour(Theme::color(Theme::Color::textWhite));
+                    g.setFont(Theme::font(11.0f));
+                    g.drawText("+", badge, juce::Justification::centred);
+                }
             }
         }
     }
@@ -622,10 +634,10 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
             }
         }
         if (draggingRegion) {
+            dragIsOption = event.mods.isAltDown();  // live update during drag
             double beatDelta = xToBeat(event.getPosition().getX()) - xToBeat(event.getMouseDownPosition().getX());
             double divSize = sequencer ? 1.0 / sequencer->getTimeSignatureDenominator() : 0.25;
             double newBeat = std::max(0.0, dragStartBeat + beatDelta);
-            // Snap to division
             newBeat = std::round(newBeat / divSize) * divSize;
             dragCurrentBeat = newBeat;
 
