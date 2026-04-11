@@ -140,20 +140,17 @@ public:
 
                 // Drive audio file nodes — check which regions cover prevBeat
                 for (auto& [trkId, afNode] : trackAudioFileNodes) {
-                    if (!afNode || !afNode->hasFile()) {
+                    if (!afNode || !afNode->hasFiles()) {
                         if (afNode) afNode->setActive(false);
                         continue;
                     }
-                    // Check if any audio region on this track covers prevBeat
                     auto regions = arr->regionsForTrack(trkId.toStdString());
                     bool found = false;
                     for (auto* r : regions) {
                         if (r->type != "audio") continue;
                         double endBeat = r->startBeat + r->lengthBeats;
                         if (prevBeat >= r->startBeat && prevBeat < endBeat) {
-                            afNode->setRegionStartBeat(r->startBeat);
-                            afNode->setPlaybackBeat(prevBeat);
-                            afNode->setActive(true);
+                            afNode->setActiveRegion(juce::String(r->id), r->startBeat, prevBeat);
                             found = true;
                             break;
                         }

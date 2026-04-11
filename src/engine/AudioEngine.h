@@ -128,8 +128,8 @@ public:
     void setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets);
     void clearAudioRecordTargets();
     double getCurrentSampleRate() const;
-    void loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,
-                                double recordTempo, int fileSampleRate);
+    void loadAudioFileForTrack(const juce::String& trackId, const juce::String& regionId,
+                                const juce::String& filePath, double recordTempo, int fileSampleRate);
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }

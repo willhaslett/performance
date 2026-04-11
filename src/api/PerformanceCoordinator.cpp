@@ -386,19 +386,18 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
     for (auto& track : song->tracks) {
         if (track.sourceType != TrackSourceType::AudioInput) continue;
 
-        // Find the first audio region with a file on this track
+        // Load ALL audio regions for this track
         for (auto& region : track.regions) {
             if (region.type != "audio") continue;
             auto* take = region.activeTake();
             if (!take || take->filePath.empty()) continue;
 
             audioEngine->loadAudioFileForTrack(juce::String(track.id),
-                juce::String(take->filePath), take->recordTempo, take->sampleRate);
+                juce::String(region.id), juce::String(take->filePath),
+                take->recordTempo, take->sampleRate);
 
-            // Compute peaks if not cached
             if (take->peakData.peaks.empty())
                 computeAudioPeaks(*take);
-            break;  // one file per track for now
         }
     }
 }

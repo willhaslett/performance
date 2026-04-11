@@ -1510,17 +1510,17 @@ void AudioEngine::clearAudioRecordTargets() {
     graphWrapper->clearAudioRecordTargets();
 }
 
-void AudioEngine::loadAudioFileForTrack(const juce::String& trackId, const juce::String& filePath,
-                                         double recordTempo, int fileSampleRate) {
+void AudioEngine::loadAudioFileForTrack(const juce::String& trackId, const juce::String& regionId,
+                                         const juce::String& filePath, double recordTempo, int fileSampleRate) {
     auto it = tracks.find(trackId);
     if (it == tracks.end() || !it->second.audioFileNode) return;
 
     auto* afNode = dynamic_cast<AudioFileNode*>(it->second.audioFileNode->getProcessor());
     if (!afNode) return;
 
-    if (afNode->loadFile(filePath, recordTempo, fileSampleRate))
-        perfLog("[Engine] Loaded audio file for track %s: %s\n",
-                trackId.toRawUTF8(), filePath.toRawUTF8());
+    if (afNode->loadFile(regionId, filePath, recordTempo, fileSampleRate))
+        perfLog("[Engine] Loaded audio file for track %s region %s: %s\n",
+                trackId.toRawUTF8(), regionId.toRawUTF8(), filePath.toRawUTF8());
     else
         perfLog("[Engine] Failed to load audio file: %s\n", filePath.toRawUTF8());
 }
