@@ -23,6 +23,19 @@ namespace Theme {
         constexpr uint32_t instrument   = 0xffddaa44;
         constexpr uint32_t effect       = 0xff88aacc;
 
+        // Track color palette — assigned to new tracks in rotation
+        constexpr uint32_t trackColors[] = {
+            0xff2a5a3a,  // green
+            0xff3a3a5a,  // purple
+            0xff4a3a2a,  // brown
+            0xff2a4a5a,  // teal
+            0xff5a2a3a,  // rose
+            0xff3a5a2a,  // olive
+            0xff4a2a5a,  // violet
+            0xff5a4a2a,  // amber
+        };
+        constexpr int trackColorCount = 8;
+
         // Chat
         constexpr uint32_t chatBgUser  = 0xff2a4a6a;
         constexpr uint32_t chatBgAsst  = 0xff2a2a2a;

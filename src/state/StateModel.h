@@ -123,6 +123,7 @@ struct TrackState {
     std::string name;
     std::string pluginId;
     std::string presetId;
+    uint32_t color = 0;        // track color (0 = use default for source type)
     float outputGain = 1.0f;
     bool midiEnabled = true;   // receives MIDI notes (instrument tracks)
     bool audioEnabled = true;  // passes audio signal (all tracks)

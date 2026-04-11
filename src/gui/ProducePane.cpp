@@ -439,13 +439,17 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
-            // Sort by startBeat so later regions paint on top at overlaps
             std::sort(regions.begin(), regions.end(),
                       [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
+            // Resolve track color
+            auto* trackState = state ? state->findTrack(tracks[ti].id) : nullptr;
+            uint32_t trackCol = trackState ? trackState->color : 0;
+            if (trackCol == 0)
+                trackCol = Theme::Color::trackColors[(int)ti % Theme::Color::trackColorCount];
+
             for (auto* r : regions) {
-                // Always draw at the original position
                 int rx = beatToX(r->startBeat);
                 int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
                 auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, trackRowHeight - 4);
@@ -453,14 +457,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 if (regionBounds.getRight() < area.getX() || regionBounds.getX() > area.getRight())
                     continue;
 
-                // Cache for hit testing
                 regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region block — always slightly transparent so overlaps show through
+                // Region block — colored by track
                 bool selected = (r->id == selectedRegionId);
                 bool beingDragged = (draggingRegion && selected);
-                auto fillCol = r->type == "midi"
-                    ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
+                auto fillCol = juce::Colour(trackCol);
                 float baseAlpha = beingDragged ? 0.45f : 0.82f;
                 g.setColour(fillCol.withAlpha(baseAlpha));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
@@ -504,9 +506,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
                             float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
 
-                            // Velocity → brightness: dim green to bright green
+                            // Velocity → brightness: dim to bright, tinted by track color
                             float velNorm = note.velocity / 127.0f;
-                            auto noteCol = juce::Colour(0xff44cc44)
+                            auto noteCol = juce::Colour(trackCol).brighter(0.6f)
                                 .interpolatedWith(juce::Colours::white, velNorm * 0.35f)
                                 .withAlpha(0.4f + velNorm * 0.5f);
                             g.setColour(noteCol);
@@ -525,8 +527,15 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int gw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
                 int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
                 auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
-                auto ghostCol = srcRegion->type == "midi"
-                    ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
+                // Use target track's color for ghost
+                uint32_t ghostTrackCol = 0;
+                if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
+                    auto* ts = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
+                    ghostTrackCol = ts ? ts->color : 0;
+                    if (ghostTrackCol == 0)
+                        ghostTrackCol = Theme::Color::trackColors[dragCurrentTrackIdx % Theme::Color::trackColorCount];
+                }
+                auto ghostCol = ghostTrackCol ? juce::Colour(ghostTrackCol) : juce::Colour(0xff2a5a3a);
                 g.setColour(ghostCol.withAlpha(0.35f));
                 g.fillRoundedRectangle(ghostBounds.toFloat(), 5.0f);
                 g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));

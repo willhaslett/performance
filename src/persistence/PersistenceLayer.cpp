@@ -86,6 +86,7 @@ void PersistenceLayer::createSchema() {
             output_gain REAL DEFAULT 1.0,
             midi_enabled INTEGER DEFAULT 1,
             audio_enabled INTEGER DEFAULT 1,
+            color INTEGER DEFAULT 0,
             position INTEGER DEFAULT 0,
             processor_state TEXT,
             processor_state_hash TEXT,
@@ -157,6 +158,7 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "DROP TABLE IF EXISTS score_steps", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "DROP TABLE IF EXISTS region_events", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN active_take_id TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN color INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
 
     // Arrangement tables
     exec(R"(
@@ -292,7 +294,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         song.initialState = col_str(songStmt, 3);
 
         // Tracks
-        auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, audio_enabled FROM tracks WHERE song_id = ? ORDER BY position");
+        auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, audio_enabled, color FROM tracks WHERE song_id = ? ORDER BY position");
         sqlite3_bind_text(ts, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(ts) == SQLITE_ROW) {
             TrackState t;
@@ -312,6 +314,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             t.inputChannelStart = sqlite3_column_int(ts, 11);
             t.inputChannelCount = sqlite3_column_int(ts, 12);
             t.audioEnabled = sqlite3_column_int(ts, 13) != 0;
+            t.color = (uint32_t)sqlite3_column_int(ts, 14);
 
             // Effects for this track
             auto* fxs = prepare("SELECT id, name, plugin_id, preset_id, position, processor_state, processor_state_hash FROM effects WHERE parent_id = ? AND parent_type = 'track' ORDER BY position");
@@ -642,7 +645,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
         // Tracks (after busses, since sends reference bus IDs)
         for (auto& t : song.tracks) {
-            auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, audio_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            auto* ts = prepare("INSERT INTO tracks (id, song_id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, audio_enabled, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             sqlite3_bind_text(ts, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(ts, 3, t.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -668,6 +671,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_int(ts, 13, t.inputChannelStart);
             sqlite3_bind_int(ts, 14, t.inputChannelCount);
             sqlite3_bind_int(ts, 15, t.audioEnabled ? 1 : 0);
+            sqlite3_bind_int(ts, 16, (int)t.color);
             sqlite3_step(ts);
             sqlite3_finalize(ts);
 
