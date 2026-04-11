@@ -22,20 +22,18 @@ public:
     Region* findRegion(const std::string& regionId) const;
 
     // --- Playback scanning ---
-    // Get MIDI events that should fire between prevBeat and currentBeat.
-    // For each note-on, calls the callback with (trackId, noteNumber, velocity, channel).
-    // For note-offs, velocity is 0.
+    // Fires callback for every MIDI event in [prevBeat, currentBeat).
+    // Events are raw — noteOn, noteOff, CC, aftertouch, pitch bend, etc.
     using MidiEventCallback = std::function<void(const std::string& trackId,
-                                                  int noteNumber, int velocity, int channel,
-                                                  double eventBeat)>;
+                                                  const MidiEvent& event,
+                                                  double absoluteBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, MidiEventCallback callback) const;
 
     // --- Recording (supports multiple armed tracks simultaneously) ---
     // Start recording into a new region on the given track at the given beat.
-    // Call once per armed track. All active recording regions receive notes.
+    // Call once per armed track. All active recording regions receive events.
     MidiRegion* startRecording(const std::string& trackId, double startBeat);
-    void addRecordedNote(int noteNumber, int velocity, int channel, double beatOffset);
-    void finalizeRecordedNote(int noteNumber, int channel, double beatOffset, double duration);
+    void addRecordedEvent(const MidiEvent& event);
     void stopRecording();
     bool isRecording() const { return !recordingRegions.empty(); }
 

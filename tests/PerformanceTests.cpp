@@ -2027,45 +2027,52 @@ public:
         {
             Arrangement arr;
             auto* r = arr.addMidiRegion("t1", 0.0, 4.0);
-            r->notes.push_back({ 1.0, 0.5, 60, 100, 1 });  // note at beat 1, dur 0.5
-            r->sortNotes();
+            // Raw events: noteOn at beat 1.0, noteOff at beat 1.5
+            r->events.push_back({ 1.0, 0x90, 1, 60, 100 });
+            r->events.push_back({ 1.5, 0x80, 1, 60, 0 });
+            r->sortEvents();
 
-            std::vector<std::tuple<std::string, int, int>> events;
-            arr.scanMidiEvents(0.0, 1.6, [&](const std::string& trackId, int note, int vel, int ch, double) {
-                events.push_back({ trackId, note, vel });
+            std::vector<std::pair<int, int>> scanned;  // {status, data1}
+            arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const MidiEvent& e, double) {
+                scanned.push_back({ e.status, e.data1 });
             });
 
-            // Should have note-on at beat 1.0 and note-off at beat 1.5
-            expectEquals((int)events.size(), 2);
-            expectEquals(std::get<2>(events[0]), 100);  // note-on velocity
-            expectEquals(std::get<2>(events[1]), 0);    // note-off velocity
+            expectEquals((int)scanned.size(), 2);
+            expectEquals(scanned[0].first, 0x90);  // noteOn
+            expectEquals(scanned[1].first, 0x80);  // noteOff
         }
 
         beginTest("Scan skips regions outside range");
         {
             Arrangement arr;
             auto* r = arr.addMidiRegion("t1", 8.0, 4.0);
-            r->notes.push_back({ 0.0, 0.5, 60, 100, 1 });
+            r->events.push_back({ 0.0, 0x90, 1, 60, 100 });
 
             int eventCount = 0;
-            arr.scanMidiEvents(0.0, 4.0, [&](auto&, int, int, int, double) { eventCount++; });
+            arr.scanMidiEvents(0.0, 4.0, [&](auto&, auto&, double) { eventCount++; });
             expectEquals(eventCount, 0);  // region starts at 8, scan is 0-4
         }
 
-        beginTest("Recording creates region and captures notes");
+        beginTest("Recording creates region and captures events");
         {
             Arrangement arr;
             auto* r = arr.startRecording("t1", 2.0);
             expect(arr.isRecording());
             expect(r != nullptr);
 
-            arr.addRecordedNote(60, 100, 1, 0.0);
-            arr.addRecordedNote(64, 90, 1, 0.5);
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });  // noteOn
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });    // noteOff
+            arr.addRecordedEvent({ 0.5, 0x90, 1, 64, 90 });   // another noteOn
             arr.stopRecording();
 
             expect(!arr.isRecording());
-            expectEquals((int)r->notes.size(), 2);
+            expectEquals((int)r->events.size(), 3);
             expect(r->lengthBeats > 0.0);
+
+            // Derive note list
+            auto notes = r->buildNoteList();
+            expectEquals((int)notes.size(), 2);  // two notes (one closed, one unclosed)
+            expect(std::abs(notes[0].durationBeats - 0.5) < 0.01);  // first note has duration
         }
     }
 };

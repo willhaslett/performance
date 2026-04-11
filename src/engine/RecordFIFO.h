@@ -7,10 +7,15 @@
 // The message thread drains them into the Arrangement.
 
 struct RecordedMidiEvent {
-    int noteNumber = 0;
-    int velocity = 0;    // 0 = note-off
+    int statusByte = 0;  // MIDI status (0x90=noteOn, 0x80=noteOff, 0xB0=CC, etc.)
+    int data1 = 0;       // note number, CC number, etc.
+    int data2 = 0;       // velocity, CC value, etc.
     int channel = 1;
     double beat = 0.0;   // absolute beat position
+
+    bool isNoteOn() const  { return (statusByte & 0xF0) == 0x90 && data2 > 0; }
+    bool isNoteOff() const { return (statusByte & 0xF0) == 0x80 || ((statusByte & 0xF0) == 0x90 && data2 == 0); }
+    bool isNote() const    { return isNoteOn() || isNoteOff(); }
 };
 
 class RecordFIFO {

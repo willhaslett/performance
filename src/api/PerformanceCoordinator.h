@@ -116,8 +116,7 @@ private:
 
     // Recording state
     bool isRecording = false;
-    struct OpenNote { double beatOffset; int velocity; };
-    std::map<std::pair<int,int>, OpenNote> openNotes;  // {noteNumber, channel} → open note
+    std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
     std::vector<std::string> recordingTrackIds;         // tracks being recorded into
     double recordStartBeat = 0.0;
     void startRecording();

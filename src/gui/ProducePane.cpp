@@ -458,12 +458,13 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.drawText(juce::String(r->name), regionBounds.reduced(4, 0),
                            juce::Justification::centredLeft);
 
-                // MIDI note preview — velocity-scaled vertical lines
+                // MIDI note preview — velocity-scaled vertical lines (derived from raw events)
                 if (r->type() == Region::Type::Midi) {
                     auto* midi = static_cast<MidiRegion*>(r);
+                    auto noteList = midi->buildNoteList();
                     g.setColour(juce::Colour(0xff44cc44).withAlpha(0.6f));
-                    int maxH = regionBounds.getHeight() / 2;  // max spike = half region height
-                    for (auto& note : midi->notes) {
+                    int maxH = regionBounds.getHeight() / 2;
+                    for (auto& note : noteList) {
                         int nx = rx + (int)(note.beatOffset * pixelsPerBeat);
                         float velNorm = note.velocity / 127.0f;
                         int spikeH = std::max(2, (int)(velNorm * maxH));

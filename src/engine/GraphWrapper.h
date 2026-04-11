@@ -92,32 +92,33 @@ public:
             auto* arr = arrangement.load(std::memory_order_acquire);
             if (arr) {
                 arr->scanMidiEvents(prevBeat, nextBeat,
-                    [&](const std::string& trackId, int noteNumber, int velocity,
-                        int channel, double eventBeat) {
+                    [&](const std::string& trackId, const MidiEvent& event, double eventBeat) {
                         auto it = trackMidiSources.find(juce::String(trackId));
                         if (it == trackMidiSources.end() || !it->second) return;
 
-                        // Sample-accurate offset within this buffer
                         int sampleOffset = (beatsPerSample > 0)
                             ? juce::jlimit(0, numSamples - 1,
                                   (int)((eventBeat - prevBeat) / beatsPerSample))
                             : 0;
 
-                        auto msg = velocity > 0
-                            ? juce::MidiMessage::noteOn(channel, noteNumber, (juce::uint8)velocity)
-                            : juce::MidiMessage::noteOff(channel, noteNumber);
+                        // Convert MidiEvent to juce::MidiMessage
+                        auto msg = juce::MidiMessage(event.status | (event.channel - 1),
+                                                      event.data1, event.data2);
                         it->second->scheduleSingleMessage(msg, sampleOffset);
                     });
             }
 
-            // Capture incoming live MIDI for recording
+            // Capture incoming live MIDI for recording (all event types)
             if (recording.load(std::memory_order_acquire)) {
                 for (const auto metadata : midi) {
                     auto msg = metadata.getMessage();
-                    if (msg.isNoteOnOrOff()) {
+                    if (msg.isNoteOnOrOff() || msg.isController() ||
+                        msg.isChannelPressure() || msg.isAftertouch() ||
+                        msg.isPitchWheel() || msg.isProgramChange()) {
                         double eventBeat = prevBeat + metadata.samplePosition * beatsPerSample;
-                        recordFIFO.push({ msg.getNoteNumber(),
-                                          msg.isNoteOn() ? (int)msg.getVelocity() : 0,
+                        recordFIFO.push({ msg.getRawData()[0] & 0xF0,
+                                          msg.getRawDataSize() > 1 ? msg.getRawData()[1] : 0,
+                                          msg.getRawDataSize() > 2 ? msg.getRawData()[2] : 0,
                                           msg.getChannel(), eventBeat });
                     }
                 }

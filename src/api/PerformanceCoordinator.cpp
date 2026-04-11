@@ -200,25 +200,20 @@ void PerformanceCoordinator::stopRecording() {
 
     audioEngine->setRecording(false);
 
-    // Close any open notes at the current beat
-    double stopBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
-    for (auto& [key, note] : openNotes) {
-        double duration = stopBeat - recordStartBeat - note.beatOffset;
-        if (duration < 0.01) duration = 0.01;
-        // The note was already added with duration 0 — we need to fix it.
-        // Since Arrangement::addRecordedNote appends, we update the last matching note.
-        // For simplicity, we'll just drain any remaining FIFO events first.
-    }
-
-    // Drain remaining events
+    // Drain remaining events from FIFO
     drainRecordFIFO();
 
-    // Close open notes
-    for (auto& [key, note] : openNotes) {
-        double duration = stopBeat - recordStartBeat - note.beatOffset;
-        if (duration < 0.01) duration = 0.01;
-        // Update the note's duration in the recording region
-        arrangementImpl.finalizeRecordedNote(key.first, key.second, note.beatOffset, duration);
+    // Inject synthetic noteOffs for any notes still open at stop time
+    double stopBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    double stopOffset = stopBeat - recordStartBeat;
+    for (auto& [key, beatOffset] : openNotes) {
+        MidiEvent noteOff;
+        noteOff.beatOffset = stopOffset;
+        noteOff.status = 0x80;  // noteOff
+        noteOff.channel = key.second;
+        noteOff.data1 = key.first;
+        noteOff.data2 = 0;
+        arrangementImpl.addRecordedEvent(noteOff);
     }
     openNotes.clear();
 
@@ -236,23 +231,19 @@ void PerformanceCoordinator::drainRecordFIFO() {
         double beatOffset = event.beat - recordStartBeat;
         if (beatOffset < 0.0) continue;
 
-        auto noteKey = std::make_pair(event.noteNumber, event.channel);
+        MidiEvent midiEvent;
+        midiEvent.beatOffset = beatOffset;
+        midiEvent.status = event.statusByte;
+        midiEvent.channel = event.channel;
+        midiEvent.data1 = event.data1;
+        midiEvent.data2 = event.data2;
+        arrangementImpl.addRecordedEvent(midiEvent);
 
-        if (event.velocity > 0) {
-            // Note-on: add to arrangement and track as open
-            arrangementImpl.addRecordedNote(event.noteNumber, event.velocity,
-                                             event.channel, beatOffset);
-            openNotes[noteKey] = { beatOffset, event.velocity };
-        } else {
-            // Note-off: find matching open note and set duration
-            auto it = openNotes.find(noteKey);
-            if (it != openNotes.end()) {
-                double duration = beatOffset - it->second.beatOffset;
-                if (duration < 0.01) duration = 0.01;
-                arrangementImpl.finalizeRecordedNote(event.noteNumber, event.channel,
-                                                      it->second.beatOffset, duration);
-                openNotes.erase(it);
-            }
+        // Track open notes for synthetic noteOff at stop
+        if (midiEvent.isNoteOn()) {
+            openNotes[{midiEvent.data1, midiEvent.channel}] = beatOffset;
+        } else if (midiEvent.isNoteOff()) {
+            openNotes.erase({midiEvent.data1, midiEvent.channel});
         }
     }
 }

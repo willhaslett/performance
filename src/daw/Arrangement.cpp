@@ -57,23 +57,14 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
         if (r->type() != Region::Type::Midi) continue;
         auto* midi = static_cast<MidiRegion*>(r.get());
 
-        // Check if this region overlaps the scan range
         if (midi->endBeat() <= prevBeat || midi->startBeat >= currentBeat) continue;
 
-        for (auto& note : midi->notes) {
-            double noteAbsBeat = midi->startBeat + note.beatOffset;
-            double noteEndBeat = noteAbsBeat + note.durationBeats;
-
-            // Note-on: fires when we cross the note start
-            if (noteAbsBeat >= prevBeat && noteAbsBeat < currentBeat) {
-                callback(midi->trackId, note.noteNumber, note.velocity, note.channel, noteAbsBeat);
-            }
-
-            // Note-off: fires when we cross the note end
-            if (noteEndBeat >= prevBeat && noteEndBeat < currentBeat) {
-                callback(midi->trackId, note.noteNumber, 0, note.channel, noteEndBeat);
-            }
+        for (auto& event : midi->events) {
+            double absBeat = midi->startBeat + event.beatOffset;
+            if (absBeat >= prevBeat && absBeat < currentBeat)
+                callback(midi->trackId, event, absBeat);
         }
+        // TODO: fire synthetic noteOffs at region end for unclosed notes (stuck note prevention)
     }
 }
 
@@ -83,41 +74,18 @@ MidiRegion* Arrangement::startRecording(const std::string& trackId, double start
     return region;
 }
 
-void Arrangement::addRecordedNote(int noteNumber, int velocity, int channel, double beatOffset) {
-    MidiNoteEvent event;
-    event.beatOffset = beatOffset;
-    event.durationBeats = 0.0;  // will be set on note-off
-    event.noteNumber = noteNumber;
-    event.velocity = velocity;
-    event.channel = channel;
-
+void Arrangement::addRecordedEvent(const MidiEvent& event) {
     for (auto* region : recordingRegions) {
-        region->notes.push_back(event);
-        double end = beatOffset + 0.5;
+        region->events.push_back(event);
+        double end = event.beatOffset + 0.1;
         if (end > region->lengthBeats)
             region->lengthBeats = end;
     }
 }
 
-void Arrangement::finalizeRecordedNote(int noteNumber, int channel,
-                                        double beatOffset, double duration) {
-    for (auto* region : recordingRegions) {
-        for (int i = (int)region->notes.size() - 1; i >= 0; --i) {
-            auto& n = region->notes[i];
-            if (n.noteNumber == noteNumber && n.channel == channel
-                && std::abs(n.beatOffset - beatOffset) < 0.001) {
-                n.durationBeats = duration;
-                double end = beatOffset + duration;
-                if (end > region->lengthBeats)
-                    region->lengthBeats = end;
-                break;  // found match in this region, move to next
-            }
-        }
-    }
-}
-
 void Arrangement::stopRecording() {
     for (auto* region : recordingRegions)
-        region->sortNotes();
+        region->sortEvents();
     recordingRegions.clear();
+    // TODO: inject synthetic noteOffs for any unclosed notes at stop beat
 }
