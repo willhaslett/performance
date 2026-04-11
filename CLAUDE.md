@@ -106,7 +106,8 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 - **MidiSourceNode** (`src/engine/MidiSourceNode.h`) — per-track AudioProcessor for sequencer MIDI. Filled by GraphWrapper before graph processes, drained during processBlock. Connected to instrument alongside live MIDI input.
 - **RecordFIFO** (`src/engine/RecordFIFO.h`) — lock-free SPSC ring buffer (1024 slots). Audio thread pushes beat-timestamped MIDI events, coordinator timer drains into Arrangement.
 - **AudioRecordFIFO** (`src/engine/AudioRecordFIFO.h`) — lock-free SPSC ring buffer for audio samples (~5 sec at 48kHz stereo, interleaved floats). Audio thread pushes, writer thread drains.
-- **AudioWriterThread** (`src/engine/AudioWriterThread.h`) — background thread draining AudioRecordFIFO to WAV file. De-interleaves and writes via JUCE AudioFormatWriter.
+- **AudioWriterThread** (`src/engine/AudioWriterThread.h`) — background thread draining AudioRecordFIFO to WAV file. De-interleaves and writes via JUCE AudioFormatWriter. Computes peaks during write for live waveform display.
+- **AudioFileNode** (`src/engine/AudioFileNode.h`) — per-audio-track AudioProcessor for sequencer playback. Holds multiple loaded WAV files (one per region). GraphWrapper selects the active region by ID based on beat position. Converts beats to sample position using recordTempo.
 - **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
 - **InternalSequencer** (`src/daw/InternalSequencer.h/.cpp`) — own transport, tempo, beat clock. Thread-safe atomics. Transport callback notifies coordinator on play/stop.
@@ -120,7 +121,7 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
 - **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (ProducePane by default, also Debug or Mappings) and right pane (Chat or Logs) switchable via sidebar.
-- **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with power icons and arm dots, timeline grid with regions (mini piano roll note preview, semi-transparent for overlap visibility), playhead. Click grid to set position. Drag track headers to reorder. Region management: click to select, delete/backspace to remove, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate with "+" indicator, Cmd+D to duplicate inline. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division. Track reordering syncs with mixer via shared state.
+- **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with power icons and arm dots, timeline grid with regions. MIDI regions show mini piano roll; audio regions show waveform (sqrt-scaled peaks, live during recording). Regions are semi-transparent for overlap visibility, colored by track, darkened when track or region is muted. Click grid to set position. Drag track headers to reorder. Region management: click to select, delete/backspace to remove, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate with "+" indicator, Cmd+D to duplicate inline, right-click for context menu (mute/unmute, delete). Auto-scroll: Logic-style page jump when playhead nears right edge, snaps to bar boundaries. Two-finger horizontal scroll for manual navigation. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division. Track reordering syncs with mixer via shared state.
 - **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges).
 - **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Red arm dot toggles `armed` for recording. Track preset callbacks from coordinator.
 - **BusStrip** — effect slots, fader+stereo meters. Power icon toggles bus `audioEnabled`.
@@ -146,10 +147,12 @@ Per instrument track:
   (midiInput = live controllers, midiSourceNode = sequencer playback)
 
 Per audio input track:
-  audioInput[ch] → [fx1 → fx2 →] ┬─ outputGain → masterGain
-                                   ├─ sendGain1  → Bus1
-                                   └─ sendGain2  → Bus2
-  (mono inputs: channel duplicated to stereo at first node)
+  audioInput[ch] ─┐
+  audioFileNode ──┤→ [fx1 → fx2 →] ┬─ outputGain → masterGain
+                                     ├─ sendGain1  → Bus1
+                                     └─ sendGain2  → Bus2
+  (audioInput = live monitoring, audioFileNode = region playback)
+  (mono inputs: channel duplicated to stereo; input optional for playback-only tracks)
 
 Per bus:
   (summed sends) → [busFx1 → busFx2 →] busOutputGain → masterGain
@@ -241,8 +244,8 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
 - Custom action creation via Claude fails despite API working via direct IPC. Needs investigation (string escaping through chat→tool→IPC pipeline).
 
-**In progress:**
-- Audio track sequencer support — recording pipeline is complete (AudioRecordFIFO, AudioWriterThread, GraphWrapper audio capture, coordinator lifecycle, peak computation). Remaining: (1) AudioFileNode for playback (AudioProcessor that reads buffered WAV, outputs audio based on beat position), (2) graph wiring to connect AudioFileNode in place of/alongside live audio input during region playback, (3) waveform display in ProducePane regions using cached peak data. TakeState has recordTempo/sampleRate/channelCount for beat↔sample conversion. WAV files stored in `~/.config/performance/audio/<takeId>.wav`.
+**Milestone: Initial sequencer implementation complete.**
+MIDI + audio recording/playback, region management, take folders, persistence, transport controls, auto-scroll, waveform display, multi-track recording.
 
 **Feature backlog (near-term):**
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp. (Playback stop/seek and recording stop are now handled.)
@@ -337,4 +340,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~18,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~19,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
