@@ -6,8 +6,9 @@ SendsPanel::SendsPanel(const juce::String& trackId, StateAPI& state)
     : state(state), trackId(trackId) {}
 
 void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
-    // Always: existing sends + one empty "add send" row
-    bool changed = (sends.size() + 1 != rows.size());
+    // Existing sends + one empty "add" row (only if busses exist)
+    size_t expectedRows = sends.size() + (availableBusses.empty() ? 0 : 1);
+    bool changed = (expectedRows != rows.size());
     if (!changed) {
         for (size_t i = 0; i < sends.size(); ++i) {
             if (rows[i].busName != sends[i].busName) {
@@ -21,7 +22,8 @@ void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
         rows.clear();
         for (auto& s : sends)
             rows.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
-        rows.push_back({ {}, {}, 1.0f, 0.0f });  // empty "add send" row
+        if (!availableBusses.empty())
+            rows.push_back({ {}, {}, 1.0f, 0.0f });  // empty "add send" row (only if busses exist)
 
         if (auto* parent = getParentComponent())
             parent->resized();
