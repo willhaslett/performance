@@ -21,6 +21,7 @@ public:
 
 private:
     sqlite3* db = nullptr;
+    std::string dbPath;
 
     void createSchema();
     void exec(const std::string& sql);

@@ -1,6 +1,7 @@
 #include "persistence/PersistenceLayer.h"
 #include "api/StateAPI.h"
 #include "engine/Log.h"
+#include <juce_core/juce_core.h>
 
 PersistenceLayer::PersistenceLayer() {}
 
@@ -9,6 +10,7 @@ PersistenceLayer::~PersistenceLayer() {
 }
 
 void PersistenceLayer::open(const std::string& dbPath) {
+    this->dbPath = dbPath;
     if (sqlite3_open(dbPath.c_str(), &db) != SQLITE_OK) {
         perfLog("[Persistence] Failed to open database: %s\n", sqlite3_errmsg(db));
         return;
@@ -16,6 +18,16 @@ void PersistenceLayer::open(const std::string& dbPath) {
     exec("PRAGMA journal_mode=WAL");
     exec("PRAGMA foreign_keys=ON");
     createSchema();
+
+    // Set schema version if not present
+    auto* stmt = prepare("SELECT value FROM config WHERE key = 'schema_version'");
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        sqlite3_finalize(stmt);
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '1')");
+    } else {
+        sqlite3_finalize(stmt);
+    }
+
     perfLog("[Persistence] Opened database: %s\n", dbPath.c_str());
 }
 
@@ -494,6 +506,13 @@ void PersistenceLayer::readConfig(AppState& out) {
 // ============================================================================
 
 void PersistenceLayer::saveFrom(const StateAPI& state) {
+    // Backup DB before save
+    if (!dbPath.empty()) {
+        auto src = juce::File(dbPath);
+        auto bak = src.getSiblingFile(src.getFileNameWithoutExtension() + ".bak." + src.getFileExtension());
+        src.copyFileTo(bak);
+    }
+
     exec("BEGIN TRANSACTION");
 
     savePlugins(state);
