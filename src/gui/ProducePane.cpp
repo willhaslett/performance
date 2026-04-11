@@ -463,12 +463,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
                 if (beingDragged) fillCol = fillCol.withAlpha(0.45f);
                 g.setColour(fillCol);
-                g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
+                g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
 
                 // Border — darker shade of region color (visible at overlaps)
                 g.setColour(selected ? Theme::color(Theme::Color::accent)
                                       : fillCol.darker(0.4f));
-                g.drawRoundedRectangle(regionBounds.toFloat(), 3.0f,
+                g.drawRoundedRectangle(regionBounds.toFloat(), 5.0f,
                                         selected ? 2.0f : 1.0f);
 
                 // Region name
@@ -504,9 +504,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 auto ghostCol = srcRegion->type == "midi"
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
                 g.setColour(ghostCol.withAlpha(0.35f));
-                g.fillRoundedRectangle(ghostBounds.toFloat(), 3.0f);
+                g.fillRoundedRectangle(ghostBounds.toFloat(), 5.0f);
                 g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));
-                g.drawRoundedRectangle(ghostBounds.toFloat(), 3.0f, 1.5f);
+                g.drawRoundedRectangle(ghostBounds.toFloat(), 5.0f, 1.5f);
 
                 // "+" when option is held (duplicate mode)
                 if (dragIsOption) {
