@@ -39,6 +39,8 @@ void RegistryTree::buildRowsRecursive(TreeNode& node, int depth, const std::stri
     row.key = key;
     row.isLeaf = node.isLeaf;
     row.expanded = node.expanded;
+    row.active = node.active;
+    row.indent = node.indent;
     row.depth = depth;
     row.y = y;
     visibleRows.push_back(row);
@@ -87,17 +89,18 @@ void RegistryTree::paint(juce::Graphics& g) {
         }
 
         if (row.isLeaf) {
+            int extraIndent = row.indent * 12;
             // Activity/active indicators: green dot
-            if (row.type == "audio_output_active" || row.type == "audio_input_active"
+            if (row.active || row.type == "audio_output_active" || row.type == "audio_input_active"
                 || row.type == "map_device_active" || row.type == "map_unregistered_active") {
                 g.setColour(Theme::color(Theme::Color::midiActive));
-                g.fillEllipse((float)(x + 4), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+                g.fillEllipse((float)(x + extraIndent + 4), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
             }
 
             g.setColour(isActive ? Theme::color(Theme::Color::textWhite)
                                  : Theme::color(Theme::Color::textPrimary));
             g.drawText(juce::String(row.label),
-                       x + 14, y, getWidth() - x - 20, rowHeight,
+                       x + extraIndent + 14, y, getWidth() - x - extraIndent - 20, rowHeight,
                        juce::Justification::centredLeft);
         } else {
             // Audio device nodes: no arrow (always expanded), draw like a leaf

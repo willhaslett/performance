@@ -72,18 +72,15 @@ Sidebar::Sidebar() {
                         refreshTree();
                     });
             }
-        } else if (type == "produce") {
-            selectedDeviceId = id;
-            if (onProduceSelected) onProduceSelected();
-        } else if (type == "debug") {
-            selectedDeviceId = id;
-            if (onDebugSelected) onDebugSelected();
-        } else if (type == "logs") {
-            selectedDeviceId = id;
-            if (onLogsSelected) onLogsSelected();
-        } else if (type == "chat") {
-            selectedDeviceId = id;
-            if (onChatSelected) onChatSelected();
+        } else if (type == "pane_content") {
+            // id is "slot:content", e.g. "left:produce"
+            auto colonPos = id.find(':');
+            if (colonPos != std::string::npos && onPaneSelected) {
+                auto slot = id.substr(0, colonPos);
+                auto content = id.substr(colonPos + 1);
+                onPaneSelected(slot, content);
+                refreshTree();
+            }
         }
     });
 }
@@ -392,25 +389,56 @@ void Sidebar::refreshTree() {
         roots.push_back(devicesNode);
     }
 
-    // Panes
+    // Panes — four slots, each with content options
     {
         TreeNode panesNode;
         panesNode.label = "Panes";
         panesNode.type = "category";
 
-        auto addLeaf = [&](const char* label, const char* id, const char* type) {
-            TreeNode leaf;
-            leaf.label = label;
-            leaf.id = id;
-            leaf.type = type;
-            leaf.isLeaf = true;
-            panesNode.children.push_back(leaf);
+        struct SlotDef { const char* label; const char* slotKey; };
+        SlotDef slots[] = {
+            { "Sidebar", "sidebar" },
+            { "Left Pane", "left" },
+            { "Right Pane", "right" },
+            { "Bottom Pane", "bottom" }
         };
 
-        addLeaf("Produce", "produce", "produce");
-        addLeaf("Debug", "debug", "debug");
-        addLeaf("Logs", "logs", "logs");
-        addLeaf("Chat", "chat", "chat");
+        struct ContentDef { const char* label; const char* contentKey; };
+        ContentDef contents[] = {
+            { "Hide", "hidden" },
+            { "Sidebar", "sidebar_tree" },
+            { "Produce", "produce" },
+            { "Mappings", "mappings" },
+            { "Debug", "debug" },
+            { "Chat", "chat" },
+            { "Logs", "logs" },
+            { "Mixer", "mixer" }
+        };
+
+        for (auto& slot : slots) {
+            TreeNode slotNode;
+            slotNode.label = slot.label;
+            slotNode.type = "pane_slot";
+            slotNode.id = slot.slotKey;
+
+            // Get current content for this slot
+            std::string currentContent;
+            if (getPaneContent)
+                currentContent = getPaneContent(slot.slotKey);
+
+            for (auto& content : contents) {
+                TreeNode leaf;
+                leaf.label = content.label;
+                leaf.id = std::string(slot.slotKey) + ":" + content.contentKey;
+                leaf.type = "pane_content";
+                leaf.isLeaf = true;
+                leaf.active = (currentContent == content.contentKey);
+                leaf.indent = 1;
+                slotNode.children.push_back(leaf);
+            }
+
+            panesNode.children.push_back(slotNode);
+        }
 
         roots.push_back(panesNode);
     }

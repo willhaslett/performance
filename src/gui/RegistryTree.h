@@ -12,6 +12,8 @@ struct TreeNode {
     std::string type;      // entity type: "song", "track", "plugin", "preset", etc.
     bool expanded = false;
     bool isLeaf = false;
+    bool active = false;   // green dot indicator (e.g., active pane)
+    int indent = 0;        // extra indentation level
     std::vector<TreeNode> children;
 };
 
@@ -53,6 +55,8 @@ private:
         std::string key;
         bool isLeaf;
         bool expanded;
+        bool active = false;
+        int indent = 0;
         int depth;
         int y;
     };

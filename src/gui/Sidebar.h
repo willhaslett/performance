@@ -27,11 +27,17 @@ public:
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
-    // Callbacks for pane selection
+    // Callbacks for pane selection (legacy — still used by some paths)
     std::function<void()> onProduceSelected;
     std::function<void()> onDebugSelected;
     std::function<void()> onLogsSelected;
     std::function<void()> onChatSelected;
+
+    // New pane system: callback to set slot content
+    // Args: slot name ("sidebar"/"left"/"right"/"bottom"), content name
+    std::function<void(const std::string& slot, const std::string& content)> onPaneSelected;
+    // Query current pane assignment for a slot
+    std::function<std::string(const std::string& slot)> getPaneContent;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

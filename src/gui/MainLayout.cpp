@@ -61,10 +61,29 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     setWantsKeyboardFocus(true);
 
     // Wire sidebar pane selection to the new system
+    // Legacy callbacks (still used by some sidebar paths)
     sidebar.onProduceSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Produce); };
     sidebar.onDebugSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Debug); };
     sidebar.onChatSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Chat); };
     sidebar.onLogsSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Logs); };
+
+    // New pane system callbacks
+    sidebar.onPaneSelected = [this](const std::string& slot, const std::string& content) {
+        PaneSlot s = PaneSlot::Left;
+        if (slot == "sidebar") s = PaneSlot::Sidebar;
+        else if (slot == "left") s = PaneSlot::Left;
+        else if (slot == "right") s = PaneSlot::Right;
+        else if (slot == "bottom") s = PaneSlot::Bottom;
+        setPaneContent(s, stringToContent(content));
+    };
+    sidebar.getPaneContent = [this](const std::string& slot) -> std::string {
+        PaneSlot s = PaneSlot::Left;
+        if (slot == "sidebar") s = PaneSlot::Sidebar;
+        else if (slot == "left") s = PaneSlot::Left;
+        else if (slot == "right") s = PaneSlot::Right;
+        else if (slot == "bottom") s = PaneSlot::Bottom;
+        return contentToString(getPaneContent(s));
+    };
 
     // Load system prompt for Claude
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
