@@ -26,11 +26,17 @@ public:
           graph(graph) {}
 
     // --- Transport state (set from message thread, read on audio thread) ---
-    void setPlaying(bool p) { playing.store(p, std::memory_order_release); }
+    void setPlaying(bool p) {
+        bool wasPlaying = playing.exchange(p, std::memory_order_release);
+        if (wasPlaying && !p)
+            flushAllNotes();
+    }
     void setTempo(double bpm) { tempo.store(bpm, std::memory_order_release); }
     void setBeatPosition(double beat) {
+        bool isPlaying = playing.load(std::memory_order_acquire);
+        if (isPlaying)
+            flushAllNotes();
         beatPosition.store(beat, std::memory_order_release);
-        // Reset sample counter so next processBlock starts from this beat
         samplesSinceStart.store(0, std::memory_order_release);
         baseBeat.store(beat, std::memory_order_release);
     }
@@ -164,4 +170,15 @@ private:
 
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
+
+    // Send all-notes-off to every track's MidiSourceNode
+    void flushAllNotes() {
+        for (auto& [trackId, node] : trackMidiSources) {
+            if (!node) continue;
+            // CC 123 (all notes off) on all 16 channels
+            for (int ch = 1; ch <= 16; ++ch)
+                node->scheduleSingleMessage(
+                    juce::MidiMessage::allNotesOff(ch), 0);
+        }
+    }
 };
