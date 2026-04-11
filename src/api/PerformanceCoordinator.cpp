@@ -891,15 +891,15 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     }
     else if (actionName == "setTrackGain") {
         auto id = resolveTrack(getArg(0));
-        // CC 0-1 maps to gain 0 to +6dB (linear ~2.0)
-        stateAPI->setTrackGain(id, value * 2.0f);
+        // Cubic curve: fine control at low end, reaches +6dB (gain 2.0) at top
+        stateAPI->setTrackGain(id, value * value * value * 2.0f);
     }
     else if (actionName == "setBusGain") {
         auto busId = getArg(0).toStdString();
-        stateAPI->setBusGain(busId, value * 2.0f);
+        stateAPI->setBusGain(busId, value * value * value * 2.0f);
     }
     else if (actionName == "setMasterGain") {
-        stateAPI->setMasterGain(value * 2.0f);
+        stateAPI->setMasterGain(value * value * value * 2.0f);
     }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());
