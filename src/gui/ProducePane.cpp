@@ -439,6 +439,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
+            // Sort by startBeat so later regions paint on top at overlaps
+            std::sort(regions.begin(), regions.end(),
+                      [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
             for (auto* r : regions) {
@@ -462,11 +465,11 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.setColour(fillCol);
                 g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
 
-                // Selection highlight
-                if (selected) {
-                    g.setColour(Theme::color(Theme::Color::accent));
-                    g.drawRoundedRectangle(regionBounds.toFloat(), 3.0f, 2.0f);
-                }
+                // Border — darker shade of region color (visible at overlaps)
+                g.setColour(selected ? Theme::color(Theme::Color::accent)
+                                      : fillCol.darker(0.4f));
+                g.drawRoundedRectangle(regionBounds.toFloat(), 3.0f,
+                                        selected ? 2.0f : 1.0f);
 
                 // Region name
                 g.setColour(Theme::color(Theme::Color::textPrimary));
