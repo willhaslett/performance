@@ -98,6 +98,28 @@ public:
             if (framesToRead < numSamples)
                 buffer.clear(ch, framesToRead, numSamples - framesToRead);
         }
+
+        // 5ms fade in/out at region boundaries to prevent clicks
+        int fadeSamples = (int)(outputSampleRate * 0.005);
+        // Fade in at region start
+        if (filePos < fadeSamples) {
+            for (int i = 0; i < std::min(fadeSamples - (int)filePos, framesToRead); ++i) {
+                float gain = (float)(filePos + i) / fadeSamples;
+                for (int ch = 0; ch < outChannels; ++ch)
+                    buffer.setSample(ch, i, buffer.getSample(ch, i) * gain);
+            }
+        }
+        // Fade out at region end
+        int64_t fadeOutStart = entry.totalFrames - fadeSamples;
+        if (filePos + framesToRead > fadeOutStart) {
+            int startSample = std::max(0, (int)(fadeOutStart - filePos));
+            for (int i = startSample; i < framesToRead; ++i) {
+                float remaining = (float)(entry.totalFrames - filePos - i) / fadeSamples;
+                float gain = std::max(0.0f, std::min(1.0f, remaining));
+                for (int ch = 0; ch < outChannels; ++ch)
+                    buffer.setSample(ch, i, buffer.getSample(ch, i) * gain);
+            }
+        }
     }
 
     const juce::String getName() const override { return "AudioFileNode"; }
