@@ -1487,3 +1487,16 @@ void AudioEngine::setRecording(bool recording) {
 RecordFIFO& AudioEngine::getRecordFIFO() {
     return graphWrapper->getRecordFIFO();
 }
+
+AudioRecordFIFO& AudioEngine::getAudioRecordFIFO() {
+    return graphWrapper->getAudioRecordFIFO();
+}
+
+void AudioEngine::setAudioRecordChannels(int startChannel, int channelCount) {
+    graphWrapper->setAudioRecordChannels(startChannel, channelCount);
+}
+
+double AudioEngine::getCurrentSampleRate() const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    return device ? device->getCurrentSampleRate() : 48000.0;
+}

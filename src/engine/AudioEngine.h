@@ -3,6 +3,8 @@
 #include "engine/GraphWrapper.h"
 #include "engine/MidiSourceNode.h"
 #include "engine/RecordFIFO.h"
+#include "engine/AudioRecordFIFO.h"
+#include "engine/AudioWriterThread.h"
 #include "state/StateModel.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -122,6 +124,10 @@ public:
     // Recording
     void setRecording(bool recording);
     RecordFIFO& getRecordFIFO();
+    AudioRecordFIFO& getAudioRecordFIFO();
+    AudioWriterThread& getAudioWriter() { return audioWriter; }
+    void setAudioRecordChannels(int startChannel, int channelCount);
+    double getCurrentSampleRate() const;
 
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }
@@ -239,6 +245,8 @@ private:
         void audioDeviceStopped() override {}
     };
     InputMeter inputMeter;
+
+    AudioWriterThread audioWriter;
 
     void setupGraph();
     void rebuildGraph();

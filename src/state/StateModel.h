@@ -91,8 +91,18 @@ struct MidiEventState {
 struct TakeState {
     std::string id;
     std::string name;
-    std::vector<MidiEventState> events;  // MIDI takes
-    std::string filePath;                 // audio takes (future)
+    std::vector<MidiEventState> events;   // MIDI takes
+    std::string filePath;                  // audio takes — WAV path
+    double recordTempo = 120.0;            // tempo at recording time (for beat↔sample)
+    int sampleRate = 48000;                // sample rate of recorded audio
+    int channelCount = 2;                  // channels in the audio file
+
+    // Waveform peak cache (computed, not persisted)
+    struct PeakData {
+        int samplesPerPeak = 256;
+        std::vector<std::pair<float, float>> peaks;  // {min, max} per chunk
+    };
+    PeakData peakData;
 };
 
 // A region is a time-positioned container of takes on a track.

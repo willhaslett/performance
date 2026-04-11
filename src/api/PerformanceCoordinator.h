@@ -123,11 +123,14 @@ private:
     bool recordModeActive = false;  // user explicitly requested recording
     bool isRecording = false;
     std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
-    std::vector<std::string> recordingTrackIds;         // tracks being recorded into
+    std::vector<std::string> recordingTrackIds;         // MIDI tracks being recorded into
+    std::string audioRecordingTrackId;                    // audio track being recorded
+    std::string audioRecordRegionId;                      // region for current audio recording
     double recordStartBeat = 0.0;
     void startRecording();
     void stopRecording();
     void drainRecordFIFO();
+    void computeAudioPeaks(TakeState& take);
 
     void timerCallback() override;
     void populatePluginCatalog();

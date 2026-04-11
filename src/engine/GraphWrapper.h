@@ -4,6 +4,7 @@
 #include "state/StateModel.h"
 #include "engine/MidiSourceNode.h"
 #include "engine/RecordFIFO.h"
+#include "engine/AudioRecordFIFO.h"
 #include <atomic>
 #include <map>
 
@@ -52,6 +53,13 @@ public:
     void setRecording(bool r) { recording.store(r, std::memory_order_release); }
     bool isRecording() const { return recording.load(std::memory_order_acquire); }
     RecordFIFO& getRecordFIFO() { return recordFIFO; }
+    AudioRecordFIFO& getAudioRecordFIFO() { return audioRecordFIFO; }
+
+    // Set audio input channels to capture when recording (for armed audio tracks)
+    void setAudioRecordChannels(int startChannel, int channelCount) {
+        audioRecordChStart.store(startChannel, std::memory_order_release);
+        audioRecordChCount.store(channelCount, std::memory_order_release);
+    }
 
     // --- Per-track MIDI source registration ---
     // Called from AudioEngine when tracks are created/destroyed (message thread,
@@ -129,6 +137,23 @@ public:
                     }
                 }
             }
+
+            // Capture audio input for recording (armed audio tracks)
+            if (recording.load(std::memory_order_acquire)) {
+                int chStart = audioRecordChStart.load(std::memory_order_acquire);
+                int chCount = audioRecordChCount.load(std::memory_order_acquire);
+                if (chStart >= 0 && chCount > 0 && chStart + chCount <= buffer.getNumChannels()) {
+                    int frames = buffer.getNumSamples();
+                    // Interleave into scratch buffer (max 2048 frames * 2 channels)
+                    int total = frames * chCount;
+                    if (total <= audioScratchSize) {
+                        for (int f = 0; f < frames; ++f)
+                            for (int c = 0; c < chCount; ++c)
+                                audioScratch[f * chCount + c] = buffer.getSample(chStart + c, f);
+                        audioRecordFIFO.push(audioScratch, total);
+                    }
+                }
+            }
         }
 
         // Flush all notes if requested (stop/seek)
@@ -178,6 +203,11 @@ private:
     // Recording
     std::atomic<bool> recording { false };
     RecordFIFO recordFIFO;
+    AudioRecordFIFO audioRecordFIFO;
+    std::atomic<int> audioRecordChStart { -1 };
+    std::atomic<int> audioRecordChCount { 0 };
+    static constexpr int audioScratchSize = 4096;  // 2048 frames * 2 channels
+    float audioScratch[audioScratchSize];
 
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
