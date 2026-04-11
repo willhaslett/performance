@@ -234,6 +234,17 @@ void LuaEngine::registerAPI() {
                                      const std::string& name) {
         engine.loadPreset(juce::String(resolveTrackId(track)), "", juce::String(name));
     });
+    lua.set_function("morphToPreset", [&coord, resolveTrackId](const std::string& track,
+                                       const std::string& preset, float duration,
+                                       const std::string& easing) {
+        auto trackId = resolveTrackId(track);
+        juce::Array<juce::var> arr;
+        arr.add(juce::String(trackId));
+        arr.add(juce::String(preset));
+        arr.add(duration);
+        arr.add(juce::String(easing));
+        coord.executeAction("morphToPreset", juce::var(arr), 1.0f);
+    });
     lua.set_function("listPresets", [this, &engine](const std::string& plugin) -> sol::table {
         auto names = engine.listPresets(juce::String(plugin));
         sol::table result = lua.create_table();

@@ -901,6 +901,31 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     else if (actionName == "setMasterGain") {
         stateAPI->setMasterGain(value * value * value * 2.0f);
     }
+    else if (actionName == "morphToPreset") {
+        auto trackId = resolveTrack(getArg(0));
+        auto presetName = getArg(1);
+        auto dur = getArgFloat(2, 3.0f);
+        auto easing = AutomationEngine::easingByName(getArg(3).toStdString());
+
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId));
+        if (!proc) {
+            perfLog("[Action] morphToPreset: no processor for track %s\n", trackId.c_str());
+        } else {
+            auto pluginName = proc->getName();
+            auto target = engineAPI->getPresetParams(pluginName, presetName);
+            if (target.values.empty()) {
+                perfLog("[Action] morphToPreset: no params for preset %s\n", presetName.toRawUTF8());
+            } else {
+                auto from = EngineAPI::captureParams(proc);
+                automationEngine->interpolate(0.0f, 1.0f, dur,
+                    [proc, from, target](float t) {
+                        EngineAPI::applyParams(proc, target, t, from);
+                    }, easing);
+                perfLog("[Action] Morphing %s → %s over %.1fs (%d params)\n",
+                        pluginName.toRawUTF8(), presetName.toRawUTF8(), dur, (int)target.values.size());
+            }
+        }
+    }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());
     }
@@ -1056,6 +1081,8 @@ void PerformanceCoordinator::registerBuiltinActions() {
         R"([{"name":"busName","type":"string"}])");
     stateAPI->registerAction("setMasterGain", "Set master volume",
         R"([])");
+    stateAPI->registerAction("morphToPreset", "Morph to preset",
+        R"([{"name":"trackName","type":"string"},{"name":"presetName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
 
     perfLog("[Coordinator] Registered %d built-in actions\n", (int)stateAPI->allActions().size());
 }

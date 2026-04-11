@@ -54,6 +54,17 @@ public:
                     const juce::String& presetName);
     std::vector<juce::String> listPresets(const juce::String& pluginName);
 
+    // --- Parameter snapshots & morphing ---
+    struct ParamSnapshot {
+        std::vector<float> values;  // indexed by parameter index, normalized 0-1
+    };
+    static ParamSnapshot captureParams(juce::AudioProcessor* proc);
+    static void applyParams(juce::AudioProcessor* proc, const ParamSnapshot& snapshot, float t,
+                             const ParamSnapshot& from);
+    static void saveParamSnapshot(const juce::File& file, juce::AudioProcessor* proc);
+    static ParamSnapshot loadParamSnapshot(const juce::File& file);
+    ParamSnapshot getPresetParams(const juce::String& pluginName, const juce::String& presetName);
+
     // --- Audio inputs ---
     std::vector<juce::String> getInputChannelNames() const;
     std::vector<float> getInputPeakLevels() const;

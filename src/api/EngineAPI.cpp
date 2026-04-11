@@ -197,8 +197,13 @@ void EngineAPI::savePreset(const juce::String& parentId, const juce::String& eff
                            file.getFullPathName().toStdString(), kind);
     }
 
-    perfLog("[EngineAPI] Saved preset \"%s\" for %s (%d bytes)\n",
-            presetName.toRawUTF8(), proc->getName().toRawUTF8(), (int)memState.getSize());
+    // Save parameter snapshot alongside blob for morphing
+    auto paramsFile = dir.getChildFile(presetName + ".params.json");
+    saveParamSnapshot(paramsFile, proc);
+
+    perfLog("[EngineAPI] Saved preset \"%s\" for %s (%d bytes, %d params)\n",
+            presetName.toRawUTF8(), proc->getName().toRawUTF8(),
+            (int)memState.getSize(), proc->getNumParameters());
 }
 
 void EngineAPI::loadPreset(const juce::String& parentId, const juce::String& effectId,
@@ -249,4 +254,68 @@ std::vector<float> EngineAPI::getInputPeakLevels() const {
 
 juce::AudioDeviceManager& EngineAPI::getDeviceManager() {
     return engine.getDeviceManager();
+}
+
+// --- Parameter snapshots ---
+
+EngineAPI::ParamSnapshot EngineAPI::captureParams(juce::AudioProcessor* proc) {
+    ParamSnapshot snap;
+    if (!proc) return snap;
+    auto& params = proc->getParameters();
+    snap.values.reserve(params.size());
+    for (auto* p : params)
+        snap.values.push_back(p->getValue());
+    return snap;
+}
+
+void EngineAPI::applyParams(juce::AudioProcessor* proc, const ParamSnapshot& target,
+                             float t, const ParamSnapshot& from) {
+    if (!proc) return;
+    auto& params = proc->getParameters();
+    int n = std::min({ (int)params.size(), (int)from.values.size(), (int)target.values.size() });
+    for (int i = 0; i < n; ++i) {
+        float v = from.values[i] + t * (target.values[i] - from.values[i]);
+        params[i]->setValue(v);
+    }
+}
+
+void EngineAPI::saveParamSnapshot(const juce::File& file, juce::AudioProcessor* proc) {
+    if (!proc) return;
+    auto& params = proc->getParameters();
+
+    juce::String json = "[\n";
+    for (int i = 0; i < (int)params.size(); ++i) {
+        if (i > 0) json += ",\n";
+        json += "  {\"index\":" + juce::String(i)
+              + ",\"name\":\"" + params[i]->getName(128).replace("\"", "\\\"") + "\""
+              + ",\"value\":" + juce::String(params[i]->getValue(), 6) + "}";
+    }
+    json += "\n]";
+    file.replaceWithText(json);
+}
+
+EngineAPI::ParamSnapshot EngineAPI::loadParamSnapshot(const juce::File& file) {
+    ParamSnapshot snap;
+    if (!file.existsAsFile()) return snap;
+
+    auto json = juce::JSON::parse(file.loadFileAsString());
+    if (auto* arr = json.getArray()) {
+        for (auto& item : *arr) {
+            if (auto* obj = item.getDynamicObject()) {
+                int index = (int)obj->getProperty("index");
+                float value = (float)obj->getProperty("value");
+                // Ensure vector is large enough
+                while ((int)snap.values.size() <= index)
+                    snap.values.push_back(0.0f);
+                snap.values[index] = value;
+            }
+        }
+    }
+    return snap;
+}
+
+EngineAPI::ParamSnapshot EngineAPI::getPresetParams(const juce::String& pluginName,
+                                                     const juce::String& presetName) {
+    auto file = getPresetsDir().getChildFile(pluginName).getChildFile(presetName + ".params.json");
+    return loadParamSnapshot(file);
 }
