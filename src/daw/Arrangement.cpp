@@ -5,76 +5,91 @@ std::string Arrangement::generateId() {
     return juce::Uuid().toString().toStdString();
 }
 
-MidiRegion* Arrangement::addMidiRegion(const std::string& trackId,
-                                        double startBeat, double lengthBeats) {
-    auto region = std::make_unique<MidiRegion>();
-    region->id = generateId();
-    region->trackId = trackId;
-    region->startBeat = startBeat;
-    region->lengthBeats = lengthBeats;
-    auto* ptr = region.get();
-    regions.push_back(std::move(region));
-    return ptr;
+RegionState* Arrangement::addMidiRegion(const std::string& trackId,
+                                         double startBeat, double lengthBeats) {
+    if (!songTracks) return nullptr;
+    for (auto& t : *songTracks) {
+        if (t.id == trackId) {
+            RegionState region;
+            region.id = generateId();
+            region.type = "midi";
+            region.startBeat = startBeat;
+            region.lengthBeats = lengthBeats;
+            t.regions.push_back(std::move(region));
+            return &t.regions.back();
+        }
+    }
+    return nullptr;
 }
 
 void Arrangement::removeRegion(const std::string& regionId) {
-    regions.erase(
-        std::remove_if(regions.begin(), regions.end(),
-            [&](auto& r) { return r->id == regionId; }),
-        regions.end());
+    if (!songTracks) return;
+    for (auto& t : *songTracks) {
+        t.regions.erase(
+            std::remove_if(t.regions.begin(), t.regions.end(),
+                [&](auto& r) { return r.id == regionId; }),
+            t.regions.end());
+    }
 }
 
-void Arrangement::clearTrack(const std::string& trackId) {
-    regions.erase(
-        std::remove_if(regions.begin(), regions.end(),
-            [&](auto& r) { return r->trackId == trackId; }),
-        regions.end());
-}
-
-void Arrangement::clearAll() {
-    regions.clear();
-    recordingRegions.clear();
-}
-
-std::vector<Region*> Arrangement::regionsForTrack(const std::string& trackId) const {
-    std::vector<Region*> result;
-    for (auto& r : regions)
-        if (r->trackId == trackId) result.push_back(r.get());
+std::vector<RegionState*> Arrangement::allRegions() const {
+    std::vector<RegionState*> result;
+    if (!songTracks) return result;
+    for (auto& t : *songTracks)
+        for (auto& r : t.regions)
+            result.push_back(const_cast<RegionState*>(&r));
     return result;
 }
 
-Region* Arrangement::findRegion(const std::string& regionId) const {
-    for (auto& r : regions)
-        if (r->id == regionId) return r.get();
+std::vector<RegionState*> Arrangement::regionsForTrack(const std::string& trackId) const {
+    std::vector<RegionState*> result;
+    if (!songTracks) return result;
+    for (auto& t : *songTracks) {
+        if (t.id == trackId) {
+            for (auto& r : t.regions)
+                result.push_back(const_cast<RegionState*>(&r));
+            break;
+        }
+    }
+    return result;
+}
+
+RegionState* Arrangement::findRegion(const std::string& regionId) const {
+    if (!songTracks) return nullptr;
+    for (auto& t : *songTracks)
+        for (auto& r : t.regions)
+            if (r.id == regionId) return const_cast<RegionState*>(&r);
     return nullptr;
 }
 
 void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
-                                  MidiEventCallback callback) const {
-    if (prevBeat >= currentBeat) return;
+                                  EventCallback callback) const {
+    if (prevBeat >= currentBeat || !songTracks) return;
 
-    for (auto& r : regions) {
-        if (r->type() != Region::Type::Midi) continue;
-        auto* midi = static_cast<MidiRegion*>(r.get());
+    for (auto& t : *songTracks) {
+        for (auto& r : t.regions) {
+            if (r.type != "midi") continue;
+            double endBeat = r.startBeat + r.lengthBeats;
+            if (endBeat <= prevBeat || r.startBeat >= currentBeat) continue;
 
-        if (midi->endBeat() <= prevBeat || midi->startBeat >= currentBeat) continue;
-
-        for (auto& event : midi->events) {
-            double absBeat = midi->startBeat + event.beatOffset;
-            if (absBeat >= prevBeat && absBeat < currentBeat)
-                callback(midi->trackId, event, absBeat);
+            for (auto& event : r.events) {
+                double absBeat = r.startBeat + event.beatOffset;
+                if (absBeat >= prevBeat && absBeat < currentBeat)
+                    callback(t.id, event, absBeat);
+            }
+            // TODO: fire synthetic noteOffs at region end for unclosed notes
         }
-        // TODO: fire synthetic noteOffs at region end for unclosed notes (stuck note prevention)
     }
 }
 
-MidiRegion* Arrangement::startRecording(const std::string& trackId, double startBeat) {
+RegionState* Arrangement::startRecording(const std::string& trackId, double startBeat) {
     auto* region = addMidiRegion(trackId, startBeat, 0.0);
-    recordingRegions.push_back(region);
+    if (region)
+        recordingRegions.push_back(region);
     return region;
 }
 
-void Arrangement::addRecordedEvent(const MidiEvent& event) {
+void Arrangement::addRecordedEvent(const RegionState::Event& event) {
     for (auto* region : recordingRegions) {
         region->events.push_back(event);
         double end = event.beatOffset + 0.1;
@@ -84,8 +99,35 @@ void Arrangement::addRecordedEvent(const MidiEvent& event) {
 }
 
 void Arrangement::stopRecording() {
-    for (auto* region : recordingRegions)
-        region->sortEvents();
+    for (auto* region : recordingRegions) {
+        std::sort(region->events.begin(), region->events.end(),
+                  [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
+    }
     recordingRegions.clear();
-    // TODO: inject synthetic noteOffs for any unclosed notes at stop beat
+    // TODO: inject synthetic noteOffs for unclosed notes at stop beat
+}
+
+std::vector<NoteView> Arrangement::buildNoteList(const RegionState& region) {
+    std::vector<NoteView> notes;
+    std::map<std::pair<int,int>, int> openNotes;  // {noteNumber, channel} → index in notes
+
+    for (auto& e : region.events) {
+        if (e.isNoteOn()) {
+            int idx = (int)notes.size();
+            notes.push_back({ e.beatOffset, 0.0, e.data1, e.data2, e.channel });
+            openNotes[{e.data1, e.channel}] = idx;
+        } else if (e.isNoteOff()) {
+            auto it = openNotes.find({e.data1, e.channel});
+            if (it != openNotes.end()) {
+                notes[it->second].durationBeats = e.beatOffset - notes[it->second].beatOffset;
+                openNotes.erase(it);
+            }
+        }
+    }
+    // Close unclosed notes at region end
+    for (auto& [key, idx] : openNotes) {
+        if (notes[idx].durationBeats <= 0.0)
+            notes[idx].durationBeats = region.lengthBeats - notes[idx].beatOffset;
+    }
+    return notes;
 }

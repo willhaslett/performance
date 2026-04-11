@@ -1986,93 +1986,104 @@ class ArrangementTests : public juce::UnitTest {
 public:
     ArrangementTests() : UnitTest("Arrangement", "Performance") {}
 
+    // Helper: create an arrangement backed by test tracks
+    struct TestContext {
+        std::vector<TrackState> tracks;
+        Arrangement arr;
+        TestContext(std::initializer_list<std::string> trackIds) {
+            for (auto& id : trackIds) {
+                TrackState t;
+                t.id = id;
+                t.name = id;
+                tracks.push_back(std::move(t));
+            }
+            arr.setTracks(&tracks);
+        }
+    };
+
     void runTest() override {
 
         beginTest("Add and find MIDI region");
         {
-            Arrangement arr;
-            auto* r = arr.addMidiRegion("track1", 0.0, 4.0);
+            TestContext ctx({"track1"});
+            auto* r = ctx.arr.addMidiRegion("track1", 0.0, 4.0);
             expect(r != nullptr);
-            expectEquals(r->trackId, std::string("track1"));
             expectWithinAbsoluteError(r->startBeat, 0.0, 0.01);
             expectWithinAbsoluteError(r->lengthBeats, 4.0, 0.01);
 
-            auto* found = arr.findRegion(r->id);
+            auto* found = ctx.arr.findRegion(r->id);
             expect(found == r);
         }
 
         beginTest("Regions for track filters correctly");
         {
-            Arrangement arr;
-            arr.addMidiRegion("t1", 0.0, 4.0);
-            arr.addMidiRegion("t2", 0.0, 4.0);
-            arr.addMidiRegion("t1", 4.0, 4.0);
+            TestContext ctx({"t1", "t2"});
+            ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            ctx.arr.addMidiRegion("t2", 0.0, 4.0);
+            ctx.arr.addMidiRegion("t1", 4.0, 4.0);
 
-            auto t1Regions = arr.regionsForTrack("t1");
+            auto t1Regions = ctx.arr.regionsForTrack("t1");
             expectEquals((int)t1Regions.size(), 2);
-            auto t2Regions = arr.regionsForTrack("t2");
+            auto t2Regions = ctx.arr.regionsForTrack("t2");
             expectEquals((int)t2Regions.size(), 1);
         }
 
         beginTest("Remove region");
         {
-            Arrangement arr;
-            auto* r = arr.addMidiRegion("t1", 0.0, 4.0);
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
             auto id = r->id;
-            arr.removeRegion(id);
-            expect(arr.findRegion(id) == nullptr);
+            ctx.arr.removeRegion(id);
+            expect(ctx.arr.findRegion(id) == nullptr);
         }
 
         beginTest("Scan MIDI events fires note on and off");
         {
-            Arrangement arr;
-            auto* r = arr.addMidiRegion("t1", 0.0, 4.0);
-            // Raw events: noteOn at beat 1.0, noteOff at beat 1.5
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
             r->events.push_back({ 1.0, 0x90, 1, 60, 100 });
             r->events.push_back({ 1.5, 0x80, 1, 60, 0 });
-            r->sortEvents();
 
-            std::vector<std::pair<int, int>> scanned;  // {status, data1}
-            arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const MidiEvent& e, double) {
+            std::vector<std::pair<int, int>> scanned;
+            ctx.arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const RegionState::Event& e, double) {
                 scanned.push_back({ e.status, e.data1 });
             });
 
             expectEquals((int)scanned.size(), 2);
-            expectEquals(scanned[0].first, 0x90);  // noteOn
-            expectEquals(scanned[1].first, 0x80);  // noteOff
+            expectEquals(scanned[0].first, 0x90);
+            expectEquals(scanned[1].first, 0x80);
         }
 
         beginTest("Scan skips regions outside range");
         {
-            Arrangement arr;
-            auto* r = arr.addMidiRegion("t1", 8.0, 4.0);
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 8.0, 4.0);
             r->events.push_back({ 0.0, 0x90, 1, 60, 100 });
 
             int eventCount = 0;
-            arr.scanMidiEvents(0.0, 4.0, [&](auto&, auto&, double) { eventCount++; });
-            expectEquals(eventCount, 0);  // region starts at 8, scan is 0-4
+            ctx.arr.scanMidiEvents(0.0, 4.0, [&](auto&, auto&, double) { eventCount++; });
+            expectEquals(eventCount, 0);
         }
 
         beginTest("Recording creates region and captures events");
         {
-            Arrangement arr;
-            auto* r = arr.startRecording("t1", 2.0);
-            expect(arr.isRecording());
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.startRecording("t1", 2.0);
+            expect(ctx.arr.isRecording());
             expect(r != nullptr);
 
-            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });  // noteOn
-            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });    // noteOff
-            arr.addRecordedEvent({ 0.5, 0x90, 1, 64, 90 });   // another noteOn
-            arr.stopRecording();
+            ctx.arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
+            ctx.arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
+            ctx.arr.addRecordedEvent({ 0.5, 0x90, 1, 64, 90 });
+            ctx.arr.stopRecording();
 
-            expect(!arr.isRecording());
+            expect(!ctx.arr.isRecording());
             expectEquals((int)r->events.size(), 3);
             expect(r->lengthBeats > 0.0);
 
-            // Derive note list
-            auto notes = r->buildNoteList();
-            expectEquals((int)notes.size(), 2);  // two notes (one closed, one unclosed)
-            expect(std::abs(notes[0].durationBeats - 0.5) < 0.01);  // first note has duration
+            auto notes = Arrangement::buildNoteList(*r);
+            expectEquals((int)notes.size(), 2);
+            expect(std::abs(notes[0].durationBeats - 0.5) < 0.01);
         }
     }
 };

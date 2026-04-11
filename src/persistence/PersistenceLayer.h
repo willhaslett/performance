@@ -4,7 +4,6 @@
 #include <sqlite3.h>
 
 class StateAPI;
-class Arrangement;
 
 // SQLite persistence — load on startup, save on demand.
 // Not in the hot path. The in-memory StateAPI is the runtime SSOT.
@@ -19,10 +18,6 @@ public:
 
     void loadInto(StateAPI& state);
     void saveFrom(const StateAPI& state);
-
-    // Arrangement persistence (bypasses StateAPI — coordinator owns arrangement)
-    void loadArrangement(Arrangement& arrangement, const std::string& songId);
-    void saveArrangement(const Arrangement& arrangement);
 
 private:
     sqlite3* db = nullptr;

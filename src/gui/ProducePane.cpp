@@ -448,7 +448,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                     continue;
 
                 // Region block
-                g.setColour(r->type() == Region::Type::Midi
+                g.setColour(r->type == "midi"
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
 
@@ -458,10 +458,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.drawText(juce::String(r->name), regionBounds.reduced(4, 0),
                            juce::Justification::centredLeft);
 
-                // MIDI note preview — velocity-scaled vertical lines (derived from raw events)
-                if (r->type() == Region::Type::Midi) {
-                    auto* midi = static_cast<MidiRegion*>(r);
-                    auto noteList = midi->buildNoteList();
+                // MIDI note preview — velocity-scaled vertical lines
+                if (r->type == "midi") {
+                    auto noteList = Arrangement::buildNoteList(*r);
                     g.setColour(juce::Colour(0xff44cc44).withAlpha(0.6f));
                     int maxH = regionBounds.getHeight() / 2;
                     for (auto& note : noteList) {

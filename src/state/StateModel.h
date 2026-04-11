@@ -75,6 +75,26 @@ struct SendState {
     float gain = 1.0f;
 };
 
+struct RegionState {
+    std::string id;
+    std::string type = "midi";  // "midi" or "audio" (future)
+    std::string name;
+    double startBeat = 0.0;
+    double lengthBeats = 4.0;
+
+    struct Event {
+        double beatOffset = 0.0;
+        int status = 0x90;
+        int channel = 1;
+        int data1 = 60;
+        int data2 = 100;
+
+        bool isNoteOn() const  { return (status & 0xF0) == 0x90 && data2 > 0; }
+        bool isNoteOff() const { return (status & 0xF0) == 0x80 || ((status & 0xF0) == 0x90 && data2 == 0); }
+    };
+    std::vector<Event> events;
+};
+
 struct TrackState {
     std::string id;
     std::string name;
@@ -94,6 +114,7 @@ struct TrackState {
     int inputChannelCount = 0;   // 1 = mono, 2 = stereo
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
+    std::vector<RegionState> regions;
 };
 
 struct BusState {

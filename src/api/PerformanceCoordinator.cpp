@@ -47,10 +47,9 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     // EngineSync reacts to creation events, building the engine graph
     persistence->loadInto(*stateAPI);
 
-    // Load arrangement for the current song
-    auto currentSongId = stateAPI->getConfig("current_song");
-    if (!currentSongId.empty())
-        persistence->loadArrangement(arrangementImpl, currentSongId);
+    // Point arrangement at current song's tracks
+    if (auto* song = stateAPI->currentSong())
+        arrangementImpl.setTracks(&song->tracks);
 
     // Restore saved audio devices (must be after loadInto so config is available)
     {
@@ -212,9 +211,9 @@ void PerformanceCoordinator::stopRecording() {
     double stopBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
     double stopOffset = stopBeat - recordStartBeat;
     for (auto& [key, beatOffset] : openNotes) {
-        MidiEvent noteOff;
+        RegionState::Event noteOff;
         noteOff.beatOffset = stopOffset;
-        noteOff.status = 0x80;  // noteOff
+        noteOff.status = 0x80;
         noteOff.channel = key.second;
         noteOff.data1 = key.first;
         noteOff.data2 = 0;
@@ -236,19 +235,19 @@ void PerformanceCoordinator::drainRecordFIFO() {
         double beatOffset = event.beat - recordStartBeat;
         if (beatOffset < 0.0) continue;
 
-        MidiEvent midiEvent;
-        midiEvent.beatOffset = beatOffset;
-        midiEvent.status = event.statusByte;
-        midiEvent.channel = event.channel;
-        midiEvent.data1 = event.data1;
-        midiEvent.data2 = event.data2;
-        arrangementImpl.addRecordedEvent(midiEvent);
+        RegionState::Event re;
+        re.beatOffset = beatOffset;
+        re.status = event.statusByte;
+        re.channel = event.channel;
+        re.data1 = event.data1;
+        re.data2 = event.data2;
+        arrangementImpl.addRecordedEvent(re);
 
         // Track open notes for synthetic noteOff at stop
-        if (midiEvent.isNoteOn()) {
-            openNotes[{midiEvent.data1, midiEvent.channel}] = beatOffset;
-        } else if (midiEvent.isNoteOff()) {
-            openNotes.erase({midiEvent.data1, midiEvent.channel});
+        if (re.isNoteOn()) {
+            openNotes[{re.data1, re.channel}] = beatOffset;
+        } else if (re.isNoteOff()) {
+            openNotes.erase({re.data1, re.channel});
         }
     }
 }
@@ -294,17 +293,13 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     // Capture processor state from current song before switching
     captureProcessorState();
 
-    // Save arrangement for current song before switching
-    if (persistence)
-        persistence->saveArrangement(arrangementImpl);
-
     songRuntime->clearBindings();
     stateAPI->setCurrentSong(songId);  // triggers EngineSync via config event
     restoreBindings();
 
-    // Load arrangement for new song
-    if (persistence)
-        persistence->loadArrangement(arrangementImpl, songId);
+    // Point arrangement at new song's tracks
+    if (auto* newSong = stateAPI->findSong(songId))
+        arrangementImpl.setTracks(&newSong->tracks);
 
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
 }
@@ -433,7 +428,6 @@ void PerformanceCoordinator::save() {
     captureProcessorState();
     if (persistence && stateAPI) {
         persistence->saveFrom(*stateAPI);
-        persistence->saveArrangement(arrangementImpl);
         perfLog("[Coordinator] Saved\n");
     }
 }

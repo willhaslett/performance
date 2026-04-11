@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "daw/Arrangement.h"
+#include "state/StateModel.h"
 #include "engine/MidiSourceNode.h"
 #include "engine/RecordFIFO.h"
 #include <atomic>
@@ -92,7 +93,7 @@ public:
             auto* arr = arrangement.load(std::memory_order_acquire);
             if (arr) {
                 arr->scanMidiEvents(prevBeat, nextBeat,
-                    [&](const std::string& trackId, const MidiEvent& event, double eventBeat) {
+                    [&](const std::string& trackId, const RegionState::Event& event, double eventBeat) {
                         auto it = trackMidiSources.find(juce::String(trackId));
                         if (it == trackMidiSources.end() || !it->second) return;
 
@@ -101,7 +102,6 @@ public:
                                   (int)((eventBeat - prevBeat) / beatsPerSample))
                             : 0;
 
-                        // Convert MidiEvent to juce::MidiMessage
                         auto msg = juce::MidiMessage(event.status | (event.channel - 1),
                                                       event.data1, event.data2);
                         it->second->scheduleSingleMessage(msg, sampleOffset);
