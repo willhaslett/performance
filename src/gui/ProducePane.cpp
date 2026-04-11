@@ -442,31 +442,21 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
             for (auto* r : regions) {
-                // If dragging this region, paint it at the drag position instead
-                bool isDragged = (draggingRegion && r->id == selectedRegionId);
-                double drawBeat = isDragged ? dragCurrentBeat : r->startBeat;
-                int drawTrack = isDragged ? dragCurrentTrackIdx : (int)ti;
-                int drawY = area.getY() + drawTrack * trackRowHeight;
-
-                int rx = beatToX(drawBeat);
+                // Always draw at the original position
+                int rx = beatToX(r->startBeat);
                 int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
-                auto regionBounds = juce::Rectangle<int>(rx, drawY + 2, rw, trackRowHeight - 4);
+                auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, trackRowHeight - 4);
 
                 if (regionBounds.getRight() < area.getX() || regionBounds.getX() > area.getRight())
                     continue;
 
-                // Cache for hit testing (use actual position, not drag position)
-                if (!isDragged) {
-                    int actualRx = beatToX(r->startBeat);
-                    auto actualBounds = juce::Rectangle<int>(actualRx, rowY + 2, rw, trackRowHeight - 4);
-                    regionHitRects.push_back({ r->id, tracks[ti].id, actualBounds });
-                }
+                // Cache for hit testing
+                regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
                 // Region block
                 bool selected = (r->id == selectedRegionId);
                 auto fillCol = r->type == "midi"
                     ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
-                if (isDragged) fillCol = fillCol.withAlpha(0.7f);
                 g.setColour(fillCol);
                 g.fillRoundedRectangle(regionBounds.toFloat(), 3.0f);
 
@@ -498,17 +488,19 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             }
         }
 
-        // Ghost region during option+drag (duplicate preview)
-        if (draggingRegion && dragIsOption) {
+        // Ghost region during drag (move or duplicate)
+        if (draggingRegion) {
             auto* srcRegion = arrangement->findRegion(selectedRegionId);
             if (srcRegion) {
-                int rx = beatToX(dragCurrentBeat);
-                int rw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
+                int gx = beatToX(dragCurrentBeat);
+                int gw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
                 int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
-                auto ghostBounds = juce::Rectangle<int>(rx, drawY + 2, rw, trackRowHeight - 4);
-                g.setColour(juce::Colour(0xff2a5a3a).withAlpha(0.4f));
+                auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
+                auto ghostCol = srcRegion->type == "midi"
+                    ? juce::Colour(0xff2a5a3a) : juce::Colour(0xff3a3a5a);
+                g.setColour(ghostCol.withAlpha(0.35f));
                 g.fillRoundedRectangle(ghostBounds.toFloat(), 3.0f);
-                g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.6f));
+                g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.5f));
                 g.drawRoundedRectangle(ghostBounds.toFloat(), 3.0f, 1.5f);
             }
         }
