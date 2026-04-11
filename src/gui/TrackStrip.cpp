@@ -363,7 +363,14 @@ void TrackStrip::resized() {
     outputTargetBounds = contentArea.removeFromBottom(18);
     contentArea.removeFromBottom(2);
 
-    // Slots at top, then sends below with padding
+    // Sends panel bottom-aligned, above output target, with padding
+    if (sendsPanel.isVisible()) {
+        int sendsHeight = sendsPanel.getDesiredHeight();
+        sendsPanel.setBounds(contentArea.removeFromBottom(sendsHeight));
+        contentArea.removeFromBottom(Theme::slotGap * 3);
+    }
+
+    // Slots at top
     int y = contentArea.getY() + Theme::trackPadding;
 
     instrumentSlot.setBounds(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
@@ -373,13 +380,6 @@ void TrackStrip::resized() {
     for (auto& slot : effectSlots) {
         slot->setBounds(contentArea.getX(), y, contentArea.getWidth(), Theme::slotHeight);
         y += Theme::slotHeight + Theme::slotGap;
-    }
-
-    // Sends panel top-aligned after slots with generous padding
-    if (sendsPanel.isVisible()) {
-        y += Theme::slotGap * 3;  // generous gap to visually separate sends from slots
-        int sendsHeight = sendsPanel.getDesiredHeight();
-        sendsPanel.setBounds(contentArea.getX(), y, contentArea.getWidth(), sendsHeight);
     }
 }
 
