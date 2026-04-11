@@ -23,6 +23,10 @@ public:
     void setCurrentSong(const std::string& songId);
     void setMasterGain(float gain);
     float getMasterGain() const;
+    void setSongTempo(double bpm);
+    double getSongTempo() const;
+    void setSongTimeSignature(int numerator, int denominator);
+    std::pair<int,int> getSongTimeSignature() const;
     void setMasterAudioEnabled(bool enabled);
     bool isMasterAudioEnabled() const;
     std::string getMasterOutputId() const;

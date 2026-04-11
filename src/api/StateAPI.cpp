@@ -200,6 +200,44 @@ bool StateAPI::isMasterAudioEnabled() const {
     return song ? song->masterAudioEnabled : true;
 }
 
+void StateAPI::setSongTempo(double bpm) {
+    auto* song = currentSong();
+    if (!song) return;
+    if (song->tempoEvents.empty())
+        song->tempoEvents.push_back({ 0.0, bpm });
+    else
+        song->tempoEvents[0].bpm = bpm;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+}
+
+double StateAPI::getSongTempo() const {
+    auto* song = currentSong();
+    if (song && !song->tempoEvents.empty())
+        return song->tempoEvents[0].bpm;
+    return 120.0;
+}
+
+void StateAPI::setSongTimeSignature(int numerator, int denominator) {
+    auto* song = currentSong();
+    if (!song) return;
+    if (song->timeSigEvents.empty())
+        song->timeSigEvents.push_back({ 0.0, numerator, denominator });
+    else {
+        song->timeSigEvents[0].numerator = numerator;
+        song->timeSigEvents[0].denominator = denominator;
+    }
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+}
+
+std::pair<int,int> StateAPI::getSongTimeSignature() const {
+    auto* song = currentSong();
+    if (song && !song->timeSigEvents.empty())
+        return { song->timeSigEvents[0].numerator, song->timeSigEvents[0].denominator };
+    return { 4, 4 };
+}
+
 std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId;
 }

@@ -384,6 +384,15 @@ void PerformanceCoordinator::drainRecordFIFO() {
     }
 }
 
+void PerformanceCoordinator::syncTempoFromState() {
+    if (!stateAPI || !sequencerImpl) return;
+    sequencerImpl->setTempo(stateAPI->getSongTempo());
+    auto [num, den] = stateAPI->getSongTimeSignature();
+    sequencerImpl->setTimeSignature(num, den);
+    perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d\n",
+            stateAPI->getSongTempo(), num, den);
+}
+
 void PerformanceCoordinator::loadAudioFilesIntoEngine() {
     if (!stateAPI || !audioEngine) return;
     auto* song = stateAPI->currentSong();
@@ -496,6 +505,9 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     if (auto* newSong = stateAPI->findSong(songId))
         arrangementImpl.setTracks(&newSong->tracks);
 
+    // Apply song tempo and time signature to sequencer
+    syncTempoFromState();
+
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
 }
 
@@ -523,8 +535,9 @@ bool PerformanceCoordinator::restoreSession() {
     if (auto* s = stateAPI->currentSong())
         arrangementImpl.setTracks(&s->tracks);
 
-    // Load audio files for any audio regions
+    // Load audio files and sync tempo
     loadAudioFilesIntoEngine();
+    syncTempoFromState();
 
     auto* song = stateAPI->currentSong();
     perfLog("[Coordinator] Session restored: %s (%d tracks)\n",

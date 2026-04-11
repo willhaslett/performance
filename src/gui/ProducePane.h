@@ -69,6 +69,10 @@ private:
     juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
 
+    // BPM and time sig click areas (in transport LCD)
+    juce::Rectangle<int> bpmClickBounds;
+    juce::Rectangle<int> timeSigClickBounds;
+
     // Metronome volume slider
     juce::Slider metronomeSlider;
     juce::Label metronomeLabel;

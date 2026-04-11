@@ -309,11 +309,13 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
 
     drawSep();
 
-    // --- Tempo + Time Signature ---
+    // --- Tempo + Time Signature (clickable) ---
+    bpmClickBounds = juce::Rectangle<int>(colX, lcdBounds.getY(), 52, lcdBounds.getHeight());
     snprintf(buf, sizeof(buf), "%.1f", bpm);
     drawCol(buf, "BPM", 52, monoMd);
 
     colX += 2;
+    timeSigClickBounds = juce::Rectangle<int>(colX, lcdBounds.getY(), 48, lcdBounds.getHeight());
     snprintf(buf, sizeof(buf), "%d/%d",
              sequencer->getTimeSignatureNumerator(), tsDen);
     drawCol(buf, "TIME SIG", 48, monoMd);
@@ -893,6 +895,56 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     }
 
     if (!sequencer) return;
+
+    // BPM click — edit tempo
+    if (bpmClickBounds.contains(event.getPosition()) && state) {
+        auto* dlg = new juce::AlertWindow("Set Tempo", "", juce::MessageBoxIconType::NoIcon);
+        dlg->addTextEditor("bpm", juce::String(state->getSongTempo(), 1), "BPM");
+        dlg->addButton("OK", 1);
+        dlg->addButton("Cancel", 0);
+        auto* statePtr = state;
+        auto* seqPtr = sequencer;
+        dlg->enterModalState(true, juce::ModalCallbackFunction::create(
+            [dlg, statePtr, seqPtr](int result) {
+                if (result == 1) {
+                    double bpm = dlg->getTextEditorContents("bpm").getDoubleValue();
+                    if (bpm >= 20.0 && bpm <= 300.0) {
+                        statePtr->setSongTempo(bpm);
+                        seqPtr->setTempo(bpm);
+                    }
+                }
+                delete dlg;
+            }));
+        return;
+    }
+
+    // Time sig click — edit time signature
+    if (timeSigClickBounds.contains(event.getPosition()) && state) {
+        auto [num, den] = state->getSongTimeSignature();
+        auto* dlg = new juce::AlertWindow("Set Time Signature", "", juce::MessageBoxIconType::NoIcon);
+        dlg->addTextEditor("timesig", juce::String(num) + "/" + juce::String(den), "Time Signature (e.g. 3/4)");
+        dlg->addButton("OK", 1);
+        dlg->addButton("Cancel", 0);
+        auto* statePtr = state;
+        auto* seqPtr = sequencer;
+        dlg->enterModalState(true, juce::ModalCallbackFunction::create(
+            [dlg, statePtr, seqPtr](int result) {
+                if (result == 1) {
+                    auto text = dlg->getTextEditorContents("timesig");
+                    auto parts = juce::StringArray::fromTokens(text, "/", "");
+                    if (parts.size() == 2) {
+                        int n = parts[0].getIntValue();
+                        int d = parts[1].getIntValue();
+                        if (n >= 1 && n <= 32 && d >= 1 && d <= 32) {
+                            statePtr->setSongTimeSignature(n, d);
+                            seqPtr->setTimeSignature(n, d);
+                        }
+                    }
+                }
+                delete dlg;
+            }));
+        return;
+    }
 
     // Transport buttons
     if (rewindButtonBounds.contains(event.getPosition())) {
