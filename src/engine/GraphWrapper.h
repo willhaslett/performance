@@ -140,7 +140,21 @@ public:
                     // Reset sample counter to match new position
                     baseBeat.store(nextBeat, std::memory_order_release);
                     samplesSinceStart.store(0, std::memory_order_release);
-                    needsNoteFlush.store(true, std::memory_order_release);
+                    // Flush active notes NOW — before the scan picks up new notes.
+                    // Only flush via MidiSourceNodes (sequencer path), NOT the live
+                    // midi buffer — a live-path noteOff can arrive after the new noteOn
+                    // from the scan, killing it.
+                    for (int ch = 0; ch < 16; ++ch) {
+                        auto& ns = activeNotes[ch];
+                        for (int note = 0; note < 128; ++note) {
+                            bool on = (note < 64) ? (ns.lo & (1ULL << note)) : (ns.hi & (1ULL << (note - 64)));
+                            if (!on) continue;
+                            auto msg = juce::MidiMessage::noteOff(ch + 1, note);
+                            for (auto& [tid, node] : trackMidiSources)
+                                if (node) node->scheduleSingleMessage(msg, 0);
+                        }
+                        ns.clearAll();
+                    }
                 }
             }
 

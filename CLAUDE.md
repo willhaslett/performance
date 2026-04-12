@@ -260,6 +260,9 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Track/region selection — multi-track (Cmd/Shift click), multi-region selection. Track selection highlights header + selects all regions.
 - Region operations — non-destructive quantize (right-click submenu), trim (drag edges), split at playhead (Cmd+T), join selected regions.
 - Smart grid snap — all playhead clicks, region drags, and trims snap to division boundaries via `snapBeatToGrid()`. Shift+H/L steps by measure.
+- Cycle playback — drag ruler to set cycle region, 'c' to toggle, 'u' to set from selection. Draggable cycle edges with resize cursor. Loop wrapping in GraphWrapper with targeted note flush (per-note bitset tracking, inline flush before scan to avoid same-sample noteOff/noteOn race). Playhead jumps to cycle start on play.
+- Ruler gutter — dedicated playhead-setting area with adaptive bar numbers and multi-resolution tick marks. Grid clicks deselect only.
+- Note flush — targeted noteOff using per-channel bitset of active notes. Loop flush via MidiSourceNodes only (not live MIDI path, which would race with new noteOns).
 - Fader improvements — click-to-jump, handle center reaches full +6/-60dB range, fader/meter vertical alignment.
 - Preset name display — editor window shows correct preset name (resolved from state on open, updated on save/load).
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
