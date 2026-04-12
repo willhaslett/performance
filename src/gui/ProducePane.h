@@ -125,6 +125,16 @@ private:
     double dragCurrentBeat = 0.0;
     int dragCurrentTrackIdx = -1;
 
+    // Loop ghost right edges (for resize cursor + drag)
+    struct GhostEdgeInfo {
+        std::string regionId;
+        int rightX;
+        int y, height;
+    };
+    std::vector<GhostEdgeInfo> ghostEdgeRects;  // rebuilt each paint
+    bool draggingLoopEnd = false;
+    std::string loopEndRegionId;
+
     // Region trim state
     enum class TrimEdge { None, Left, Right };
     TrimEdge trimEdge = TrimEdge::None;

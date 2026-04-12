@@ -783,6 +783,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Regions — cache hit rects for mouse interaction
     regionHitRects.clear();
     actionHitRects.clear();
+    ghostEdgeRects.clear();
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
@@ -803,17 +804,34 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
                 auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, trackRowHeight - 4);
 
-                if (regionBounds.getRight() < area.getX() || regionBounds.getX() > area.getRight())
+                // Compute full visual extent including ghost loops
+                double visualEnd = r->startBeat + r->lengthBeats;
+                if (r->looped) {
+                    double le = r->loopEndBeat;
+                    if (le <= 0.0) {
+                        le = 1e9;
+                        for (auto* other : regions)
+                            if (other != r && !other->muted && other->startBeat >= visualEnd)
+                                le = std::min(le, other->startBeat);
+                        if (le > 1e8) le = r->startBeat + r->lengthBeats * 9;
+                    }
+                    visualEnd = le;
+                }
+                int visualEndX = beatToX(visualEnd);
+                if (visualEndX < area.getX() || regionBounds.getX() > area.getRight())
                     continue;
 
-                regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
+                bool originalVisible = regionBounds.getRight() >= area.getX() && regionBounds.getX() <= area.getRight();
+                if (originalVisible)
+                    regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region block — colored by track
+                // Region color (used by both original and ghosts)
+                auto fillCol = juce::Colour(trackCol);
                 bool selected = selectedRegionIds.count(r->id) > 0;
                 bool beingDragged = (draggingRegion && r->id == dragRegionId);
-                auto fillCol = juce::Colour(trackCol);
                 if (!trackEnabled || r->muted)
                     fillCol = fillCol.interpolatedWith(juce::Colour(0xff181818), 0.65f);
+                if (originalVisible) {
                 float baseAlpha = beingDragged ? 0.45f : 0.82f;
                 g.setColour(fillCol.withAlpha(baseAlpha));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
@@ -903,22 +921,26 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                 // (Action track spheres are painted outside the region loop)
 
+                }  // end originalVisible
+
                 // Ghost loop copies
                 if (r->looped && r->type == "midi") {
-                    // Find effective loop end
-                    double loopEnd = r->loopEndBeat;
-                    if (loopEnd <= 0.0) {
-                        loopEnd = 1e9;
-                        double rEnd = r->startBeat + r->lengthBeats;
-                        for (auto* other : regions) {
-                            if (other == r || other->muted) continue;
-                            if (other->startBeat >= rEnd)
-                                loopEnd = std::min(loopEnd, other->startBeat);
-                        }
-                        if (loopEnd > 1e8) loopEnd = r->startBeat + r->lengthBeats * 9;
-                    }
-
+                    double loopEnd = visualEnd;  // already computed above
                     int maxGhosts = (int)std::ceil((loopEnd - r->startBeat) / r->lengthBeats) - 1;
+
+                    // Build note list once for ghost note previews
+                    auto ghostNotes = Arrangement::buildNoteList(*r);
+                    int minNote = 127, maxNote = 0;
+                    for (auto& n : ghostNotes) {
+                        minNote = std::min(minNote, n.noteNumber);
+                        maxNote = std::max(maxNote, n.noteNumber);
+                    }
+                    int noteRange = std::max(1, maxNote - minNote);
+                    int pad = std::max(2, noteRange / 4);
+                    int lo = std::max(0, minNote - pad);
+                    int hi = std::min(127, maxNote + pad);
+                    int span = std::max(1, hi - lo);
+
                     for (int gi = 1; gi <= maxGhosts; ++gi) {
                         double ghostStart = r->startBeat + gi * r->lengthBeats;
                         if (ghostStart >= loopEnd) break;
@@ -930,11 +952,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         if (ghostBounds.getRight() < area.getX() || ghostBounds.getX() > area.getRight())
                             continue;
 
-                        // Ghost fill — more transparent, dashed border
+                        // Ghost fill
                         g.setColour(fillCol.withAlpha(0.35f));
                         g.fillRoundedRectangle(ghostBounds.toFloat(), 5.0f);
+
+                        // Dashed border
                         g.setColour(fillCol.darker(0.3f).withAlpha(0.5f));
-                        // Dashed border effect — draw top and bottom lines with gaps
                         float dashLen = 4.0f, gapLen = 3.0f;
                         for (float dx = 0; dx < ghostBounds.getWidth(); dx += dashLen + gapLen) {
                             float x0 = ghostBounds.getX() + dx;
@@ -943,12 +966,22 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             g.drawLine(x0, (float)ghostBounds.getBottom(), x1, (float)ghostBounds.getBottom(), 0.5f);
                         }
 
-                        // Loop icon: small curved arrow in top-left
-                        if (gi == 1) {
-                            g.setColour(Theme::color(Theme::Color::textDim));
-                            g.setFont(Theme::font(8.0f));
-                            g.drawText(juce::CharPointer_UTF8("\xe2\x86\xbb"), ghostBounds.getX() + 3,
-                                       ghostBounds.getY() + 1, 12, 10, juce::Justification::centredLeft);
+                        // Record right edge for resize interaction
+                        ghostEdgeRects.push_back({ r->id, ghostBounds.getRight(),
+                            ghostBounds.getY(), ghostBounds.getHeight() });
+
+                        // Dimmed note preview
+                        if (!ghostNotes.empty()) {
+                            auto inner = ghostBounds.reduced(1, 3);
+                            constexpr float noteH = 2.0f;
+                            for (auto& note : ghostNotes) {
+                                if (note.beatOffset >= ghostLen) continue;
+                                float nx = (float)gx + (float)(note.beatOffset * pixelsPerBeat);
+                                float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
+                                float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
+                                g.setColour(fillCol.brighter(0.4f).withAlpha(0.25f));
+                                g.fillRect(nx, ny - noteH * 0.5f, nw, std::max(1.0f, noteH));
+                            }
                         }
                     }
                 }
@@ -1168,6 +1201,87 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
     // Check for region click (grid area, below ruler)
     if (event.getPosition().getY() > transportHeight + rulerHeight
         && event.getPosition().getX() > trackHeaderWidth) {
+
+        // Ghost loop edge drag or right-click "Trim loops to here"
+        for (auto& ge : ghostEdgeRects) {
+            if (event.getPosition().getY() >= ge.y && event.getPosition().getY() < ge.y + ge.height) {
+                if (std::abs(event.getPosition().getX() - ge.rightX) <= trimHandleWidth && !event.mods.isPopupMenu()) {
+                    draggingLoopEnd = true;
+                    loopEndRegionId = ge.regionId;
+                    return;
+                }
+            }
+        }
+
+        // Right-click on ghost → "Trim loops to here"
+        if (event.mods.isPopupMenu() && arrangement) {
+            // Check if click is inside any ghost region
+            double clickBeat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            int trkIdx = getTrackIndexAtY(event.getPosition().getY());
+            auto allTracks = state ? state->listTracks() : std::vector<StateAPI::TrackInfo>{};
+            if (trkIdx >= 0 && trkIdx < (int)allTracks.size()) {
+                auto trackRegions = arrangement->regionsForTrack(allTracks[trkIdx].id);
+                for (auto* r : trackRegions) {
+                    if (!r->looped || r->type != "midi") continue;
+                    double regionEnd = r->startBeat + r->lengthBeats;
+                    if (clickBeat < regionEnd) continue;  // click is on the original, not a ghost
+                    // Check if click is within the loop extent
+                    double loopEnd = r->loopEndBeat;
+                    if (loopEnd <= 0.0) {
+                        loopEnd = 1e9;
+                        for (auto* other : trackRegions)
+                            if (other != r && !other->muted && other->startBeat >= regionEnd)
+                                loopEnd = std::min(loopEnd, other->startBeat);
+                        if (loopEnd > 1e8) loopEnd = r->startBeat + r->lengthBeats * 9;
+                    }
+                    if (clickBeat < loopEnd) {
+                        auto regionId = r->id;
+                        juce::PopupMenu menu;
+                        menu.addItem(1, "Trim loops to here");
+                        menu.addItem(2, "Convert loops to regions");
+                        menu.addItem(3, "Unloop");
+                        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                            juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                            [this, regionId, clickBeat](int result) {
+                                if (!arrangement) return;
+                                auto* r = arrangement->findRegion(regionId);
+                                if (!r) return;
+                                if (result == 1) {
+                                    r->loopEndBeat = clickBeat;
+                                } else if (result == 2) {
+                                    // Convert: find track, duplicate
+                                    std::string trackId;
+                                    if (state) {
+                                        for (auto& ti : state->listTracks()) {
+                                            auto regs = arrangement->regionsForTrack(ti.id);
+                                            for (auto* rr : regs)
+                                                if (rr->id == regionId) { trackId = ti.id; break; }
+                                            if (!trackId.empty()) break;
+                                        }
+                                    }
+                                    if (!trackId.empty()) {
+                                        double le = r->loopEndBeat > 0 ? r->loopEndBeat : clickBeat + r->lengthBeats;
+                                        int reps = (int)std::ceil((le - r->startBeat) / r->lengthBeats) - 1;
+                                        for (int gi = 1; gi <= reps; ++gi) {
+                                            double gs = r->startBeat + gi * r->lengthBeats;
+                                            if (gs >= le) break;
+                                            arrangement->duplicateRegion(regionId, trackId, gs);
+                                        }
+                                        r->looped = false;
+                                        r->loopEndBeat = 0.0;
+                                    }
+                                    if (onRegionsChanged) onRegionsChanged();
+                                } else if (result == 3) {
+                                    r->looped = false;
+                                    r->loopEndBeat = 0.0;
+                                }
+                                repaint();
+                            });
+                        return;
+                    }
+                }
+            }
+        }
 
         // Hit test action event spheres — left-click to drag, right-click for menu
         for (auto& hit : actionHitRects) {
@@ -1433,6 +1547,18 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
 
+    // Ghost loop end drag
+    if (draggingLoopEnd && arrangement) {
+        auto* region = arrangement->findRegion(loopEndRegionId);
+        if (region) {
+            double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            double minEnd = region->startBeat + region->lengthBeats;
+            region->loopEndBeat = std::max(minEnd, beat);
+            repaint();
+        }
+        return;
+    }
+
     // Region trim drag
     if (trimEdge != TrimEdge::None && arrangement) {
         auto* region = arrangement->findRegion(trimRegionId);
@@ -1584,6 +1710,14 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         draggingCycleEdge = CycleEdge::None;
         draggingCycleBody = false;
         dragStartY = 0;
+        repaint();
+        return;
+    }
+
+    // Complete loop end drag
+    if (draggingLoopEnd) {
+        draggingLoopEnd = false;
+        loopEndRegionId.clear();
         repaint();
         return;
     }
@@ -1984,6 +2118,15 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
                 setMouseCursor(juce::MouseCursor::DraggingHandCursor);
                 return;
             }
+        }
+    }
+
+    // Ghost loop edge resize cursor
+    for (auto& ge : ghostEdgeRects) {
+        if (std::abs(event.getPosition().getX() - ge.rightX) <= trimHandleWidth
+            && event.getPosition().getY() >= ge.y && event.getPosition().getY() < ge.y + ge.height) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
         }
     }
 
