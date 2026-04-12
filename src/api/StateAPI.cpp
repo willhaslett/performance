@@ -157,14 +157,6 @@ std::string StateAPI::createSong(const std::string& name) {
     SongState song;
     song.id = generateId();
     song.name = name;
-    // Every song gets an Actions track
-    TrackState actionTrack;
-    actionTrack.id = generateId();
-    actionTrack.name = "Actions";
-    actionTrack.sourceType = TrackSourceType::Action;
-    actionTrack.midiEnabled = false;
-    actionTrack.position = 0;
-    song.tracks.push_back(std::move(actionTrack));
     state.songs.push_back(std::move(song));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id, "" });

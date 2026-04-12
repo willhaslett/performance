@@ -186,6 +186,8 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE busses ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN quantize REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN looped INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
 
     // Action events table
     exec(R"(
@@ -387,7 +389,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_finalize(ss);
 
             // Regions for this track
-            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id, muted, quantize FROM regions WHERE track_id = ? ORDER BY start_beat");
+            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat FROM regions WHERE track_id = ? ORDER BY start_beat");
             sqlite3_bind_text(rs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(rs) == SQLITE_ROW) {
                 RegionState r;
@@ -399,6 +401,8 @@ void PersistenceLayer::readSongs(AppState& out) {
                 r.activeTakeId = col_str(rs, 5);
                 r.muted = sqlite3_column_int(rs, 6) != 0;
                 r.quantize = sqlite3_column_double(rs, 7);
+                r.looped = sqlite3_column_int(rs, 8) != 0;
+                r.loopEndBeat = sqlite3_column_double(rs, 9);
 
                 // Takes for this region
                 auto* tks = prepare("SELECT id, name FROM takes WHERE region_id = ?");
@@ -802,8 +806,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             // Regions and takes
             for (auto& r : t.regions) {
                 auto* rs = prepare(
-                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id, muted, quantize) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(rs, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 3, r.type.c_str(), -1, SQLITE_TRANSIENT);
@@ -813,6 +817,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_text(rs, 7, r.activeTakeId.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(rs, 8, r.muted ? 1 : 0);
                 sqlite3_bind_double(rs, 9, r.quantize);
+                sqlite3_bind_int(rs, 10, r.looped ? 1 : 0);
+                sqlite3_bind_double(rs, 11, r.loopEndBeat);
                 sqlite3_step(rs);
                 sqlite3_finalize(rs);
 

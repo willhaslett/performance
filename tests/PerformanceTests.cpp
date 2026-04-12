@@ -1222,8 +1222,8 @@ public:
             auto trackId = tc.state().createTrack("Keys");
             expect(!trackId.empty());
             auto tracks = tc.state().listTracks();
-            expectEquals((int)tracks.size(), 1);
-            expectEquals(tracks[0].name, std::string("Keys"));
+            expectEquals((int)tracks.size(), 2);
+            expectEquals(tracks[1].name, std::string("Keys"));
         }
 
         beginTest("Create bus and send");
@@ -1242,7 +1242,7 @@ public:
             TestCoordinator tc;
             auto id = tc.state().createTrack("Old");
             tc.state().renameTrack(id, "New");
-            expectEquals(tc.state().listTracks()[0].name, std::string("New"));
+            expectEquals(tc.state().listTracks()[1].name, std::string("New"));
         }
 
         beginTest("Set and get gains");
@@ -1288,16 +1288,16 @@ public:
             TestCoordinator tc;
             auto songA = tc->createSong("Song A");
             tc.state().createTrack("A Track");
-            tc.state().setTrackGain(tc.state().listTracks()[0].id, 0.25f);
+            tc.state().setTrackGain(tc.state().listTracks()[1].id, 0.25f);
 
             tc->createSong("Song B");
             tc.state().createTrack("B Track");
-            expectEquals((int)tc.state().listTracks().size(), 1);
+            expectEquals((int)tc.state().listTracks().size(), 2);
 
             tc->loadSong(songA);
-            expectEquals((int)tc.state().listTracks().size(), 1);
-            expectEquals(tc.state().listTracks()[0].name, std::string("A Track"));
-            expectWithinAbsoluteError(tc.state().getTrackGain(tc.state().listTracks()[0].id), 0.25f, 0.01f);
+            expectEquals((int)tc.state().listTracks().size(), 2);
+            expectEquals(tc.state().listTracks()[1].name, std::string("A Track"));
+            expectWithinAbsoluteError(tc.state().getTrackGain(tc.state().listTracks()[1].id), 0.25f, 0.01f);
         }
 
         beginTest("MIDI enabled state");
@@ -1332,7 +1332,7 @@ public:
                 coord.initialise(db.path());
                 coord.createSong("Persist Test");
                 coord.state().createTrack("T1");
-                coord.state().setTrackGain(coord.state().listTracks()[0].id, 0.42f);
+                coord.state().setTrackGain(coord.state().listTracks()[1].id, 0.42f);
                 coord.state().createBus("B1");
                 coord.save();
                 coord.shutdown();
@@ -1344,9 +1344,9 @@ public:
                 coord.restoreSession();
 
                 auto tracks = coord.state().listTracks();
-                expectEquals((int)tracks.size(), 1);
-                expectEquals(tracks[0].name, std::string("T1"));
-                expectWithinAbsoluteError(coord.state().getTrackGain(tracks[0].id), 0.42f, 0.01f);
+                expectEquals((int)tracks.size(), 2);
+                expectEquals(tracks[1].name, std::string("T1"));
+                expectWithinAbsoluteError(coord.state().getTrackGain(tracks[1].id), 0.42f, 0.01f);
 
                 auto busses = coord.state().listBusses();
                 expectEquals((int)busses.size(), 1);

@@ -902,6 +902,56 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 }
 
                 // (Action track spheres are painted outside the region loop)
+
+                // Ghost loop copies
+                if (r->looped && r->type == "midi") {
+                    // Find effective loop end
+                    double loopEnd = r->loopEndBeat;
+                    if (loopEnd <= 0.0) {
+                        loopEnd = 1e9;
+                        double rEnd = r->startBeat + r->lengthBeats;
+                        for (auto* other : regions) {
+                            if (other == r || other->muted) continue;
+                            if (other->startBeat >= rEnd)
+                                loopEnd = std::min(loopEnd, other->startBeat);
+                        }
+                        if (loopEnd > 1e8) loopEnd = r->startBeat + r->lengthBeats * 9;
+                    }
+
+                    int maxGhosts = (int)std::ceil((loopEnd - r->startBeat) / r->lengthBeats) - 1;
+                    for (int gi = 1; gi <= maxGhosts; ++gi) {
+                        double ghostStart = r->startBeat + gi * r->lengthBeats;
+                        if (ghostStart >= loopEnd) break;
+                        double ghostLen = std::min(r->lengthBeats, loopEnd - ghostStart);
+                        int gx = beatToX(ghostStart);
+                        int gw = std::max(4, (int)(ghostLen * pixelsPerBeat));
+                        auto ghostBounds = juce::Rectangle<int>(gx, rowY + 2, gw, trackRowHeight - 4);
+
+                        if (ghostBounds.getRight() < area.getX() || ghostBounds.getX() > area.getRight())
+                            continue;
+
+                        // Ghost fill — more transparent, dashed border
+                        g.setColour(fillCol.withAlpha(0.35f));
+                        g.fillRoundedRectangle(ghostBounds.toFloat(), 5.0f);
+                        g.setColour(fillCol.darker(0.3f).withAlpha(0.5f));
+                        // Dashed border effect — draw top and bottom lines with gaps
+                        float dashLen = 4.0f, gapLen = 3.0f;
+                        for (float dx = 0; dx < ghostBounds.getWidth(); dx += dashLen + gapLen) {
+                            float x0 = ghostBounds.getX() + dx;
+                            float x1 = std::min(x0 + dashLen, (float)ghostBounds.getRight());
+                            g.drawLine(x0, (float)ghostBounds.getY(), x1, (float)ghostBounds.getY(), 0.5f);
+                            g.drawLine(x0, (float)ghostBounds.getBottom(), x1, (float)ghostBounds.getBottom(), 0.5f);
+                        }
+
+                        // Loop icon: small curved arrow in top-left
+                        if (gi == 1) {
+                            g.setColour(Theme::color(Theme::Color::textDim));
+                            g.setFont(Theme::font(8.0f));
+                            g.drawText(juce::CharPointer_UTF8("\xe2\x86\xbb"), ghostBounds.getX() + 3,
+                                       ghostBounds.getY() + 1, 12, 10, juce::Justification::centredLeft);
+                        }
+                    }
+                }
             }
         }
 
@@ -1679,6 +1729,22 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 if (selectedRegionIds.size() >= 2)
                     menu.addItem(4, "Join Regions");
 
+                // Loop options
+                {
+                    bool anyLooped = false, anyUnlooped = false;
+                    for (auto& rid : selectedRegionIds) {
+                        auto* rr = arrangement->findRegion(rid);
+                        if (rr && rr->type == "midi") {
+                            if (rr->looped) anyLooped = true;
+                            else anyUnlooped = true;
+                        }
+                    }
+                    menu.addSeparator();
+                    if (anyUnlooped) menu.addItem(5, "Loop Region(s)");
+                    if (anyLooped) menu.addItem(6, "Unloop Region(s)");
+                    if (anyLooped) menu.addItem(7, "Convert Loops to Regions");
+                }
+
                 auto selIds = selectedRegionIds;
                 menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                     juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
@@ -1701,6 +1767,54 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                             if (onRegionsChanged) onRegionsChanged();
                         } else if (result == 4) {
                             joinSelectedRegions();
+                        } else if (result == 5) {
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (r && r->type == "midi") r->looped = true;
+                            }
+                        } else if (result == 6) {
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (r) { r->looped = false; r->loopEndBeat = 0.0; }
+                            }
+                        } else if (result == 7) {
+                            // Convert loops to regions
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (!r || !r->looped) continue;
+                                // Find owning track
+                                std::string trackId;
+                                if (state) {
+                                    for (auto& ti : state->listTracks()) {
+                                        auto regs = arrangement->regionsForTrack(ti.id);
+                                        for (auto* rr : regs)
+                                            if (rr->id == rid) { trackId = ti.id; break; }
+                                        if (!trackId.empty()) break;
+                                    }
+                                }
+                                if (trackId.empty()) continue;
+                                double loopEnd = r->loopEndBeat;
+                                if (loopEnd <= 0.0) {
+                                    loopEnd = 1e9;
+                                    auto regs = arrangement->regionsForTrack(trackId);
+                                    double rEnd = r->startBeat + r->lengthBeats;
+                                    for (auto* other : regs) {
+                                        if (other == r || other->muted) continue;
+                                        if (other->startBeat >= rEnd)
+                                            loopEnd = std::min(loopEnd, other->startBeat);
+                                    }
+                                    if (loopEnd > 1e8) loopEnd = r->startBeat + r->lengthBeats * 9;
+                                }
+                                int reps = (int)std::ceil((loopEnd - r->startBeat) / r->lengthBeats) - 1;
+                                for (int gi = 1; gi <= reps; ++gi) {
+                                    double gs = r->startBeat + gi * r->lengthBeats;
+                                    if (gs >= loopEnd) break;
+                                    arrangement->duplicateRegion(rid, trackId, gs);
+                                }
+                                r->looped = false;
+                                r->loopEndBeat = 0.0;
+                            }
+                            if (onRegionsChanged) onRegionsChanged();
                         } else if (result >= 100 && result < 200) {
                             double grid = quantizeGridSize(result);
                             for (auto& rid : selIds) {
@@ -1970,6 +2084,20 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
     }
 
     // c: toggle cycle playback
+    // l: toggle loop on selected regions
+    if (key.getTextCharacter() == 'l' && !key.getModifiers().isShiftDown()
+        && !selectedRegionIds.empty() && arrangement) {
+        for (auto& rid : selectedRegionIds) {
+            auto* r = arrangement->findRegion(rid);
+            if (r && r->type == "midi") {
+                r->looped = !r->looped;
+                if (!r->looped) r->loopEndBeat = 0.0;
+            }
+        }
+        repaint();
+        return true;
+    }
+
     if (key.getTextCharacter() == 'c' && sequencer) {
         sequencer->setLoopEnabled(!sequencer->isLoopEnabled());
         repaint();

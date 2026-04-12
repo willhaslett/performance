@@ -277,6 +277,20 @@ RegionState* Arrangement::findRegion(const std::string& regionId) const {
     return nullptr;
 }
 
+// Compute effective loop end for a region (next region start, or explicit loopEndBeat)
+static double computeLoopEnd(const RegionState& r, const std::vector<RegionState>& allRegions) {
+    if (r.loopEndBeat > 0.0) return r.loopEndBeat;
+    // Find next region on same track that starts after this one
+    double regionEnd = r.startBeat + r.lengthBeats;
+    double nearest = 1e9;
+    for (auto& other : allRegions) {
+        if (&other == &r || other.muted) continue;
+        if (other.startBeat >= regionEnd)
+            nearest = std::min(nearest, other.startBeat);
+    }
+    return nearest < 1e8 ? nearest : regionEnd + r.lengthBeats * 8;  // cap at 8 reps if no next region
+}
+
 void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                                   EventCallback callback) const {
     if (prevBeat >= currentBeat || !songTracks) return;
@@ -284,50 +298,60 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
     for (auto& t : *songTracks) {
         for (auto& r : t.regions) {
             if (r.type != "midi" || r.muted) continue;
-            double endBeat = r.startBeat + r.lengthBeats;
-            if (endBeat <= prevBeat || r.startBeat >= currentBeat) continue;
 
-            // Scan the active take's events
+            // Compute repetition range
+            double regionEnd = r.startBeat + r.lengthBeats;
+            double effectiveEnd = r.looped ? computeLoopEnd(r, t.regions) : regionEnd;
+            if (effectiveEnd <= prevBeat || r.startBeat >= currentBeat) continue;
+
+            // Number of repetitions to scan
+            int maxReps = r.looped ? (int)std::ceil((effectiveEnd - r.startBeat) / r.lengthBeats) : 1;
+
             auto* take = r.activeTake();
             if (!take) continue;
 
-            if (r.quantize > 0.0) {
-                // Build per-note shift map: quantize noteOns, shift noteOffs by same delta
-                // Key: (channel << 8 | noteNumber)
-                std::map<int, double> noteShifts;
-                for (auto& event : take->events) {
-                    double offset = event.beatOffset;
-                    if (offset < 0.0 || offset >= r.lengthBeats) continue;
+            for (int rep = 0; rep < maxReps; ++rep) {
+                double repBase = r.startBeat + rep * r.lengthBeats;
+                if (repBase >= effectiveEnd || repBase >= currentBeat) break;
+                if (repBase + r.lengthBeats <= prevBeat) continue;
 
-                    bool isNoteOn = (event.status & 0xF0) == 0x90 && event.data2 > 0;
-                    bool isNoteOff = (event.status & 0xF0) == 0x80
-                                  || ((event.status & 0xF0) == 0x90 && event.data2 == 0);
-                    int noteKey = (event.channel << 8) | event.data1;
+                if (r.quantize > 0.0) {
+                    std::map<int, double> noteShifts;
+                    for (auto& event : take->events) {
+                        double offset = event.beatOffset;
+                        if (offset < 0.0 || offset >= r.lengthBeats) continue;
 
-                    double quantized = offset;
-                    if (isNoteOn) {
-                        quantized = std::round(offset / r.quantize) * r.quantize;
-                        noteShifts[noteKey] = quantized - offset;
-                    } else if (isNoteOff) {
-                        auto it = noteShifts.find(noteKey);
-                        if (it != noteShifts.end())
-                            quantized = offset + it->second;
+                        bool isNoteOn = (event.status & 0xF0) == 0x90 && event.data2 > 0;
+                        bool isNoteOff = (event.status & 0xF0) == 0x80
+                                      || ((event.status & 0xF0) == 0x90 && event.data2 == 0);
+                        int noteKey = (event.channel << 8) | event.data1;
+
+                        double quantized = offset;
+                        if (isNoteOn) {
+                            quantized = std::round(offset / r.quantize) * r.quantize;
+                            noteShifts[noteKey] = quantized - offset;
+                        } else if (isNoteOff) {
+                            auto it = noteShifts.find(noteKey);
+                            if (it != noteShifts.end())
+                                quantized = offset + it->second;
+                        }
+
+                        double absBeat = repBase + quantized;
+                        if (absBeat >= effectiveEnd) continue;  // past loop end
+                        if (absBeat >= prevBeat && absBeat < currentBeat)
+                            callback(t.id, event, absBeat);
                     }
-                    // Other events (CC, etc.) pass through unquantized
-
-                    double absBeat = r.startBeat + quantized;
-                    if (absBeat >= prevBeat && absBeat < currentBeat)
-                        callback(t.id, event, absBeat);
+                } else {
+                    for (auto& event : take->events) {
+                        double offset = event.beatOffset;
+                        if (offset < 0.0 || offset >= r.lengthBeats) continue;
+                        double absBeat = repBase + offset;
+                        if (absBeat >= effectiveEnd) continue;
+                        if (absBeat >= prevBeat && absBeat < currentBeat)
+                            callback(t.id, event, absBeat);
+                    }
                 }
-            } else {
-                for (auto& event : take->events) {
-                    double offset = event.beatOffset;
-                    if (offset < 0.0 || offset >= r.lengthBeats) continue;
-                    double absBeat = r.startBeat + offset;
-                    if (absBeat >= prevBeat && absBeat < currentBeat)
-                        callback(t.id, event, absBeat);
-                }
-            }
+            }  // end rep loop
             // TODO: fire synthetic noteOffs at region end for unclosed notes
         }
     }

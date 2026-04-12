@@ -525,6 +525,8 @@ EngineAPI& PerformanceCoordinator::engine() { return *engineAPI; }
 std::string PerformanceCoordinator::createSong(const juce::String& name) {
     auto songId = stateAPI->createSong(name.toStdString());
     stateAPI->setCurrentSong(songId);
+    // Every song gets an Actions track
+    stateAPI->createActionTrack("Actions");
     perfLog("[Coordinator] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), songId.c_str());
     return songId;
 }
@@ -559,6 +561,7 @@ bool PerformanceCoordinator::restoreSession() {
     if (songs.empty()) {
         auto songId = stateAPI->createSong("Sandbox");
         stateAPI->setCurrentSong(songId);
+        stateAPI->createActionTrack("Actions");
         if (auto* s = stateAPI->currentSong())
             arrangementImpl.setTracks(&s->tracks);
         perfLog("[Coordinator] Created default session\n");

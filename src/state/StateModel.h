@@ -123,6 +123,8 @@ struct RegionState {
     double lengthBeats = 4.0;
     std::string activeTakeId;   // which take plays back
     bool muted = false;         // region-level mute (skipped during playback)
+    bool looped = false;       // region loops until next region or loopEndBeat
+    double loopEndBeat = 0.0;  // 0 = auto (extend to next region), >0 = explicit end
     double quantize = 0.0;     // non-destructive quantize grid in beats (0 = off)
     std::vector<TakeState> takes;
 
