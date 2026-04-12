@@ -45,7 +45,7 @@ private:
     static constexpr int transportHeight = 60;
     static constexpr int trackHeaderWidth = 120;
     int trackRowHeight = 48;
-    static constexpr int rulerHeight = 20;
+    static constexpr int rulerHeight = 28;
     int beatsPerBar() const;
 
     double pixelsPerBeat = 30.0;
@@ -57,6 +57,7 @@ private:
     int beatToX(double beat) const;
     double xToBeat(int x) const;
     double snapBeatToGrid(double beat) const;  // snap to nearest division
+    void saveZoomState();
     void ensurePlayheadVisible();              // scroll so playhead is on-screen
 
     // Paint helpers
@@ -131,6 +132,13 @@ private:
     double trimOrigStartBeat = 0.0;
     double trimOrigLengthBeats = 0.0;
     static constexpr int trimHandleWidth = 6;
+
+    // Cycle drag (ruler)
+    bool draggingCycle = false;
+    double cycleAnchorBeat = 0.0;
+    enum class CycleEdge { None, Start, End };
+    CycleEdge draggingCycleEdge = CycleEdge::None;
+    static constexpr int cycleEdgeThreshold = 6;  // pixels
 
     // Action event drag
     std::string dragActionEventId;

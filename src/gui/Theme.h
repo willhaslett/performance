@@ -19,6 +19,7 @@ namespace Theme {
         constexpr uint32_t textDim      = 0xff666666;
         constexpr uint32_t textWhite    = 0xffffffff;
         constexpr uint32_t accent       = 0xff2a6aaa;
+        constexpr uint32_t lcdDigit     = 0xffd0d0d0;
         constexpr uint32_t midiActive   = 0xff44cc44;
         constexpr uint32_t instrument   = 0xffddaa44;
         constexpr uint32_t effect       = 0xff88aacc;

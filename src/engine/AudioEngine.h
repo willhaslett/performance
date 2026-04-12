@@ -122,6 +122,7 @@ public:
     void setPlaybackState(bool playing, double bpm);
     void setPlaybackBeatPosition(double beat);
     double getPlaybackBeatPosition() const;
+    void setPlaybackLoop(bool enabled, double start, double end);
     void setArrangement(const Arrangement* arrangement);
 
     // Recording

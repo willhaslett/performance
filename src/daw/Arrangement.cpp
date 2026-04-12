@@ -1,5 +1,6 @@
 #include "daw/Arrangement.h"
 #include <juce_core/juce_core.h>
+#include <map>
 
 std::string Arrangement::generateId() {
     return juce::Uuid().toString().toStdString();
@@ -290,16 +291,42 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
             auto* take = r.activeTake();
             if (!take) continue;
 
-            for (auto& event : take->events) {
-                double offset = event.beatOffset;
-                // Skip events outside region bounds (trimmed away)
-                if (offset < 0.0 || offset >= r.lengthBeats) continue;
-                // Non-destructive quantize: snap offset to grid
-                if (r.quantize > 0.0)
-                    offset = std::round(offset / r.quantize) * r.quantize;
-                double absBeat = r.startBeat + offset;
-                if (absBeat >= prevBeat && absBeat < currentBeat)
-                    callback(t.id, event, absBeat);
+            if (r.quantize > 0.0) {
+                // Build per-note shift map: quantize noteOns, shift noteOffs by same delta
+                // Key: (channel << 8 | noteNumber)
+                std::map<int, double> noteShifts;
+                for (auto& event : take->events) {
+                    double offset = event.beatOffset;
+                    if (offset < 0.0 || offset >= r.lengthBeats) continue;
+
+                    bool isNoteOn = (event.status & 0xF0) == 0x90 && event.data2 > 0;
+                    bool isNoteOff = (event.status & 0xF0) == 0x80
+                                  || ((event.status & 0xF0) == 0x90 && event.data2 == 0);
+                    int noteKey = (event.channel << 8) | event.data1;
+
+                    double quantized = offset;
+                    if (isNoteOn) {
+                        quantized = std::round(offset / r.quantize) * r.quantize;
+                        noteShifts[noteKey] = quantized - offset;
+                    } else if (isNoteOff) {
+                        auto it = noteShifts.find(noteKey);
+                        if (it != noteShifts.end())
+                            quantized = offset + it->second;
+                    }
+                    // Other events (CC, etc.) pass through unquantized
+
+                    double absBeat = r.startBeat + quantized;
+                    if (absBeat >= prevBeat && absBeat < currentBeat)
+                        callback(t.id, event, absBeat);
+                }
+            } else {
+                for (auto& event : take->events) {
+                    double offset = event.beatOffset;
+                    if (offset < 0.0 || offset >= r.lengthBeats) continue;
+                    double absBeat = r.startBeat + offset;
+                    if (absBeat >= prevBeat && absBeat < currentBeat)
+                        callback(t.id, event, absBeat);
+                }
             }
             // TODO: fire synthetic noteOffs at region end for unclosed notes
         }

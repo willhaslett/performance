@@ -45,6 +45,12 @@ public:
 
     double getBeatPosition() const { return beatPosition.load(std::memory_order_acquire); }
 
+    void setLoop(bool enabled, double start, double end) {
+        loopEnabled.store(enabled, std::memory_order_release);
+        loopStart.store(start, std::memory_order_release);
+        loopEnd.store(end, std::memory_order_release);
+    }
+
     // --- Arrangement (set from message thread) ---
     void setArrangement(const Arrangement* arr) {
         arrangement.store(arr, std::memory_order_release);
@@ -121,8 +127,29 @@ public:
             double prevBeat = base + samples * beatsPerSample;
             double nextBeat = base + (samples + numSamples) * beatsPerSample;
 
+            // Loop wrapping
+            if (loopEnabled.load(std::memory_order_acquire)) {
+                double lEnd = loopEnd.load(std::memory_order_acquire);
+                double lStart = loopStart.load(std::memory_order_acquire);
+                if (lEnd > lStart && nextBeat >= lEnd) {
+                    double offset = nextBeat - lEnd;
+                    double loopLen = lEnd - lStart;
+                    nextBeat = lStart + std::fmod(offset, loopLen);
+                    prevBeat = nextBeat - numSamples * beatsPerSample;
+                    if (prevBeat < lStart) prevBeat = lStart;
+                    // Reset sample counter to match new position
+                    baseBeat.store(nextBeat, std::memory_order_release);
+                    samplesSinceStart.store(0, std::memory_order_release);
+                    needsNoteFlush.store(true, std::memory_order_release);
+                }
+            }
+
             // Update running position
-            samplesSinceStart.store(samples + numSamples, std::memory_order_release);
+            samplesSinceStart.store(
+                loopEnabled.load(std::memory_order_acquire)
+                    ? samplesSinceStart.load(std::memory_order_acquire) + numSamples
+                    : samples + numSamples,
+                std::memory_order_release);
             beatPosition.store(nextBeat, std::memory_order_release);
 
             // Scan arrangement and schedule per-track MIDI
@@ -141,6 +168,16 @@ public:
                         auto msg = juce::MidiMessage(event.status | (event.channel - 1),
                                                       event.data1, event.data2);
                         it->second->scheduleSingleMessage(msg, sampleOffset);
+
+                        // Track active notes for targeted flush
+                        int ch = event.channel - 1;
+                        if (ch >= 0 && ch < 16 && event.data1 < 128) {
+                            if ((event.status & 0xF0) == 0x90 && event.data2 > 0)
+                                activeNotes[ch].set(event.data1);
+                            else if ((event.status & 0xF0) == 0x80
+                                  || ((event.status & 0xF0) == 0x90 && event.data2 == 0))
+                                activeNotes[ch].clear(event.data1);
+                        }
                     });
 
                 // Drive audio file nodes — check which regions cover prevBeat
@@ -198,17 +235,36 @@ public:
             }
         }
 
-        // Flush all notes and deactivate audio nodes if requested (stop/seek)
-        if (needsNoteFlush.exchange(false, std::memory_order_acquire)) {
-            for (auto& [trackId, node] : trackMidiSources) {
-                if (!node) continue;
-                for (int ch = 1; ch <= 16; ++ch) {
-                    node->scheduleSingleMessage(juce::MidiMessage::allNotesOff(ch), 0);
-                    node->scheduleSingleMessage(juce::MidiMessage::allSoundOff(ch), 0);
-                }
+        // Track live MIDI input notes for flush
+        for (const auto metadata : midi) {
+            auto msg = metadata.getMessage();
+            int ch = msg.getChannel() - 1;
+            if (ch >= 0 && ch < 16) {
+                if (msg.isNoteOn()) activeNotes[ch].set(msg.getNoteNumber());
+                else if (msg.isNoteOff()) activeNotes[ch].clear(msg.getNoteNumber());
             }
-            for (auto& [trackId, afNode] : trackAudioFileNodes) {
-                if (afNode) afNode->setActive(false);
+        }
+
+        // Flush notes if requested (stop/seek/loop)
+        // OUTSIDE the playing check — must fire even after setPlaying(false)
+        if (needsNoteFlush.exchange(false, std::memory_order_acquire)) {
+            bool isStopped = !playing.load(std::memory_order_acquire);
+            // Send explicit noteOff for each tracked active note
+            for (int ch = 0; ch < 16; ++ch) {
+                auto& ns = activeNotes[ch];
+                for (int note = 0; note < 128; ++note) {
+                    bool active = (note < 64) ? (ns.lo & (1ULL << note)) : (ns.hi & (1ULL << (note - 64)));
+                    if (!active) continue;
+                    auto msg = juce::MidiMessage::noteOff(ch + 1, note);
+                    for (auto& [trackId, node] : trackMidiSources)
+                        if (node) node->scheduleSingleMessage(msg, 0);
+                    midi.addEvent(msg, 0);
+                }
+                ns.clearAll();
+            }
+            if (isStopped) {
+                for (auto& [trackId, afNode] : trackAudioFileNodes)
+                    if (afNode) afNode->setActive(false);
             }
         }
 
@@ -277,6 +333,11 @@ private:
     std::atomic<int64_t> samplesSinceStart { 0 };
     double currentSampleRate = 0;
 
+    // Loop
+    std::atomic<bool> loopEnabled { false };
+    std::atomic<double> loopStart { 0.0 };
+    std::atomic<double> loopEnd { 0.0 };
+
     // Arrangement pointer (atomic — swapped from message thread)
     std::atomic<const Arrangement*> arrangement { nullptr };
 
@@ -295,6 +356,17 @@ private:
     // Track MIDI sources — modified only during rebuildConnections (not while processing)
     std::map<juce::String, MidiSourceNode*> trackMidiSources;
     std::map<juce::String, AudioFileNode*> trackAudioFileNodes;
+
+    // Active note tracking for targeted flush (audio thread only)
+    // Bit set: activeNotes[channel-1] has bit N set if note N is on
+    // Two uint64s per channel cover 128 notes
+    struct NoteSet {
+        uint64_t lo = 0, hi = 0;  // bits 0-63, 64-127
+        void set(int n) { if (n < 64) lo |= (1ULL << n); else hi |= (1ULL << (n - 64)); }
+        void clear(int n) { if (n < 64) lo &= ~(1ULL << n); else hi &= ~(1ULL << (n - 64)); }
+        void clearAll() { lo = hi = 0; }
+    };
+    NoteSet activeNotes[16];  // per MIDI channel
 
     // Flag: flush all notes on next processBlock
     std::atomic<bool> needsNoteFlush { false };

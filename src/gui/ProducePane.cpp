@@ -48,6 +48,12 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
         if (!metVol.empty())
             metronomeSlider.setValue(std::stof(metVol), juce::dontSendNotification);
 
+        // Restore zoom state
+        auto ppb = state->getConfig("zoom_pixels_per_beat");
+        if (!ppb.empty()) pixelsPerBeat = std::stod(ppb);
+        auto trh = state->getConfig("zoom_track_row_height");
+        if (!trh.empty()) trackRowHeight = std::stoi(trh);
+
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
                 juce::MessageManager::callAsync([this] { repaint(); });
@@ -261,6 +267,13 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
     window->onClose = editor->onCancel;
 }
 
+void ProducePane::saveZoomState() {
+    if (state) {
+        state->setConfig("zoom_pixels_per_beat", std::to_string(pixelsPerBeat));
+        state->setConfig("zoom_track_row_height", std::to_string(trackRowHeight));
+    }
+}
+
 double ProducePane::snapBeatToGrid(double beat) const {
     if (!snapToGrid || !sequencer) return beat;
     double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
@@ -444,7 +457,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     // LCD background — matches fader meter groove
     auto lcdBg = Theme::color(Theme::Color::bgSlot);
     auto lcdBorder = Theme::color(Theme::Color::border);
-    auto lcdDigit = Theme::color(Theme::Color::midiActive);
+    auto lcdDigit = Theme::color(Theme::Color::lcdDigit);
     g.setColour(lcdBg);
     g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
     g.setColour(lcdBorder);
@@ -522,29 +535,103 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(Theme::color(Theme::Color::bgSlot));
-    g.fillRect(area.withLeft(trackHeaderWidth));
+    auto rulerArea = area.withLeft(trackHeaderWidth);
+    g.setColour(Theme::color(Theme::Color::bgApp));
+    g.fillRect(rulerArea);
+    auto rulerLineCol = Theme::color(Theme::Color::border).brighter(0.15f);
+    g.setColour(rulerLineCol);
+    g.drawLine((float)rulerArea.getX(), (float)rulerArea.getBottom(),
+               (float)rulerArea.getRight(), (float)rulerArea.getBottom(), 1.0f);
 
-    g.setFont(Theme::font(9.0f));
+    if (!sequencer) return;
+
+    int bpb = beatsPerBar();
     int gridWidth = getWidth() - trackHeaderWidth;
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
-    // Draw bar numbers
-    int startBar = (int)(startBeat / beatsPerBar());
-    int endBar = (int)(endBeat / beatsPerBar()) + 1;
+    int startBar = (int)(startBeat / bpb);
+    int endBar = (int)(endBeat / bpb) + 1;
+
+    // Adaptive bar number interval based on zoom
+    double pixelsPerBar = pixelsPerBeat * bpb;
+    int barLabelEvery = 1;
+    if (pixelsPerBar < 12) barLabelEvery = 16;
+    else if (pixelsPerBar < 24) barLabelEvery = 8;
+    else if (pixelsPerBar < 48) barLabelEvery = 4;
+    else if (pixelsPerBar < 80) barLabelEvery = 2;
+
+    int tickBottom = rulerArea.getBottom() - 1;
+    int tallTick = rulerArea.getHeight() - 4;   // bar lines
+    int medTick = rulerArea.getHeight() / 2;     // beat lines
+    int shortTick = rulerArea.getHeight() / 4;   // sub-beat ticks
+
+    // Determine sub-beat resolution based on zoom
+    int tsDen = sequencer->getTimeSignatureDenominator();
+    double pixelsPerBeatVal = pixelsPerBeat;
+    int subsPerBeat = 0;
+    if (pixelsPerBeatVal > 60) subsPerBeat = tsDen;      // show subdivisions
+    else if (pixelsPerBeatVal > 30) subsPerBeat = 2;     // half-beat ticks
+    // else: no sub-beat ticks
 
     for (int bar = startBar; bar <= endBar; ++bar) {
-        double barBeat = bar * beatsPerBar();
-        int x = beatToX(barBeat);
-        if (x < trackHeaderWidth || x > getWidth()) continue;
+        double barBeat = bar * bpb;
 
-        g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.drawText(juce::String(bar + 1), x + 2, area.getY(), 30, rulerHeight,
-                   juce::Justification::centredLeft);
+        for (int b = 0; b < bpb; ++b) {
+            double beat = barBeat + b;
+            int x = beatToX(beat);
+            if (x < trackHeaderWidth || x > getWidth()) continue;
 
-        g.setColour(Theme::color(Theme::Color::border));
-        g.drawLine((float)x, (float)area.getY(), (float)x, (float)area.getBottom(), 1.0f);
+            if (b == 0) {
+                // Bar line — tall tick
+                g.setColour(rulerLineCol);
+                g.drawLine((float)x, (float)(tickBottom - tallTick), (float)x, (float)tickBottom, 1.0f);
+
+                // Bar number
+                if ((bar + 1) % barLabelEvery == 0 || barLabelEvery == 1) {
+                    g.setFont(Theme::font(Theme::fontSizeSm));
+                    g.setColour(rulerLineCol);
+                    g.drawText(juce::String(bar + 1), x + 3, rulerArea.getY(), 40, 16,
+                               juce::Justification::centredLeft);
+                }
+            } else {
+                // Beat line — medium tick
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.drawLine((float)x, (float)(tickBottom - medTick), (float)x, (float)tickBottom, 0.5f);
+            }
+
+            // Sub-beat ticks
+            if (subsPerBeat > 0) {
+                for (int s = 1; s < subsPerBeat; ++s) {
+                    double subBeat = beat + (double)s / subsPerBeat;
+                    int sx = beatToX(subBeat);
+                    if (sx < trackHeaderWidth || sx > getWidth()) continue;
+                    g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.4f));
+                    g.drawLine((float)sx, (float)(tickBottom - shortTick), (float)sx, (float)tickBottom, 0.5f);
+                }
+            }
+        }
+    }
+
+    // Cycle region highlight in ruler (full height)
+    if (sequencer) {
+        double loopStart = sequencer->getLoopStart();
+        double loopEnd = sequencer->getLoopEnd();
+        if (loopEnd > loopStart) {
+            int x1 = std::max(beatToX(loopStart), trackHeaderWidth);
+            int x2 = std::min(beatToX(loopEnd), getWidth());
+            if (x2 > x1) {
+                bool active = sequencer->isLoopEnabled();
+                auto cycleCol = active ? juce::Colour(0xff8a8a40) : juce::Colour(0xff505050);
+                g.setColour(cycleCol.withAlpha(active ? 0.35f : 0.15f));
+                g.fillRect(x1, rulerArea.getY(), x2 - x1, rulerArea.getHeight());
+                g.setColour(cycleCol.withAlpha(0.6f));
+                g.drawLine((float)x1, (float)rulerArea.getY(), (float)x1,
+                           (float)rulerArea.getBottom(), 1.5f);
+                g.drawLine((float)x2, (float)rulerArea.getY(), (float)x2,
+                           (float)rulerArea.getBottom(), 1.5f);
+            }
+        }
     }
 }
 
@@ -945,6 +1032,29 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             }
         }
     }
+
+    // Cycle guide lines in arrange area — only while dragging
+    if (draggingCycle && sequencer) {
+        double loopStart = sequencer->getLoopStart();
+        double loopEnd = sequencer->getLoopEnd();
+        if (loopEnd > loopStart) {
+            auto lineCol = juce::Colour(0xff8a8a40);
+            int x1 = beatToX(loopStart);
+            int x2 = beatToX(loopEnd);
+            g.setColour(lineCol.withAlpha(0.5f));
+            if (x1 >= trackHeaderWidth && x1 <= getWidth())
+                g.drawLine((float)x1, (float)area.getY(), (float)x1, (float)area.getBottom(), 1.0f);
+            if (x2 >= trackHeaderWidth && x2 <= getWidth())
+                g.drawLine((float)x2, (float)area.getY(), (float)x2, (float)area.getBottom(), 1.0f);
+            // Subtle fill
+            int cx1 = std::max(x1, trackHeaderWidth);
+            int cx2 = std::min(x2, getWidth());
+            if (cx2 > cx1) {
+                g.setColour(lineCol.withAlpha(0.06f));
+                g.fillRect(cx1, area.getY(), cx2 - cx1, area.getHeight());
+            }
+        }
+    }
 }
 
 void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -1159,30 +1269,77 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             }
         }
 
-        // Clicked empty grid — deselect and set playhead
+        // Clicked empty grid — deselect (playhead only moves via ruler)
         selectedRegionIds.clear();
         if (state) state->clearSelection();
-        if (sequencer) {
-            double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
-            if (beat >= 0.0) { sequencer->setBeatPosition(beat); ensurePlayheadVisible(); }
-        }
         repaint();
         return;
     }
 
-    // Click on ruler to set playhead
-    if (sequencer && event.getPosition().getY() > transportHeight
+    // Click on ruler — plain click sets playhead, drag starts/adjusts cycle
+    if (sequencer && event.getPosition().getY() >= transportHeight
+        && event.getPosition().getY() < transportHeight + rulerHeight
         && event.getPosition().getX() > trackHeaderWidth) {
         double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
-        if (beat >= 0.0) {
-            sequencer->setBeatPosition(beat);
-            ensurePlayheadVisible();
-            repaint();
+        draggingCycle = false;
+        draggingCycleEdge = CycleEdge::None;
+
+        // Check if near an existing cycle edge (when cycle is enabled)
+        if (sequencer->isLoopEnabled()) {
+            int startX = beatToX(sequencer->getLoopStart());
+            int endX = beatToX(sequencer->getLoopEnd());
+            int mx = event.getPosition().getX();
+            if (std::abs(mx - startX) <= cycleEdgeThreshold) {
+                draggingCycleEdge = CycleEdge::Start;
+                dragStartY = event.getPosition().getY();
+                return;
+            }
+            if (std::abs(mx - endX) <= cycleEdgeThreshold) {
+                draggingCycleEdge = CycleEdge::End;
+                dragStartY = event.getPosition().getY();
+                return;
+            }
         }
+
+        cycleAnchorBeat = beat;
+        dragStartY = event.getPosition().getY();
+        return;
     }
 }
 
 void ProducePane::mouseDrag(const juce::MouseEvent& event) {
+    // Ruler drag → cycle region (new or edge adjust)
+    if (dragStartY >= transportHeight && dragStartY < transportHeight + rulerHeight
+        && event.getPosition().getX() > trackHeaderWidth && sequencer) {
+        double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+
+        // Edge drag — adjust existing cycle boundary
+        if (draggingCycleEdge != CycleEdge::None) {
+            double lo = sequencer->getLoopStart();
+            double hi = sequencer->getLoopEnd();
+            if (draggingCycleEdge == CycleEdge::Start)
+                lo = std::min(beat, hi - 0.25);
+            else
+                hi = std::max(beat, lo + 0.25);
+            sequencer->setLoopRange(lo, hi);
+            repaint();
+            return;
+        }
+
+        // New cycle drag
+        if (!draggingCycle && event.getDistanceFromDragStart() > 3) {
+            draggingCycle = true;
+            sequencer->setLoopEnabled(true);
+        }
+        if (draggingCycle) {
+            double lo = std::min(cycleAnchorBeat, beat);
+            double hi = std::max(cycleAnchorBeat, beat);
+            sequencer->setLoopRange(lo, hi);
+            repaint();
+        }
+        return;
+    }
+
     // Action event drag
     if (!dragActionEventId.empty() && state) {
         if (!draggingActionEvent && event.getDistanceFromDragStart() > 5)
@@ -1333,6 +1490,30 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
 }
 
 void ProducePane::mouseUp(const juce::MouseEvent& event) {
+    // Complete ruler interaction (cycle drag, edge drag, or plain click)
+    if (dragStartY >= transportHeight && dragStartY < transportHeight + rulerHeight) {
+        if (draggingCycleEdge != CycleEdge::None) {
+            // Edge drag complete — nothing extra needed
+        } else if (draggingCycle && sequencer) {
+            double lo = sequencer->getLoopStart();
+            double hi = sequencer->getLoopEnd();
+            if (hi - lo < 0.25)
+                sequencer->setLoopEnabled(false);
+        } else if (sequencer) {
+            // Plain click (no drag) — set playhead
+            double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            if (beat >= 0.0) {
+                sequencer->setBeatPosition(beat);
+                ensurePlayheadVisible();
+            }
+        }
+        draggingCycle = false;
+        draggingCycleEdge = CycleEdge::None;
+        dragStartY = 0;
+        repaint();
+        return;
+    }
+
     // Complete action event drag
     if (!dragActionEventId.empty()) {
         dragActionEventId.clear();
@@ -1648,6 +1829,20 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseMove(const juce::MouseEvent& event) {
+    // Cycle edge resize cursor in ruler
+    if (sequencer && sequencer->isLoopEnabled()
+        && event.getPosition().getY() >= transportHeight
+        && event.getPosition().getY() < transportHeight + rulerHeight
+        && event.getPosition().getX() > trackHeaderWidth) {
+        int mx = event.getPosition().getX();
+        int startX = beatToX(sequencer->getLoopStart());
+        int endX = beatToX(sequencer->getLoopEnd());
+        if (std::abs(mx - startX) <= cycleEdgeThreshold || std::abs(mx - endX) <= cycleEdgeThreshold) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+    }
+
     // Show resize cursor when hovering over trim handles of selected regions
     for (auto& hit : regionHitRects) {
         if (selectedRegionIds.count(hit.regionId) && hit.bounds.contains(event.getPosition())) {
@@ -1666,6 +1861,7 @@ void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
     if (event.mods.isCommandDown()) {
         // Zoom (pinch or Cmd+scroll)
         pixelsPerBeat = juce::jlimit(5.0, 100.0, pixelsPerBeat + wheel.deltaY * 10);
+        saveZoomState();
     } else {
         // Horizontal scroll (two-finger swipe or deltaX)
         if (std::abs(wheel.deltaX) > std::abs(wheel.deltaY))
@@ -1743,6 +1939,30 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
+    // c: toggle cycle playback
+    if (key.getTextCharacter() == 'c' && sequencer) {
+        sequencer->setLoopEnabled(!sequencer->isLoopEnabled());
+        repaint();
+        return true;
+    }
+
+    // u: set cycle locators from selected regions
+    if (key.getTextCharacter() == 'u' && sequencer && arrangement && !selectedRegionIds.empty()) {
+        double earliest = 1e9, latest = 0;
+        for (auto& rid : selectedRegionIds) {
+            auto* r = arrangement->findRegion(rid);
+            if (!r) continue;
+            earliest = std::min(earliest, r->startBeat);
+            latest = std::max(latest, r->startBeat + r->lengthBeats);
+        }
+        if (latest > earliest) {
+            sequencer->setLoopRange(earliest, latest);
+            sequencer->setLoopEnabled(true);
+        }
+        repaint();
+        return true;
+    }
+
     // Return: snap playhead to beginning
     if (key == juce::KeyPress::returnKey && sequencer) {
         sequencer->setBeatPosition(0.0);
@@ -1756,19 +1976,19 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         auto c = key.getKeyCode();
         if (c == 'H' || c == 'h') {
             pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat / 1.3);
-            repaint(); return true;
+            saveZoomState(); repaint(); return true;
         }
         if (c == 'L' || c == 'l') {
             pixelsPerBeat = juce::jlimit(5.0, 200.0, pixelsPerBeat * 1.3);
-            repaint(); return true;
+            saveZoomState(); repaint(); return true;
         }
         if (c == 'J' || c == 'j') {
             trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight * 1.3));
-            repaint(); return true;
+            saveZoomState(); repaint(); return true;
         }
         if (c == 'K' || c == 'k') {
             trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight / 1.3));
-            repaint(); return true;
+            saveZoomState(); repaint(); return true;
         }
     }
 

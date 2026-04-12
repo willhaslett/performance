@@ -38,6 +38,7 @@ private:
     juce::String effectId;  // internal key for effect lookup (empty for instruments)
     bool hovered = false;
     bool waitingForLoad = false;
+    int loadPollCount = 0;
 
     void timerCallback() override;
     void buildPluginMenu(juce::PopupMenu& menu, const std::vector<juce::String>& plugins, bool isInstrument);

@@ -1526,6 +1526,10 @@ double AudioEngine::getPlaybackBeatPosition() const {
     return graphWrapper->getBeatPosition();
 }
 
+void AudioEngine::setPlaybackLoop(bool enabled, double start, double end) {
+    graphWrapper->setLoop(enabled, start, end);
+}
+
 void AudioEngine::setArrangement(const Arrangement* arrangement) {
     graphWrapper->setArrangement(arrangement);
 }

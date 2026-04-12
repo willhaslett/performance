@@ -110,12 +110,25 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     audioEngine->setArrangement(&arrangementImpl);
     auto* seq = static_cast<InternalSequencer*>(sequencerImpl.get());
     seq->setTransportCallback([this](bool playing) {
-        audioEngine->setPlaybackState(playing, sequencerImpl->getTempo());
         if (playing) {
+            // Jump to cycle start if cycle is enabled and playhead is outside the region
+            if (sequencerImpl->isLoopEnabled()) {
+                double pos = sequencerImpl->getBeatPosition();
+                double lo = sequencerImpl->getLoopStart();
+                double hi = sequencerImpl->getLoopEnd();
+                if (hi > lo && (pos < lo || pos >= hi)) {
+                    sequencerImpl->setBeatPosition(lo);
+                }
+                audioEngine->setPlaybackLoop(true, lo, hi);
+            }
+            // Set position BEFORE enabling playback — prevents race where
+            // audio thread processes a buffer with stale position
             audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
+            audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
             if (recordModeActive)
                 startRecording();
         } else {
+            audioEngine->setPlaybackState(false, sequencerImpl->getTempo());
             stopRecording();
             recordModeActive = false;
         }
@@ -155,6 +168,10 @@ void PerformanceCoordinator::timerCallback() {
             if (!metVolStr.empty()) metVol = std::stof(metVolStr);
             audioEngine->setMetronome(sequencerImpl->isMetronomeEnabled(),
                                        sequencerImpl->getTimeSignatureNumerator(), metVol);
+            // Sync loop state to engine
+            audioEngine->setPlaybackLoop(sequencerImpl->isLoopEnabled(),
+                                          sequencerImpl->getLoopStart(),
+                                          sequencerImpl->getLoopEnd());
             // Drain recorded MIDI events from audio thread
             if (isRecording) {
                 drainRecordFIFO();
@@ -537,8 +554,8 @@ bool PerformanceCoordinator::restoreSession() {
         return true;
     }
 
-    // Restore the last active song from config, or first song
-    auto lastSongId = stateAPI->getConfig("current_song_id");
+    // Restore the last active song
+    auto lastSongId = stateAPI->getMasterOutputId();
     if (lastSongId.empty() || !stateAPI->findSong(lastSongId))
         lastSongId = songs[0].id;
 

@@ -419,9 +419,11 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
-    // Forward Cmd+arrows to ProducePane for zoom (global scope)
-    if (key.getModifiers().isCommandDown()) {
-        if (producePane.keyPressed(key))
+    // Forward keys to ProducePane when it's visible (arrange shortcuts work globally)
+    if (producePane.isVisible()) {
+        auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        bool textEditorFocused = focused && dynamic_cast<juce::TextEditor*>(focused);
+        if (!textEditorFocused && producePane.keyPressed(key))
             return true;
     }
 
