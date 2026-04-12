@@ -179,6 +179,9 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN tempo REAL DEFAULT 120.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN time_sig_num INTEGER DEFAULT 4", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN time_sig_den INTEGER DEFAULT 4", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_start REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_end REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_enabled INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE busses ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
@@ -320,7 +323,7 @@ void PersistenceLayer::readActions(AppState& out) {
 }
 
 void PersistenceLayer::readSongs(AppState& out) {
-    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den FROM songs");
+    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
         song.id = col_str(songStmt, 0);
@@ -333,6 +336,9 @@ void PersistenceLayer::readSongs(AppState& out) {
         int tsDen = sqlite3_column_int(songStmt, 6);
         if (tempo > 0) song.tempoEvents.push_back({ 0.0, tempo });
         if (tsNum > 0 && tsDen > 0) song.timeSigEvents.push_back({ 0.0, tsNum, tsDen });
+        song.cycleStart = sqlite3_column_double(songStmt, 7);
+        song.cycleEnd = sqlite3_column_double(songStmt, 8);
+        song.cycleEnabled = sqlite3_column_int(songStmt, 9) != 0;
 
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, midi_enabled, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, audio_enabled, color, output_target FROM tracks WHERE song_id = ? ORDER BY position");
@@ -666,7 +672,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         int songTsNum = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].numerator;
         int songTsDen = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].denominator;
 
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den) VALUES (?, ?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -677,6 +683,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 5, songTempo);
         sqlite3_bind_int(stmt, 6, songTsNum);
         sqlite3_bind_int(stmt, 7, songTsDen);
+        sqlite3_bind_double(stmt, 8, song.cycleStart);
+        sqlite3_bind_double(stmt, 9, song.cycleEnd);
+        sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
         sqlite3_step(stmt);
         sqlite3_finalize(stmt);
 

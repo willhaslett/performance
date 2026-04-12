@@ -138,6 +138,8 @@ private:
     double cycleAnchorBeat = 0.0;
     enum class CycleEdge { None, Start, End };
     CycleEdge draggingCycleEdge = CycleEdge::None;
+    bool draggingCycleBody = false;
+    double cycleBodyDragOffset = 0.0;  // beat offset from drag start to cycle start
     static constexpr int cycleEdgeThreshold = 6;  // pixels
 
     // Action event drag

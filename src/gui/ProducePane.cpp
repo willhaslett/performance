@@ -1283,11 +1283,16 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
         double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
         draggingCycle = false;
         draggingCycleEdge = CycleEdge::None;
+        draggingCycleBody = false;
 
-        // Check if near an existing cycle edge (when cycle is enabled)
-        if (sequencer->isLoopEnabled()) {
-            int startX = beatToX(sequencer->getLoopStart());
-            int endX = beatToX(sequencer->getLoopEnd());
+        double loopStart = sequencer->getLoopStart();
+        double loopEnd = sequencer->getLoopEnd();
+        bool hasCycle = loopEnd > loopStart;
+
+        // Check if near an existing cycle edge
+        if (hasCycle) {
+            int startX = beatToX(loopStart);
+            int endX = beatToX(loopEnd);
             int mx = event.getPosition().getX();
             if (std::abs(mx - startX) <= cycleEdgeThreshold) {
                 draggingCycleEdge = CycleEdge::Start;
@@ -1296,6 +1301,13 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             }
             if (std::abs(mx - endX) <= cycleEdgeThreshold) {
                 draggingCycleEdge = CycleEdge::End;
+                dragStartY = event.getPosition().getY();
+                return;
+            }
+            // Check if inside the cycle body
+            if (beat >= loopStart && beat < loopEnd) {
+                draggingCycleBody = true;
+                cycleBodyDragOffset = beat - loopStart;
                 dragStartY = event.getPosition().getY();
                 return;
             }
@@ -1312,6 +1324,15 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
     if (dragStartY >= transportHeight && dragStartY < transportHeight + rulerHeight
         && event.getPosition().getX() > trackHeaderWidth && sequencer) {
         double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+
+        // Body drag — move entire cycle region
+        if (draggingCycleBody) {
+            double newStart = snapBeatToGrid(std::max(0.0, beat - cycleBodyDragOffset));
+            double len = sequencer->getLoopEnd() - sequencer->getLoopStart();
+            sequencer->setLoopRange(newStart, newStart + len);
+            repaint();
+            return;
+        }
 
         // Edge drag — adjust existing cycle boundary
         if (draggingCycleEdge != CycleEdge::None) {
@@ -1490,10 +1511,12 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
 }
 
 void ProducePane::mouseUp(const juce::MouseEvent& event) {
-    // Complete ruler interaction (cycle drag, edge drag, or plain click)
+    // Complete ruler interaction (cycle drag, edge drag, body drag, or plain click)
     if (dragStartY >= transportHeight && dragStartY < transportHeight + rulerHeight) {
-        if (draggingCycleEdge != CycleEdge::None) {
-            // Edge drag complete — nothing extra needed
+        if (draggingCycleBody) {
+            // Body drag complete
+        } else if (draggingCycleEdge != CycleEdge::None) {
+            // Edge drag complete
         } else if (draggingCycle && sequencer) {
             double lo = sequencer->getLoopStart();
             double hi = sequencer->getLoopEnd();
@@ -1509,6 +1532,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         }
         draggingCycle = false;
         draggingCycleEdge = CycleEdge::None;
+        draggingCycleBody = false;
         dragStartY = 0;
         repaint();
         return;
@@ -1829,17 +1853,23 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseMove(const juce::MouseEvent& event) {
-    // Cycle edge resize cursor in ruler
-    if (sequencer && sequencer->isLoopEnabled()
-        && event.getPosition().getY() >= transportHeight
+    // Cycle cursors in ruler
+    if (sequencer && event.getPosition().getY() >= transportHeight
         && event.getPosition().getY() < transportHeight + rulerHeight
         && event.getPosition().getX() > trackHeaderWidth) {
-        int mx = event.getPosition().getX();
-        int startX = beatToX(sequencer->getLoopStart());
-        int endX = beatToX(sequencer->getLoopEnd());
-        if (std::abs(mx - startX) <= cycleEdgeThreshold || std::abs(mx - endX) <= cycleEdgeThreshold) {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            return;
+        double ls = sequencer->getLoopStart(), le = sequencer->getLoopEnd();
+        if (le > ls) {
+            int mx = event.getPosition().getX();
+            int startX = beatToX(ls);
+            int endX = beatToX(le);
+            if (std::abs(mx - startX) <= cycleEdgeThreshold || std::abs(mx - endX) <= cycleEdgeThreshold) {
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                return;
+            }
+            if (mx > startX + cycleEdgeThreshold && mx < endX - cycleEdgeThreshold) {
+                setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+                return;
+            }
         }
     }
 

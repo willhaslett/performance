@@ -420,6 +420,17 @@ void PerformanceCoordinator::syncTempoFromState() {
     sequencerImpl->setTempo(stateAPI->getSongTempo());
     auto [num, den] = stateAPI->getSongTimeSignature();
     sequencerImpl->setTimeSignature(num, den);
+
+    // Restore cycle range from song
+    auto* song = stateAPI->currentSong();
+    if (song && song->cycleEnd > song->cycleStart) {
+        sequencerImpl->setLoopRange(song->cycleStart, song->cycleEnd);
+        sequencerImpl->setLoopEnabled(song->cycleEnabled);
+    } else {
+        sequencerImpl->setLoopRange(0.0, 0.0);
+        sequencerImpl->setLoopEnabled(false);
+    }
+
     perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d\n",
             stateAPI->getSongTempo(), num, den);
 }
@@ -674,6 +685,15 @@ void PerformanceCoordinator::captureProcessorState() {
 
 void PerformanceCoordinator::save() {
     captureProcessorState();
+    // Persist cycle range to current song
+    if (sequencerImpl && stateAPI) {
+        auto* song = stateAPI->currentSong();
+        if (song) {
+            song->cycleStart = sequencerImpl->getLoopStart();
+            song->cycleEnd = sequencerImpl->getLoopEnd();
+            song->cycleEnabled = sequencerImpl->isLoopEnabled();
+        }
+    }
     if (persistence && stateAPI) {
         persistence->saveFrom(*stateAPI);
         perfLog("[Coordinator] Saved\n");

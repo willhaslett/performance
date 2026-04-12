@@ -62,7 +62,7 @@ private:
     std::atomic<double> beatPosition { 0.0 };
     std::atomic<bool> loopEnabled { false };
     std::atomic<double> loopStart { 0.0 };
-    std::atomic<double> loopEnd { 4.0 };
+    std::atomic<double> loopEnd { 0.0 };  // 0 = no cycle set
     std::atomic<bool> metronomeEnabled { false };
     std::atomic<int> timeSigNum { 4 };
     std::atomic<int> timeSigDen { 4 };

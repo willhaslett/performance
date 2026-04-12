@@ -219,6 +219,11 @@ struct SongState {
     std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
     std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
 
+    // Cycle playback (per-song)
+    double cycleStart = 0.0;
+    double cycleEnd = 0.0;      // 0 = no cycle set
+    bool cycleEnabled = false;
+
     // Action events — beat-triggered actions on the timeline
     struct ActionEvent {
         std::string id;
