@@ -1,6 +1,7 @@
 #pragma once
 #include "state/StateModel.h"
 #include "state/StateEvents.h"
+#include "state/UndoHistory.h"
 #include <string>
 #include <vector>
 
@@ -200,13 +201,27 @@ public:
     // Fires a single Config "current_song_id" event so EngineSync rebuilds.
     void replaceState(AppState&& newState);
 
+    // --- Undo/Redo ---
+    void pushUndo();  // snapshot current state (call before mutations)
+    void beginTransaction();  // begin a grouped operation (one undo step)
+    void endTransaction();    // end grouped operation
+    bool undo();      // returns true if state was restored
+    bool redo();
+    bool canUndo() const { return undoHistory.canUndo(); }
+    bool canRedo() const { return undoHistory.canRedo(); }
+    void suspendUndo() { undoHistory.suspend(); }
+    void resumeUndo() { undoHistory.resume(); }
+    UndoHistory& getUndoHistory() { return undoHistory; }
+
     // --- UUID generation ---
     static std::string generateId();
 
 private:
     AppState state;
     StateEventBus eventBus;
+    UndoHistory undoHistory;
     bool dirty = false;
+    bool inTransaction = false;
 
     // Find the effects vector that contains effectId, and optionally the parent ID
     std::vector<EffectState>* findEffectList(const std::string& effectId, std::string* outParentId = nullptr);

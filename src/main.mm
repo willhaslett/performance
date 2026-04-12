@@ -260,6 +260,18 @@ public:
             });
         };
 
+        // Wire undo/redo
+        layout->onUndo = [this]() {
+            if (coordinator->state().undo()) {
+                coordinator->onUndoRedoRestore();
+            }
+        };
+        layout->onRedo = [this]() {
+            if (coordinator->state().redo()) {
+                coordinator->onUndoRedoRestore();
+            }
+        };
+
         // Wire sidebar song loading
         layout->getSidebar().onLoadSong = [this, layout](const std::string& songId) {
             layout->showOverlay("Loading song...");

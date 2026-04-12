@@ -50,6 +50,9 @@ public:
     void save();  // flush state to SQLite
     void captureProcessorState();  // grab all plugin binary blobs into state
 
+    // --- Undo/Redo ---
+    void onUndoRedoRestore();  // post-restore fixup after undo/redo
+
     // --- Song state snapshots ---
     void saveInitialState();
     void loadInitialState();

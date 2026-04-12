@@ -11,6 +11,8 @@ BusStrip::BusStrip(const juce::String& id, const juce::String& name,
     faderMeter.onGainChanged = [&](float newGain) {
         state.setBusGain(busId.toStdString(), newGain);
     };
+    faderMeter.onDragStart = [&]() { state.beginTransaction(); };
+    faderMeter.onDragEnd = [&]() { state.endTransaction(); };
 
     // Start with one empty effect slot
     rebuildEffectSlots();

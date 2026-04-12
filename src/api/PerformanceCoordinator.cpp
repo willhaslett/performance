@@ -251,6 +251,10 @@ void PerformanceCoordinator::stopRecordMode() {
 void PerformanceCoordinator::startRecording() {
     if (!stateAPI || !audioEngine) return;
 
+    // Push undo snapshot before recording, then suspend during recording
+    stateAPI->pushUndo();
+    stateAPI->suspendUndo();
+
     // Find armed MIDI tracks
     recordingTrackIds.clear();
     audioRecordSessions.clear();
@@ -384,6 +388,10 @@ void PerformanceCoordinator::stopRecording() {
     arrangementImpl.stopRecording();
     isRecording = false;
     recordingTrackIds.clear();
+
+    // Resume undo — the next undo will revert to pre-recording state
+    stateAPI->resumeUndo();
+
     perfLog("[Coordinator] Recording stopped at beat %.1f, total regions: %d\n",
             stopBeat, (int)arrangementImpl.allRegions().size());
 }
@@ -684,6 +692,28 @@ void PerformanceCoordinator::captureProcessorState() {
         stateAPI->markDirty();
         perfLog("[Coordinator] Captured %d processor states\n", captured);
     }
+}
+
+void PerformanceCoordinator::onUndoRedoRestore() {
+    // Re-point arrangement at current song's tracks
+    if (auto* s = stateAPI->currentSong())
+        arrangementImpl.setTracks(&s->tracks);
+
+    // Reload audio files (regions may have changed)
+    loadAudioFilesIntoEngine();
+
+    // Sync tempo and cycle
+    syncTempoFromState();
+
+    // Cancel any in-flight automations
+    if (automationEngine)
+        automationEngine->cancelAll();
+
+    // Flush notes (regions may have been removed)
+    if (audioEngine)
+        audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
+
+    perfLog("[Coordinator] Undo/redo restore complete\n");
 }
 
 void PerformanceCoordinator::save() {

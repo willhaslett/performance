@@ -15,6 +15,8 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     faderMeter.onGainChanged = [&](float newGain) {
         state.setTrackGain(trackId.toStdString(), newGain);
     };
+    faderMeter.onDragStart = [&]() { state.beginTransaction(); };
+    faderMeter.onDragEnd = [&]() { state.endTransaction(); };
 
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
 }

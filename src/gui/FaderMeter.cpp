@@ -180,6 +180,7 @@ void FaderMeter::mouseDown(const juce::MouseEvent& event) {
         dragging = true;
         dragStartGain = gainValue;
         dragStartY = event.getPosition().getY();
+        if (onDragStart) onDragStart();
     } else {
         // Click-to-jump: set fader to clicked position
         dragging = true;
@@ -214,5 +215,6 @@ void FaderMeter::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void FaderMeter::mouseUp(const juce::MouseEvent&) {
+    if (dragging && onDragEnd) onDragEnd();
     dragging = false;
 }

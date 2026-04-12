@@ -154,6 +154,7 @@ void StateAPI::setEffectPresetId(const std::string& effectId, const std::string&
 // --- Song ---
 
 std::string StateAPI::createSong(const std::string& name) {
+    pushUndo();
     SongState song;
     song.id = generateId();
     song.name = name;
@@ -164,6 +165,7 @@ std::string StateAPI::createSong(const std::string& name) {
 }
 
 void StateAPI::deleteSong(const std::string& id) {
+    pushUndo();
     auto it = std::find_if(state.songs.begin(), state.songs.end(),
                            [&](auto& s) { return s.id == id; });
     if (it == state.songs.end()) return;
@@ -187,6 +189,7 @@ void StateAPI::setCurrentSong(const std::string& songId) {
 }
 
 void StateAPI::setMasterGain(float gain) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     song->masterGain = gain;
@@ -200,6 +203,7 @@ float StateAPI::getMasterGain() const {
 }
 
 void StateAPI::setMasterAudioEnabled(bool enabled) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     song->masterAudioEnabled = enabled;
@@ -213,6 +217,7 @@ bool StateAPI::isMasterAudioEnabled() const {
 }
 
 void StateAPI::setSongTempo(double bpm) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     if (song->tempoEvents.empty())
@@ -231,6 +236,7 @@ double StateAPI::getSongTempo() const {
 }
 
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     if (song->timeSigEvents.empty())
@@ -257,6 +263,7 @@ std::string StateAPI::getMasterOutputId() const {
 // --- Tracks ---
 
 std::string StateAPI::createTrack(const std::string& name) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return {};
     TrackState track;
@@ -271,6 +278,7 @@ std::string StateAPI::createTrack(const std::string& name) {
 
 std::string StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
                                              int inputChannelCount) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return {};
     TrackState track;
@@ -289,6 +297,7 @@ std::string StateAPI::createAudioInputTrack(const std::string& name, int inputCh
 }
 
 std::string StateAPI::createActionTrack(const std::string& name) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return {};
     TrackState track;
@@ -305,6 +314,7 @@ std::string StateAPI::createActionTrack(const std::string& name) {
 }
 
 void StateAPI::removeTrack(const std::string& id) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     auto it = std::find_if(song->tracks.begin(), song->tracks.end(),
@@ -316,6 +326,7 @@ void StateAPI::removeTrack(const std::string& id) {
 }
 
 void StateAPI::renameTrack(const std::string& id, const std::string& name) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->name = name;
@@ -324,6 +335,7 @@ void StateAPI::renameTrack(const std::string& id, const std::string& name) {
 }
 
 void StateAPI::moveTrack(const std::string& id, int newPosition) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
 
@@ -355,6 +367,7 @@ void StateAPI::moveTrack(const std::string& id, int newPosition) {
 }
 
 void StateAPI::setTrackGain(const std::string& id, float gain) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->outputGain = gain;
@@ -368,6 +381,7 @@ float StateAPI::getTrackGain(const std::string& id) const {
 }
 
 void StateAPI::setTrackMidiEnabled(const std::string& id, bool enabled) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->midiEnabled = enabled;
@@ -381,6 +395,7 @@ bool StateAPI::isTrackMidiEnabled(const std::string& id) const {
 }
 
 void StateAPI::setTrackAudioEnabled(const std::string& id, bool enabled) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->audioEnabled = enabled;
@@ -394,6 +409,7 @@ bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
 }
 
 void StateAPI::setTrackOutputTarget(const std::string& id, const std::string& target) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->outputTarget = target;
@@ -421,6 +437,7 @@ bool StateAPI::isTrackArmed(const std::string& id) const {
 
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->pluginId = pluginId;
@@ -430,6 +447,7 @@ void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId
 }
 
 void StateAPI::clearTrackPlugin(const std::string& id) {
+    pushUndo();
     setTrackPlugin(id, "", "");
 }
 
@@ -441,6 +459,7 @@ void StateAPI::setTrackPresetId(const std::string& id, const std::string& preset
 }
 
 void StateAPI::setTrackInputChannels(const std::string& id, int start, int count) {
+    pushUndo();
     auto* track = findTrack(id);
     if (!track) return;
     track->inputChannelStart = start;
@@ -473,6 +492,7 @@ void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus statu
 // --- Busses ---
 
 std::string StateAPI::createBus(const std::string& name) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return {};
     BusState bus;
@@ -486,6 +506,7 @@ std::string StateAPI::createBus(const std::string& name) {
 }
 
 void StateAPI::removeBus(const std::string& id) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     auto it = std::find_if(song->busses.begin(), song->busses.end(),
@@ -497,6 +518,7 @@ void StateAPI::removeBus(const std::string& id) {
 }
 
 void StateAPI::renameBus(const std::string& id, const std::string& name) {
+    pushUndo();
     auto* bus = findBus(id);
     if (!bus) return;
     bus->name = name;
@@ -505,6 +527,7 @@ void StateAPI::renameBus(const std::string& id, const std::string& name) {
 }
 
 void StateAPI::setBusGain(const std::string& id, float gain) {
+    pushUndo();
     auto* bus = findBus(id);
     if (!bus) return;
     bus->outputGain = gain;
@@ -518,6 +541,7 @@ float StateAPI::getBusGain(const std::string& id) const {
 }
 
 void StateAPI::setBusAudioEnabled(const std::string& id, bool enabled) {
+    pushUndo();
     auto* bus = findBus(id);
     if (!bus) return;
     bus->audioEnabled = enabled;
@@ -531,6 +555,7 @@ bool StateAPI::isBusAudioEnabled(const std::string& id) const {
 }
 
 void StateAPI::setBusOutputTarget(const std::string& id, const std::string& target) {
+    pushUndo();
     auto* bus = findBus(id);
     if (!bus) return;
     bus->outputTarget = target;
@@ -547,6 +572,7 @@ std::string StateAPI::getBusOutputTarget(const std::string& id) const {
 
 std::string StateAPI::addEffect(const std::string& parentId, const std::string& name,
                                  const std::string& pluginId) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return {};
 
@@ -582,6 +608,7 @@ std::string StateAPI::addEffect(const std::string& parentId, const std::string& 
 }
 
 void StateAPI::removeEffect(const std::string& effectId) {
+    pushUndo();
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
     if (!list) return;
@@ -595,6 +622,7 @@ void StateAPI::removeEffect(const std::string& effectId) {
 // --- Sends ---
 
 std::string StateAPI::addSend(const std::string& trackId, const std::string& busId, float gain) {
+    pushUndo();
     auto* track = findTrack(trackId);
     if (!track) return {};
     SendState send;
@@ -608,6 +636,7 @@ std::string StateAPI::addSend(const std::string& trackId, const std::string& bus
 }
 
 void StateAPI::removeSend(const std::string& sendId) {
+    pushUndo();
     std::string trackId;
     auto* list = findSendList(sendId, &trackId);
     if (!list) return;
@@ -619,6 +648,7 @@ void StateAPI::removeSend(const std::string& sendId) {
 }
 
 void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& busId, float gain) {
+    pushUndo();
     auto* track = findTrack(trackId);
     if (!track) return;
     for (auto& s : track->sends) {
@@ -630,6 +660,7 @@ void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& b
 }
 
 void StateAPI::setSendGain(const std::string& sendId, float gain) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     for (auto& t : song->tracks) {
@@ -650,6 +681,7 @@ std::string StateAPI::addBinding(const std::string& songId, const std::string& c
                                   int channel, int number, const std::string& actionId,
                                   const std::string& args, const std::string& description,
                                   const std::string& deviceId) {
+    pushUndo();
     auto* song = findSong(songId);
     if (!song) return {};
     BindingState binding;
@@ -672,6 +704,7 @@ std::string StateAPI::addGlobalBinding(const std::string& controlType, int chann
                                         const std::string& actionId, const std::string& args,
                                         const std::string& description,
                                         const std::string& deviceId) {
+    pushUndo();
     BindingState binding;
     binding.id = generateId();
     // songId left empty = global
@@ -689,6 +722,7 @@ std::string StateAPI::addGlobalBinding(const std::string& controlType, int chann
 }
 
 void StateAPI::removeBinding(const std::string& id) {
+    pushUndo();
     // Check global bindings first
     auto git = std::find_if(state.globalBindings.begin(), state.globalBindings.end(),
                             [&](auto& b) { return b.id == id; });
@@ -863,6 +897,7 @@ std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) con
 
 std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
                                       const std::string& argsJson) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return "";
     SongState::ActionEvent ev;
@@ -876,6 +911,7 @@ std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
 }
 
 void StateAPI::removeActionEvent(const std::string& id) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     auto& events = song->actionEvents;
@@ -885,6 +921,7 @@ void StateAPI::removeActionEvent(const std::string& id) {
 }
 
 void StateAPI::setActionEventBeat(const std::string& id, double beat) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     for (auto& ev : song->actionEvents) {
@@ -910,6 +947,7 @@ std::vector<BindingState> StateAPI::scoreSteps() const {
 }
 
 void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     for (auto& b : song->bindings) {
@@ -924,6 +962,7 @@ void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position)
 }
 
 void StateAPI::clearScoreStep(const std::string& bindingId) {
+    pushUndo();
     auto* song = currentSong();
     if (!song) return;
     for (auto& b : song->bindings) {
@@ -1250,6 +1289,42 @@ void StateAPI::replaceState(AppState&& newState) {
     // Single event: tell EngineSync to rebuild for the current song
     if (!state.currentSongId.empty())
         eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
+}
+
+void StateAPI::pushUndo() {
+    if (inTransaction) return;  // transaction already captured the snapshot
+    undoHistory.push(state);
+}
+
+void StateAPI::beginTransaction() {
+    if (!inTransaction) {
+        undoHistory.push(state);
+        inTransaction = true;
+    }
+}
+
+void StateAPI::endTransaction() {
+    inTransaction = false;
+}
+
+bool StateAPI::undo() {
+    if (!undoHistory.canUndo()) return false;
+    auto restored = undoHistory.undo(state);
+    state = std::move(restored);
+    dirty = true;
+    if (!state.currentSongId.empty())
+        eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
+    return true;
+}
+
+bool StateAPI::redo() {
+    if (!undoHistory.canRedo()) return false;
+    auto restored = undoHistory.redo(state);
+    state = std::move(restored);
+    dirty = true;
+    if (!state.currentSongId.empty())
+        eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
+    return true;
 }
 
 void StateAPI::markDirty() {

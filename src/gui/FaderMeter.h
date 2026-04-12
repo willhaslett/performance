@@ -13,6 +13,8 @@ public:
 
     // Called when user drags the fader
     std::function<void(float newGain)> onGainChanged;
+    std::function<void()> onDragStart;  // begin undo transaction
+    std::function<void()> onDragEnd;    // end undo transaction
 
     // IEC-style piecewise dB→normalized mapping (expanded near 0dB, compressed at bottom)
     static float dbToNormalized(float db);

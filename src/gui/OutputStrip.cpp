@@ -9,6 +9,8 @@ OutputStrip::OutputStrip(StateAPI& state, EngineAPI& engine)
     faderMeter.onGainChanged = [&](float newGain) {
         state.setMasterGain(newGain);
     };
+    faderMeter.onDragStart = [&]() { state.beginTransaction(); };
+    faderMeter.onDragEnd = [&]() { state.endTransaction(); };
     // Don't rebuild slots in constructor — getMasterOutputId() may be empty.
     // First rebuild happens when MixerView calls setEffects() after session restore.
 }

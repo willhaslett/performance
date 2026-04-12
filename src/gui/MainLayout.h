@@ -57,6 +57,8 @@ public:
 
     std::function<void()> onSave;
     std::function<void()> onOpenSettings;
+    std::function<void()> onUndo;
+    std::function<void()> onRedo;
 
     // Loading overlay
     void showOverlay(const juce::String& message);

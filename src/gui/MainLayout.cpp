@@ -404,6 +404,16 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
 
+    if (key == KeyBindings::redo) {  // check redo BEFORE undo (redo has shift+cmd, undo is just cmd)
+        if (onRedo) onRedo();
+        return true;
+    }
+
+    if (key == KeyBindings::undo) {
+        if (onUndo) onUndo();
+        return true;
+    }
+
     if (key == KeyBindings::save) {
         if (onSave) onSave();
         return true;
