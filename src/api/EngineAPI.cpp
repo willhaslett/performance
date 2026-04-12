@@ -67,14 +67,50 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
     // Build preset callbacks
     AudioEngine::PresetCallbacks callbacks;
     if (pluginName.isNotEmpty()) {
+        // Resolve current preset name from state
+        std::string presetId;
+        if (effectId.isEmpty()) {
+            auto* track = state.findTrack(parentId.toStdString());
+            if (track) presetId = track->presetId;
+        } else {
+            auto* fx = state.findEffect(effectId.toStdString());
+            if (fx) presetId = fx->presetId;
+        }
+        if (!presetId.empty()) {
+            auto* preset = state.findPresetById(presetId);
+            if (preset) callbacks.currentPresetName = juce::String(preset->name);
+        }
+
         callbacks.listPresets = [this, pluginName]() {
             return listPresets(pluginName);
         };
-        callbacks.savePreset = [this, parentId, effectId](const juce::String& name) {
+        callbacks.savePreset = [this, parentId, effectId, pluginName](const juce::String& name) {
             savePreset(parentId, effectId, name);
+            // Update presetId in state
+            auto* plugin = state.findPluginByName(pluginName.toStdString());
+            if (plugin) {
+                auto* preset = state.findPreset(plugin->id, name.toStdString());
+                if (preset) {
+                    if (effectId.isEmpty())
+                        state.setTrackPresetId(parentId.toStdString(), preset->id);
+                    else
+                        state.setEffectPresetId(effectId.toStdString(), preset->id);
+                }
+            }
         };
-        callbacks.loadPreset = [this, parentId, effectId](const juce::String& name) {
+        callbacks.loadPreset = [this, parentId, effectId, pluginName](const juce::String& name) {
             loadPreset(parentId, effectId, name);
+            // Update presetId in state
+            auto* plugin = state.findPluginByName(pluginName.toStdString());
+            if (plugin) {
+                auto* preset = state.findPreset(plugin->id, name.toStdString());
+                if (preset) {
+                    if (effectId.isEmpty())
+                        state.setTrackPresetId(parentId.toStdString(), preset->id);
+                    else
+                        state.setEffectPresetId(effectId.toStdString(), preset->id);
+                }
+            }
         };
     }
 

@@ -40,8 +40,10 @@ private:
     static constexpr int meterWidth = meterBarWidth * 2 + meterGap;
     static constexpr int labelWidth = 20;
     static constexpr int labelPad = 3;
-    static constexpr int topMargin = 6;  // room for +6 label at top
+    static constexpr int topMargin = 6;   // room for +6 label at top
+    static constexpr int bottomMargin = 6; // room for handle at bottom
     static constexpr int gap = 6;
+    static constexpr int handleHeight = 8;
 
     juce::Rectangle<int> getFaderArea() const;
     juce::Rectangle<int> getMeterArea() const;

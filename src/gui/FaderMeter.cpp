@@ -23,13 +23,14 @@ void FaderMeter::setPeakLevelStereo(float left, float right) {
 }
 
 juce::Rectangle<int> FaderMeter::getFaderArea() const {
-    auto area = getLocalBounds().withTrimmedTop(topMargin);
+    // Fader travel area matches meter area exactly — handle extends beyond
+    auto area = getLocalBounds().withTrimmedTop(topMargin).withTrimmedBottom(bottomMargin);
     return area.withTrimmedRight(meterWidth + labelWidth + gap + labelPad)
                .withSizeKeepingCentre(faderWidth, area.getHeight());
 }
 
 juce::Rectangle<int> FaderMeter::getMeterArea() const {
-    auto area = getLocalBounds().withTrimmedTop(topMargin);
+    auto area = getLocalBounds().withTrimmedTop(topMargin).withTrimmedBottom(bottomMargin);
     area.removeFromRight(labelWidth + labelPad);
     return area.removeFromRight(meterWidth);
 }
@@ -146,10 +147,10 @@ void FaderMeter::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(groove.toFloat(), 1.0f);
 
-    constexpr int handleHeight = 8;
     float normalized = gainToNormalized(gainValue);
-    int travel = faderArea.getHeight() - handleHeight;
-    int handleY = faderArea.getBottom() - handleHeight - (int)(travel * normalized);
+    // Handle center maps to full fader range (faderArea is already inset by handleHeight/2)
+    int handleCenterY = faderArea.getBottom() - (int)(faderArea.getHeight() * normalized);
+    int handleY = handleCenterY - handleHeight / 2;
 
     auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY,
                                         faderWidth + 4, handleHeight);
@@ -166,11 +167,32 @@ void FaderMeter::paint(juce::Graphics& g) {
 }
 
 void FaderMeter::mouseDown(const juce::MouseEvent& event) {
-    auto hitArea = getFaderArea().expanded(4, 0);
-    if (hitArea.contains(event.getPosition())) {
+    auto faderArea = getFaderArea();
+    auto hitArea = faderArea.expanded(4, handleHeight);
+    if (!hitArea.contains(event.getPosition())) return;
+
+    // Check if clicking directly on the handle — if so, start relative drag
+    float normalized = gainToNormalized(gainValue);
+    int handleCenterY = faderArea.getBottom() - (int)(faderArea.getHeight() * normalized);
+    bool onHandle = std::abs(event.getPosition().getY() - handleCenterY) <= handleHeight;
+
+    if (onHandle) {
         dragging = true;
         dragStartGain = gainValue;
         dragStartY = event.getPosition().getY();
+    } else {
+        // Click-to-jump: set fader to clicked position
+        dragging = true;
+        float clickNorm = 1.0f - (float)(event.getPosition().getY() - faderArea.getY())
+                                  / (float)faderArea.getHeight();
+        clickNorm = juce::jlimit(0.0f, 1.0f, clickNorm);
+        float newDb = normalizedToDb(clickNorm);
+        float newGain = std::pow(10.0f, newDb / 20.0f);
+        gainValue = newGain;
+        dragStartGain = newGain;
+        dragStartY = event.getPosition().getY();
+        if (onGainChanged) onGainChanged(newGain);
+        repaint();
     }
 }
 

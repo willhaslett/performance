@@ -33,6 +33,7 @@ struct ActionInfo {
     std::string paramSchema;  // JSON
     std::string luaCode;      // custom action body (empty for built-in)
     std::string songId;       // empty = global, non-empty = song-scoped
+    int durationParamIndex = -1;  // which arg index is the duration (-1 = none)
 };
 
 // --- Devices (registered physical controllers) ---
@@ -55,8 +56,16 @@ struct DeviceState {
 // --- Session state (per-song, mutable at runtime) ---
 
 enum class LoadStatus { None, Pending, Loaded, Failed };
-enum class TrackSourceType { Instrument, AudioInput };
+enum class TrackSourceType { Instrument, AudioInput, Action };
 enum class ChannelMode { Mono, Stereo };
+
+// Action event data — stored directly on Action tracks (no regions)
+struct ActionEventData {
+    std::string id;
+    double beat = 0.0;         // absolute beat position
+    std::string actionId;      // references ActionInfo
+    std::string argsJson = "[]";
+};
 
 struct EffectState {
     std::string id;
@@ -114,6 +123,7 @@ struct RegionState {
     double lengthBeats = 4.0;
     std::string activeTakeId;   // which take plays back
     bool muted = false;         // region-level mute (skipped during playback)
+    double quantize = 0.0;     // non-destructive quantize grid in beats (0 = off)
     std::vector<TakeState> takes;
 
     // Convenience: get the active take
@@ -151,6 +161,7 @@ struct TrackState {
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
     std::vector<RegionState> regions;
+    std::vector<ActionEventData> actionData;  // only for Action tracks
 };
 
 struct BusState {
@@ -207,6 +218,15 @@ struct SongState {
     // Tempo and time signature maps (sorted by beat)
     std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
     std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
+
+    // Action events — beat-triggered actions on the timeline
+    struct ActionEvent {
+        std::string id;
+        double beat = 0.0;
+        std::string actionId;    // references ActionInfo
+        std::string argsJson;    // JSON array of arguments
+    };
+    std::vector<ActionEvent> actionEvents;
 
     // Selection state (observable, not persisted)
     std::vector<std::string> selectedTrackIds;

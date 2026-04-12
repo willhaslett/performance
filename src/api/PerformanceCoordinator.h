@@ -121,6 +121,7 @@ private:
     Arrangement arrangementImpl;
     double lastSequencerTimeMs = 0.0;
     double lastSequencerBeat = 0.0;
+    double lastActionScanBeat = 0.0;
 
     // Recording state
     bool recordModeActive = false;  // user explicitly requested recording

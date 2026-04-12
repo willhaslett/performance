@@ -59,6 +59,8 @@ target_sources(Performance PRIVATE
     src/gui/SettingsWindow.cpp
     src/gui/TransportBar.cpp
     src/gui/ProducePane.cpp
+    src/gui/MusicalTyping.cpp
+    src/gui/MorphEditor.cpp
     src/daw/InternalSequencer.cpp
     src/daw/Arrangement.cpp
     src/gui/MappingPane.cpp

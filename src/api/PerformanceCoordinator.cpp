@@ -50,8 +50,9 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     persistence->loadInto(*stateAPI);
 
     // Point arrangement at current song's tracks
-    if (auto* song = stateAPI->currentSong())
+    if (auto* song = stateAPI->currentSong()) {
         arrangementImpl.setTracks(&song->tracks);
+           }
 
     // Restore saved audio devices (must be after loadInto so config is available)
     {
@@ -174,12 +175,25 @@ void PerformanceCoordinator::timerCallback() {
                         take->peakData.peaks.push_back({ p.min, p.max });
                 }
             }
+            // Scan and dispatch action events
+            if (audioBeat > lastActionScanBeat) {
+                arrangementImpl.scanActionEvents(lastActionScanBeat, audioBeat,
+                    [this](const SongState::ActionEvent& ev) {
+                        auto* action = stateAPI->findActionById(ev.actionId);
+                        if (action) {
+                            auto args = juce::JSON::parse(juce::String(ev.argsJson));
+                            executeAction(action->name, args, 1.0f);
+                        }
+                    });
+                lastActionScanBeat = audioBeat;
+            }
         } else {
             // When stopped, the UI is authoritative — forward position to engine
             // so that when play starts, the engine begins from the right place
             double lastSynced = lastSequencerBeat;
             if (std::abs(uiBeat - lastSynced) > 0.001)
                 audioEngine->setPlaybackBeatPosition(uiBeat);
+            lastActionScanBeat = uiBeat;
         }
 
         lastSequencerBeat = uiBeat;
@@ -943,6 +957,98 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
             }
         }
     }
+    else if (actionName == "morphChain") {
+        // morphChain(track, presetA, presetB, dwell, morphDuration, easing)
+        // Load presetA instantly, wait dwell seconds, then morph to presetB
+        auto trackId = resolveTrack(getArg(0));
+        auto presetA = getArg(1);
+        auto presetB = getArg(2);
+        auto dwell = getArgFloat(3, 1.0f);
+        auto morphDur = getArgFloat(4, 3.0f);
+        auto easingName = getArg(5).toStdString();
+
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId));
+        if (!proc) {
+            perfLog("[Action] morphChain: no processor for track %s\n", trackId.c_str());
+        } else {
+            auto pluginName = proc->getName();
+            // Load preset A state blob immediately
+            engineAPI->loadPreset(juce::String(trackId), "", presetA);
+            perfLog("[Action] morphChain: loaded %s, dwell %.1fs then morph to %s over %.1fs\n",
+                    presetA.toRawUTF8(), dwell, presetB.toRawUTF8(), morphDur);
+
+            // After dwell, morph to B
+            auto* eng = engineAPI.get();
+            auto* ae = automationEngine.get();
+            automationEngine->delay(dwell, [proc, pluginName, presetB, morphDur, easingName, eng, ae]() {
+                auto target = eng->getPresetParams(pluginName, presetB);
+                if (target.values.empty()) return;
+                auto from = EngineAPI::captureParams(proc);
+                auto easing = AutomationEngine::easingByName(easingName);
+                ae->interpolate(0.0f, 1.0f, morphDur,
+                    [proc, from, target](float t) {
+                        EngineAPI::applyParams(proc, target, t, from);
+                    }, easing);
+            });
+        }
+    }
+    else if (actionName == "morph") {
+        auto mode = args.getProperty("mode", "parallel").toString();
+        auto subActions = args.getProperty("actions", juce::var());
+        if (!subActions.isArray()) {
+            perfLog("[Action] morph: 'actions' is not an array\n");
+        } else {
+            bool sequential = (mode == "sequential");
+            perfLog("[Action] Morph: %d sub-actions (%s)\n",
+                    subActions.size(), mode.toRawUTF8());
+
+            if (!sequential) {
+                for (int i = 0; i < subActions.size(); ++i) {
+                    auto sub = subActions[i];
+                    auto subName = sub.getProperty("action", "").toString().toStdString();
+                    if (subName == "morph") continue;  // no nested morphs
+                    auto subArgs = sub.getProperty("args", juce::var());
+                    executeAction(subName, subArgs, 1.0f);
+                }
+            } else {
+                // Sequential: chain via completion callbacks
+                // Build a list and execute recursively via delay
+                struct ChainStep { std::string name; juce::var args; };
+                auto steps = std::make_shared<std::vector<ChainStep>>();
+                for (int i = 0; i < subActions.size(); ++i) {
+                    auto sub = subActions[i];
+                    auto subName = sub.getProperty("action", "").toString().toStdString();
+                    if (subName == "morph") continue;  // no nested morphs
+                    steps->push_back({ subName, sub.getProperty("args", juce::var()) });
+                }
+
+                // For sequential mode, we need to know when each action completes.
+                // Estimate duration from args (duration field), default 0 = instant.
+                auto runChain = std::make_shared<std::function<void(int)>>();
+                *runChain = [this, steps, runChain](int idx) {
+                    if (idx >= (int)steps->size()) return;
+                    auto& step = (*steps)[idx];
+                    executeAction(step.name, step.args, 1.0f);
+                    // Get duration from args for delay to next
+                    float dur = 0.0f;
+                    if (step.args.isArray() && step.args.size() >= 3)
+                        dur = (float)step.args[2];
+                    else if (step.args.hasProperty("duration"))
+                        dur = (float)step.args.getProperty("duration", 0.0f);
+                    if (dur > 0.01f && idx + 1 < (int)steps->size()) {
+                        automationEngine->delay(dur, [runChain, idx]() {
+                            (*runChain)(idx + 1);
+                        });
+                    } else {
+                        // Instant action — fire next immediately
+                        if (idx + 1 < (int)steps->size())
+                            (*runChain)(idx + 1);
+                    }
+                };
+                (*runChain)(0);
+            }
+        }
+    }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());
     }
@@ -1087,15 +1193,19 @@ void PerformanceCoordinator::registerBuiltinActions() {
     stateAPI->registerAction("disableTrack", "Disable track",
         R"([{"name":"trackName","type":"string"}])");
     stateAPI->registerAction("fadeOut", "Fade out",
-        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 1);
     stateAPI->registerAction("fadeIn", "Fade in",
-        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 1);
     stateAPI->registerAction("crossfade", "Crossfade",
-        R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+        R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 2);
     stateAPI->registerAction("trackVolume", "Track Volume",
         R"([{"name":"channel","type":"channel"}])");
     stateAPI->registerAction("morphToPreset", "Morph to preset",
-        R"([{"name":"trackName","type":"string"},{"name":"presetName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])");
+        R"([{"name":"trackName","type":"string"},{"name":"presetName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 2);
+    stateAPI->registerAction("morphChain", "Morph chain (A \xe2\x86\x92 dwell \xe2\x86\x92 B)",
+        R"([{"name":"trackName","type":"string"},{"name":"presetA","type":"string"},{"name":"presetB","type":"string"},{"name":"dwell","type":"float"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 4);
+    stateAPI->registerAction("morph", "Morph",
+        R"([{"name":"mode","type":"morph"}])");
 
     perfLog("[Coordinator] Registered %d built-in actions\n", (int)stateAPI->allActions().size());
 }

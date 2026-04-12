@@ -122,6 +122,130 @@ RegionState* Arrangement::duplicateRegion(const std::string& regionId,
     return nullptr;
 }
 
+RegionState* Arrangement::splitRegion(const std::string& regionId, double splitBeat, bool splitNotes) {
+    if (!songTracks) return nullptr;
+
+    for (auto& t : *songTracks) {
+        for (size_t ri = 0; ri < t.regions.size(); ++ri) {
+            auto& r = t.regions[ri];
+            if (r.id != regionId) continue;
+
+            double regionEnd = r.startBeat + r.lengthBeats;
+            if (splitBeat <= r.startBeat || splitBeat >= regionEnd)
+                return nullptr;  // split point outside region
+
+            double splitOffset = splitBeat - r.startBeat;  // beat offset within region
+
+            // Create right-side region
+            RegionState right;
+            right.id = generateId();
+            right.type = r.type;
+            right.name = r.name;
+            right.startBeat = splitBeat;
+            right.lengthBeats = regionEnd - splitBeat;
+            right.quantize = r.quantize;
+
+            if (r.type == "midi") {
+                auto* srcTake = r.activeTake();
+                if (srcTake) {
+                    // Build note list to find crossing notes
+                    auto notes = buildNoteList(*srcTake, r.lengthBeats);
+
+                    TakeState leftTake;
+                    leftTake.id = generateId();
+                    leftTake.name = srcTake->name;
+
+                    TakeState rightTake;
+                    rightTake.id = generateId();
+                    rightTake.name = srcTake->name;
+
+                    // Partition events
+                    for (auto& ev : srcTake->events) {
+                        if (ev.beatOffset < splitOffset) {
+                            leftTake.events.push_back(ev);
+                        } else {
+                            MidiEventState shifted = ev;
+                            shifted.beatOffset -= splitOffset;
+                            rightTake.events.push_back(shifted);
+                        }
+                    }
+
+                    // Handle crossing notes
+                    for (auto& note : notes) {
+                        double noteEnd = note.beatOffset + note.durationBeats;
+                        if (note.beatOffset < splitOffset && noteEnd > splitOffset) {
+                            // Note crosses the split point
+                            // Add noteOff at split point in left region
+                            MidiEventState offEv;
+                            offEv.beatOffset = splitOffset - 0.001;
+                            offEv.status = 0x80;
+                            offEv.channel = note.channel;
+                            offEv.data1 = note.noteNumber;
+                            offEv.data2 = 0;
+                            leftTake.events.push_back(offEv);
+
+                            if (splitNotes) {
+                                // Re-attack in right region
+                                MidiEventState onEv;
+                                onEv.beatOffset = 0.0;
+                                onEv.status = 0x90;
+                                onEv.channel = note.channel;
+                                onEv.data1 = note.noteNumber;
+                                onEv.data2 = note.velocity;
+                                rightTake.events.push_back(onEv);
+                            }
+                            // Remove the original noteOff from right (it was already shifted)
+                            // No action needed — the noteOff was after the split so it's in rightTake
+                        }
+                    }
+
+                    // Sort events by beat offset
+                    auto sortEvents = [](std::vector<MidiEventState>& evs) {
+                        std::sort(evs.begin(), evs.end(),
+                                  [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
+                    };
+                    sortEvents(leftTake.events);
+                    sortEvents(rightTake.events);
+
+                    // Replace left region's take
+                    r.takes.clear();
+                    r.takes.push_back(std::move(leftTake));
+                    r.activeTakeId = r.takes[0].id;
+
+                    right.takes.push_back(std::move(rightTake));
+                    right.activeTakeId = right.takes[0].id;
+                }
+            } else {
+                // Audio region: copy take references, adjust nothing
+                // (audio playback uses beat-to-sample, split just changes region bounds)
+                for (auto& srcTake : r.takes) {
+                    TakeState copy;
+                    copy.id = generateId();
+                    copy.name = srcTake.name;
+                    copy.filePath = srcTake.filePath;
+                    copy.recordTempo = srcTake.recordTempo;
+                    copy.sampleRate = srcTake.sampleRate;
+                    copy.channelCount = srcTake.channelCount;
+                    copy.peakData = srcTake.peakData;
+                    if (srcTake.id == r.activeTakeId)
+                        right.activeTakeId = copy.id;
+                    right.takes.push_back(std::move(copy));
+                }
+                if (right.activeTakeId.empty() && !right.takes.empty())
+                    right.activeTakeId = right.takes[0].id;
+            }
+
+            // Trim left region
+            r.lengthBeats = splitOffset;
+
+            // Add right region
+            t.regions.push_back(std::move(right));
+            return &t.regions.back();
+        }
+    }
+    return nullptr;
+}
+
 std::vector<RegionState*> Arrangement::allRegions() const {
     std::vector<RegionState*> result;
     if (!songTracks) return result;
@@ -167,11 +291,36 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
             if (!take) continue;
 
             for (auto& event : take->events) {
-                double absBeat = r.startBeat + event.beatOffset;
+                double offset = event.beatOffset;
+                // Skip events outside region bounds (trimmed away)
+                if (offset < 0.0 || offset >= r.lengthBeats) continue;
+                // Non-destructive quantize: snap offset to grid
+                if (r.quantize > 0.0)
+                    offset = std::round(offset / r.quantize) * r.quantize;
+                double absBeat = r.startBeat + offset;
                 if (absBeat >= prevBeat && absBeat < currentBeat)
                     callback(t.id, event, absBeat);
             }
             // TODO: fire synthetic noteOffs at region end for unclosed notes
+        }
+    }
+}
+
+void Arrangement::scanActionEvents(double prevBeat, double currentBeat,
+                                    ActionCallback callback) const {
+    if (prevBeat >= currentBeat || !songTracks) return;
+
+    for (auto& t : *songTracks) {
+        if (t.sourceType != TrackSourceType::Action || !t.audioEnabled) continue;
+        for (auto& ae : t.actionData) {
+            if (ae.beat >= prevBeat && ae.beat < currentBeat) {
+                SongState::ActionEvent ev;
+                ev.id = ae.id;
+                ev.beat = ae.beat;
+                ev.actionId = ae.actionId;
+                ev.argsJson = ae.argsJson;
+                callback(ev);
+            }
         }
     }
 }

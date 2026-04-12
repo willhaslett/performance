@@ -1,7 +1,9 @@
 #include "gui/ProducePane.h"
+#include "gui/MorphEditor.h"
 #include "api/StateAPI.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
+#include <map>
 
 ProducePane::ProducePane() {
     setWantsKeyboardFocus(true);
@@ -69,12 +71,13 @@ void ProducePane::timerCallback() {
             double newScroll = std::floor(beat / bpb) * bpb;
             scrollBeat = std::max(0.0, newScroll);
         }
-        repaint();
     }
+    repaint();
 }
 
 int ProducePane::beatsPerBar() const {
-    return sequencer ? sequencer->getTimeSignatureNumerator() : 4;
+    jassert(sequencer != nullptr);
+    return sequencer->getTimeSignatureNumerator();
 }
 
 int ProducePane::beatToX(double beat) const {
@@ -83,6 +86,197 @@ int ProducePane::beatToX(double beat) const {
 
 double ProducePane::xToBeat(int x) const {
     return scrollBeat + (double)(x - trackHeaderWidth) / pixelsPerBeat;
+}
+
+void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string& trackId, double beat) {
+    if (!state) return;
+    auto actions = state->allActions();
+    auto stateTracks = state->listTracks();
+
+    juce::PopupMenu menu;
+    int baseId = 1;
+    int morphIdx = -1;
+
+    for (int ai = 0; ai < (int)actions.size(); ++ai) {
+        auto& act = actions[ai];
+
+        // Skip "morph" — it goes at the bottom
+        if (act.name == "morph") { morphIdx = ai; continue; }
+
+        auto schema = juce::JSON::parse(juce::String(act.paramSchema));
+
+        if (!schema.isArray() || schema.size() == 0) {
+            menu.addItem(baseId + ai * 1000, juce::String(act.label));
+            continue;
+        }
+
+        auto firstParam = schema[0];
+        auto paramType = firstParam.getProperty("type", "").toString();
+        auto paramName = firstParam.getProperty("name", "").toString();
+        bool isTrackParam = (paramName.containsIgnoreCase("track") || paramName == "channel")
+                            && (paramType == "string" || paramType == "channel");
+
+        if (isTrackParam) {
+            juce::PopupMenu trackMenu;
+            for (int ti = 0; ti < (int)stateTracks.size(); ++ti) {
+                auto* ts = state->findTrack(stateTracks[ti].id);
+                if (ts && ts->sourceType == TrackSourceType::Action) continue;
+                trackMenu.addItem(baseId + ai * 1000 + ti + 1, juce::String(stateTracks[ti].name));
+            }
+            if (paramType == "channel" || paramName == "channel") {
+                auto busses = state->listBusses();
+                if (!busses.empty()) trackMenu.addSeparator();
+                for (int bi = 0; bi < (int)busses.size(); ++bi)
+                    trackMenu.addItem(baseId + ai * 1000 + 500 + bi, juce::String(busses[bi].name));
+                trackMenu.addSeparator();
+                trackMenu.addItem(baseId + ai * 1000 + 999, "Main");
+            }
+            menu.addSubMenu(juce::String(act.label), trackMenu);
+        } else {
+            menu.addItem(baseId + ai * 1000, juce::String(act.label));
+        }
+    }
+
+    // Morph at the bottom
+    if (morphIdx >= 0) {
+        menu.addSeparator();
+        menu.addItem(baseId + morphIdx * 1000, "Morph");
+    }
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options()
+            .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, trackId, beat, actions, stateTracks, baseId](int result) {
+            if (result <= 0) return;
+            int encoded = result - baseId;
+            int ai = encoded / 1000;
+            int sub = encoded % 1000;
+            if (ai < 0 || ai >= (int)actions.size()) return;
+
+            // Morph: open the morph editor
+            if (actions[ai].name == "morph") {
+                showMorphEditor(trackId, beat);
+                return;
+            }
+
+            // Resolve first arg (track/channel ID)
+            juce::String firstArg;
+            if (sub == 999) firstArg = "Main";
+            else if (sub >= 500) {
+                auto busses = state->listBusses();
+                int bi = sub - 500;
+                if (bi < (int)busses.size()) firstArg = juce::String(busses[bi].id);
+            } else if (sub > 0) {
+                int ti = sub - 1;
+                if (ti < (int)stateTracks.size()) firstArg = juce::String(stateTracks[ti].id);
+            }
+
+            auto actionId = actions[ai].id;
+            auto schema = actions[ai].paramSchema;
+            showRemainingParamsDialog(schema, firstArg,
+                [this, trackId, beat, actionId](const std::string& argsJson) {
+                    auto* ts = state ? state->findTrack(trackId) : nullptr;
+                    if (!ts) return;
+                    ActionEventData ae;
+                    ae.id = juce::Uuid().toString().toStdString();
+                    ae.beat = beat;
+                    ae.actionId = actionId;
+                    ae.argsJson = argsJson;
+                    ts->actionData.push_back(std::move(ae));
+                    state->markDirty();
+                    repaint();
+                });
+        });
+}
+
+void ProducePane::showMorphEditor(const std::string& trackId, double beat,
+                                   const std::string& existingEventId) {
+    if (!state) return;
+
+    auto* editor = new MorphEditor(*state);
+
+    // Load existing data if editing
+    if (!existingEventId.empty()) {
+        auto* ts = state->findTrack(trackId);
+        if (ts) {
+            for (auto& ae : ts->actionData) {
+                if (ae.id == existingEventId) {
+                    editor->setMorphData(juce::JSON::parse(juce::String(ae.argsJson)));
+                    break;
+                }
+            }
+        }
+    }
+
+    auto trkId = trackId;
+    auto evId = existingEventId;
+    auto evBeat = beat;
+
+    // Show as a popup window with working close button
+    struct MorphWindow : public juce::DocumentWindow {
+        std::function<void()> onClose;
+        MorphWindow() : DocumentWindow("Morph", juce::Colour(0xff2a2a2a), closeButton) {}
+        void closeButtonPressed() override { if (onClose) onClose(); }
+    };
+    auto* window = new MorphWindow();
+    window->setContentOwned(editor, true);
+    window->centreWithSize(editor->getWidth(), editor->getHeight());
+    window->setUsingNativeTitleBar(false);
+    window->setVisible(true);
+    window->setAlwaysOnTop(true);
+
+    editor->onDone = [this, window, editor, trkId, evId, evBeat]() {
+        if (!state) { delete window; return; }
+        auto morphData = editor->getMorphData();
+        auto json = juce::JSON::toString(morphData, true).toStdString();
+
+        std::string morphActionId;
+        for (auto& a : state->allActions())
+            if (a.name == "morph") { morphActionId = a.id; break; }
+
+        auto* ts = state->findTrack(trkId);
+        if (ts && !morphActionId.empty()) {
+            if (!evId.empty()) {
+                for (auto& ae : ts->actionData) {
+                    if (ae.id == evId) {
+                        ae.argsJson = json;
+                        ae.actionId = morphActionId;
+                        break;
+                    }
+                }
+            } else {
+                ActionEventData ae;
+                ae.id = juce::Uuid().toString().toStdString();
+                ae.beat = evBeat;
+                ae.actionId = morphActionId;
+                ae.argsJson = json;
+                ts->actionData.push_back(std::move(ae));
+            }
+            state->markDirty();
+        }
+        delete window;
+        repaint();
+    };
+    editor->onCancel = [window]() { delete window; };
+    window->onClose = editor->onCancel;
+}
+
+double ProducePane::snapBeatToGrid(double beat) const {
+    if (!snapToGrid || !sequencer) return beat;
+    double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
+    return std::round(beat / divSize) * divSize;
+}
+
+void ProducePane::ensurePlayheadVisible() {
+    if (!sequencer) return;
+    double beat = sequencer->getBeatPosition();
+    int gridWidth = getWidth() - trackHeaderWidth;
+    double visibleBeats = gridWidth / pixelsPerBeat;
+    if (beat < scrollBeat || beat > scrollBeat + visibleBeats) {
+        // Snap scroll so playhead is near the left edge, aligned to bar
+        int bpb = beatsPerBar();
+        scrollBeat = std::max(0.0, std::floor(beat / bpb) * bpb);
+    }
 }
 
 // --- Paint ---
@@ -379,9 +573,10 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
     if (!state) return;
 
+    int y = area.getY();
+
     auto tracks = state->listTracks();
     powerIconBounds.resize(tracks.size());
-    int y = area.getY();
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto& t = tracks[i];
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
@@ -390,10 +585,12 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         // Track header background
         bool enabled = trackState ? trackState->audioEnabled : true;
         bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
+        bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
         constexpr float disabledDarken = 0.35f;
 
-        auto headerCol = isAudioInput ? juce::Colour(0xff3a2e18)
-                                       : Theme::color(Theme::Color::bgHeader);
+        auto headerCol = isAction ? juce::Colour(0xff2a2438)
+                       : isAudioInput ? juce::Colour(0xff3a2e18)
+                       : Theme::color(Theme::Color::bgHeader);
         // User-defined color overrides default
         if (trackState && trackState->color != 0)
             headerCol = juce::Colour(trackState->color);
@@ -403,6 +600,14 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         // Full row background
         g.setColour(headerCol);
         g.fillRect(row);
+
+        // Selection highlight
+        auto sel = state->selectedTrackIds();
+        bool isSelected = std::find(sel.begin(), sel.end(), t.id) != sel.end();
+        if (isSelected) {
+            g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.18f));
+            g.fillRect(row);
+        }
 
         // Row separator
         g.setColour(Theme::color(Theme::Color::border));
@@ -490,6 +695,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Regions
     // Regions — cache hit rects for mouse interaction
     regionHitRects.clear();
+    actionHitRects.clear();
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
@@ -516,8 +722,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
                 // Region block — colored by track
-                bool selected = (r->id == selectedRegionId);
-                bool beingDragged = (draggingRegion && selected);
+                bool selected = selectedRegionIds.count(r->id) > 0;
+                bool beingDragged = (draggingRegion && r->id == dragRegionId);
                 auto fillCol = juce::Colour(trackCol);
                 if (!trackEnabled || r->muted)
                     fillCol = fillCol.interpolatedWith(juce::Colour(0xff181818), 0.65f);
@@ -558,7 +764,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         constexpr float noteH = 2.0f;
 
                         for (auto& note : noteList) {
-                            float nx = (float)rx + (float)(note.beatOffset * pixelsPerBeat);
+                            // Skip notes outside region bounds (trimmed away)
+                            if (note.beatOffset < 0.0 || note.beatOffset >= r->lengthBeats) continue;
+                            double dispOffset = note.beatOffset;
+                            if (r->quantize > 0.0)
+                                dispOffset = std::round(dispOffset / r->quantize) * r->quantize;
+                            float nx = (float)rx + (float)(dispOffset * pixelsPerBeat);
                             float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
                             float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
 
@@ -602,12 +813,109 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         }
                     }
                 }
+
+                // (Action track spheres are painted outside the region loop)
+            }
+        }
+
+        // Action track spheres (painted directly on track lane, no regions)
+        for (size_t ti = 0; ti < tracks.size(); ++ti) {
+            auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
+            if (!trkState || trkState->sourceType != TrackSourceType::Action) continue;
+            if (trkState->actionData.empty()) continue;
+
+            int rowY = area.getY() + (int)ti * trackRowHeight;
+            float centreY = (float)(rowY + trackRowHeight / 2);
+            float sphereR = std::min(5.0f, (float)trackRowHeight * 0.25f);
+
+            bool isAct = true;
+            uint32_t trackCol = (trkState->color != 0) ? trkState->color : 0xff2a2438;
+            auto sphereCol = juce::Colour(trackCol).brighter(0.5f);
+
+            // Pre-compute duration in beats for each visible event
+            struct ActionVis {
+                const ActionEventData* ae;
+                float durationBeats;
+                int lane;  // 0 = center, 1 = up, -1 = down, 2 = up, -2 = down...
+            };
+            std::vector<ActionVis> visible;
+            for (auto& ae : trkState->actionData) {
+                if (ae.beat > endBeat) continue;
+                float durBeats = 0;
+                auto* actInfo = state->findActionById(ae.actionId);
+                if (actInfo && actInfo->durationParamIndex >= 0) {
+                    auto args = juce::JSON::parse(juce::String(ae.argsJson));
+                    if (args.isArray() && actInfo->durationParamIndex < args.size()) {
+                        float durSec = (float)args[actInfo->durationParamIndex];
+                        if (durSec > 0) {
+                            jassert(sequencer != nullptr);
+                            durBeats = durSec * (float)(sequencer->getTempo() / 60.0);
+                        }
+                    }
+                }
+                double eventEnd = ae.beat + (double)durBeats;
+                if (eventEnd < startBeat && durBeats > 0) continue;
+                if (ae.beat < startBeat && durBeats == 0) continue;
+                visible.push_back({ &ae, durBeats, 0 });
+            }
+
+            // Sort by beat for overlap detection
+            std::sort(visible.begin(), visible.end(),
+                      [](auto& a, auto& b) { return a.ae->beat < b.ae->beat; });
+
+            // Assign lanes: for each event, find which lanes are occupied by
+            // earlier events whose tails overlap this event's start
+            for (int vi = 0; vi < (int)visible.size(); ++vi) {
+                std::set<int> occupied;
+                for (int vj = 0; vj < vi; ++vj) {
+                    double tailEnd = visible[vj].ae->beat + (double)visible[vj].durationBeats;
+                    // Overlap if tail extends past this event's start (or same beat)
+                    bool overlaps = (visible[vj].durationBeats > 0 && tailEnd > visible[vi].ae->beat)
+                                 || (visible[vj].ae->beat == visible[vi].ae->beat);
+                    if (overlaps) occupied.insert(visible[vj].lane);
+                }
+                // Find first free lane: 0, 1, -1, 2, -2, ...
+                int lane = 0;
+                for (int try_ = 0; occupied.count(lane); ++try_) {
+                    lane = ((try_ / 2) + 1) * ((try_ % 2 == 0) ? 1 : -1);
+                }
+                visible[vi].lane = lane;
+            }
+
+            // Draw
+            float laneStep = sphereR * 2.0f + 2.0f;
+            for (auto& v : visible) {
+                float cx = (float)beatToX(v.ae->beat);
+                float cy = centreY + v.lane * laneStep;
+
+                // Duration bar
+                if (v.durationBeats > 0) {
+                    float barW = (float)(v.durationBeats * pixelsPerBeat);
+                    g.setColour(sphereCol.withAlpha(0.18f));
+                    g.fillRoundedRectangle(cx, cy - sphereR * 0.6f, barW, sphereR * 1.2f, 2.0f);
+                    g.setColour(sphereCol.withAlpha(0.3f));
+                    g.drawRoundedRectangle(cx, cy - sphereR * 0.6f, barW, sphereR * 1.2f, 2.0f, 0.5f);
+                }
+
+                // Hit rect
+                int hitSize = (int)(sphereR * 2 + 4);
+                actionHitRects.push_back({ v.ae->id, "", tracks[ti].id,
+                    juce::Rectangle<int>((int)(cx - hitSize/2), (int)(cy - hitSize/2), hitSize, hitSize) });
+
+                // Sphere
+                auto highlight = sphereCol.brighter(0.5f);
+                juce::ColourGradient grad(highlight, cx - sphereR * 0.3f, cy - sphereR * 0.3f,
+                                           sphereCol.darker(0.3f), cx + sphereR, cy + sphereR, true);
+                g.setGradientFill(grad);
+                g.fillEllipse(cx - sphereR, cy - sphereR, sphereR * 2, sphereR * 2);
+                g.setColour(sphereCol.darker(0.5f).withAlpha(0.5f));
+                g.drawEllipse(cx - sphereR, cy - sphereR, sphereR * 2, sphereR * 2, 0.5f);
             }
         }
 
         // Ghost region during drag (move or duplicate)
         if (draggingRegion) {
-            auto* srcRegion = arrangement->findRegion(selectedRegionId);
+            auto* srcRegion = arrangement->findRegion(dragRegionId);
             if (srcRegion) {
                 int gx = beatToX(dragCurrentBeat);
                 int gw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
@@ -701,10 +1009,129 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
     if (event.getPosition().getY() > transportHeight + rulerHeight
         && event.getPosition().getX() > trackHeaderWidth) {
 
+        // Hit test action event spheres — left-click to drag, right-click for menu
+        for (auto& hit : actionHitRects) {
+            if (hit.bounds.contains(event.getPosition())) {
+                if (event.mods.isPopupMenu()) {
+                    // Right-click: find event beat and show action picker to replace/delete
+                    double evBeat = 0;
+                    auto* t = state ? state->findTrack(hit.trackId) : nullptr;
+                    if (t) {
+                        for (auto& ae : t->actionData)
+                            if (ae.id == hit.eventId) { evBeat = ae.beat; break; }
+                    }
+                    auto trkId = hit.trackId;
+                    auto evId = hit.eventId;
+                    juce::PopupMenu menu;
+                    menu.addItem(1, "Delete");
+                    menu.addSeparator();
+                    // Reuse the action picker inline
+                    auto actions = state->allActions();
+                    auto stateTracks = state->listTracks();
+                    int baseId = 100;
+                    for (int ai = 0; ai < (int)actions.size(); ++ai) {
+                        if (actions[ai].name == "morph") continue;
+                        auto schema = juce::JSON::parse(juce::String(actions[ai].paramSchema));
+                        bool isTrackParam = false;
+                        if (schema.isArray() && schema.size() > 0) {
+                            auto pn = schema[0].getProperty("name", "").toString();
+                            auto pt = schema[0].getProperty("type", "").toString();
+                            isTrackParam = (pn.containsIgnoreCase("track") || pn == "channel")
+                                            && (pt == "string" || pt == "channel");
+                        }
+                        if (isTrackParam) {
+                            juce::PopupMenu sub;
+                            for (int ti = 0; ti < (int)stateTracks.size(); ++ti) {
+                                auto* ts2 = state->findTrack(stateTracks[ti].id);
+                                if (ts2 && ts2->sourceType == TrackSourceType::Action) continue;
+                                sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(stateTracks[ti].name));
+                            }
+                            menu.addSubMenu(juce::String(actions[ai].label), sub);
+                        } else {
+                            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
+                        }
+                    }
+                    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                        juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                        [this, trkId, evId, actions, stateTracks, baseId](int result) {
+                            if (result <= 0) return;
+                            auto* t = state ? state->findTrack(trkId) : nullptr;
+                            if (!t) return;
+                            if (result == 1) {
+                                t->actionData.erase(
+                                    std::remove_if(t->actionData.begin(), t->actionData.end(),
+                                        [&](auto& e) { return e.id == evId; }), t->actionData.end());
+                                state->markDirty(); repaint(); return;
+                            }
+                            int encoded = result - baseId;
+                            int ai = encoded / 1000, sub = encoded % 1000;
+                            if (ai < 0 || ai >= (int)actions.size()) return;
+                            juce::String firstArg;
+                            if (sub > 0 && sub < 500) {
+                                int ti = sub - 1;
+                                if (ti < (int)stateTracks.size()) firstArg = juce::String(stateTracks[ti].id);
+                            }
+                            showRemainingParamsDialog(actions[ai].paramSchema, firstArg,
+                                [this, trkId, evId, ai, actions](const std::string& argsJson) {
+                                    auto* t2 = state ? state->findTrack(trkId) : nullptr;
+                                    if (!t2) return;
+                                    for (auto& ae : t2->actionData) {
+                                        if (ae.id == evId) {
+                                            ae.actionId = actions[ai].id;
+                                            ae.argsJson = argsJson; break;
+                                        }
+                                    }
+                                    state->markDirty(); repaint();
+                                });
+                        });
+                } else {
+                    // Left-click: begin drag
+                    dragActionEventId = hit.eventId;
+                    dragActionTrackId = hit.trackId;
+                    draggingActionEvent = false;
+                }
+                return;
+            }
+        }
+
         // Hit test against cached region bounds
         for (auto& hit : regionHitRects) {
             if (hit.bounds.contains(event.getPosition())) {
-                selectedRegionId = hit.regionId;
+                bool alreadySelected = selectedRegionIds.count(hit.regionId) > 0;
+
+                // Check for trim handle (only on selected regions)
+                if (alreadySelected) {
+                    int localX = event.getPosition().getX() - hit.bounds.getX();
+                    if (localX <= trimHandleWidth) {
+                        trimEdge = TrimEdge::Left;
+                        trimRegionId = hit.regionId;
+                        auto* r = arrangement ? arrangement->findRegion(hit.regionId) : nullptr;
+                        if (r) { trimOrigStartBeat = r->startBeat; trimOrigLengthBeats = r->lengthBeats; }
+                        return;
+                    }
+                    if (localX >= hit.bounds.getWidth() - trimHandleWidth) {
+                        trimEdge = TrimEdge::Right;
+                        trimRegionId = hit.regionId;
+                        auto* r = arrangement ? arrangement->findRegion(hit.regionId) : nullptr;
+                        if (r) { trimOrigStartBeat = r->startBeat; trimOrigLengthBeats = r->lengthBeats; }
+                        return;
+                    }
+                }
+
+                if (event.mods.isCommandDown()) {
+                    // Cmd+click: toggle region in/out of selection
+                    if (alreadySelected)
+                        selectedRegionIds.erase(hit.regionId);
+                    else
+                        selectedRegionIds.insert(hit.regionId);
+                } else if (!alreadySelected) {
+                    // Plain click on unselected: select only this one
+                    selectedRegionIds.clear();
+                    selectedRegionIds.insert(hit.regionId);
+                }
+                // If already selected and no modifier, keep selection (allows drag)
+
+                dragRegionId = hit.regionId;
                 draggingRegion = false;  // will start on mouseDrag
                 dragIsOption = event.mods.isAltDown();
                 dragStartBeat = xToBeat(event.getPosition().getX());
@@ -716,11 +1143,28 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             }
         }
 
+        // Right-click or double-click empty grid on action track → create action event
+        if (event.mods.isPopupMenu() && state) {
+            int trkIdx = getTrackIndexAtY(event.getPosition().getY());
+            if (trkIdx >= 0) {
+                auto trkList = state->listTracks();
+                if (trkIdx < (int)trkList.size()) {
+                    auto* ts = state->findTrack(trkList[trkIdx].id);
+                    if (ts && ts->sourceType == TrackSourceType::Action) {
+                        double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+                        showActionPicker(event.getScreenPosition(), trkList[trkIdx].id, beat);
+                        return;
+                    }
+                }
+            }
+        }
+
         // Clicked empty grid — deselect and set playhead
-        selectedRegionId.clear();
+        selectedRegionIds.clear();
+        if (state) state->clearSelection();
         if (sequencer) {
-            double beat = xToBeat(event.getPosition().getX());
-            if (beat >= 0.0) sequencer->setBeatPosition(beat);
+            double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            if (beat >= 0.0) { sequencer->setBeatPosition(beat); ensurePlayheadVisible(); }
         }
         repaint();
         return;
@@ -729,15 +1173,67 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
     // Click on ruler to set playhead
     if (sequencer && event.getPosition().getY() > transportHeight
         && event.getPosition().getX() > trackHeaderWidth) {
-        double beat = xToBeat(event.getPosition().getX());
+        double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
         if (beat >= 0.0) {
             sequencer->setBeatPosition(beat);
+            ensurePlayheadVisible();
             repaint();
         }
     }
 }
 
 void ProducePane::mouseDrag(const juce::MouseEvent& event) {
+    // Action event drag
+    if (!dragActionEventId.empty() && state) {
+        if (!draggingActionEvent && event.getDistanceFromDragStart() > 5)
+            draggingActionEvent = true;
+        if (draggingActionEvent) {
+            double newBeat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            if (newBeat < 0) newBeat = 0;
+            auto* t = state->findTrack(dragActionTrackId);
+            if (t) {
+                for (auto& ae : t->actionData) {
+                    if (ae.id == dragActionEventId) {
+                        ae.beat = newBeat;
+                        state->markDirty();
+                        break;
+                    }
+                }
+            }
+            repaint();
+        }
+        return;
+    }
+
+    // Region trim drag
+    if (trimEdge != TrimEdge::None && arrangement) {
+        auto* region = arrangement->findRegion(trimRegionId);
+        if (region) {
+            double beatAtMouse = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+            if (trimEdge == TrimEdge::Left) {
+                double maxStart = trimOrigStartBeat + trimOrigLengthBeats - 0.0625;
+                double newStart = std::max(0.0, std::min(beatAtMouse, maxStart));
+                double delta = newStart - region->startBeat;  // delta from current, not original
+                region->startBeat = newStart;
+                region->lengthBeats -= delta;
+                // Adjust event offsets so notes stay at their absolute beat positions
+                if (region->type == "midi" && delta != 0.0) {
+                    auto* take = region->activeTake();
+                    if (take) {
+                        for (auto& ev : take->events)
+                            ev.beatOffset -= delta;
+                    }
+                }
+            } else {
+                double minEnd = region->startBeat + 0.0625;
+                double newEnd = std::max(minEnd, beatAtMouse);
+                region->lengthBeats = newEnd - region->startBeat;
+            }
+            repaint();
+        }
+        return;
+    }
+
     // Track header reorder drag
     if (dragTrackIndex >= 0) {
         int newTarget = getTrackIndexAtY(event.getPosition().getY());
@@ -750,11 +1246,11 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
     }
 
     // Region drag (starts after 5px threshold)
-    if (!selectedRegionId.empty() && sequencer) {
+    if (!dragRegionId.empty() && sequencer) {
         if (!draggingRegion && event.getDistanceFromDragStart() > 5) {
             draggingRegion = true;
             // Capture the region's original beat for offset calculation
-            auto* region = arrangement ? arrangement->findRegion(selectedRegionId) : nullptr;
+            auto* region = arrangement ? arrangement->findRegion(dragRegionId) : nullptr;
             if (region) {
                 dragStartBeat = region->startBeat;
                 dragCurrentBeat = region->startBeat;
@@ -763,11 +1259,7 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
         if (draggingRegion) {
             dragIsOption = event.mods.isAltDown();  // live update during drag
             double beatDelta = xToBeat(event.getPosition().getX()) - xToBeat(event.getMouseDownPosition().getX());
-            double newBeat = std::max(0.0, dragStartBeat + beatDelta);
-            if (snapToGrid) {
-                double divSize = sequencer ? 1.0 / sequencer->getTimeSignatureDenominator() : 0.25;
-                newBeat = std::round(newBeat / divSize) * divSize;
-            }
+            double newBeat = snapBeatToGrid(std::max(0.0, dragStartBeat + beatDelta));
             dragCurrentBeat = newBeat;
 
             int trackIdx = getTrackIndexAtY(event.getPosition().getY());
@@ -776,13 +1268,17 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
                 auto tracks = state->listTracks();
                 if (trackIdx < (int)tracks.size()) {
                     auto* targetTrack = state->findTrack(tracks[trackIdx].id);
-                    auto* region = arrangement ? arrangement->findRegion(selectedRegionId) : nullptr;
+                    auto* region = arrangement ? arrangement->findRegion(dragRegionId) : nullptr;
                     if (targetTrack && region) {
-                        bool isMidiRegion = (region->type == "midi");
-                        bool isInstrumentTrack = (targetTrack->sourceType == TrackSourceType::Instrument);
-                        if (isMidiRegion == isInstrumentTrack)
+                        bool compatible = false;
+                        if (region->type == "midi" && targetTrack->sourceType == TrackSourceType::Instrument)
+                            compatible = true;
+                        else if (region->type == "audio" && targetTrack->sourceType == TrackSourceType::AudioInput)
+                            compatible = true;
+                        else if (region->type == "action" && targetTrack->sourceType == TrackSourceType::Action)
+                            compatible = true;
+                        if (compatible)
                             dragCurrentTrackIdx = trackIdx;
-                        // else: keep previous valid track index (snap back visually)
                     }
                 }
             }
@@ -792,21 +1288,126 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
     }
 }
 
-void ProducePane::mouseUp(const juce::MouseEvent& event) {
-    // Complete drag reorder
-    if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && dragTrackIndex != dragTargetIndex && state) {
-        auto tracks = state->listTracks();
-        if (dragTrackIndex < (int)tracks.size() && dragTargetIndex < (int)tracks.size()) {
-            auto* srcTrack = state->findTrack(tracks[dragTrackIndex].id);
-            auto* dstTrack = state->findTrack(tracks[dragTargetIndex].id);
-            if (srcTrack && dstTrack) {
-                state->moveTrack(srcTrack->id, dstTrack->position);
-            }
+void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& event) {
+    if (!state) return;
+    auto tracks = state->listTracks();
+    if (trackIdx < 0 || trackIdx >= (int)tracks.size()) return;
+    auto& trackId = tracks[trackIdx].id;
+
+    if (event.mods.isCommandDown()) {
+        // Cmd+click: toggle this track in/out of selection
+        state->selectTrack(trackId, true);
+    } else if (event.mods.isShiftDown() && !selectionAnchorTrackId.empty()) {
+        // Shift+click: range select from anchor to here
+        int anchorIdx = -1;
+        for (int i = 0; i < (int)tracks.size(); ++i) {
+            if (tracks[i].id == selectionAnchorTrackId) { anchorIdx = i; break; }
         }
+        if (anchorIdx >= 0) {
+            int lo = std::min(anchorIdx, trackIdx);
+            int hi = std::max(anchorIdx, trackIdx);
+            // Clear existing, select entire range
+            state->clearSelection();
+            for (int i = lo; i <= hi; ++i)
+                state->selectTrack(tracks[i].id, true);
+        } else {
+            state->selectTrack(trackId, false);
+        }
+    } else {
+        // Plain click: select only this track
+        state->selectTrack(trackId, false);
+        selectionAnchorTrackId = trackId;
+    }
+
+    // Also select all regions on selected tracks
+    selectedRegionIds.clear();
+    if (arrangement) {
+        auto sel = state->selectedTrackIds();
+        for (auto& sid : sel) {
+            auto regs = arrangement->regionsForTrack(sid);
+            for (auto* r : regs)
+                selectedRegionIds.insert(r->id);
+        }
+    }
+    repaint();
+}
+
+void ProducePane::mouseUp(const juce::MouseEvent& event) {
+    // Complete action event drag
+    if (!dragActionEventId.empty()) {
+        dragActionEventId.clear();
+        dragActionTrackId.clear();
+        draggingActionEvent = false;
+        repaint();
+        return;
+    }
+
+    // Complete trim
+    if (trimEdge != TrimEdge::None) {
+        trimEdge = TrimEdge::None;
+        trimRegionId.clear();
+        if (onRegionsChanged) onRegionsChanged();
+        repaint();
+        return;
+    }
+
+    // Complete drag reorder (only if actually dragged)
+    if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && state) {
+        if (dragTrackIndex != dragTargetIndex
+            && event.getDistanceFromDragStart() > 5) {
+            auto tracks = state->listTracks();
+            if (dragTrackIndex < (int)tracks.size() && dragTargetIndex < (int)tracks.size()) {
+                auto* srcTrack = state->findTrack(tracks[dragTrackIndex].id);
+                auto* dstTrack = state->findTrack(tracks[dragTargetIndex].id);
+                if (srcTrack && dstTrack) {
+                    state->moveTrack(srcTrack->id, dstTrack->position);
+                }
+            }
+            dragTrackIndex = -1;
+            dragTargetIndex = -1;
+            repaint();
+            return;
+        }
+
+        // No significant drag — treat as click for selection/controls
+        int idx = dragTrackIndex;
         dragTrackIndex = -1;
         dragTargetIndex = -1;
-        repaint();
-        return;  // don't process other clicks
+
+        auto tracks = state->listTracks();
+        if (idx >= 0 && idx < (int)tracks.size()) {
+            auto* trackState = state->findTrack(tracks[idx].id);
+
+            // Power icon
+            if (idx < (int)powerIconBounds.size()
+                && powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
+                if (trackState) {
+                    bool newEnabled = !trackState->audioEnabled;
+                    state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
+                    if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
+                        state->setTrackMidiEnabled(tracks[idx].id, true);
+                    if (!newEnabled && trackState->armed)
+                        state->setTrackArmed(tracks[idx].id, false);
+                }
+                repaint();
+                return;
+            }
+
+            // Arm dot — only when track is enabled
+            if (trackState && trackState->audioEnabled) {
+                int gridTop = transportHeight + rulerHeight;
+                auto armArea = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + (trackRowHeight - 10) / 2, 10, 10);
+                if (armArea.expanded(4).contains(event.getPosition())) {
+                    state->setTrackArmed(tracks[idx].id, !trackState->armed);
+                    repaint();
+                    return;
+                }
+            }
+
+            // Otherwise: track selection
+            handleTrackHeaderClick(idx, event);
+        }
+        return;
     }
     dragTrackIndex = -1;
     dragTargetIndex = -1;
@@ -817,85 +1418,94 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
             auto targetTrackId = tracks[dragCurrentTrackIdx].id;
             if (dragIsOption) {
-                // Option+drag = duplicate
-                auto* newRegion = arrangement->duplicateRegion(selectedRegionId, targetTrackId, dragCurrentBeat);
-                if (newRegion) selectedRegionId = newRegion->id;
+                auto* newRegion = arrangement->duplicateRegion(dragRegionId, targetTrackId, dragCurrentBeat);
+                if (newRegion) {
+                    selectedRegionIds.clear();
+                    selectedRegionIds.insert(newRegion->id);
+                }
             } else {
-                // Normal drag = move
-                arrangement->moveRegion(selectedRegionId, targetTrackId, dragCurrentBeat);
+                arrangement->moveRegion(dragRegionId, targetTrackId, dragCurrentBeat);
             }
             if (onRegionsChanged) onRegionsChanged();
         }
         draggingRegion = false;
+        dragRegionId.clear();
         repaint();
         return;
     }
     draggingRegion = false;
+    dragRegionId.clear();
 
     // Right-click on region — context menu
-    if (event.mods.isPopupMenu() && !selectedRegionId.empty() && arrangement) {
-        auto* region = arrangement->findRegion(selectedRegionId);
-        if (region) {
-            for (auto& hit : regionHitRects) {
-                if (hit.regionId == selectedRegionId && hit.bounds.contains(event.getPosition())) {
-                    juce::PopupMenu menu;
-                    menu.addItem(1, region->muted ? "Unmute Region" : "Mute Region");
-                    menu.addItem(2, "Delete Region");
-                    auto regionId = selectedRegionId;
-                    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                        juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
-                        [this, regionId](int result) {
-                            if (!arrangement) return;
-                            if (result == 1) {
-                                auto* r = arrangement->findRegion(regionId);
-                                if (r) r->muted = !r->muted;
-                            } else if (result == 2) {
-                                arrangement->removeRegion(regionId);
-                                if (selectedRegionId == regionId) selectedRegionId.clear();
-                                if (onRegionsChanged) onRegionsChanged();
+    if (event.mods.isPopupMenu() && !selectedRegionIds.empty() && arrangement) {
+        // Check if click is on a selected region
+        for (auto& hit : regionHitRects) {
+            if (selectedRegionIds.count(hit.regionId) && hit.bounds.contains(event.getPosition())) {
+                juce::PopupMenu menu;
+
+                bool anyMuted = false, anyUnmuted = false;
+                for (auto& rid : selectedRegionIds) {
+                    auto* r = arrangement->findRegion(rid);
+                    if (r && r->muted) anyMuted = true;
+                    if (r && !r->muted) anyUnmuted = true;
+                }
+                if (anyUnmuted) menu.addItem(1, "Mute Region(s)");
+                if (anyMuted) menu.addItem(3, "Unmute Region(s)");
+                menu.addItem(2, "Delete Region(s)");
+                menu.addSeparator();
+
+                // Quantize submenu
+                juce::PopupMenu quantMenu;
+                quantMenu.addItem(100, "Off");
+                quantMenu.addSeparator();
+                quantMenu.addItem(101, "1/1 Note");
+                quantMenu.addItem(102, "1/2 Note");
+                quantMenu.addItem(103, "1/4 Note");
+                quantMenu.addItem(104, "1/8 Note");
+                quantMenu.addItem(105, "1/16 Note");
+                quantMenu.addItem(106, "1/32 Note");
+                quantMenu.addItem(107, "1/64 Note");
+                quantMenu.addSeparator();
+                quantMenu.addItem(110, "1/4 Triplet (1/6)");
+                quantMenu.addItem(111, "1/8 Triplet (1/12)");
+                quantMenu.addItem(112, "1/16 Triplet (1/24)");
+                quantMenu.addItem(113, "1/32 Triplet (1/48)");
+                menu.addSubMenu("Quantize", quantMenu);
+                if (selectedRegionIds.size() >= 2)
+                    menu.addItem(4, "Join Regions");
+
+                auto selIds = selectedRegionIds;
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                    juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                    [this, selIds](int result) {
+                        if (!arrangement) return;
+                        if (result == 1) {
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (r) r->muted = true;
                             }
-                            repaint();
-                        });
-                    return;
-                }
-            }
-        }
-    }
-
-    // Track header controls (power icon, arm dot)
-    if (state && event.getPosition().getX() < trackHeaderWidth) {
-        int idx = getTrackIndexAtY(event.getPosition().getY());
-        if (idx >= 0) {
-            auto tracks = state->listTracks();
-            if (idx < (int)tracks.size()) {
-                auto* trackState = state->findTrack(tracks[idx].id);
-
-                // Power icon
-                if (idx < (int)powerIconBounds.size()
-                    && powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
-                    if (trackState) {
-                        bool newEnabled = !trackState->audioEnabled;
-                        state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
-                        if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
-                            state->setTrackMidiEnabled(tracks[idx].id, true);
-                        if (!newEnabled && trackState->armed)
-                            state->setTrackArmed(tracks[idx].id, false);
-                    }
-                    repaint();
-                    return;
-                }
-
-                // Arm dot — only when track is enabled
-                if (trackState && trackState->audioEnabled) {
-                    // Layout: 8 + 14(power) + 6 = 28, arm at 28..38
-                    int gridTop = transportHeight + rulerHeight;
-                    auto armArea = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + (trackRowHeight - 10) / 2, 10, 10);
-                    if (armArea.expanded(4).contains(event.getPosition())) {
-                        state->setTrackArmed(tracks[idx].id, !trackState->armed);
+                        } else if (result == 3) {
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (r) r->muted = false;
+                            }
+                        } else if (result == 2) {
+                            for (auto& rid : selIds)
+                                arrangement->removeRegion(rid);
+                            selectedRegionIds.clear();
+                            if (onRegionsChanged) onRegionsChanged();
+                        } else if (result == 4) {
+                            joinSelectedRegions();
+                        } else if (result >= 100 && result < 200) {
+                            double grid = quantizeGridSize(result);
+                            for (auto& rid : selIds) {
+                                auto* r = arrangement->findRegion(rid);
+                                if (r) r->quantize = grid;
+                            }
+                        }
                         repaint();
-                        return;
-                    }
-                }
+                    });
+                return;
             }
         }
     }
@@ -955,12 +1565,14 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     // Transport buttons
     if (rewindButtonBounds.contains(event.getPosition())) {
         sequencer->setBeatPosition(0.0);
+        ensurePlayheadVisible();
         repaint();
         return;
     }
     if (stopButtonBounds.contains(event.getPosition())) {
         if (sequencer->isPlaying()) sequencer->stop();
         else sequencer->setBeatPosition(0.0);  // second stop = rewind
+        ensurePlayheadVisible();
         repaint();
         return;
     }
@@ -987,7 +1599,29 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
-    if (!state) return;
+    if (!state) { perfLog("[ProducePane] dblclick: no state\n"); return; }
+
+    perfLog("[ProducePane] dblclick at (%d, %d) headerW=%d gridTop=%d\n",
+            event.getPosition().getX(), event.getPosition().getY(),
+            trackHeaderWidth, transportHeight + rulerHeight);
+
+    // Double-click in grid area on action track → create action event
+    if (event.getPosition().getX() >= trackHeaderWidth
+        && event.getPosition().getY() > transportHeight + rulerHeight) {
+        int trkIdx = getTrackIndexAtY(event.getPosition().getY());
+        if (trkIdx >= 0) {
+            auto tracks = state->listTracks();
+            if (trkIdx < (int)tracks.size()) {
+                auto* ts = state->findTrack(tracks[trkIdx].id);
+                if (ts && ts->sourceType == TrackSourceType::Action) {
+                    double beat = snapBeatToGrid(xToBeat(event.getPosition().getX()));
+                    showActionPicker(event.getScreenPosition(), tracks[trkIdx].id, beat);
+                    return;
+                }
+            }
+        }
+    }
+
     if (event.getPosition().getX() >= trackHeaderWidth) return;
 
     int idx = getTrackIndexAtY(event.getPosition().getY());
@@ -1011,6 +1645,20 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
         }
     };
     nameEditor.show(*this, editBounds, juce::String(tracks[idx].name));
+}
+
+void ProducePane::mouseMove(const juce::MouseEvent& event) {
+    // Show resize cursor when hovering over trim handles of selected regions
+    for (auto& hit : regionHitRects) {
+        if (selectedRegionIds.count(hit.regionId) && hit.bounds.contains(event.getPosition())) {
+            int localX = event.getPosition().getX() - hit.bounds.getX();
+            if (localX <= trimHandleWidth || localX >= hit.bounds.getWidth() - trimHandleWidth) {
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                return;
+            }
+        }
+    }
+    setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
@@ -1039,11 +1687,12 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Delete/Backspace: delete selected region
+    // Delete/Backspace: delete selected regions
     if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
-        && !selectedRegionId.empty() && arrangement) {
-        arrangement->removeRegion(selectedRegionId);
-        selectedRegionId.clear();
+        && !selectedRegionIds.empty() && arrangement) {
+        for (auto& rid : selectedRegionIds)
+            arrangement->removeRegion(rid);
+        selectedRegionIds.clear();
         if (onRegionsChanged) onRegionsChanged();
         repaint();
         return true;
@@ -1056,29 +1705,32 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         return true;
     }
 
-    // Cmd+D: duplicate selected region (place after original)
+    // Cmd+D: duplicate selected regions (place after originals)
     if (key.getTextCharacter() == 'd' && key.getModifiers().isCommandDown()
-        && !selectedRegionId.empty() && arrangement) {
-        auto* region = arrangement->findRegion(selectedRegionId);
-        if (region) {
-            // Find which track owns this region
+        && !selectedRegionIds.empty() && arrangement) {
+        std::set<std::string> newSelection;
+        for (auto& rid : selectedRegionIds) {
+            auto* region = arrangement->findRegion(rid);
+            if (!region) continue;
+            // Find owning track
             std::string ownerTrackId;
             if (state) {
                 auto tracks = state->listTracks();
                 for (auto& t : tracks) {
                     auto regs = arrangement->regionsForTrack(t.id);
                     for (auto* r : regs) {
-                        if (r->id == selectedRegionId) { ownerTrackId = t.id; break; }
+                        if (r->id == rid) { ownerTrackId = t.id; break; }
                     }
                     if (!ownerTrackId.empty()) break;
                 }
             }
             if (!ownerTrackId.empty()) {
-                auto* dup = arrangement->duplicateRegion(selectedRegionId, ownerTrackId,
+                auto* dup = arrangement->duplicateRegion(rid, ownerTrackId,
                                                           region->startBeat + region->lengthBeats);
-                if (dup) selectedRegionId = dup->id;
+                if (dup) newSelection.insert(dup->id);
             }
         }
+        selectedRegionIds = newSelection;
         if (onRegionsChanged) onRegionsChanged();
         repaint();
         return true;
@@ -1094,6 +1746,7 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
     // Return: snap playhead to beginning
     if (key == juce::KeyPress::returnKey && sequencer) {
         sequencer->setBeatPosition(0.0);
+        ensurePlayheadVisible();
         repaint();
         return true;
     }
@@ -1119,6 +1772,23 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
         }
     }
 
+    // Shift+h/l: step playhead by one measure
+    if (key.getModifiers().isShiftDown()
+        && (key.getTextCharacter() == 'H' || key.getTextCharacter() == 'L') && sequencer) {
+        int bpb = beatsPerBar();
+        double beat = sequencer->getBeatPosition();
+        if (key.getTextCharacter() == 'H') {
+            double snapped = std::floor(beat / bpb) * bpb - bpb;
+            sequencer->setBeatPosition(std::max(0.0, snapped));
+        } else {
+            double snapped = std::floor(beat / bpb) * bpb + bpb;
+            sequencer->setBeatPosition(snapped);
+        }
+        ensurePlayheadVisible();
+        repaint();
+        return true;
+    }
+
     // h/l: step playhead by one division (no Cmd modifier)
     if ((key.getTextCharacter() == 'h' || key.getTextCharacter() == 'l') && sequencer) {
         double divSize = 1.0 / sequencer->getTimeSignatureDenominator();
@@ -1130,9 +1800,122 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
             double snapped = std::floor(beat / divSize) * divSize + divSize;
             sequencer->setBeatPosition(snapped);
         }
+        ensurePlayheadVisible();
+        repaint();
+        return true;
+    }
+
+    // Cmd+T: split selected region(s) at playhead
+    if (key.getTextCharacter() == 't' && key.getModifiers().isCommandDown()
+        && !selectedRegionIds.empty() && arrangement && sequencer) {
+        double splitBeat = sequencer->getBeatPosition();
+        std::set<std::string> newSelection;
+        for (auto& rid : selectedRegionIds) {
+            auto* region = arrangement->findRegion(rid);
+            if (!region) continue;
+            // Only split if playhead is inside the region
+            if (splitBeat > region->startBeat && splitBeat < region->startBeat + region->lengthBeats) {
+                auto* right = arrangement->splitRegion(rid, splitBeat, true);  // splitNotes = keep crossing notes
+                if (right) {
+                    newSelection.insert(rid);
+                    newSelection.insert(right->id);
+                }
+            } else {
+                newSelection.insert(rid);
+            }
+        }
+        selectedRegionIds = newSelection;
+        if (onRegionsChanged) onRegionsChanged();
         repaint();
         return true;
     }
 
     return false;
+}
+
+void ProducePane::joinSelectedRegions() {
+    if (!arrangement || !state || selectedRegionIds.size() < 2) return;
+
+    // Group selected regions by track
+    auto tracks = state->listTracks();
+    for (auto& t : tracks) {
+        // Collect selected regions on this track, sorted by start beat
+        std::vector<RegionState*> trackRegs;
+        for (auto* r : arrangement->regionsForTrack(t.id)) {
+            if (selectedRegionIds.count(r->id))
+                trackRegs.push_back(r);
+        }
+        if (trackRegs.size() < 2) continue;
+
+        std::sort(trackRegs.begin(), trackRegs.end(),
+                  [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
+
+        // Only join regions of the same type
+        auto type = trackRegs[0]->type;
+        bool allSameType = true;
+        for (auto* r : trackRegs)
+            if (r->type != type) { allSameType = false; break; }
+        if (!allSameType) continue;
+
+        // Build merged region: span from earliest start to latest end
+        double minStart = trackRegs[0]->startBeat;
+        double maxEnd = 0.0;
+        for (auto* r : trackRegs)
+            maxEnd = std::max(maxEnd, r->startBeat + r->lengthBeats);
+
+        // Create the merged region as a copy of the first
+        auto* merged = arrangement->addMidiRegion(t.id, minStart, maxEnd - minStart);
+        if (!merged) continue;
+        merged->type = type;
+        merged->name = trackRegs[0]->name;
+
+        // Merge events from all regions into the merged region's take
+        auto* mergedTake = merged->activeTake();
+        if (!mergedTake) continue;
+
+        if (type == "midi") {
+            for (auto* r : trackRegs) {
+                auto* take = r->activeTake();
+                if (!take) continue;
+                double offsetDelta = r->startBeat - minStart;
+                for (auto& ev : take->events) {
+                    MidiEventState newEv = ev;
+                    newEv.beatOffset += offsetDelta;
+                    mergedTake->events.push_back(newEv);
+                }
+            }
+            // Sort by beat offset
+            std::sort(mergedTake->events.begin(), mergedTake->events.end(),
+                      [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
+        }
+        // For audio regions, join doesn't merge waveforms — just extend the span
+        // (audio takes reference files, can't trivially merge)
+
+        // Remove the source regions
+        for (auto* r : trackRegs)
+            arrangement->removeRegion(r->id);
+
+        selectedRegionIds.clear();
+        selectedRegionIds.insert(merged->id);
+    }
+    if (onRegionsChanged) onRegionsChanged();
+    repaint();
+}
+
+double ProducePane::quantizeGridSize(int menuId) {
+    switch (menuId) {
+        case 100: return 0.0;       // Off
+        case 101: return 4.0;       // 1/1
+        case 102: return 2.0;       // 1/2
+        case 103: return 1.0;       // 1/4
+        case 104: return 0.5;       // 1/8
+        case 105: return 0.25;      // 1/16
+        case 106: return 0.125;     // 1/32
+        case 107: return 0.0625;    // 1/64
+        case 110: return 2.0 / 3.0; // 1/4 triplet
+        case 111: return 1.0 / 3.0; // 1/8 triplet
+        case 112: return 0.5 / 3.0; // 1/16 triplet
+        case 113: return 0.25 / 3.0;// 1/32 triplet
+        default:  return 0.0;
+    }
 }

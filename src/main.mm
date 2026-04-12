@@ -55,11 +55,23 @@ public:
                     return nil;
                 return event;
             }];
+
+        keyUpMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyUp
+            handler:^NSEvent* (NSEvent* event) {
+                juce::juce_wchar c = event.characters.length > 0
+                    ? [event.characters characterAtIndex:0] : 0;
+                auto key = juce::KeyPress(c, juce::ModifierKeys::getCurrentModifiers(), c);
+                if (mainLayout->handleGlobalKeyUp(key))
+                    return nil;
+                return event;
+            }];
     }
 
     ~MainWindow() override {
         if (keyMonitor)
             [NSEvent removeMonitor:keyMonitor];
+        if (keyUpMonitor)
+            [NSEvent removeMonitor:keyUpMonitor];
     }
 
     void closeButtonPressed() override {
@@ -71,6 +83,7 @@ public:
 private:
     MainLayout* mainLayout;
     id keyMonitor = nil;
+    id keyUpMonitor = nil;
 };
 
 // --- Menu Bar ---
@@ -150,6 +163,9 @@ public:
             auto tracks = state.listTracks();
             auto name = "Audio " + juce::String((int)tracks.size() + 1);
             state.createAudioInputTrack(name.toStdString(), -1, 0);  // no input until user selects
+        }
+        else if (menuItemID == 11) {
+            state.createActionTrack("Actions");
         }
         else if (menuItemID == CommandIDs::newEffectsBus) {
             auto busses = state.listBusses();

@@ -111,6 +111,9 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
     auto* track = stateAPI.findTrack(trackId);
     if (!track) return;
 
+    // Action tracks have no audio engine representation
+    if (track->sourceType == TrackSourceType::Action) return;
+
     if (track->sourceType == TrackSourceType::AudioInput) {
         engine.createAudioInputTrackWithId(juce::String(track->id), juce::String(track->name),
                                             track->inputChannelStart, track->inputChannelCount);
@@ -250,6 +253,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     if (entityType == "track") {
         auto* t = stateAPI.findTrack(entityId);
         if (!t) return;
+        if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
         engine.setTrackAudioEnabled(id, t->audioEnabled);
         engine.setTrackOutputTarget(id, juce::String(t->outputTarget));

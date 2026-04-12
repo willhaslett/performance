@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <set>
 #include "gui/Theme.h"
 #include "gui/InlineEditor.h"
 #include "daw/SequencerAPI.h"
@@ -28,6 +29,7 @@ public:
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
     bool keyPressed(const juce::KeyPress& key) override;
 
@@ -54,6 +56,8 @@ private:
     // Convert beat to x pixel
     int beatToX(double beat) const;
     double xToBeat(int x) const;
+    double snapBeatToGrid(double beat) const;  // snap to nearest division
+    void ensurePlayheadVisible();              // scroll so playhead is on-screen
 
     // Paint helpers
     void paintTransport(juce::Graphics& g, juce::Rectangle<int> area);
@@ -90,8 +94,12 @@ private:
     InlineEditor nameEditor;
     void paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled);
 
+    // Track selection (anchor for shift-range)
+    std::string selectionAnchorTrackId;
+    void handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& event);
+
     // Region interaction
-    std::string selectedRegionId;
+    std::set<std::string> selectedRegionIds;
     struct RegionHitInfo {
         std::string regionId;
         std::string trackId;
@@ -99,11 +107,44 @@ private:
     };
     std::vector<RegionHitInfo> regionHitRects;  // rebuilt each paint
 
+    struct ActionHitInfo {
+        std::string eventId;
+        std::string regionId;
+        std::string trackId;
+        juce::Rectangle<int> bounds;
+    };
+    std::vector<ActionHitInfo> actionHitRects;  // rebuilt each paint
+
     // Region drag state
     bool draggingRegion = false;
     bool dragIsOption = false;  // option+drag = duplicate
+    std::string dragRegionId;   // the region being dragged (for multi-select)
     double dragStartBeat = 0.0;
     int dragStartTrackIdx = -1;
     double dragCurrentBeat = 0.0;
     int dragCurrentTrackIdx = -1;
+
+    // Region trim state
+    enum class TrimEdge { None, Left, Right };
+    TrimEdge trimEdge = TrimEdge::None;
+    std::string trimRegionId;
+    double trimOrigStartBeat = 0.0;
+    double trimOrigLengthBeats = 0.0;
+    static constexpr int trimHandleWidth = 6;
+
+    // Action event drag
+    std::string dragActionEventId;
+    std::string dragActionTrackId;
+    bool draggingActionEvent = false;
+
+    // Quantize
+    static double quantizeGridSize(int menuId);  // menu ID → beat grid size
+
+    // Action event creation
+    void showActionPicker(juce::Point<int> screenPos, const std::string& trackId, double beat);
+    void showMorphEditor(const std::string& trackId, double beat,
+                         const std::string& existingEventId = "");
+
+    // Join
+    void joinSelectedRegions();
 };

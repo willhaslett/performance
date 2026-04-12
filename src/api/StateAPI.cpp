@@ -139,12 +139,32 @@ const EffectState* StateAPI::findEffect(const std::string& effectId) const {
     return nullptr;
 }
 
+void StateAPI::setEffectPresetId(const std::string& effectId, const std::string& presetId) {
+    auto* list = findEffectList(effectId, nullptr);
+    if (!list) return;
+    for (auto& fx : *list) {
+        if (fx.id == effectId) {
+            fx.presetId = presetId;
+            markDirty();
+            return;
+        }
+    }
+}
+
 // --- Song ---
 
 std::string StateAPI::createSong(const std::string& name) {
     SongState song;
     song.id = generateId();
     song.name = name;
+    // Every song gets an Actions track
+    TrackState actionTrack;
+    actionTrack.id = generateId();
+    actionTrack.name = "Actions";
+    actionTrack.sourceType = TrackSourceType::Action;
+    actionTrack.midiEnabled = false;
+    actionTrack.position = 0;
+    song.tracks.push_back(std::move(actionTrack));
     state.songs.push_back(std::move(song));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id, "" });
@@ -270,6 +290,22 @@ std::string StateAPI::createAudioInputTrack(const std::string& name, int inputCh
     track.inputChannelStart = inputChannelStart;
     track.inputChannelCount = inputChannelCount;
     track.midiEnabled = false;  // audio input tracks don't receive MIDI
+    song->tracks.push_back(std::move(track));
+    markDirty();
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
+    return song->tracks.back().id;
+}
+
+std::string StateAPI::createActionTrack(const std::string& name) {
+    auto* song = currentSong();
+    if (!song) return {};
+    TrackState track;
+    track.id = generateId();
+    track.name = name;
+    track.position = (int)song->tracks.size();
+    track.sourceType = TrackSourceType::Action;
+    track.midiEnabled = false;
+    track.audioEnabled = true;  // visible in mixer, no audio output
     song->tracks.push_back(std::move(track));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
@@ -403,6 +439,13 @@ void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId
 
 void StateAPI::clearTrackPlugin(const std::string& id) {
     setTrackPlugin(id, "", "");
+}
+
+void StateAPI::setTrackPresetId(const std::string& id, const std::string& presetId) {
+    auto* track = findTrack(id);
+    if (!track) return;
+    track->presetId = presetId;
+    markDirty();
 }
 
 void StateAPI::setTrackInputChannels(const std::string& id, int start, int count) {
@@ -824,6 +867,45 @@ std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) con
 
 // --- Score ---
 
+// --- Action Events ---
+
+std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
+                                      const std::string& argsJson) {
+    auto* song = currentSong();
+    if (!song) return "";
+    SongState::ActionEvent ev;
+    ev.id = generateId();
+    ev.beat = beat;
+    ev.actionId = actionId;
+    ev.argsJson = argsJson;
+    song->actionEvents.push_back(std::move(ev));
+    markDirty();
+    return song->actionEvents.back().id;
+}
+
+void StateAPI::removeActionEvent(const std::string& id) {
+    auto* song = currentSong();
+    if (!song) return;
+    auto& events = song->actionEvents;
+    events.erase(std::remove_if(events.begin(), events.end(),
+        [&](auto& e) { return e.id == id; }), events.end());
+    markDirty();
+}
+
+void StateAPI::setActionEventBeat(const std::string& id, double beat) {
+    auto* song = currentSong();
+    if (!song) return;
+    for (auto& ev : song->actionEvents) {
+        if (ev.id == id) { ev.beat = beat; markDirty(); return; }
+    }
+}
+
+std::vector<SongState::ActionEvent>& StateAPI::actionEvents() {
+    static std::vector<SongState::ActionEvent> empty;
+    auto* song = currentSong();
+    return song ? song->actionEvents : empty;
+}
+
 std::vector<BindingState> StateAPI::scoreSteps() const {
     auto* song = currentSong();
     if (!song) return {};
@@ -988,14 +1070,21 @@ std::vector<const PresetInfo*> StateAPI::presetsForPlugin(const std::string& plu
 // --- Catalog: Actions ---
 
 std::string StateAPI::registerAction(const std::string& name, const std::string& label,
-                                      const std::string& paramSchema) {
-    for (auto& a : state.actions)
-        if (a.name == name) return a.id;
+                                      const std::string& paramSchema, int durationParamIndex) {
+    for (auto& a : state.actions) {
+        if (a.name == name) {
+            a.label = label;
+            a.paramSchema = paramSchema;
+            a.durationParamIndex = durationParamIndex;
+            return a.id;
+        }
+    }
     ActionInfo action;
     action.id = generateId();
     action.name = name;
     action.label = label;
     action.paramSchema = paramSchema;
+    action.durationParamIndex = durationParamIndex;
     state.actions.push_back(std::move(action));
     return state.actions.back().id;
 }

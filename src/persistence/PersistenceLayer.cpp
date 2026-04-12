@@ -181,6 +181,19 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN time_sig_den INTEGER DEFAULT 4", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE busses ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN quantize REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
+
+    // Action events table
+    exec(R"(
+        CREATE TABLE IF NOT EXISTS action_events (
+            id TEXT PRIMARY KEY,
+            track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            beat REAL NOT NULL,
+            action_id TEXT NOT NULL,
+            args_json TEXT DEFAULT '[]'
+        );
+    )");
 
     // Arrangement tables
     exec(R"(
@@ -336,7 +349,9 @@ void PersistenceLayer::readSongs(AppState& out) {
             t.processorState = col_str(ts, 7);
             t.processorStateHash = col_str(ts, 8);
             auto srcType = col_str(ts, 9);
-            t.sourceType = (srcType == "audio_input") ? TrackSourceType::AudioInput : TrackSourceType::Instrument;
+            t.sourceType = (srcType == "audio_input") ? TrackSourceType::AudioInput
+                         : (srcType == "action") ? TrackSourceType::Action
+                         : TrackSourceType::Instrument;
             auto chMode = col_str(ts, 10);
             t.channelMode = (chMode == "mono") ? ChannelMode::Mono : ChannelMode::Stereo;
             t.inputChannelStart = sqlite3_column_int(ts, 11);
@@ -366,7 +381,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_finalize(ss);
 
             // Regions for this track
-            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id FROM regions WHERE track_id = ? ORDER BY start_beat");
+            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id, muted, quantize FROM regions WHERE track_id = ? ORDER BY start_beat");
             sqlite3_bind_text(rs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(rs) == SQLITE_ROW) {
                 RegionState r;
@@ -376,6 +391,8 @@ void PersistenceLayer::readSongs(AppState& out) {
                 r.startBeat = sqlite3_column_double(rs, 3);
                 r.lengthBeats = sqlite3_column_double(rs, 4);
                 r.activeTakeId = col_str(rs, 5);
+                r.muted = sqlite3_column_int(rs, 6) != 0;
+                r.quantize = sqlite3_column_double(rs, 7);
 
                 // Takes for this region
                 auto* tks = prepare("SELECT id, name FROM takes WHERE region_id = ?");
@@ -471,6 +488,23 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_finalize(bi);
 
         out.songs.push_back(std::move(song));
+
+        // Action events for action tracks (after song is pushed so tracks exist)
+        auto& savedSong = out.songs.back();
+        for (auto& t : savedSong.tracks) {
+            if (t.sourceType != TrackSourceType::Action) continue;
+            auto* ae = prepare("SELECT id, beat, action_id, args_json FROM action_events WHERE track_id = ? ORDER BY beat");
+            sqlite3_bind_text(ae, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
+            while (sqlite3_step(ae) == SQLITE_ROW) {
+                ActionEventData ev;
+                ev.id = col_str(ae, 0);
+                ev.beat = sqlite3_column_double(ae, 1);
+                ev.actionId = col_str(ae, 2);
+                ev.argsJson = col_str(ae, 3);
+                t.actionData.push_back(std::move(ev));
+            }
+            sqlite3_finalize(ae);
+        }
     }
     sqlite3_finalize(songStmt);
 
@@ -591,6 +625,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
     exec("DELETE FROM effects");
     exec("DELETE FROM sends");
     exec("DELETE FROM song_devices");
+    exec("DELETE FROM action_events");
     exec("DELETE FROM songs");  // CASCADE clears tracks, busses, bindings
     exec("DELETE FROM device_controls");
     exec("DELETE FROM devices");
@@ -709,7 +744,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             if (!t.processorStateHash.empty())
                 sqlite3_bind_text(ts, 10, t.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(ts, 10);
-            auto srcType = (t.sourceType == TrackSourceType::AudioInput) ? "audio_input" : "instrument";
+            auto srcType = (t.sourceType == TrackSourceType::Action) ? "action"
+                         : (t.sourceType == TrackSourceType::AudioInput) ? "audio_input"
+                         : "instrument";
             sqlite3_bind_text(ts, 11, srcType, -1, SQLITE_TRANSIENT);
             auto chMode = (t.channelMode == ChannelMode::Mono) ? "mono" : "stereo";
             sqlite3_bind_text(ts, 12, chMode, -1, SQLITE_TRANSIENT);
@@ -756,8 +793,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             // Regions and takes
             for (auto& r : t.regions) {
                 auto* rs = prepare(
-                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)");
+                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id, muted, quantize) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(rs, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 3, r.type.c_str(), -1, SQLITE_TRANSIENT);
@@ -765,6 +802,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_double(rs, 5, r.startBeat);
                 sqlite3_bind_double(rs, 6, r.lengthBeats);
                 sqlite3_bind_text(rs, 7, r.activeTakeId.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int(rs, 8, r.muted ? 1 : 0);
+                sqlite3_bind_double(rs, 9, r.quantize);
                 sqlite3_step(rs);
                 sqlite3_finalize(rs);
 
@@ -837,6 +876,20 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_int(bs, 11, bind.scorePosition);
             sqlite3_step(bs);
             sqlite3_finalize(bs);
+        }
+        // Action events (on action tracks)
+        for (auto& t : song.tracks) {
+            if (t.sourceType != TrackSourceType::Action) continue;
+            for (auto& ev : t.actionData) {
+                auto* aes = prepare("INSERT INTO action_events (id, track_id, beat, action_id, args_json) VALUES (?, ?, ?, ?, ?)");
+                sqlite3_bind_text(aes, 1, ev.id.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(aes, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_double(aes, 3, ev.beat);
+                sqlite3_bind_text(aes, 4, ev.actionId.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(aes, 5, ev.argsJson.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step(aes);
+                sqlite3_finalize(aes);
+            }
         }
     }
 

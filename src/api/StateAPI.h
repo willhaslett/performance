@@ -35,6 +35,7 @@ public:
     std::string createTrack(const std::string& name);  // virtual instrument track
     std::string createAudioInputTrack(const std::string& name, int inputChannelStart,
                                        int inputChannelCount);
+    std::string createActionTrack(const std::string& name);
     void removeTrack(const std::string& id);
     void renameTrack(const std::string& id, const std::string& name);
     void moveTrack(const std::string& id, int newPosition);  // reorder within song
@@ -49,6 +50,7 @@ public:
     void setTrackPlugin(const std::string& id, const std::string& pluginId,
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);
+    void setTrackPresetId(const std::string& id, const std::string& presetId);
     void setTrackInputChannels(const std::string& id, int start, int count);
     void setTrackOutputTarget(const std::string& id, const std::string& target);
     std::string getTrackOutputTarget(const std::string& id) const;
@@ -75,6 +77,7 @@ public:
     void removeEffect(const std::string& effectId);
     void setEffectLoadStatus(const std::string& effectId, LoadStatus status);
     const EffectState* findEffect(const std::string& effectId) const;
+    void setEffectPresetId(const std::string& effectId, const std::string& presetId);
 
     // --- Sends ---
     std::string addSend(const std::string& trackId, const std::string& busId, float gain = 1.0f);
@@ -95,6 +98,13 @@ public:
     std::vector<BindingState> bindingsForSong(const std::string& songId) const;
     std::vector<BindingState> globalBindings() const;
     std::vector<BindingState> effectiveBindings() const;  // global + current song (song wins on conflict)
+
+    // --- Action Events (beat-triggered actions on the timeline) ---
+    std::string addActionEvent(double beat, const std::string& actionId,
+                               const std::string& argsJson = "[]");
+    void removeActionEvent(const std::string& id);
+    void setActionEventBeat(const std::string& id, double beat);
+    std::vector<SongState::ActionEvent>& actionEvents();
 
     // Score — ordered subset of song bindings where isScoreStep == true
     std::vector<BindingState> scoreSteps() const;  // sorted by scorePosition
@@ -137,7 +147,8 @@ public:
 
     // --- Catalog: Actions ---
     std::string registerAction(const std::string& name, const std::string& label = "",
-                               const std::string& paramSchema = "");
+                               const std::string& paramSchema = "",
+                               int durationParamIndex = -1);
     std::string createCustomAction(const std::string& name, const std::string& label,
                                     const std::string& luaCode, const std::string& songId = "");
     void removeAction(const std::string& id);

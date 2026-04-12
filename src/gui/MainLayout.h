@@ -9,6 +9,7 @@
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
 #include "gui/Divider.h"
+#include "gui/MusicalTyping.h"
 #include <map>
 #include <string>
 
@@ -42,6 +43,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
 
     bool handleGlobalKey(const juce::KeyPress& key);
+    bool handleGlobalKeyUp(const juce::KeyPress& key);
 
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
@@ -106,4 +108,10 @@ private:
         }
     };
     Overlay overlay;
+
+    // Musical Typing
+    MusicalTyping musicalTyping;
+    bool musicalTypingActive = false;
+    juce::Point<int> musicalTypingLastPos { -1, -1 };
+    void toggleMusicalTyping();
 };

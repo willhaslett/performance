@@ -39,6 +39,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     addChildComponent(logPane);
     addChildComponent(mixerView);
 
+    // Musical Typing (hidden by default)
+    musicalTyping.setAudioEngine(&engine.getAudioEngine());
+    addChildComponent(musicalTyping);
+
     // Sidebar divider
     addAndMakeVisible(sidebarDivider);
     sidebarDivider.onDragStart = [this]() { dragStartSidebarWidth = sidebarWidth; };
@@ -348,7 +352,44 @@ void MainLayout::mouseUp(const juce::MouseEvent& event) {
     }
 }
 
+void MainLayout::toggleMusicalTyping() {
+    musicalTypingActive = !musicalTypingActive;
+    musicalTyping.setVisible(musicalTypingActive);
+    if (musicalTypingActive) {
+        if (musicalTypingLastPos.x < 0) {
+            // First open — center at top
+            musicalTypingLastPos.x = (getWidth() - musicalTyping.getWidth()) / 2;
+            musicalTypingLastPos.y = toolbarHeight + 8;
+        }
+        musicalTyping.setBounds(musicalTypingLastPos.x, musicalTypingLastPos.y,
+                                musicalTyping.getWidth(), musicalTyping.getHeight());
+        musicalTyping.toFront(false);
+    } else {
+        musicalTypingLastPos = musicalTyping.getPosition();
+        musicalTyping.allNotesOff();
+    }
+    repaint();
+}
+
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
+    // Cmd+K: toggle musical typing
+    if (key == KeyBindings::musicalTyping) {
+        toggleMusicalTyping();
+        return true;
+    }
+
+    // When musical typing is active, intercept all keys
+    if (musicalTypingActive) {
+        if (musicalTyping.handleKey(key, true))
+            return true;
+        // Escape also closes it
+        if (key == KeyBindings::closeEditor) {
+            toggleMusicalTyping();
+            return true;
+        }
+        return true;  // eat everything else
+    }
+
     if (key == KeyBindings::toggleSidebar) {
         auto current = getPaneContent(PaneSlot::Sidebar);
         setPaneContent(PaneSlot::Sidebar,
@@ -384,6 +425,12 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
             return true;
     }
 
+    return false;
+}
+
+bool MainLayout::handleGlobalKeyUp(const juce::KeyPress& key) {
+    if (musicalTypingActive)
+        return musicalTyping.handleKey(key, false);
     return false;
 }
 

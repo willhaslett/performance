@@ -74,10 +74,13 @@ void MixerView::timerCallback() {
     auto stateTracks = state.listTracks();
     auto stateBusses = state.listBusses();
 
-    // Convert to local types for comparison
+    // Convert to local types for comparison (skip action tracks — no audio)
     std::vector<TrackInfo> tracks;
-    for (auto& t : stateTracks)
+    for (auto& t : stateTracks) {
+        auto* ts = state.findTrack(t.id);
+        if (ts && ts->sourceType == TrackSourceType::Action) continue;
         tracks.push_back({ juce::String(t.id), juce::String(t.name) });
+    }
     std::vector<BusInfo> busses;
     for (auto& b : stateBusses)
         busses.push_back({ juce::String(b.id), juce::String(b.name) });

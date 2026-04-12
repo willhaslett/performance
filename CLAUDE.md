@@ -9,7 +9,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from state.
 - **Bindings** — MIDI controls bind to named actions (e.g., `setActiveTrack`, `fadeOut`) with entity ID arguments. Two scopes: global (always active) and song-scoped (override globals, deleted with song). All behavior is a registered, reusable action.
 - **Score** — an ordered list of action references per song. Used for development ("go to step N" replays from initial state) and as documentation of performance transitions.
-- **Automation** — `interpolate(from, to, duration, callback, easing)` with library helpers: `fadeOut`, `fadeIn`, `crossfade`, `paramSweep`.
+- **Automation** — `interpolate(from, to, duration, callback, easing)` and `delay(seconds, callback)` with actions: `fadeOut`, `fadeIn`, `crossfade`, `morphToPreset`, `morphChain`, `morph` (compound). The `morph` action bundles multiple sub-actions (parallel or sequential). All actions can be placed on the action track timeline or bound to MIDI controls.
 - **Authoring model** — Claude runs embedded in the app (native chat UI calling Claude API with tool use). Will plays and directs, Claude modifies the environment via the `perf` tool (Lua execution). The GUI provides direct manipulation. All consumers use the same APIs.
 
 ## Architecture
@@ -64,7 +64,7 @@ AppState
 ```
 
 Key model features:
-- Two track source types: `TrackSourceType::Instrument` (MIDI→plugin→audio) and `TrackSourceType::AudioInput` (physical input→effects→output, mono→stereo upmix)
+- Three track source types: `TrackSourceType::Instrument` (MIDI→plugin→audio), `TrackSourceType::AudioInput` (physical input→effects→output, mono→stereo upmix), and `TrackSourceType::Action` (beat-triggered actions, no audio, hidden from mixer)
 - `midiEnabled` (MIDI note routing, instrument tracks) and `audioEnabled` (audio signal pass-through, all tracks) are distinct properties
 - `armed` (runtime, not persisted) — record-arm; armed tracks record MIDI when the sequencer is playing
 - `audioEnabled` on BusState and `masterAudioEnabled` on SongState — power toggle for busses and master output
@@ -77,6 +77,9 @@ Key model features:
 - `TrackState.color` (uint32, 0 = type default) — user-definable track color. Instrument tracks default to `bgHeader`, audio input to amber. Regions and track headers both use this color.
 - Recording is explicit via `recordModeActive` — press 'r' or click record button to enter record mode. Armed tracks record only when record mode is active.
 - Selection state on SongState (observable, not persisted)
+- Action track: one per song (auto-created), stores `ActionEventData` directly on the track (no regions). Events have absolute beat positions, action ID, and JSON args. Scanned during playback and dispatched on message thread.
+- Non-destructive quantize: `RegionState.quantize` (grid size in beats, 0 = off). Applied at playback and display time — original event data untouched.
+- Multi-region and multi-track selection with Cmd/Shift modifiers. Region operations (delete, duplicate, mute, quantize, split, join, trim) work on the full selection.
 
 ### Persistence (`src/persistence/PersistenceLayer.h/.cpp`)
 
@@ -84,7 +87,7 @@ SQLite normalized relational schema. `loadInto()` builds a plain `AppState` stru
 
 Database: `~/.config/performance/state.db`
 
-Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks` (with `color`), `busses`, `effects`, `sends`, `regions`, `takes`, `take_events`, `bindings` (nullable `song_id` for global/song scope), `config`, `devices`, `device_controls`, `song_devices`.
+Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks` (with `color`, `source_type`), `busses`, `effects`, `sends`, `regions` (with `muted`, `quantize`), `takes`, `take_events`, `action_events` (with `track_id`), `bindings` (nullable `song_id` for global/song scope), `config`, `devices`, `device_controls`, `song_devices`.
 
 ### Identity
 
@@ -121,12 +124,14 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
 - **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (ProducePane by default, also Debug or Mappings) and right pane (Chat or Logs) switchable via sidebar.
-- **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with power icons and arm dots, timeline grid with regions. MIDI regions show mini piano roll; audio regions show waveform (sqrt-scaled peaks, live during recording). Regions are semi-transparent for overlap visibility, colored by track, darkened when track or region is muted. Click grid to set position. Drag track headers to reorder. Region management: click to select, delete/backspace to remove, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate with "+" indicator, Cmd+D to duplicate inline, right-click for context menu (mute/unmute, delete). Auto-scroll: Logic-style page jump when playhead nears right edge, snaps to bar boundaries. Two-finger horizontal scroll for manual navigation. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division. Track reordering syncs with mixer via shared state.
+- **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with power icons and arm dots, timeline grid with regions. MIDI regions show mini piano roll; audio regions show waveform (sqrt-scaled peaks, live during recording). Action track shows 3D-ish spheres with duration tails, overlap-aware beehive lane layout. Regions are semi-transparent for overlap visibility, colored by track, darkened when track or region is muted. Click grid to set position (snaps to division). Drag track headers to reorder. Multi-track selection: click=select, Cmd+click=toggle, Shift+click=range. Region management: multi-select with Cmd+click, delete/backspace removes all selected, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate, Cmd+D to duplicate inline, Cmd+T to split at playhead, right-click for context menu (mute/unmute, delete, quantize, join). Region trimming: drag left/right edges with resize cursor, non-destructive. Auto-scroll: Logic-style page jump when playhead nears right edge; `ensurePlayheadVisible()` on all manual position changes. Two-finger horizontal scroll. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division, Shift+H/L=step by measure, Cmd+h/l/j/k=zoom.
 - **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges).
 - **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, output target selector (Master/No Output/Bus), sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Red arm dot toggles `armed` for recording. Track preset callbacks from coordinator.
 - **BusStrip** — effect slots, output target selector (Master/No Output/Bus), fader+stereo meters. Power icon toggles bus `audioEnabled`. Bus preset save/load via right-click menu.
 - **OutputStrip** — master effect slots, master fader+stereo meters. Power icon toggles master `audioEnabled`.
-- **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader drag operates in normalized space through the curve.
+- **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader handle center reaches full range (+6 to -60). Click-to-jump: clicking the fader track sets the fader to that position. Fader travel and meter bars share identical vertical bounds.
+- **MusicalTyping** — on-screen keyboard (Cmd+K toggle). Computer keys mapped to MIDI notes (Logic layout). Octave shift (Z/X), velocity (C/V), sustain (Tab). Draggable floating panel. Injects MIDI via `audioEngine.injectMidi()`. Intercepts all keyboard input when active.
+- **MorphEditor** — slot-based editor for compound morph actions. Growing list of action slots with inline action picker per slot. Parallel/sequential mode toggle. OK/Cancel with proper window close handling.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
 - **Sidebar** — StateAPI + EngineAPI + PerformanceCoordinator. Songs, Library (instruments/effects with presets), Actions, Maps (MIDI devices with activity lights), Devices (Audio with per-device Input/Output children), Panes (Debug, Logs, Chat). Audio device nodes always expanded; click device name to set both I/O, click Input or Output leaf individually. Green dot on active role/activity.
@@ -179,7 +184,7 @@ MIDI gating: disabled tracks (`audioEnabled=false`) receive no MIDI — prevents
 
 Bindings map MIDI controls to named actions with arguments. Two scopes: song-scoped (deleted with song) and global (always active). `effectiveBindings()` merges both (song wins on conflict). Bindings store action args as JSON arrays with track UUIDs (resolved from names at bind-time). Action `paramSchema` (JSON) defines expected parameters — used by MappingPane to generate appropriate input fields.
 
-Built-in actions: `setActiveTrack(trackName)`, `enableTrack(trackName)`, `disableTrack(trackName)`, `fadeOut(trackName, duration, easing)`, `fadeIn(trackName, duration, easing)`, `crossfade(fromTrack, toTrack, duration, easing)`. Track args stored as UUIDs (resolved at bind-time). `resolveTrack()` expects UUIDs only — no name fallback at runtime.
+Built-in actions: `setActiveTrack(trackId)`, `enableTrack(trackId)`, `disableTrack(trackId)`, `fadeOut(trackId, duration, easing)`, `fadeIn(trackId, duration, easing)`, `crossfade(fromTrackId, toTrackId, duration, easing)`, `trackVolume(channelId)`, `morphToPreset(trackId, presetName, duration, easing)`, `morphChain(trackId, presetA, presetB, dwell, duration, easing)`, `morph({mode, actions[]})`. All track/channel args are UUIDs. `resolveTrack()` expects UUIDs only — no name fallback at runtime. `ActionInfo.durationParamIndex` explicitly identifies which arg is the duration (for UI duration bars).
 
 SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact match → any device → any channel → any device + any channel.
 
@@ -239,6 +244,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - juce_String.cpp:327 assertion on startup — non-fatal, JUCE internals.
 - No error handling on failed plugin loads (user sees nothing).
 - State changes sometimes not visible until restart — watch for missed rebuildConnections/restoreBindings calls.
+- Transport requires active audio device: beat clock runs in `GraphWrapper.processBlock`, so play/stop/position don't advance without an audio output device linked. Fix: fallback timer-based clock. Low priority — live use always has a device.
 
 **Known issues with embedded Claude:**
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
@@ -248,11 +254,14 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 MIDI + audio recording/playback, region management (select/move/copy/delete/mute), take folders, persistence, transport controls, auto-scroll, waveform display, multi-track recording, per-song tempo and time signature, preset morphing, metronome, flexible pane system, CC fader mapping.
 
 **Recent additions:**
-- Per-song tempo and time signature — click BPM or time sig in transport LCD to edit. Persisted in SQLite. Song switching applies automatically.
-- Preset morphing — `morphToPreset(track, preset, duration, easing)` interpolates all plugin parameters from current state to target preset. Parameter snapshots (.params.json) saved alongside preset blobs.
-- Metronome — audible click with accent on beat 1, volume slider in transport bar, 'm' to toggle.
-- Unified Track Volume action — single CC fader action for any track, bus, or output. Cubic curve for fine low-end control.
-- Flexible pane system — four slots (sidebar/left/right/bottom), each with assignable content. Persisted. View menu + sidebar tree with green dots.
+- Action track — one per song, auto-created. Beat-triggered actions on the timeline. 3D spheres with duration tails, overlap-aware beehive layout. Double-click to create, drag to reposition, right-click to edit/delete. Persisted in `action_events` table.
+- Compound morph action — bundles multiple sub-actions (parallel or sequential). `morphChain` for preset A → dwell → preset B transitions. MorphEditor UI with growing action slots.
+- Musical typing — on-screen keyboard (Cmd+K). Logic-style key mapping, octave/velocity controls, sustain, draggable panel.
+- Track/region selection — multi-track (Cmd/Shift click), multi-region selection. Track selection highlights header + selects all regions.
+- Region operations — non-destructive quantize (right-click submenu), trim (drag edges), split at playhead (Cmd+T), join selected regions.
+- Smart grid snap — all playhead clicks, region drags, and trims snap to division boundaries via `snapBeatToGrid()`. Shift+H/L steps by measure.
+- Fader improvements — click-to-jump, handle center reaches full +6/-60dB range, fader/meter vertical alignment.
+- Preset name display — editor window shows correct preset name (resolved from state on open, updated on save/load).
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (high priority):**
@@ -350,4 +359,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~20,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~22,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
