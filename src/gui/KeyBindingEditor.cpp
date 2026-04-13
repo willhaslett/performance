@@ -6,8 +6,19 @@ KeyBindingEditor::KeyBindingEditor(KeyBindingManager& mgr) : manager(mgr) {
     addAndMakeVisible(restoreButton);
     closeButton.onClick = [this]() { if (onClose) onClose(); };
     restoreButton.onClick = [this]() {
-        manager.restoreAllDefaults();
-        repaint();
+        auto* dlg = new juce::AlertWindow("Restore Defaults",
+            "Reset all keyboard shortcuts to their defaults?",
+            juce::MessageBoxIconType::QuestionIcon);
+        dlg->addButton("Restore", 1);
+        dlg->addButton("Cancel", 0);
+        dlg->enterModalState(true, juce::ModalCallbackFunction::create(
+            [this, dlg](int result) {
+                if (result == 1) {
+                    manager.restoreAllDefaults();
+                    repaint();
+                }
+                delete dlg;
+            }));
     };
     buildRows();
 }
@@ -33,10 +44,8 @@ void KeyBindingEditor::buildRows() {
 void KeyBindingEditor::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
-    // Title
-    g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(16.0f));
-    g.drawText("Keyboard Shortcuts", 0, 8, getWidth(), 28, juce::Justification::centred);
+    // Clip to avoid painting into footer
+    g.reduceClipRegion(0, 0, getWidth(), getHeight() - 44);
 
     int y = headerHeight - scrollOffset;
     auto& cmds = manager.allCommands();
@@ -97,12 +106,21 @@ void KeyBindingEditor::paint(juce::Graphics& g) {
             y += rowHeight;
         }
     }
+
+    // Opaque footer behind buttons
+    g.resetToDefaultState();
+    auto footer = juce::Rectangle<int>(0, getHeight() - 44, getWidth(), 44);
+    g.setColour(Theme::color(Theme::Color::bgApp));
+    g.fillRect(footer);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine(0.0f, (float)footer.getY(), (float)getWidth(), (float)footer.getY(), 0.5f);
 }
 
 void KeyBindingEditor::resized() {
     int btnW = 100;
-    closeButton.setBounds(getWidth() - btnW - 16, 8, btnW, 28);
-    restoreButton.setBounds(16, 8, 130, 28);
+    int y = getHeight() - 36;
+    closeButton.setBounds(getWidth() - btnW - 16, y, btnW, 28);
+    restoreButton.setBounds(16, y, 130, 28);
 }
 
 void KeyBindingEditor::mouseUp(const juce::MouseEvent& event) {

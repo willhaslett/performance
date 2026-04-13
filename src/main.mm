@@ -622,20 +622,46 @@ private:
     }
 
     void showKeyBindingEditor() {
+        // Muted window chrome — dark theme, no red close button
+        struct DarkLookAndFeel : public juce::LookAndFeel_V4 {
+            DarkLookAndFeel() {
+                setColour(juce::DocumentWindow::textColourId, juce::Colour(0xffcccccc));
+                setColour(juce::ResizableWindow::backgroundColourId, juce::Colour(0xff2a2a2a));
+            }
+            juce::Button* createDocumentWindowButton(int buttonType) override {
+                auto* btn = juce::LookAndFeel_V4::createDocumentWindowButton(buttonType);
+                btn->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a3a3a));
+                btn->setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff4a4a4a));
+                return btn;
+            }
+        };
+        static DarkLookAndFeel darkLaf;
+
+        struct KBWindow : public juce::DocumentWindow {
+            std::function<void()> onClose;
+            KBWindow() : DocumentWindow("Keyboard Shortcuts",
+                juce::Colour(0xff2a2a2a), closeButton) {
+                setTitleBarHeight(24);
+                setLookAndFeel(&darkLaf);
+            }
+            ~KBWindow() override { setLookAndFeel(nullptr); }
+            void closeButtonPressed() override { if (onClose) onClose(); }
+        };
         auto* editor = new KeyBindingEditor(keyBindings);
-        auto* window = new juce::DocumentWindow("Keyboard Shortcuts",
-            juce::Colour(0xff1e1e1e), juce::DocumentWindow::closeButton);
+        auto* window = new KBWindow();
         window->setContentOwned(editor, false);
         window->centreWithSize(500, 600);
         window->setUsingNativeTitleBar(false);
         window->setVisible(true);
         window->setAlwaysOnTop(true);
 
-        editor->onClose = [this, window]() {
+        auto closeAction = [this, window]() {
             keyBindings.saveOverrides(coordinator->state());
             coordinator->save();
             delete window;
         };
+        editor->onClose = closeAction;
+        window->onClose = closeAction;
     }
 };
 

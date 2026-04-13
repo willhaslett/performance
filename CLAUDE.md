@@ -245,6 +245,7 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 - No error handling on failed plugin loads (user sees nothing).
 - State changes sometimes not visible until restart — watch for missed rebuildConnections/restoreBindings calls.
 - Transport requires active audio device: beat clock runs in `GraphWrapper.processBlock`, so play/stop/position don't advance without an audio output device linked. Fix: fallback timer-based clock. Low priority — live use always has a device.
+- DocumentWindow close button renders red despite custom LookAndFeel. JUCE's internal button drawing ignores TextButton colour overrides for the built-in close/minimize/maximize buttons. Fix: fully custom title bar component or custom LookAndFeel that overrides the specific draw method. Low priority cosmetic issue.
 
 **Known issues with embedded Claude:**
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
@@ -269,6 +270,8 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Undo/redo — `UndoHistory` with `deque<AppState>` (max 50 snapshots). `pushUndo()` before 39 undoable StateAPI mutations. Transactions (beginTransaction/endTransaction) for fader drags. Suspended during recording (pre-recording snapshot pushed, resumed on stop). Post-restore: arrangement pointer + audio reload + tempo sync + automation cancel. Cmd+Z / Cmd+Shift+Z.
 - Menu bar — File, Edit, Track, View, Transport. Edit has undo/redo/split/duplicate/delete/cycle-from-selection. Transport has play/stop/record/rewind/cycle/metronome/step controls. All dispatch through the same key handlers.
 - Song deletion — right-click song in sidebar (except Sandbox). Switches to Sandbox first if deleting current song.
+- Menu bar — File/Edit/Track/View/Transport. Right-aligned gray shortcut text via NSAttributedString with tab stops. All commands accessible.
+- Keybinding system — `KeyBindingManager` with defaults + user overrides stored in config. `KeyBindingEditor` modal: categorized outline, click-to-capture, conflict detection, restore defaults with confirmation. Performance menu → Keyboard Shortcuts.
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (high priority):**
@@ -364,4 +367,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~23,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~24,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.

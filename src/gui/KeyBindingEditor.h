@@ -25,7 +25,7 @@ private:
     int capturingIndex = -1;  // which command is waiting for a keypress (-1 = none)
 
     static constexpr int rowHeight = 28;
-    static constexpr int headerHeight = 44;
+    static constexpr int headerHeight = 8;
     static constexpr int categoryRowHeight = 32;
     static constexpr int shortcutColWidth = 100;
     static constexpr int leftMargin = 24;
