@@ -67,7 +67,7 @@ void RegistryTree::drawArrow(juce::Graphics& g, int x, int y, bool expanded) {
 }
 
 void RegistryTree::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgPanel));
+    g.fillAll(juce::Colours::transparentBlack);
     g.setFont(Theme::font(Theme::fontSizeSm));
 
     for (int i = 0; i < (int)visibleRows.size(); ++i) {

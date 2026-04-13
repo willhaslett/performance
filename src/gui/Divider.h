@@ -19,12 +19,14 @@ public:
     std::function<void(int delta)> onDrag;
 
     void paint(juce::Graphics& g) override {
-        // Transparent background, just draw the divider line at the edge
         g.setColour(Theme::color(Theme::Color::border));
+        float mid = orientation == Horizontal
+            ? (float)getHeight() * 0.5f
+            : (float)getWidth() * 0.5f;
         if (orientation == Horizontal)
-            g.drawLine(0.0f, 0.0f, (float)getWidth(), 0.0f, 1.0f);
+            g.drawLine(0.0f, mid, (float)getWidth(), mid, 1.0f);
         else
-            g.drawLine(0.0f, 0.0f, 0.0f, (float)getHeight(), 1.0f);
+            g.drawLine(mid, 0.0f, mid, (float)getHeight(), 1.0f);
     }
 
     void mouseDown(const juce::MouseEvent&) override {
@@ -37,7 +39,7 @@ public:
         if (onDrag) onDrag(delta);
     }
 
-    static constexpr int thickness = 6;
+    static constexpr int thickness = 3;
 
 private:
     Orientation orientation;

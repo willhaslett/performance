@@ -112,15 +112,15 @@ juce::Rectangle<int> Sidebar::getTabBounds(int tabIndex) const {
 }
 
 void Sidebar::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgPanel));
+    auto contentCol = juce::Colour(0xff2a2a2a);
+    auto tabBarCol = Theme::color(Theme::Color::bgPanel);
 
-    // Tab bar
-    static const char* tabIcons[] = {
-        "\xf0\x9f\x93\x81",  // Songs (folder)
-        "\xf0\x9f\x8e\xb9",  // Library (keyboard)
-        "\xe2\x9a\xa1",       // Actions (lightning)
-        "\xf0\x9f\x94\xa7"   // Devices (wrench)
-    };
+    // Tab bar darker, content area lighter
+    g.setColour(tabBarCol);
+    g.fillRect(0, 0, getWidth(), tabBarHeight);
+    g.setColour(contentCol);
+    g.fillRect(0, tabBarHeight, getWidth(), getHeight() - tabBarHeight);
+
     static const char* tabLabels[] = { "Songs", "Library", "Actions", "Devices" };
 
     for (int i = 0; i < tabCount; ++i) {
@@ -128,27 +128,17 @@ void Sidebar::paint(juce::Graphics& g) {
         bool active = (i == (int)activeTab);
 
         if (active) {
-            g.setColour(Theme::color(Theme::Color::bgApp));
+            g.setColour(contentCol);
             g.fillRect(bounds);
         }
 
-        // Bottom border on inactive tabs
-        if (!active) {
-            g.setColour(Theme::color(Theme::Color::border));
-            g.drawLine((float)bounds.getX(), (float)bounds.getBottom() - 1,
-                       (float)bounds.getRight(), (float)bounds.getBottom() - 1, 1.0f);
-        }
-
-        // Label
         g.setColour(active ? Theme::color(Theme::Color::textPrimary)
                             : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(10.0f));
+        g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(tabLabels[i], bounds, juce::Justification::centred);
     }
 
-    // Right border
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)getWidth(), 0.0f, (float)getWidth(), (float)getHeight(), 1.0f);
+    // No right border — the layout divider handles separation
 }
 
 void Sidebar::mouseUp(const juce::MouseEvent& event) {
@@ -165,7 +155,7 @@ void Sidebar::mouseUp(const juce::MouseEvent& event) {
 }
 
 void Sidebar::resized() {
-    tree.setBounds(0, tabBarHeight, getWidth(), getHeight() - tabBarHeight);
+    tree.setBounds(4, tabBarHeight + 4, getWidth() - 4, getHeight() - tabBarHeight - 4);
 }
 
 void Sidebar::timerCallback() {

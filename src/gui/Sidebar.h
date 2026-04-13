@@ -59,7 +59,7 @@ private:
     juce::String lastAudioOutputName;
     juce::String lastAudioInputName;
 
-    static constexpr int tabBarHeight = 28;
+    static constexpr int tabBarHeight = 34;
     static constexpr int tabCount = 4;
     juce::Rectangle<int> getTabBounds(int tabIndex) const;
 };
