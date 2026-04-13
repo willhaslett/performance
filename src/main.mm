@@ -7,6 +7,8 @@
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
 #include "gui/SettingsWindow.h"
+#include "gui/KeyBindingManager.h"
+#include "gui/KeyBindingEditor.h"
 #include "engine/Log.h"
 #import <AppKit/AppKit.h>
 
@@ -349,6 +351,9 @@ public:
 
         // Settings
         case CommandIDs::openSettings: layout.handleGlobalKey(KeyBindings::settings); break;
+        case 200:
+            if (onShowKeyBindings) onShowKeyBindings();
+            break;
 
         default:
             if (menuItemID >= 100) {
@@ -360,6 +365,8 @@ public:
             break;
         }
     }
+
+    std::function<void()> onShowKeyBindings;
 
 private:
     PerformanceCoordinator& coord;
@@ -417,8 +424,11 @@ public:
         menuBar = std::make_unique<AppMenuBar>(*coordinator, *luaEngine, *layout);
         auto appMenu = std::make_unique<juce::PopupMenu>();
         appMenu->addItem(CommandIDs::openSettings, "Settings...");
+        appMenu->addItem(200, "Keyboard Shortcuts...");
         juce::MenuBarModel::setMacMainMenu(menuBar.get(), appMenu.get());
+        menuBar->onShowKeyBindings = [this]() { showKeyBindingEditor(); };
         installMenuStyling();
+        setupKeyBindings();
         appMenuItems = std::move(appMenu);
 
         // Wire settings
@@ -555,6 +565,78 @@ private:
     std::unique_ptr<AppMenuBar> menuBar;
     std::unique_ptr<juce::PopupMenu> appMenuItems;
     std::unique_ptr<SettingsWindow> settingsWindow;
+    KeyBindingManager keyBindings;
+
+    void setupKeyBindings() {
+        namespace KB = KeyBindings;
+        auto& k = keyBindings;
+        // File
+        k.registerCommand("file.save", "File", "Save", KB::save);
+        // Edit
+        k.registerCommand("edit.undo", "Edit", "Undo", KB::undo);
+        k.registerCommand("edit.redo", "Edit", "Redo", KB::redo);
+        k.registerCommand("edit.split", "Edit", "Split at Playhead",
+            juce::KeyPress('t', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("edit.duplicate", "Edit", "Duplicate",
+            juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("edit.delete", "Edit", "Delete",
+            juce::KeyPress(juce::KeyPress::backspaceKey));
+        k.registerCommand("edit.cycleFromSel", "Edit", "Set Cycle from Selection",
+            juce::KeyPress('u', 0, 'u'));
+        // Transport
+        k.registerCommand("transport.playStop", "Transport", "Play/Stop",
+            juce::KeyPress(juce::KeyPress::spaceKey));
+        k.registerCommand("transport.record", "Transport", "Record",
+            juce::KeyPress('r', 0, 'r'));
+        k.registerCommand("transport.rewind", "Transport", "Rewind",
+            juce::KeyPress(juce::KeyPress::returnKey));
+        k.registerCommand("transport.cycle", "Transport", "Cycle Mode",
+            juce::KeyPress('c', 0, 'c'));
+        k.registerCommand("transport.metronome", "Transport", "Metronome",
+            juce::KeyPress('m', 0, 'm'));
+        k.registerCommand("transport.stepFwd", "Transport", "Step Forward",
+            juce::KeyPress('l', 0, 'l'));
+        k.registerCommand("transport.stepBack", "Transport", "Step Back",
+            juce::KeyPress('h', 0, 'h'));
+        k.registerCommand("transport.stepFwdBar", "Transport", "Step Forward Bar",
+            juce::KeyPress('L', juce::ModifierKeys::shiftModifier, 0));
+        k.registerCommand("transport.stepBackBar", "Transport", "Step Back Bar",
+            juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
+        // View
+        k.registerCommand("view.sidebar", "View", "Sidebar", KB::toggleSidebar);
+        k.registerCommand("view.mixer", "View", "Mixer", KB::toggleMixer);
+        k.registerCommand("view.musicalTyping", "View", "Musical Typing", KB::musicalTyping);
+        k.registerCommand("view.zoomIn", "View", "Zoom In",
+            juce::KeyPress('l', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.zoomOut", "View", "Zoom Out",
+            juce::KeyPress('h', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.zoomTaller", "View", "Zoom Tracks Taller",
+            juce::KeyPress('j', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.zoomShorter", "View", "Zoom Tracks Shorter",
+            juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0));
+        // Region
+        k.registerCommand("region.loop", "Region", "Loop",
+            juce::KeyPress('l', 0, 'l'));
+
+        k.loadOverrides(coordinator->state());
+    }
+
+    void showKeyBindingEditor() {
+        auto* editor = new KeyBindingEditor(keyBindings);
+        auto* window = new juce::DocumentWindow("Keyboard Shortcuts",
+            juce::Colour(0xff1e1e1e), juce::DocumentWindow::closeButton);
+        window->setContentOwned(editor, false);
+        window->centreWithSize(500, 600);
+        window->setUsingNativeTitleBar(false);
+        window->setVisible(true);
+        window->setAlwaysOnTop(true);
+
+        editor->onClose = [this, window]() {
+            keyBindings.saveOverrides(coordinator->state());
+            coordinator->save();
+            delete window;
+        };
+    }
 };
 
 START_JUCE_APPLICATION(PerformanceApp)
