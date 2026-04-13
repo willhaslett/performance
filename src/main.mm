@@ -86,6 +86,74 @@ private:
     id keyUpMonitor = nil;
 };
 
+// --- Menu styling: gray shortcuts in native macOS menus ---
+
+static void styleMenuShortcuts(NSMenu* menu) {
+    // Right-aligned tab stop for shortcut text
+    NSMutableParagraphStyle* paraStyle = [[NSMutableParagraphStyle alloc] init];
+    NSTextTab* rightTab = [[NSTextTab alloc] initWithTextAlignment:NSTextAlignmentRight
+                                                          location:180
+                                                           options:@{}];
+    [paraStyle setTabStops:@[rightTab]];
+
+    for (NSMenuItem* item in [menu itemArray]) {
+        if ([item hasSubmenu]) {
+            styleMenuShortcuts([item submenu]);
+            continue;
+        }
+        NSString* title = [item title];
+        NSRange tabRange = [title rangeOfString:@"\t"];
+        if (tabRange.location != NSNotFound) {
+            NSString* label = [title substringToIndex:tabRange.location];
+            NSString* shortcut = [title substringFromIndex:tabRange.location + 1];
+            NSString* full = [NSString stringWithFormat:@"%@\t%@", label, shortcut];
+
+            NSMutableAttributedString* attr = [[NSMutableAttributedString alloc]
+                initWithString:full attributes:@{
+                    NSFontAttributeName: [NSFont menuFontOfSize:14],
+                    NSForegroundColorAttributeName: [NSColor labelColor],
+                    NSParagraphStyleAttributeName: paraStyle
+                }];
+
+            // Style the shortcut portion (after tab) in gray, slightly smaller
+            NSRange shortcutRange = NSMakeRange(tabRange.location, [full length] - tabRange.location);
+            [attr addAttribute:NSForegroundColorAttributeName
+                         value:[NSColor tertiaryLabelColor]
+                         range:shortcutRange];
+            [attr addAttribute:NSFontAttributeName
+                         value:[NSFont menuFontOfSize:12]
+                         range:shortcutRange];
+
+            [item setAttributedTitle:attr];
+        }
+    }
+}
+
+@interface MenuStyleObserver : NSObject
+@end
+
+@implementation MenuStyleObserver
+- (void)menuOpened:(NSNotification*)notification {
+    NSMenu* menu = [notification object];
+    // Delay slightly to let JUCE finish populating the menu
+    dispatch_async(dispatch_get_main_queue(), ^{
+        styleMenuShortcuts(menu);
+    });
+}
+@end
+
+static MenuStyleObserver* menuStyleObserver = nil;
+
+static void installMenuStyling() {
+    if (!menuStyleObserver) {
+        menuStyleObserver = [[MenuStyleObserver alloc] init];
+        [[NSNotificationCenter defaultCenter] addObserver:menuStyleObserver
+                                                 selector:@selector(menuOpened:)
+                                                     name:NSMenuDidBeginTrackingNotification
+                                                   object:nil];
+    }
+}
+
 // --- Menu Bar ---
 
 enum CommandIDs {
@@ -119,9 +187,19 @@ public:
 
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
         juce::PopupMenu menu;
+        // Helper: menu item with right-aligned shortcut hint
+        // (native macOS menus ignore shortcutKeyDescription, so we append to the label)
+        auto shortcut = [](int id, const juce::String& label, const juce::String& key, bool enabled = true) {
+            // Use tab character for right-alignment in native menus
+            juce::PopupMenu::Item item(label + "\t" + key);
+            item.itemID = id;
+            item.isEnabled = enabled;
+            return item;
+        };
+
         if (index == 0) {  // File
             menu.addItem(CommandIDs::newSong, "New Song");
-            menu.addItem(CommandIDs::saveSong, juce::String("Save") + juce::String::fromUTF8("                          \xe2\x8c\x98S"));
+            menu.addItem(shortcut(CommandIDs::saveSong, "Save", juce::CharPointer_UTF8("\xe2\x8c\x98" "S")));
             menu.addSeparator();
             auto& songs = coord.state().allSongs();
             for (int i = 0; i < (int)songs.size(); ++i) {
@@ -132,14 +210,14 @@ public:
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Edit
-            menu.addItem(CommandIDs::menuUndo, "Undo", coord.state().canUndo());
-            menu.addItem(CommandIDs::menuRedo, "Redo", coord.state().canRedo());
+            menu.addItem(shortcut(CommandIDs::menuUndo, "Undo", juce::CharPointer_UTF8("\xe2\x8c\x98" "Z"), coord.state().canUndo()));
+            menu.addItem(shortcut(CommandIDs::menuRedo, "Redo", juce::CharPointer_UTF8("\xe2\x8c\x98\xe2\x87\xa7" "Z"), coord.state().canRedo()));
             menu.addSeparator();
-            menu.addItem(CommandIDs::menuSplit, "Split at Playhead");
-            menu.addItem(CommandIDs::menuDuplicate, "Duplicate");
-            menu.addItem(CommandIDs::menuDelete, "Delete");
+            menu.addItem(shortcut(CommandIDs::menuSplit, "Split at Playhead", juce::CharPointer_UTF8("\xe2\x8c\x98" "T")));
+            menu.addItem(shortcut(CommandIDs::menuDuplicate, "Duplicate", juce::CharPointer_UTF8("\xe2\x8c\x98" "D")));
+            menu.addItem(shortcut(CommandIDs::menuDelete, "Delete", juce::CharPointer_UTF8("\xe2\x8c\xab")));
             menu.addSeparator();
-            menu.addItem(CommandIDs::menuCycleFromSel, "Set Cycle from Selection");
+            menu.addItem(shortcut(CommandIDs::menuCycleFromSel, "Set Cycle from Selection", "U"));
         }
         else if (index == 2) {  // Track
             menu.addItem(CommandIDs::newInstrumentTrack, "New Virtual Instrument Track");
@@ -147,32 +225,32 @@ public:
             menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
         }
         else if (index == 3) {  // View
-            menu.addItem(CommandIDs::viewSidebar, "Sidebar");
-            menu.addItem(CommandIDs::viewMixer, "Mixer");
-            menu.addItem(CommandIDs::viewMusicalTyping, "Musical Typing");
+            menu.addItem(shortcut(CommandIDs::viewSidebar, "Sidebar", juce::CharPointer_UTF8("\xe2\x8c\x98" "1")));
+            menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", juce::CharPointer_UTF8("\xe2\x8c\x98" "X")));
+            menu.addItem(shortcut(CommandIDs::viewMusicalTyping, "Musical Typing", juce::CharPointer_UTF8("\xe2\x8c\x98\xe2\x87\xa7" "K")));
             menu.addSeparator();
-            menu.addSubMenu("Sidebar", layout.buildPaneMenu(PaneSlot::Sidebar));
+            menu.addSubMenu("Sidebar Content", layout.buildPaneMenu(PaneSlot::Sidebar));
             menu.addSubMenu("Left Pane", layout.buildPaneMenu(PaneSlot::Left));
             menu.addSubMenu("Right Pane", layout.buildPaneMenu(PaneSlot::Right));
             menu.addSubMenu("Bottom Pane", layout.buildPaneMenu(PaneSlot::Bottom));
             menu.addSeparator();
-            menu.addItem(CommandIDs::viewZoomIn, "Zoom In");
-            menu.addItem(CommandIDs::viewZoomOut, "Zoom Out");
-            menu.addItem(CommandIDs::viewZoomTaller, "Zoom Tracks Taller");
-            menu.addItem(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter");
+            menu.addItem(shortcut(CommandIDs::viewZoomIn, "Zoom In", juce::CharPointer_UTF8("\xe2\x8c\x98" "L")));
+            menu.addItem(shortcut(CommandIDs::viewZoomOut, "Zoom Out", juce::CharPointer_UTF8("\xe2\x8c\x98" "H")));
+            menu.addItem(shortcut(CommandIDs::viewZoomTaller, "Zoom Tracks Taller", juce::CharPointer_UTF8("\xe2\x8c\x98" "J")));
+            menu.addItem(shortcut(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter", juce::CharPointer_UTF8("\xe2\x8c\x98" "K")));
         }
         else if (index == 4) {  // Transport
-            menu.addItem(CommandIDs::transportPlayStop, "Play/Stop");
-            menu.addItem(CommandIDs::transportRecord, "Record");
-            menu.addItem(CommandIDs::transportRewind, "Rewind");
+            menu.addItem(shortcut(CommandIDs::transportPlayStop, "Play/Stop", "Space"));
+            menu.addItem(shortcut(CommandIDs::transportRecord, "Record", "R"));
+            menu.addItem(shortcut(CommandIDs::transportRewind, "Rewind", "Return"));
             menu.addSeparator();
-            menu.addItem(CommandIDs::transportCycle, "Cycle Mode");
-            menu.addItem(CommandIDs::transportMetronome, "Metronome");
+            menu.addItem(shortcut(CommandIDs::transportCycle, "Cycle Mode", "C"));
+            menu.addItem(shortcut(CommandIDs::transportMetronome, "Metronome", "M"));
             menu.addSeparator();
-            menu.addItem(CommandIDs::transportStepFwd, "Step Forward");
-            menu.addItem(CommandIDs::transportStepBack, "Step Back");
-            menu.addItem(CommandIDs::transportStepFwdBar, "Step Forward Bar");
-            menu.addItem(CommandIDs::transportStepBackBar, "Step Back Bar");
+            menu.addItem(shortcut(CommandIDs::transportStepFwd, "Step Forward", "L"));
+            menu.addItem(shortcut(CommandIDs::transportStepBack, "Step Back", "H"));
+            menu.addItem(shortcut(CommandIDs::transportStepFwdBar, "Step Forward Bar", juce::CharPointer_UTF8("\xe2\x87\xa7" "L")));
+            menu.addItem(shortcut(CommandIDs::transportStepBackBar, "Step Back Bar", juce::CharPointer_UTF8("\xe2\x87\xa7" "H")));
         }
         return menu;
     }
@@ -340,6 +418,7 @@ public:
         auto appMenu = std::make_unique<juce::PopupMenu>();
         appMenu->addItem(CommandIDs::openSettings, "Settings...");
         juce::MenuBarModel::setMacMainMenu(menuBar.get(), appMenu.get());
+        installMenuStyling();
         appMenuItems = std::move(appMenu);
 
         // Wire settings
