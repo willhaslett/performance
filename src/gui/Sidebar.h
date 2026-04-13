@@ -17,35 +17,35 @@ public:
     void setEngineAPI(EngineAPI* e);
     void setCoordinator(PerformanceCoordinator* c);
 
-    // Callback for song loading (coordinator-level operation)
+    // Callbacks
     std::function<void(const std::string& songId)> onLoadSong;
     std::function<void(const std::string& songId)> onDeleteSong;
-
-    // Callback for Maps device selection
     std::function<void(const std::string& deviceId, const std::string& portName)> onMapSelected;
-
-    // Callbacks for audio device selection (output and input independently)
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
-    // Callbacks for pane selection (legacy — still used by some paths)
+    // Legacy pane callbacks (still used by some paths)
     std::function<void()> onProduceSelected;
     std::function<void()> onDebugSelected;
     std::function<void()> onLogsSelected;
     std::function<void()> onChatSelected;
-
-    // New pane system: callback to set slot content
-    // Args: slot name ("sidebar"/"left"/"right"/"bottom"), content name
     std::function<void(const std::string& slot, const std::string& content)> onPaneSelected;
-    // Query current pane assignment for a slot
     std::function<std::string(const std::string& slot)> getPaneContent;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseUp(const juce::MouseEvent& event) override;
 
 private:
+    enum Tab { Songs = 0, Library, Actions, Devices, TabCount };
+    Tab activeTab = Songs;
+
     void timerCallback() override;
     void refreshTree();
+    void refreshSongsTab();
+    void refreshLibraryTab();
+    void refreshActionsTab();
+    void refreshDevicesTab();
 
     StateAPI* state = nullptr;
     EngineAPI* engineAPI = nullptr;
@@ -58,4 +58,8 @@ private:
     int lastMidiDeviceCount = -1;
     juce::String lastAudioOutputName;
     juce::String lastAudioInputName;
+
+    static constexpr int tabBarHeight = 28;
+    static constexpr int tabCount = 4;
+    juce::Rectangle<int> getTabBounds(int tabIndex) const;
 };

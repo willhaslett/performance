@@ -8,7 +8,7 @@
 
 Sidebar::Sidebar() {
     addAndMakeVisible(tree);
-    startTimerHz(4);  // check active song highlight
+    startTimerHz(4);
 
     tree.setOnNodeRightClick([this](const std::string& type, const std::string& id, const std::string& label) {
         if (type == "song" && label != "Sandbox") {
@@ -33,67 +33,38 @@ Sidebar::Sidebar() {
         }
         else if (type == "audio_device") {
             selectedDeviceId = id;
-            // id is "audio_both:DeviceName" — extract device name
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioOutputSelected) onAudioOutputSelected(devName);
             if (onAudioInputSelected) onAudioInputSelected(devName);
         } else if (type == "audio_output" || type == "audio_output_active") {
             selectedDeviceId = id;
-            // id is "audio_out:DeviceName"
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioOutputSelected) onAudioOutputSelected(devName);
         } else if (type == "audio_input" || type == "audio_input_active") {
             selectedDeviceId = id;
-            // id is "audio_in:DeviceName"
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioInputSelected) onAudioInputSelected(devName);
-        } else if (type == "map_device" || type == "map_unregistered") {
+        } else if (type == "map_device" || type == "map_device_active") {
+            selectedDeviceId = id;
+            auto* device = state->findDevice(id);
+            if (device && onMapSelected) {
+                onMapSelected(device->id, device->midiPortName);
+            }
+        } else if (type == "map_unregistered" || type == "map_unregistered_active") {
             selectedDeviceId = id;
             if (onMapSelected) {
-                if (type == "map_device")
-                    onMapSelected(id, "");
-                else
-                    onMapSelected("", id);  // id is port name for unregistered
-            }
-        } else if (type == "audio_buffer" && engineAPI) {
-            // Show buffer size picker popup
-            auto& dm = engineAPI->getDeviceManager();
-            if (auto* device = dm.getCurrentAudioDevice()) {
-                auto bufferSizes = device->getAvailableBufferSizes();
-                int currentBuf = device->getCurrentBufferSizeSamples();
                 juce::PopupMenu menu;
-                for (int i = 0; i < bufferSizes.size(); ++i)
-                    menu.addItem(i + 1, juce::String(bufferSizes[i]) + " samples",
-                                 true, bufferSizes[i] == currentBuf);
+                menu.addItem(1, "Register Device");
+                auto portName = id;
                 menu.showMenuAsync(juce::PopupMenu::Options(),
-                    [this, bufferSizes](int result) {
-                        if (result == 0) return;
-                        int newSize = bufferSizes[result - 1];
-                        auto& dm = engineAPI->getDeviceManager();
-                        auto setup = dm.getAudioDeviceSetup();
-                        setup.bufferSize = newSize;
-                        auto err = dm.setAudioDeviceSetup(setup, true);
-                        if (err.isEmpty()) {
-                            // Verify and persist
-                            if (auto* dev = dm.getCurrentAudioDevice())
-                                perfLog("[Sidebar] Buffer size: requested=%d actual=%d\n",
-                                        newSize, dev->getCurrentBufferSizeSamples());
-                            if (state)
-                                state->setConfig("audio_buffer_size", std::to_string(newSize));
-                        } else {
-                            perfLog("[Sidebar] Buffer size change failed: %s\n", err.toRawUTF8());
+                    [this, portName](int result) {
+                        if (result == 1 && state) {
+                            auto devId = state->registerDevice(portName, portName);
+                            if (onMapSelected)
+                                onMapSelected(devId, portName);
+                            refreshTree();
                         }
-                        refreshTree();
                     });
-            }
-        } else if (type == "pane_content") {
-            // id is "slot:content", e.g. "left:produce"
-            auto colonPos = id.find(':');
-            if (colonPos != std::string::npos && onPaneSelected) {
-                auto slot = id.substr(0, colonPos);
-                auto content = id.substr(colonPos + 1);
-                onPaneSelected(slot, content);
-                refreshTree();
             }
         }
     });
@@ -120,9 +91,7 @@ void Sidebar::setStateAPI(StateAPI* s) {
     state = s;
     if (!state) return;
 
-    // Subscribe to all state changes
     subscriptionId = state->events().subscribe([this](const StateEvent&) {
-        // Flag for refresh — we may be on a non-message thread
         needsRefresh = true;
         juce::MessageManager::callAsync([this] {
             if (needsRefresh) {
@@ -132,24 +101,76 @@ void Sidebar::setStateAPI(StateAPI* s) {
         });
     });
 
-    // Initial population
     refreshTree();
+}
+
+// --- Tab bar ---
+
+juce::Rectangle<int> Sidebar::getTabBounds(int tabIndex) const {
+    int w = getWidth() / tabCount;
+    return { tabIndex * w, 0, w, tabBarHeight };
 }
 
 void Sidebar::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgPanel));
 
+    // Tab bar
+    static const char* tabIcons[] = {
+        "\xf0\x9f\x93\x81",  // Songs (folder)
+        "\xf0\x9f\x8e\xb9",  // Library (keyboard)
+        "\xe2\x9a\xa1",       // Actions (lightning)
+        "\xf0\x9f\x94\xa7"   // Devices (wrench)
+    };
+    static const char* tabLabels[] = { "Songs", "Library", "Actions", "Devices" };
+
+    for (int i = 0; i < tabCount; ++i) {
+        auto bounds = getTabBounds(i);
+        bool active = (i == (int)activeTab);
+
+        if (active) {
+            g.setColour(Theme::color(Theme::Color::bgApp));
+            g.fillRect(bounds);
+        }
+
+        // Bottom border on inactive tabs
+        if (!active) {
+            g.setColour(Theme::color(Theme::Color::border));
+            g.drawLine((float)bounds.getX(), (float)bounds.getBottom() - 1,
+                       (float)bounds.getRight(), (float)bounds.getBottom() - 1, 1.0f);
+        }
+
+        // Label
+        g.setColour(active ? Theme::color(Theme::Color::textPrimary)
+                            : Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(10.0f));
+        g.drawText(tabLabels[i], bounds, juce::Justification::centred);
+    }
+
+    // Right border
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine((float)getWidth(), 0.0f, (float)getWidth(), (float)getHeight(), 1.0f);
 }
 
+void Sidebar::mouseUp(const juce::MouseEvent& event) {
+    if (event.getPosition().getY() < tabBarHeight) {
+        for (int i = 0; i < tabCount; ++i) {
+            if (getTabBounds(i).contains(event.getPosition())) {
+                activeTab = (Tab)i;
+                refreshTree();
+                repaint();
+                return;
+            }
+        }
+    }
+}
+
 void Sidebar::resized() {
-    tree.setBounds(getLocalBounds().reduced(0, 4));
+    tree.setBounds(0, tabBarHeight, getWidth(), getHeight() - tabBarHeight);
 }
 
 void Sidebar::timerCallback() {
     if (!state) return;
-    // Highlight: prefer selected device/pane, fall back to active song
+
     std::string highlightId = selectedDeviceId;
     if (highlightId.empty()) {
         auto song = state->currentSong();
@@ -160,7 +181,7 @@ void Sidebar::timerCallback() {
         tree.setHighlightedId(highlightId);
     }
 
-    // Poll for MIDI device changes — rescan when count changes
+    // Poll MIDI device changes
     auto devices = juce::MidiInput::getAvailableDevices();
     int count = (int)devices.size();
     if (count != lastMidiDeviceCount) {
@@ -169,7 +190,7 @@ void Sidebar::timerCallback() {
         refreshTree();
     }
 
-    // Poll for audio device changes (output or input)
+    // Poll audio device changes
     if (engineAPI) {
         auto setup = engineAPI->getDeviceManager().getAudioDeviceSetup();
         if (setup.outputDeviceName != lastAudioOutputName ||
@@ -182,114 +203,114 @@ void Sidebar::timerCallback() {
 }
 
 void Sidebar::refreshTree() {
-    if (!state) return;
+    switch (activeTab) {
+        case Songs:   refreshSongsTab(); break;
+        case Library: refreshLibraryTab(); break;
+        case Actions: refreshActionsTab(); break;
+        case Devices: refreshDevicesTab(); break;
+        default: break;
+    }
+}
 
+void Sidebar::refreshSongsTab() {
+    if (!state) return;
     std::vector<TreeNode> roots;
 
-    // Songs — Sandbox always first, then user songs
-    {
-        TreeNode songsNode;
-        songsNode.label = "Songs";
-        songsNode.type = "category";
-
-        // Sandbox always at the top
-        for (auto& song : state->allSongs()) {
-            if (song.name == "Sandbox") {
-                TreeNode sandboxNode;
-                sandboxNode.label = "Sandbox";
-                sandboxNode.id = song.id;
-                sandboxNode.type = "song";
-                sandboxNode.isLeaf = true;
-                songsNode.children.push_back(sandboxNode);
-                break;
-            }
+    // Sandbox first
+    for (auto& song : state->allSongs()) {
+        if (song.name == "Sandbox") {
+            TreeNode n;
+            n.label = "Sandbox";
+            n.id = song.id;
+            n.type = "song";
+            n.isLeaf = true;
+            roots.push_back(n);
+            break;
         }
-
-        // User songs
-        for (auto& song : state->allSongs()) {
-            if (song.name == "Sandbox") continue;
-            TreeNode songNode;
-            songNode.label = song.name;
-            songNode.id = song.id;
-            songNode.type = "song";
-            songNode.isLeaf = true;
-            songsNode.children.push_back(songNode);
-        }
-        roots.push_back(songsNode);
+    }
+    // User songs
+    for (auto& song : state->allSongs()) {
+        if (song.name == "Sandbox") continue;
+        TreeNode n;
+        n.label = song.name;
+        n.id = song.id;
+        n.type = "song";
+        n.isLeaf = true;
+        roots.push_back(n);
     }
 
-    // Library — saved sounds grouped by instrument/effect
-    {
-        TreeNode libraryNode;
-        libraryNode.label = "Library";
-        libraryNode.type = "category";
+    tree.setRootNodes(std::move(roots));
+}
 
-        // Instruments (plugins that are instruments with saved presets)
-        TreeNode instrumentsNode;
-        instrumentsNode.label = "Instruments";
-        instrumentsNode.type = "category";
+void Sidebar::refreshLibraryTab() {
+    if (!state) return;
+    std::vector<TreeNode> roots;
 
-        TreeNode effectsNode;
-        effectsNode.label = "Effects";
-        effectsNode.type = "category";
+    TreeNode instrumentsNode;
+    instrumentsNode.label = "Instruments";
+    instrumentsNode.type = "category";
 
-        for (auto& plugin : state->allPlugins()) {
-            auto presets = state->presetsForPlugin(plugin.id);
-            if (presets.empty()) continue;
+    TreeNode effectsNode;
+    effectsNode.label = "Effects";
+    effectsNode.type = "category";
 
-            TreeNode pluginNode;
-            pluginNode.label = plugin.name;
-            pluginNode.type = "plugin";
-            pluginNode.id = plugin.id;
+    for (auto& plugin : state->allPlugins()) {
+        auto presets = state->presetsForPlugin(plugin.id);
+        if (presets.empty()) continue;
 
-            for (auto& preset : presets) {
-                TreeNode presetLeaf;
-                presetLeaf.label = preset->name;
-                presetLeaf.id = preset->id;
-                presetLeaf.type = "preset";
-                presetLeaf.isLeaf = true;
-                pluginNode.children.push_back(presetLeaf);
-            }
+        TreeNode pluginNode;
+        pluginNode.label = plugin.name;
+        pluginNode.type = "plugin";
+        pluginNode.id = plugin.id;
 
-            // Determine if instrument or effect from plugin description
-            bool isInstrument = plugin.isInstrument;
-
-            if (isInstrument)
-                instrumentsNode.children.push_back(pluginNode);
-            else
-                effectsNode.children.push_back(pluginNode);
+        for (auto& preset : presets) {
+            TreeNode leaf;
+            leaf.label = preset->name;
+            leaf.id = preset->id;
+            leaf.type = "preset";
+            leaf.isLeaf = true;
+            pluginNode.children.push_back(leaf);
         }
 
-        if (!instrumentsNode.children.empty())
-            libraryNode.children.push_back(instrumentsNode);
-        if (!effectsNode.children.empty())
-            libraryNode.children.push_back(effectsNode);
-
-        roots.push_back(libraryNode);
+        if (plugin.isInstrument)
+            instrumentsNode.children.push_back(pluginNode);
+        else
+            effectsNode.children.push_back(pluginNode);
     }
 
-    // Actions
-    {
-        TreeNode actionsNode;
-        actionsNode.label = "Actions";
-        actionsNode.type = "category";
+    if (!instrumentsNode.children.empty())
+        roots.push_back(instrumentsNode);
+    if (!effectsNode.children.empty())
+        roots.push_back(effectsNode);
 
-        for (auto& action : state->allActions()) {
-            TreeNode actionLeaf;
-            actionLeaf.label = action.label.empty() ? action.name : action.label;
-            actionLeaf.id = action.id;
-            actionLeaf.type = "action";
-            actionLeaf.isLeaf = true;
-            actionsNode.children.push_back(actionLeaf);
-        }
-        roots.push_back(actionsNode);
+    tree.setRootNodes(std::move(roots));
+}
+
+void Sidebar::refreshActionsTab() {
+    if (!state) return;
+    std::vector<TreeNode> roots;
+
+    for (auto& action : state->allActions()) {
+        TreeNode leaf;
+        leaf.label = action.label.empty() ? action.name : action.label;
+        leaf.id = action.id;
+        leaf.type = "action";
+        leaf.isLeaf = true;
+        roots.push_back(leaf);
     }
 
-    // Maps — connected MIDI devices with activity lights
+    tree.setRootNodes(std::move(roots));
+}
+
+void Sidebar::refreshDevicesTab() {
+    if (!state) return;
+    std::vector<TreeNode> roots;
+
+    // MIDI devices (Maps)
     {
-        TreeNode mapsNode;
-        mapsNode.label = "Maps";
-        mapsNode.type = "category";
+        TreeNode midiNode;
+        midiNode.label = "MIDI";
+        midiNode.type = "category";
 
         auto midiDevices = juce::MidiInput::getAvailableDevices();
         auto now = juce::Time::currentTimeMillis();
@@ -310,168 +331,83 @@ void Sidebar::refreshTree() {
             }
             leaf.isLeaf = true;
 
-            // Activity indicator: check if this port had recent MIDI activity
             if (coordinator) {
                 int64_t lastMs = coordinator->getMidiPortActivityMs(portName);
                 bool active = (lastMs > 0 && now - lastMs < 400);
-                // Encode activity in the type suffix so RegistryTree can draw it
                 if (active) leaf.type += "_active";
             }
 
-            mapsNode.children.push_back(leaf);
+            midiNode.children.push_back(leaf);
         }
 
-        roots.push_back(mapsNode);
+        roots.push_back(midiNode);
     }
 
-    // Devices — Audio and MIDI subsections
-    {
-        TreeNode devicesNode;
-        devicesNode.label = "Devices";
-        devicesNode.type = "category";
+    // Audio devices
+    if (engineAPI) {
+        auto& dm = engineAPI->getDeviceManager();
+        auto setup = dm.getAudioDeviceSetup();
 
-        // Audio devices — each device is a node with Input/Output children
-        if (engineAPI) {
-            auto& dm = engineAPI->getDeviceManager();
-            auto setup = dm.getAudioDeviceSetup();
+        TreeNode audioNode;
+        audioNode.label = "Audio";
+        audioNode.type = "category";
 
-            TreeNode audioNode;
-            audioNode.label = "Audio";
-            audioNode.type = "category";
+        if (auto* type = dm.getCurrentDeviceTypeObject()) {
+            auto outputNames = type->getDeviceNames(false);
+            auto inputNames = type->getDeviceNames(true);
 
-            if (auto* type = dm.getCurrentDeviceTypeObject()) {
-                auto outputNames = type->getDeviceNames(false);
-                auto inputNames = type->getDeviceNames(true);
+            std::set<juce::String> allNames;
+            for (auto& n : outputNames) allNames.insert(n);
+            for (auto& n : inputNames) allNames.insert(n);
 
-                // Collect unique device names across input and output
-                std::set<juce::String> allNames;
-                for (auto& n : outputNames) allNames.insert(n);
-                for (auto& n : inputNames) allNames.insert(n);
+            for (auto& name : allNames) {
+                auto nameStr = name.toStdString();
+                bool hasOutput = outputNames.contains(name);
+                bool hasInput = inputNames.contains(name);
 
-                for (auto& name : allNames) {
-                    auto nameStr = name.toStdString();
-                    bool hasOutput = outputNames.contains(name);
-                    bool hasInput = inputNames.contains(name);
+                TreeNode deviceNode;
+                deviceNode.label = nameStr;
+                deviceNode.id = "audio_both:" + nameStr;
+                deviceNode.type = "audio_device";
+                deviceNode.expanded = true;
 
-                    TreeNode deviceNode;
-                    deviceNode.label = nameStr;
-                    deviceNode.id = "audio_both:" + nameStr;
-                    deviceNode.type = "audio_device";
-                    deviceNode.expanded = true;  // always expanded
-
-                    if (hasInput) {
-                        TreeNode inLeaf;
-                        inLeaf.label = "Input";
-                        bool isActive = (name == setup.inputDeviceName);
-                        inLeaf.id = "audio_in:" + nameStr;
-                        inLeaf.type = isActive ? "audio_input_active" : "audio_input";
-                        inLeaf.isLeaf = true;
-                        deviceNode.children.push_back(inLeaf);
-                    }
-                    if (hasOutput) {
-                        TreeNode outLeaf;
-                        outLeaf.label = "Output";
-                        bool isActive = (name == setup.outputDeviceName);
-                        outLeaf.id = "audio_out:" + nameStr;
-                        outLeaf.type = isActive ? "audio_output_active" : "audio_output";
-                        outLeaf.isLeaf = true;
-                        deviceNode.children.push_back(outLeaf);
-                    }
-
-                    audioNode.children.push_back(deviceNode);
+                if (hasInput) {
+                    TreeNode inLeaf;
+                    inLeaf.label = "Input";
+                    inLeaf.id = "audio_in:" + nameStr;
+                    inLeaf.type = (name == setup.inputDeviceName) ? "audio_input_active" : "audio_input";
+                    inLeaf.isLeaf = true;
+                    deviceNode.children.push_back(inLeaf);
                 }
-            }
-            // Buffer size / sample rate info
-            if (auto* device = dm.getCurrentAudioDevice()) {
-                int bufSize = device->getCurrentBufferSizeSamples();
-                double sampleRate = device->getCurrentSampleRate();
-                float latencyMs = (float)bufSize / (float)sampleRate * 1000.0f;
-                char label[64];
-                snprintf(label, sizeof(label), "Buffer: %d (%.1fms @ %.0fkHz)",
-                         bufSize, latencyMs, sampleRate / 1000.0);
-                TreeNode bufLeaf;
-                bufLeaf.label = label;
-                bufLeaf.id = "audio_buffer";
-                bufLeaf.type = "audio_buffer";
-                bufLeaf.isLeaf = true;
-                audioNode.children.push_back(bufLeaf);
-            }
+                if (hasOutput) {
+                    TreeNode outLeaf;
+                    outLeaf.label = "Output";
+                    outLeaf.id = "audio_out:" + nameStr;
+                    outLeaf.type = (name == setup.outputDeviceName) ? "audio_output_active" : "audio_output";
+                    outLeaf.isLeaf = true;
+                    deviceNode.children.push_back(outLeaf);
+                }
 
-            devicesNode.children.push_back(audioNode);
-        }
-
-        roots.push_back(devicesNode);
-    }
-
-    // Panes — four slots, each with content options
-    {
-        TreeNode panesNode;
-        panesNode.label = "Panes";
-        panesNode.type = "category";
-
-        struct SlotDef {
-            const char* label;
-            const char* slotKey;
-            std::vector<std::string> allowedContent;
-        };
-        SlotDef slots[] = {
-            { "Sidebar", "sidebar", { "hidden", "sidebar_tree" } },
-            { "Left Pane", "left", { "hidden", "produce", "mappings", "debug" } },
-            { "Right Pane", "right", { "hidden", "chat", "logs" } },
-            { "Bottom Pane", "bottom", { "hidden", "mixer" } }
-        };
-
-        // Content display names
-        auto contentLabel = [](const std::string& key) -> std::string {
-            if (key == "hidden") return "Hide";
-            if (key == "sidebar_tree") return "Sidebar";
-            if (key == "produce") return "Produce";
-            if (key == "mappings") return "Mappings";
-            if (key == "debug") return "Debug";
-            if (key == "chat") return "Chat";
-            if (key == "logs") return "Logs";
-            if (key == "mixer") return "Mixer";
-            return key;
-        };
-
-        // Collect all currently assigned content (for exclusivity)
-        std::set<std::string> assignedContent;
-        for (auto& slot : slots) {
-            if (getPaneContent) {
-                auto c = getPaneContent(slot.slotKey);
-                if (c != "hidden") assignedContent.insert(c);
+                audioNode.children.push_back(deviceNode);
             }
         }
 
-        for (auto& slot : slots) {
-            TreeNode slotNode;
-            slotNode.label = slot.label;
-            slotNode.type = "pane_slot";
-            slotNode.id = slot.slotKey;
-
-            std::string currentContent;
-            if (getPaneContent)
-                currentContent = getPaneContent(slot.slotKey);
-
-            for (auto& contentKey : slot.allowedContent) {
-                TreeNode leaf;
-                leaf.label = contentLabel(contentKey);
-                leaf.id = std::string(slot.slotKey) + ":" + contentKey;
-                leaf.type = "pane_content";
-                leaf.isLeaf = true;
-                leaf.active = (currentContent == contentKey);
-                leaf.indent = 1;
-                // Disable if this content is assigned to another slot
-                if (contentKey != "hidden" && contentKey != currentContent
-                    && assignedContent.count(contentKey))
-                    leaf.type = "pane_content_disabled";
-                slotNode.children.push_back(leaf);
-            }
-
-            panesNode.children.push_back(slotNode);
+        if (auto* device = dm.getCurrentAudioDevice()) {
+            int bufSize = device->getCurrentBufferSizeSamples();
+            double sampleRate = device->getCurrentSampleRate();
+            float latencyMs = (float)bufSize / (float)sampleRate * 1000.0f;
+            char label[64];
+            snprintf(label, sizeof(label), "Buffer: %d (%.1fms @ %.0fkHz)",
+                     bufSize, latencyMs, sampleRate / 1000.0);
+            TreeNode bufLeaf;
+            bufLeaf.label = label;
+            bufLeaf.id = "audio_buffer";
+            bufLeaf.type = "audio_buffer";
+            bufLeaf.isLeaf = true;
+            audioNode.children.push_back(bufLeaf);
         }
 
-        roots.push_back(panesNode);
+        roots.push_back(audioNode);
     }
 
     tree.setRootNodes(std::move(roots));
