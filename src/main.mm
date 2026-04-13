@@ -89,14 +89,23 @@ private:
 // --- Menu Bar ---
 
 enum CommandIDs {
-    newSong = 1,
-    saveSong = 3,
-    closeSong = 4,
-    newInstrumentTrack = 5,
-    newEffectsBus = 6,
-    toggleSidebar = 7,
-    toggleMixer = 8,
-    openSettings = 10,
+    // File
+    newSong = 1, saveSong = 2, closeSong = 3,
+    // Edit
+    menuUndo = 10, menuRedo = 11, menuSplit = 12, menuDuplicate = 13,
+    menuDelete = 14, menuSelectAll = 15, menuCycleFromSel = 16,
+    // Track
+    newInstrumentTrack = 20, newAudioTrack = 21, newEffectsBus = 22,
+    // View
+    viewSidebar = 30, viewMixer = 31, viewMusicalTyping = 32,
+    viewZoomIn = 33, viewZoomOut = 34, viewZoomTaller = 35, viewZoomShorter = 36,
+    // Transport
+    transportPlayStop = 40, transportRecord = 41, transportRewind = 42,
+    transportCycle = 43, transportMetronome = 44,
+    transportStepFwd = 45, transportStepBack = 46,
+    transportStepFwdBar = 47, transportStepBackBar = 48,
+    // Other
+    openSettings = 99,
 };
 
 class AppMenuBar : public juce::MenuBarModel {
@@ -105,38 +114,65 @@ public:
         : coord(coord), lua(lua), layout(layout) {}
 
     juce::StringArray getMenuBarNames() override {
-        return { "File", "Track", "View" };
+        return { "File", "Edit", "Track", "View", "Transport" };
     }
 
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
         juce::PopupMenu menu;
         if (index == 0) {  // File
             menu.addItem(CommandIDs::newSong, "New Song");
-            menu.addItem(CommandIDs::saveSong, "Save");
+            menu.addItem(CommandIDs::saveSong, juce::String("Save") + juce::String::fromUTF8("                          \xe2\x8c\x98S"));
             menu.addSeparator();
-
-            // Song list from state
             auto& songs = coord.state().allSongs();
             for (int i = 0; i < (int)songs.size(); ++i) {
                 auto isCurrent = songs[i].id == coord.state().getMasterOutputId();
-                menu.addItem(100 + i, juce::String(songs[i].name),
-                             true, isCurrent);
+                menu.addItem(100 + i, juce::String(songs[i].name), true, isCurrent);
             }
-
-            if (!songs.empty())
-                menu.addSeparator();
+            if (!songs.empty()) menu.addSeparator();
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
-        else if (index == 1) {  // Track
+        else if (index == 1) {  // Edit
+            menu.addItem(CommandIDs::menuUndo, "Undo", coord.state().canUndo());
+            menu.addItem(CommandIDs::menuRedo, "Redo", coord.state().canRedo());
+            menu.addSeparator();
+            menu.addItem(CommandIDs::menuSplit, "Split at Playhead");
+            menu.addItem(CommandIDs::menuDuplicate, "Duplicate");
+            menu.addItem(CommandIDs::menuDelete, "Delete");
+            menu.addSeparator();
+            menu.addItem(CommandIDs::menuCycleFromSel, "Set Cycle from Selection");
+        }
+        else if (index == 2) {  // Track
             menu.addItem(CommandIDs::newInstrumentTrack, "New Virtual Instrument Track");
-            menu.addItem(9, "New Audio Input Track");
+            menu.addItem(CommandIDs::newAudioTrack, "New Audio Input Track");
             menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
         }
-        else if (index == 2) {  // View
+        else if (index == 3) {  // View
+            menu.addItem(CommandIDs::viewSidebar, "Sidebar");
+            menu.addItem(CommandIDs::viewMixer, "Mixer");
+            menu.addItem(CommandIDs::viewMusicalTyping, "Musical Typing");
+            menu.addSeparator();
             menu.addSubMenu("Sidebar", layout.buildPaneMenu(PaneSlot::Sidebar));
             menu.addSubMenu("Left Pane", layout.buildPaneMenu(PaneSlot::Left));
             menu.addSubMenu("Right Pane", layout.buildPaneMenu(PaneSlot::Right));
             menu.addSubMenu("Bottom Pane", layout.buildPaneMenu(PaneSlot::Bottom));
+            menu.addSeparator();
+            menu.addItem(CommandIDs::viewZoomIn, "Zoom In");
+            menu.addItem(CommandIDs::viewZoomOut, "Zoom Out");
+            menu.addItem(CommandIDs::viewZoomTaller, "Zoom Tracks Taller");
+            menu.addItem(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter");
+        }
+        else if (index == 4) {  // Transport
+            menu.addItem(CommandIDs::transportPlayStop, "Play/Stop");
+            menu.addItem(CommandIDs::transportRecord, "Record");
+            menu.addItem(CommandIDs::transportRewind, "Rewind");
+            menu.addSeparator();
+            menu.addItem(CommandIDs::transportCycle, "Cycle Mode");
+            menu.addItem(CommandIDs::transportMetronome, "Metronome");
+            menu.addSeparator();
+            menu.addItem(CommandIDs::transportStepFwd, "Step Forward");
+            menu.addItem(CommandIDs::transportStepBack, "Step Back");
+            menu.addItem(CommandIDs::transportStepFwdBar, "Step Forward Bar");
+            menu.addItem(CommandIDs::transportStepBackBar, "Step Back Bar");
         }
         return menu;
     }
@@ -144,42 +180,106 @@ public:
     void menuItemSelected(int menuItemID, int) override {
         auto& state = coord.state();
 
-        if (menuItemID == CommandIDs::newSong) {
+        switch (menuItemID) {
+        // File
+        case CommandIDs::newSong: {
             auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
             coord.createSong(name);
+            break;
         }
-        else if (menuItemID == CommandIDs::saveSong) {
-            coord.save();
-        }
-        else if (menuItemID == CommandIDs::closeSong) {
-            coord.unloadSong();
-        }
-        else if (menuItemID == CommandIDs::newInstrumentTrack) {
+        case CommandIDs::saveSong: coord.save(); break;
+        case CommandIDs::closeSong: coord.unloadSong(); break;
+
+        // Edit
+        case CommandIDs::menuUndo: layout.onUndo(); break;
+        case CommandIDs::menuRedo: layout.onRedo(); break;
+        case CommandIDs::menuSplit:
+            layout.producePane.keyPressed(juce::KeyPress('t', juce::ModifierKeys::commandModifier, 0));
+            break;
+        case CommandIDs::menuDuplicate:
+            layout.producePane.keyPressed(juce::KeyPress('d', juce::ModifierKeys::commandModifier, 0));
+            break;
+        case CommandIDs::menuDelete:
+            layout.producePane.keyPressed(juce::KeyPress(juce::KeyPress::backspaceKey));
+            break;
+        case CommandIDs::menuCycleFromSel:
+            layout.producePane.keyPressed(juce::KeyPress('u', 0, 'u'));
+            break;
+
+        // Track
+        case CommandIDs::newInstrumentTrack: {
             auto tracks = state.listTracks();
-            auto name = "Track " + juce::String((int)tracks.size() + 1);
-            state.createTrack(name.toStdString());
+            state.createTrack(("Track " + juce::String((int)tracks.size() + 1)).toStdString());
+            break;
         }
-        else if (menuItemID == 9) {
+        case CommandIDs::newAudioTrack: {
             auto tracks = state.listTracks();
-            auto name = "Audio " + juce::String((int)tracks.size() + 1);
-            state.createAudioInputTrack(name.toStdString(), -1, 0);  // no input until user selects
+            state.createAudioInputTrack(("Audio " + juce::String((int)tracks.size() + 1)).toStdString(), -1, 0);
+            break;
         }
-        else if (menuItemID == 11) {
-            state.createActionTrack("Actions");
-        }
-        else if (menuItemID == CommandIDs::newEffectsBus) {
+        case CommandIDs::newEffectsBus: {
             auto busses = state.listBusses();
-            auto name = "Bus " + juce::String((int)busses.size() + 1);
-            state.createBus(name.toStdString());
+            state.createBus(("Bus " + juce::String((int)busses.size() + 1)).toStdString());
+            break;
         }
-        else if (menuItemID == CommandIDs::openSettings) {
-            layout.handleGlobalKey(KeyBindings::settings);
-        }
-        else if (menuItemID >= 100) {
-            auto& songs = state.allSongs();
-            int idx = menuItemID - 100;
-            if (idx < (int)songs.size())
-                coord.loadSong(songs[idx].id);
+
+        // View
+        case CommandIDs::viewSidebar: layout.handleGlobalKey(KeyBindings::toggleSidebar); break;
+        case CommandIDs::viewMixer: layout.handleGlobalKey(KeyBindings::toggleMixer); break;
+        case CommandIDs::viewMusicalTyping: layout.handleGlobalKey(KeyBindings::musicalTyping); break;
+        case CommandIDs::viewZoomIn:
+            layout.producePane.keyPressed(juce::KeyPress('l', juce::ModifierKeys::commandModifier, 0));
+            break;
+        case CommandIDs::viewZoomOut:
+            layout.producePane.keyPressed(juce::KeyPress('h', juce::ModifierKeys::commandModifier, 0));
+            break;
+        case CommandIDs::viewZoomTaller:
+            layout.producePane.keyPressed(juce::KeyPress('j', juce::ModifierKeys::commandModifier, 0));
+            break;
+        case CommandIDs::viewZoomShorter:
+            layout.producePane.keyPressed(juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0));
+            break;
+
+        // Transport
+        case CommandIDs::transportPlayStop:
+            layout.producePane.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
+            break;
+        case CommandIDs::transportRecord:
+            layout.producePane.keyPressed(juce::KeyPress('r', 0, 'r'));
+            break;
+        case CommandIDs::transportRewind:
+            layout.producePane.keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+            break;
+        case CommandIDs::transportCycle:
+            layout.producePane.keyPressed(juce::KeyPress('c', 0, 'c'));
+            break;
+        case CommandIDs::transportMetronome:
+            layout.producePane.keyPressed(juce::KeyPress('m', 0, 'm'));
+            break;
+        case CommandIDs::transportStepFwd:
+            layout.producePane.keyPressed(juce::KeyPress('l', 0, 'l'));
+            break;
+        case CommandIDs::transportStepBack:
+            layout.producePane.keyPressed(juce::KeyPress('h', 0, 'h'));
+            break;
+        case CommandIDs::transportStepFwdBar:
+            layout.producePane.keyPressed(juce::KeyPress('L', juce::ModifierKeys::shiftModifier, 0));
+            break;
+        case CommandIDs::transportStepBackBar:
+            layout.producePane.keyPressed(juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
+            break;
+
+        // Settings
+        case CommandIDs::openSettings: layout.handleGlobalKey(KeyBindings::settings); break;
+
+        default:
+            if (menuItemID >= 100) {
+                auto& songs = state.allSongs();
+                int idx = menuItemID - 100;
+                if (idx < (int)songs.size())
+                    coord.loadSong(songs[idx].id);
+            }
+            break;
         }
     }
 
@@ -279,6 +379,22 @@ public:
                 coordinator->loadSong(songId);
                 layout->hideOverlay();
             });
+        };
+
+        layout->getSidebar().onDeleteSong = [this, layout](const std::string& songId) {
+            // Switch to Sandbox first if deleting the current song
+            auto currentId = coordinator->state().getMasterOutputId();
+            if (songId == currentId) {
+                auto& songs = coordinator->state().allSongs();
+                for (auto& s : songs) {
+                    if (s.name == "Sandbox" && s.id != songId) {
+                        coordinator->loadSong(s.id);
+                        break;
+                    }
+                }
+            }
+            coordinator->state().deleteSong(songId);
+            coordinator->save();
         };
 
         // Wire sidebar Maps device selection

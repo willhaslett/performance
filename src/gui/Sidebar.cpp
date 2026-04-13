@@ -10,6 +10,19 @@ Sidebar::Sidebar() {
     addAndMakeVisible(tree);
     startTimerHz(4);  // check active song highlight
 
+    tree.setOnNodeRightClick([this](const std::string& type, const std::string& id, const std::string& label) {
+        if (type == "song" && label != "Sandbox") {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Delete Song");
+            auto songId = id;
+            menu.showMenuAsync(juce::PopupMenu::Options(),
+                [this, songId](int result) {
+                    if (result == 1 && onDeleteSong)
+                        onDeleteSong(songId);
+                });
+        }
+    });
+
     tree.setOnNodeClick([this](const std::string& type, const std::string& id, const std::string& label) {
         if (!state) return;
         perfLog("[Sidebar] Clicked %s: %s (%s)\n", type.c_str(), label.c_str(), id.c_str());

@@ -154,7 +154,7 @@ void StateAPI::setEffectPresetId(const std::string& effectId, const std::string&
 // --- Song ---
 
 std::string StateAPI::createSong(const std::string& name) {
-    pushUndo();
+    // No pushUndo — song creation is orchestrated by coordinator
     SongState song;
     song.id = generateId();
     song.name = name;
@@ -165,7 +165,7 @@ std::string StateAPI::createSong(const std::string& name) {
 }
 
 void StateAPI::deleteSong(const std::string& id) {
-    pushUndo();
+    // No pushUndo — song deletion is orchestrated by coordinator
     auto it = std::find_if(state.songs.begin(), state.songs.end(),
                            [&](auto& s) { return s.id == id; });
     if (it == state.songs.end()) return;
@@ -297,7 +297,7 @@ std::string StateAPI::createAudioInputTrack(const std::string& name, int inputCh
 }
 
 std::string StateAPI::createActionTrack(const std::string& name) {
-    pushUndo();
+    // No pushUndo — action track creation is part of song setup
     auto* song = currentSong();
     if (!song) return {};
     TrackState track;

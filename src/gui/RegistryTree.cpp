@@ -154,8 +154,16 @@ void RegistryTree::mouseUp(const juce::MouseEvent& event) {
         }
     }
 
+    if (clickId.empty()) return;
+
+    // Right-click → context menu callback
+    if (event.mods.isPopupMenu() && onNodeRightClick) {
+        onNodeRightClick(clickType, clickId, clickLabel);
+        return;
+    }
+
     // Dispatch click for leaf nodes and audio_device nodes (always-expanded, clickable)
-    if ((clickIsLeaf || clickType == "audio_device") && !clickId.empty() && onNodeClick)
+    if ((clickIsLeaf || clickType == "audio_device") && onNodeClick)
         onNodeClick(clickType, clickId, clickLabel);
 }
 

@@ -13,7 +13,7 @@ namespace KeyBindings {
     inline const auto save          = juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0);
     inline const auto settings      = juce::KeyPress(',', juce::ModifierKeys::commandModifier, 0);
     inline const auto closeEditor   = juce::KeyPress(juce::KeyPress::escapeKey);
-    inline const auto musicalTyping = juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0);
+    inline const auto musicalTyping = juce::KeyPress('k', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0);
     inline const auto undo          = juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0);
     inline const auto redo          = juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0);
 }

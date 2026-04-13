@@ -19,6 +19,7 @@ public:
 
     // Callback for song loading (coordinator-level operation)
     std::function<void(const std::string& songId)> onLoadSong;
+    std::function<void(const std::string& songId)> onDeleteSong;
 
     // Callback for Maps device selection
     std::function<void(const std::string& deviceId, const std::string& portName)> onMapSelected;

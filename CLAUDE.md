@@ -130,7 +130,7 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **BusStrip** — effect slots, output target selector (Master/No Output/Bus), fader+stereo meters. Power icon toggles bus `audioEnabled`. Bus preset save/load via right-click menu.
 - **OutputStrip** — master effect slots, master fader+stereo meters. Power icon toggles master `audioEnabled`.
 - **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader handle center reaches full range (+6 to -60). Click-to-jump: clicking the fader track sets the fader to that position. Fader travel and meter bars share identical vertical bounds.
-- **MusicalTyping** — on-screen keyboard (Cmd+K toggle). Computer keys mapped to MIDI notes (Logic layout). Octave shift (Z/X), velocity (C/V), sustain (Tab). Draggable floating panel. Injects MIDI via `audioEngine.injectMidi()`. Intercepts all keyboard input when active.
+- **MusicalTyping** — on-screen keyboard (Cmd+Shift+K toggle). Computer keys mapped to MIDI notes (Logic layout). Octave shift (Z/X), velocity (C/V), sustain (Tab). Draggable floating panel. Injects MIDI via `audioEngine.injectMidi()`. Intercepts all keyboard input when active.
 - **MorphEditor** — slot-based editor for compound morph actions. Growing list of action slots with inline action picker per slot. Parallel/sequential mode toggle. OK/Cancel with proper window close handling.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
@@ -265,12 +265,13 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Note flush — targeted noteOff using per-channel bitset of active notes. Loop flush via MidiSourceNodes only (not live MIDI path, which would race with new noteOns).
 - Fader improvements — click-to-jump, handle center reaches full +6/-60dB range, fader/meter vertical alignment.
 - Preset name display — editor window shows correct preset name (resolved from state on open, updated on save/load).
+- Region looping — 'l' toggles loop, ghost copies with dashed borders and dimmed note previews. Loops until next region (or explicit loopEndBeat). Ghost right-edge resizable. Right-click ghost: Trim/Convert/Unloop. Looped regions repeat during playback via rep loop in scanMidiEvents.
+- Undo/redo — `UndoHistory` with `deque<AppState>` (max 50 snapshots). `pushUndo()` before 39 undoable StateAPI mutations. Transactions (beginTransaction/endTransaction) for fader drags. Suspended during recording (pre-recording snapshot pushed, resumed on stop). Post-restore: arrangement pointer + audio reload + tempo sync + automation cancel. Cmd+Z / Cmd+Shift+Z.
+- Menu bar — File, Edit, Track, View, Transport. Edit has undo/redo/split/duplicate/delete/cycle-from-selection. Transport has play/stop/record/rewind/cycle/metronome/step controls. All dispatch through the same key handlers.
+- Song deletion — right-click song in sidebar (except Sandbox). Switches to Sandbox first if deleting current song.
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (high priority):**
-- Undo/redo — snapshot-based, using existing `replaceState()`. Architecture is ready: AppState is fully copyable (all std containers, no pointers), replaceState fires one event, EngineSync rebuilds correctly. Implementation: `UndoHistory` with `deque<AppState>`, push before each user mutation, Cmd+Z restores. After restore: update arrangement pointer + reload audio files. Concerns: (1) mutation grouping (begin/end transaction for multi-step operations like track preset load), (2) audio recording undo needs WAV file cleanup side-channel, (3) morph undo needs automation cancellation, (4) cap at ~50 steps to limit memory (1-10MB per snapshot). NOT undoable: per-parameter tweaks, transport state, mid-recording mutations. ~50ms restore time for large songs.
-
-**Feature backlog (near-term):**
 - Atomic transport commands: InternalSequencer and GraphWrapper have independent beat clocks synced at 60Hz. Separate `setPlaybackBeatPosition` + `setPlaybackState` calls create race windows where the audio thread processes a buffer with partial state. Refactor to a single `startPlayback(beat, bpm, loop)` / `stopPlayback()` command that GraphWrapper reads atomically. Eliminates call-order bugs by construction. Known symptom: first note at loop boundary sounds on every other cycle — flush and scan alternate winning the race depending on buffer alignment.
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
 - Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
@@ -363,4 +364,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~22,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~23,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
