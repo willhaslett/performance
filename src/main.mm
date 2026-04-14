@@ -429,6 +429,7 @@ public:
         menuBar->onShowKeyBindings = [this]() { showKeyBindingEditor(); };
         installMenuStyling();
         setupKeyBindings();
+        layout->setKeyBindingManager(&keyBindings);
         appMenuItems = std::move(appMenu);
 
         // Wire settings
@@ -570,8 +571,14 @@ private:
     void setupKeyBindings() {
         namespace KB = KeyBindings;
         auto& k = keyBindings;
+        auto noKey = juce::KeyPress();  // unbound by default
+
         // File
+        k.registerCommand("file.newSong", "File", "New Song", noKey);
         k.registerCommand("file.save", "File", "Save", KB::save);
+        k.registerCommand("file.closeSong", "File", "Close Song", noKey);
+        k.registerCommand("file.settings", "File", "Settings", KB::settings);
+
         // Edit
         k.registerCommand("edit.undo", "Edit", "Undo", KB::undo);
         k.registerCommand("edit.redo", "Edit", "Redo", KB::redo);
@@ -583,6 +590,7 @@ private:
             juce::KeyPress(juce::KeyPress::backspaceKey));
         k.registerCommand("edit.cycleFromSel", "Edit", "Set Cycle from Selection",
             juce::KeyPress('u', 0, 'u'));
+
         // Transport
         k.registerCommand("transport.playStop", "Transport", "Play/Stop",
             juce::KeyPress(juce::KeyPress::spaceKey));
@@ -602,6 +610,7 @@ private:
             juce::KeyPress('L', juce::ModifierKeys::shiftModifier, 0));
         k.registerCommand("transport.stepBackBar", "Transport", "Step Back Bar",
             juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
+
         // View
         k.registerCommand("view.sidebar", "View", "Sidebar", KB::toggleSidebar);
         k.registerCommand("view.mixer", "View", "Mixer", KB::toggleMixer);
@@ -614,9 +623,17 @@ private:
             juce::KeyPress('j', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.zoomShorter", "View", "Zoom Tracks Shorter",
             juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.closeEditor", "View", "Close Plugin Editor", KB::closeEditor);
+
         // Region
-        k.registerCommand("region.loop", "Region", "Loop",
+        k.registerCommand("region.loop", "Region", "Toggle Loop",
             juce::KeyPress('l', 0, 'l'));
+        k.registerCommand("region.mute", "Region", "Mute/Unmute", noKey);
+
+        // Track
+        k.registerCommand("track.newInstrument", "Track", "New Instrument Track", noKey);
+        k.registerCommand("track.newAudioInput", "Track", "New Audio Input Track", noKey);
+        k.registerCommand("track.newBus", "Track", "New Effects Bus", noKey);
 
         k.loadOverrides(coordinator->state());
     }

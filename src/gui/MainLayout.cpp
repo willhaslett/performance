@@ -372,69 +372,96 @@ void MainLayout::toggleMusicalTyping() {
 }
 
 bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
-    // Cmd+K: toggle musical typing
-    if (key == KeyBindings::musicalTyping) {
+    // Musical typing toggle — always available
+    if (keyBindingMgr && keyBindingMgr->matches("view.musicalTyping", key)) {
         toggleMusicalTyping();
         return true;
     }
 
-    // When musical typing is active, intercept all keys
+    // When musical typing is active, intercept all keys except musical typing toggle
     if (musicalTypingActive) {
         if (musicalTyping.handleKey(key, true))
             return true;
-        // Escape also closes it
-        if (key == KeyBindings::closeEditor) {
+        if (key == juce::KeyPress::escapeKey) {
             toggleMusicalTyping();
             return true;
         }
         return true;  // eat everything else
     }
 
-    if (key == KeyBindings::toggleSidebar) {
+    // Skip all shortcuts when a text editor has focus
+    auto* focused = juce::Component::getCurrentlyFocusedComponent();
+    if (focused && dynamic_cast<juce::TextEditor*>(focused))
+        return false;
+
+    // Use KeyBindingManager if available, fall back to hardcoded
+    auto matches = [this](const std::string& cmd, const juce::KeyPress& k) {
+        if (keyBindingMgr) return keyBindingMgr->matches(cmd, k);
+        return false;
+    };
+
+    // --- View ---
+    if (matches("view.sidebar", key)) {
         auto current = getPaneContent(PaneSlot::Sidebar);
         setPaneContent(PaneSlot::Sidebar,
                        current == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
         return true;
     }
-
-    if (key == KeyBindings::toggleMixer) {
+    if (matches("view.mixer", key)) {
         auto current = getPaneContent(PaneSlot::Bottom);
         setPaneContent(PaneSlot::Bottom,
                        current == PaneContent::Hidden ? PaneContent::Mixer : PaneContent::Hidden);
         return true;
     }
-
-    if (key == KeyBindings::redo) {  // check redo BEFORE undo (redo has shift+cmd, undo is just cmd)
-        if (onRedo) onRedo();
+    if (matches("view.closeEditor", key)) {
+        engine.closeTopPluginEditor();
         return true;
     }
-
-    if (key == KeyBindings::undo) {
-        if (onUndo) onUndo();
-        return true;
+    if (matches("view.zoomIn", key)) {
+        producePane.keyPressed(key); return true;
+    }
+    if (matches("view.zoomOut", key)) {
+        producePane.keyPressed(key); return true;
+    }
+    if (matches("view.zoomTaller", key)) {
+        producePane.keyPressed(key); return true;
+    }
+    if (matches("view.zoomShorter", key)) {
+        producePane.keyPressed(key); return true;
     }
 
-    if (key == KeyBindings::save) {
+    // --- File ---
+    if (matches("file.save", key)) {
         if (onSave) onSave();
         return true;
     }
-
-    if (key == KeyBindings::settings) {
+    if (matches("file.settings", key)) {
         if (onOpenSettings) onOpenSettings();
         return true;
     }
 
-    if (key == KeyBindings::closeEditor) {
-        engine.closeTopPluginEditor();
+    // --- Edit (check redo before undo — redo has shift) ---
+    if (matches("edit.redo", key)) {
+        if (onRedo) onRedo();
+        return true;
+    }
+    if (matches("edit.undo", key)) {
+        if (onUndo) onUndo();
         return true;
     }
 
-    // Forward keys to ProducePane when it's visible (arrange shortcuts work globally)
-    if (producePane.isVisible()) {
-        auto* focused = juce::Component::getCurrentlyFocusedComponent();
-        bool textEditorFocused = focused && dynamic_cast<juce::TextEditor*>(focused);
-        if (!textEditorFocused && producePane.keyPressed(key))
-            return true;
+    // --- Forward remaining to ProducePane (transport, region, edit operations) ---
+    // These work regardless of which pane is focused
+    if (matches("transport.playStop", key) || matches("transport.record", key) ||
+        matches("transport.rewind", key) || matches("transport.cycle", key) ||
+        matches("transport.metronome", key) || matches("transport.stepFwd", key) ||
+        matches("transport.stepBack", key) || matches("transport.stepFwdBar", key) ||
+        matches("transport.stepBackBar", key) ||
+        matches("edit.split", key) || matches("edit.duplicate", key) ||
+        matches("edit.delete", key) || matches("edit.cycleFromSel", key) ||
+        matches("region.loop", key)) {
+        producePane.keyPressed(key);
+        return true;
     }
 
     return false;

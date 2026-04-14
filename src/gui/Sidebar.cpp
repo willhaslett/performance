@@ -155,7 +155,7 @@ void Sidebar::mouseUp(const juce::MouseEvent& event) {
 }
 
 void Sidebar::resized() {
-    tree.setBounds(4, tabBarHeight + 4, getWidth() - 4, getHeight() - tabBarHeight - 4);
+    tree.setBounds(4, tabBarHeight + 8, getWidth() - 4, getHeight() - tabBarHeight - 8);
 }
 
 void Sidebar::timerCallback() {

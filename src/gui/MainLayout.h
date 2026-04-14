@@ -10,6 +10,7 @@
 #include "gui/ProducePane.h"
 #include "gui/Divider.h"
 #include "gui/MusicalTyping.h"
+#include "gui/KeyBindingManager.h"
 #include <map>
 #include <string>
 
@@ -59,6 +60,8 @@ public:
     std::function<void()> onOpenSettings;
     std::function<void()> onUndo;
     std::function<void()> onRedo;
+
+    void setKeyBindingManager(KeyBindingManager* mgr) { keyBindingMgr = mgr; }
 
     // Loading overlay
     void showOverlay(const juce::String& message);
@@ -110,6 +113,8 @@ private:
         }
     };
     Overlay overlay;
+
+    KeyBindingManager* keyBindingMgr = nullptr;
 
     // Musical Typing
     MusicalTyping musicalTyping;
