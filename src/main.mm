@@ -516,7 +516,7 @@ public:
         // Wire sidebar Maps device selection
         layout->getSidebar().onMapSelected = [layout](const std::string& deviceId, const std::string& portName) {
             layout->setPaneContent(PaneSlot::Left, PaneContent::Mappings);
-            layout->mappingPane.setDevice(deviceId, portName);
+            layout->mappingPane.scrollToDevice(deviceId);
         };
 
         // Wire sidebar audio output device selection

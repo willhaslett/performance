@@ -24,6 +24,19 @@ namespace Theme {
         constexpr uint32_t instrument   = 0xffddaa44;
         constexpr uint32_t effect       = 0xff88aacc;
 
+        // Device color palette — muted tints for MIDI device rows
+        constexpr uint32_t deviceColors[] = {
+            0xff2a4a6a,  // steel blue
+            0xff4a3a5a,  // plum
+            0xff3a5a4a,  // sage
+            0xff5a3a3a,  // rust
+            0xff3a4a3a,  // forest
+            0xff5a4a3a,  // tan
+            0xff3a3a5a,  // slate
+            0xff4a5a3a,  // moss
+        };
+        constexpr int deviceColorCount = 8;
+
         // Track color palette — assigned to new tracks in rotation
         constexpr uint32_t trackColors[] = {
             0xff2a5a3a,  // green

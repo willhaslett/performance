@@ -4,858 +4,672 @@
 #include "api/PerformanceCoordinator.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
+#include <set>
 
 MappingPane::MappingPane(StateAPI& state, EngineAPI& engine, PerformanceCoordinator& coordinator)
     : state(state), engine(engine), coordinator(coordinator) {
+    addAndMakeVisible(learnButton);
+    learnButton.setButtonText("Learn");
+    learnButton.onClick = [this]() {
+        if (isLearning) cancelLearn(); else startLearn();
+    };
 
-    deviceNameLabel.setFont(Theme::font(18.0f));
-    deviceNameLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textWhite));
-    deviceNameLabel.setJustificationType(juce::Justification::centredLeft);
-    addChildComponent(deviceNameLabel);
-
-    portNameLabel.setFont(Theme::font(Theme::fontSizeXs));
-    portNameLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
-    portNameLabel.setJustificationType(juce::Justification::centredLeft);
-    addChildComponent(portNameLabel);
-
-    learnButton.setButtonText("Learn mappings");
-    learnButton.setColour(juce::TextButton::buttonColourId, Theme::color(Theme::Color::accent));
-    learnButton.setColour(juce::TextButton::textColourOnId, Theme::color(Theme::Color::textWhite));
-    learnButton.setColour(juce::TextButton::textColourOffId, Theme::color(Theme::Color::textWhite));
-    learnButton.onClick = [this]() { isLearning ? cancelLearn() : startLearn(); };
-    addChildComponent(learnButton);
-
-    midiLabelPrefix.setText("Incoming MIDI:", juce::dontSendNotification);
-    midiLabelPrefix.setFont(Theme::font(Theme::fontSizeXs));
-    midiLabelPrefix.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
-    addChildComponent(midiLabelPrefix);
-
-    midiEventLabel.setFont(Theme::font(Theme::fontSizeXs));
-    midiEventLabel.setColour(juce::Label::textColourId, juce::Colour(0xff44ff44));
-    addChildComponent(midiEventLabel);
-
-    stateSubscriptionId = state.events().subscribe([this](const StateEvent& event) {
-        if (event.entity == StateEvent::Device || event.entity == StateEvent::Binding
-            || event.entity == StateEvent::Song || event.entity == StateEvent::Config) {
-            juce::MessageManager::callAsync([this] { refresh(); });
-        }
+    stateSubscriptionId = state.events().subscribe([this](const StateEvent&) {
+        juce::MessageManager::callAsync([this] { refresh(); });
     });
 
     startTimerHz(10);
+    buildRows();
 }
 
 MappingPane::~MappingPane() {
     if (stateSubscriptionId >= 0)
         state.events().unsubscribe(stateSubscriptionId);
     if (isLearning) cancelLearn();
-    coordinator.clearMidiDeviceMonitor();
 }
 
-void MappingPane::setDevice(const std::string& deviceId, const std::string& portName) {
-    if (isLearning) cancelLearn();
-    coordinator.clearMidiDeviceMonitor();
-
-    // Auto-register unregistered devices
-    if (deviceId.empty() && !portName.empty()) {
-        currentDeviceId = state.registerDevice(portName, portName);
-        coordinator.refreshMidiDevices();
-    } else {
-        currentDeviceId = deviceId;
-    }
-
-    auto* device = state.findDevice(currentDeviceId);
-    if (device) {
-        deviceNameLabel.setText("Mappings", juce::dontSendNotification);
-        auto* song = state.currentSong();
-        auto info = "Device: " + device->name + (song ? "    Song: " + song->name : "");
-        portNameLabel.setText(juce::String(info), juce::dontSendNotification);
-        deviceNameLabel.setVisible(true);
-        portNameLabel.setVisible(true);
-        learnButton.setVisible(true);
-        midiLabelPrefix.setVisible(true);
-        midiEventLabel.setVisible(true);
-    }
-
-    // Set up MIDI monitor for this device
-    coordinator.setMidiDeviceMonitor(currentDeviceId,
-        [this](const std::string& desc, const std::string& type, int ch, int num) {
-            juce::MessageManager::callAsync([this, desc, type, ch, num] {
-                onMidiEvent(desc, type, ch, num);
-            });
-        });
-
-    refresh();
-    resized();
-}
-
-void MappingPane::onMidiEvent(const std::string& description,
-                               const std::string& type, int channel, int number) {
-    lastEvent2 = lastEvent1;
-    lastEvent1 = description;
-    auto display = lastEvent1 + (lastEvent2.empty() ? "" : "  |  " + lastEvent2);
-    midiEventLabel.setText(juce::String(display), juce::dontSendNotification);
-
-    // Update per-control activity
-    auto now = juce::Time::currentTimeMillis();
-    for (auto& row : rows) {
-        if (row.section != Row::GlobalControl && row.section != Row::SongControl) continue;
-        if (row.controlType == type && row.channel == channel && row.number == number)
-            row.lastActivityMs = now;
-    }
-}
-
-// --- Build rows ---
-
-std::string MappingPane::formatArgs(const std::string& argsJson) const {
-    auto parsed = juce::JSON::parse(juce::String(argsJson));
-    if (auto* arr = parsed.getArray()) {
-        juce::StringArray parts;
-        for (auto& v : *arr) {
-            auto s = v.toString();
-            if (s.length() == 32 && s.containsOnly("0123456789abcdef")) {
-                auto* track = state.findTrack(s.toStdString());
-                if (track) { parts.add(juce::String(track->name)); continue; }
-            }
-            parts.add(s);
-        }
-        return parts.joinIntoString(", ").toStdString();
-    }
-    return "";
-}
-
-std::set<std::string> MappingPane::getExistingGroups() const {
-    std::set<std::string> groups;
-    auto* device = state.findDevice(currentDeviceId);
-    if (device)
-        for (auto& ctrl : device->controls)
-            if (!ctrl.group.empty()) groups.insert(ctrl.group);
-    return groups;
-}
+// --- Build ---
 
 void MappingPane::buildRows() {
-    rows.clear();
-    auto* device = state.findDevice(currentDeviceId);
-    if (!device) return;
+    leftEntries.clear();
+    mappingRows.clear();
+    scoreRows.clear();
 
-    // Build binding lookup (song-scoped only)
-    songBindingMap.clear();
     auto* song = state.currentSong();
-    if (song) {
-        for (auto& b : song->bindings)
-            if (b.deviceId == currentDeviceId)
-                songBindingMap[{ b.controlType, b.channel, b.number, b.deviceId }] = b;
-    }
-
     if (!song) return;
 
-    // Header
-    Row header;
-    header.section = Row::SongHeader;
-    rows.push_back(header);
+    struct ControlKey {
+        std::string deviceId, controlType;
+        int channel, number;
+        bool operator<(const ControlKey& o) const {
+            if (deviceId != o.deviceId) return deviceId < o.deviceId;
+            if (controlType != o.controlType) return controlType < o.controlType;
+            if (channel != o.channel) return channel < o.channel;
+            return number < o.number;
+        }
+    };
+    std::map<ControlKey, const BindingState*> boundControls;
+    for (auto& b : song->bindings)
+        boundControls[{ b.deviceId, b.controlType, b.channel, b.number }] = &b;
 
-    // Build all control rows
-    std::vector<Row> scoreRows, nonScoreRows;
-    for (int i = 0; i < (int)device->controls.size(); ++i) {
-        auto& ctrl = device->controls[i];
-        Row row;
-        row.section = Row::SongControl;
-        row.controlName = ctrl.name;
-        row.group = ctrl.group;
-        row.controlType = ctrl.controlType;
-        row.channel = ctrl.channel;
-        row.number = ctrl.number;
-        row.controlIndex = i;
+    auto midiDevices = juce::MidiInput::getAvailableDevices();
+    std::set<std::string> connectedPorts;
+    for (auto& d : midiDevices) connectedPorts.insert(d.name.toStdString());
 
-        auto it = songBindingMap.find({ ctrl.controlType, ctrl.channel, ctrl.number, currentDeviceId });
-        if (it != songBindingMap.end()) {
-            row.bindingId = it->second.id;
-            auto* action = state.findActionById(it->second.actionId);
-            row.actionName = action ? (action->label.empty() ? action->name : action->label) : "?";
-            row.argsDisplay = formatArgs(it->second.args);
-            row.scorePosition = it->second.isScoreStep ? it->second.scorePosition : -1;
+    auto& devices = state.allDevices();
+    for (int di = 0; di < (int)devices.size(); ++di) {
+        auto& dev = devices[di];
+        bool connected = connectedPorts.count(dev.midiPortName) > 0;
+
+        std::vector<int> unmappedIndices;
+        for (int ci = 0; ci < (int)dev.controls.size(); ++ci) {
+            auto& ctrl = dev.controls[ci];
+            if (boundControls.find({ dev.id, ctrl.controlType, ctrl.channel, ctrl.number }) == boundControls.end())
+                unmappedIndices.push_back(ci);
         }
 
-        if (row.scorePosition >= 0)
-            scoreRows.push_back(row);
-        else
-            nonScoreRows.push_back(row);
+        if (!unmappedIndices.empty()) {
+            LeftPanelEntry header;
+            header.type = LeftPanelEntry::DeviceHeader;
+            header.deviceId = dev.id;
+            header.deviceName = dev.name;
+            header.deviceConnected = connected;
+            leftEntries.push_back(header);
+
+            for (int ci : unmappedIndices) {
+                auto& ctrl = dev.controls[ci];
+                LeftPanelEntry entry;
+                entry.type = LeftPanelEntry::Control;
+                entry.deviceId = dev.id;
+                entry.deviceName = dev.name;
+                entry.deviceConnected = connected;
+                entry.controlName = ctrl.name;
+                entry.group = ctrl.group;
+                entry.controlType = ctrl.controlType;
+                entry.channel = ctrl.channel;
+                entry.number = ctrl.number;
+                entry.controlIndex = ci;
+                leftEntries.push_back(entry);
+            }
+        }
+
+        for (int ci = 0; ci < (int)dev.controls.size(); ++ci) {
+            auto& ctrl = dev.controls[ci];
+            auto it = boundControls.find({ dev.id, ctrl.controlType, ctrl.channel, ctrl.number });
+            if (it == boundControls.end()) continue;
+
+            auto* binding = it->second;
+            auto* action = state.findActionById(binding->actionId);
+            std::string label = action ? (action->label.empty() ? action->name : action->label) : "?";
+
+            if (binding->isScoreStep) {
+                ScoreRow sr;
+                sr.deviceId = dev.id;
+                sr.deviceName = dev.name;
+                sr.controlName = ctrl.name;
+                sr.controlType = ctrl.controlType;
+                sr.channel = ctrl.channel;
+                sr.number = ctrl.number;
+                sr.bindingId = binding->id;
+                sr.actionLabel = label;
+                sr.argsDisplay = formatArgs(binding->args);
+                sr.scorePosition = binding->scorePosition;
+                scoreRows.push_back(sr);
+            } else {
+                MappingRow mr;
+                mr.deviceId = dev.id;
+                mr.deviceName = dev.name;
+                mr.controlName = ctrl.name;
+                mr.group = ctrl.group;
+                mr.controlType = ctrl.controlType;
+                mr.channel = ctrl.channel;
+                mr.number = ctrl.number;
+                mr.controlIndex = ci;
+                mr.bindingId = binding->id;
+                mr.actionLabel = label;
+                mr.argsDisplay = formatArgs(binding->args);
+                mappingRows.push_back(mr);
+            }
+        }
     }
 
-    // Score steps first, sorted by position
+    std::sort(mappingRows.begin(), mappingRows.end(),
+        [&devices](const MappingRow& a, const MappingRow& b) {
+            int ai = -1, bi = -1;
+            for (int i = 0; i < (int)devices.size(); ++i) {
+                if (devices[i].id == a.deviceId) ai = i;
+                if (devices[i].id == b.deviceId) bi = i;
+            }
+            if (ai != bi) return ai < bi;
+            if (a.group != b.group) return a.group < b.group;
+            return a.controlName < b.controlName;
+        });
+
     std::sort(scoreRows.begin(), scoreRows.end(),
-              [](auto& a, auto& b) { return a.scorePosition < b.scorePosition; });
-    for (auto& r : scoreRows) rows.push_back(r);
-    for (auto& r : nonScoreRows) rows.push_back(r);
+        [](const ScoreRow& a, const ScoreRow& b) { return a.scorePosition < b.scorePosition; });
 }
 
-void MappingPane::refresh() {
-    buildRows();
-    repaint();
+void MappingPane::refresh() { buildRows(); repaint(); }
+
+// --- Utility ---
+
+juce::Colour MappingPane::getDeviceColor(const std::string& deviceId) const {
+    auto& devices = state.allDevices();
+    for (int i = 0; i < (int)devices.size(); ++i)
+        if (devices[i].id == deviceId)
+            return juce::Colour(Theme::Color::deviceColors[i % Theme::Color::deviceColorCount]);
+    return Theme::color(Theme::Color::bgPanel);
+}
+
+bool MappingPane::isDeviceConnected(const std::string& deviceId) const {
+    auto* dev = state.findDevice(deviceId);
+    if (!dev) return false;
+    auto midiDevices = juce::MidiInput::getAvailableDevices();
+    for (auto& d : midiDevices)
+        if (d.name.toStdString() == dev->midiPortName) return true;
+    return false;
+}
+
+std::string MappingPane::formatArgs(const std::string& argsJson) const {
+    auto args = juce::JSON::parse(juce::String(argsJson));
+    if (!args.isArray() || args.size() == 0) return "";
+    juce::String result;
+    for (int i = 0; i < std::min(args.size(), 2); ++i) {
+        if (i > 0) result += ", ";
+        auto val = args[i].toString();
+        if (val.length() > 20) {
+            auto* track = state.findTrack(val.toStdString());
+            if (track) val = juce::String(track->name);
+        }
+        result += val;
+    }
+    return result.toStdString();
 }
 
 // --- Layout ---
 
-static bool isSectionHeader(MappingPane::Row::Section s) {
-    return s == MappingPane::Row::GlobalHeader || s == MappingPane::Row::SongHeader
-           || s == MappingPane::Row::ScoreHeader;
-}
+void MappingPane::resized() {
+    auto area = getLocalBounds();
+    learnButton.setBounds(area.getWidth() - 80, 10, 70, 24);
 
-static int sectionHeight(MappingPane::Row::Section s) {
-    if (s == MappingPane::Row::SongHeader) return 30;  // column headers + padding below
-    return 24;
-}
+    auto contentArea = area.withTrimmedTop(headerHeight);
+    leftPanelBounds = contentArea.removeFromLeft(leftPanelWidth);
 
-int MappingPane::getRowY(int rowIndex) const {
-    int y = headerHeight;
-    for (int i = 0; i < rowIndex && i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::ScoreHeader)
-            y += scoreSectionGap;
-        y += sectionHeight(rows[i].section);
-    }
-    if (rowIndex < (int)rows.size() && rows[rowIndex].section == Row::ScoreHeader)
-        y += scoreSectionGap;
-    return y - scrollOffset;
-}
+    int scoreHeight = std::max(120, sectionTitleHeight + (int)scoreRows.size() * scoreRowHeight + 20);
+    scoreHeight = std::min(scoreHeight, contentArea.getHeight() / 2);
 
-juce::Rectangle<int> MappingPane::getRowBounds(int rowIndex) const {
-    int y = getRowY(rowIndex);
-    int h = (rowIndex < (int)rows.size()) ? sectionHeight(rows[rowIndex].section) : rowHeight;
-    return juce::Rectangle<int>(0, y, getWidth(), h);
-}
-
-int MappingPane::getTotalHeight() const {
-    int h = headerHeight;
-    for (auto& r : rows) {
-        if (r.section == Row::ScoreHeader)
-            h += scoreSectionGap;
-        h += sectionHeight(r.section);
-    }
-    return h;
+    mappingPanelBounds = contentArea.withTrimmedBottom(scoreHeight);
+    scorePanelBounds = contentArea.withTrimmedTop(contentArea.getHeight() - scoreHeight);
 }
 
 // --- Paint ---
 
 void MappingPane::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
+    paintHeader(g);
+    paintLeftPanel(g);
+    paintMappingPanel(g);
+    paintScorePanel(g);
+}
 
-    if (currentDeviceId.empty()) {
+void MappingPane::paintHeader(juce::Graphics& g) {
+    auto area = getLocalBounds().removeFromTop(headerHeight);
+    g.setColour(Theme::color(Theme::Color::bgPanel));
+    g.fillRect(area);
+
+    g.setColour(Theme::color(Theme::Color::textPrimary));
+    g.setFont(Theme::font(16.0f));
+    g.drawText("Performance Map", 12, 8, 200, 28, juce::Justification::centredLeft);
+
+    auto* song = state.currentSong();
+    if (song) {
         g.setColour(Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(Theme::fontSize));
-        g.drawText("Select a device from Maps", getLocalBounds(), juce::Justification::centred);
-        return;
+        g.setFont(Theme::font(11.0f));
+        g.drawText(juce::String(song->name), 180, 14, 200, 16, juce::Justification::centredLeft);
     }
 
-    // Header background
-    auto headerArea = getLocalBounds().removeFromTop(headerHeight);
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(headerArea);
     g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine(0.0f, (float)headerHeight, (float)getWidth(), (float)headerHeight, 1.0f);
+    g.drawLine(0, (float)headerHeight, (float)getWidth(), (float)headerHeight, 1.0f);
+}
 
-    // Clip to content area
-    g.reduceClipRegion(getLocalBounds().withTrimmedTop(headerHeight));
+void MappingPane::paintLeftPanel(juce::Graphics& g) {
+    auto area = leftPanelBounds;
+    g.setColour(juce::Colour(0xff222222));
+    g.fillRect(area);
 
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(11.0f));
+    g.drawText("Available Controls", area.getX() + panelPadding, area.getY() + 4,
+               area.getWidth() - panelPadding * 2, 20, juce::Justification::centredLeft);
+
+    int y = area.getY() + sectionTitleHeight - leftScrollOffset;
+    for (int i = 0; i < (int)leftEntries.size(); ++i) {
+        if (y > area.getBottom()) break;
+        auto& entry = leftEntries[i];
+
+        if (entry.type == LeftPanelEntry::DeviceHeader) {
+            if (y + rowHeight >= area.getY() + sectionTitleHeight) {
+                auto devCol = getDeviceColor(entry.deviceId);
+                g.setColour(devCol.darker(0.3f));
+                g.fillRect(area.getX(), y, area.getWidth(), rowHeight);
+
+                float dotY = (float)(y + rowHeight / 2 - 3);
+                g.setColour(entry.deviceConnected ? juce::Colour(0xff44cc44) : juce::Colour(0xff555555));
+                g.fillEllipse((float)(area.getX() + 8), dotY, 6.0f, 6.0f);
+
+                g.setColour(Theme::color(Theme::Color::textPrimary));
+                g.setFont(Theme::font(12.0f));
+                g.drawText(juce::String(entry.deviceName), area.getX() + 20, y,
+                           area.getWidth() - 24, rowHeight, juce::Justification::centredLeft);
+            }
+        } else {
+            if (y + rowHeight >= area.getY() + sectionTitleHeight) {
+                auto devCol = getDeviceColor(entry.deviceId);
+                bool hovered = (i == hoveredLeftRow);
+                g.setColour(hovered ? devCol.brighter(0.15f) : devCol.withAlpha(0.3f));
+                g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
+
+                auto now = juce::Time::currentTimeMillis();
+                bool active = (entry.lastActivityMs > 0 && now - entry.lastActivityMs < 300);
+                g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+                g.fillEllipse((float)(area.getX() + 12), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+
+                g.setColour(Theme::color(Theme::Color::textSecondary));
+                g.setFont(Theme::font(Theme::fontSizeSm));
+                g.drawText(juce::String(entry.controlName), area.getX() + 24, y,
+                           area.getWidth() - 28, rowHeight, juce::Justification::centredLeft);
+            }
+        }
+        y += rowHeight;
+    }
+
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)area.getRight(), (float)area.getY(),
+               (float)area.getRight(), (float)area.getBottom(), 1.0f);
+}
+
+void MappingPane::paintMappingPanel(juce::Graphics& g) {
+    auto area = mappingPanelBounds;
+
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(11.0f));
+    g.drawText("Mappings", area.getX() + panelPadding, area.getY() + 4, 200, 20,
+               juce::Justification::centredLeft);
+
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(16.0f));
+    g.drawText("+", area.getRight() - 30, area.getY() + 4, 20, 20, juce::Justification::centred);
+
+    int y = area.getY() + sectionTitleHeight - mappingScrollOffset;
     auto now = juce::Time::currentTimeMillis();
 
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        auto bounds = getRowBounds(i);
-        if (bounds.getBottom() < headerHeight) continue;
-        if (bounds.getY() > getHeight()) break;
+    if (mappingRows.empty()) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(11.0f));
+        g.drawText("Drag controls here or click +",
+                   area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
+    }
 
-        auto& row = rows[i];
+    for (int i = 0; i < (int)mappingRows.size(); ++i) {
+        if (y > area.getBottom()) break;
+        if (y + rowHeight < area.getY() + sectionTitleHeight) { y += rowHeight; continue; }
 
-        // Section headers
-        if (isSectionHeader(row.section)) {
-            g.setColour(Theme::color(Theme::Color::bgSlot));
-            g.fillRect(bounds);
-            g.setColour(Theme::color(Theme::Color::textWhite));
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            if (row.section == Row::GlobalHeader)
-                g.drawText("Global Bindings", bounds.reduced(12, 0), juce::Justification::centredLeft);
-            else if (row.section == Row::SongHeader) {
-                // Column headers only — title is in the page header
-                g.setColour(Theme::color(Theme::Color::textSecondary));
-                g.setFont(Theme::font(Theme::fontSizeXs));
-                int colY = bounds.getY();
-                g.drawText("MIDI Source", colName, colY, colScore - colName, 20, juce::Justification::centredLeft);
-                g.drawText("Score Step", colScore, colY, colGroup - colScore, 20, juce::Justification::centredLeft);
-                g.drawText("Group",   colGroup, colY, colType - colGroup, 20, juce::Justification::centredLeft);
-                g.drawText("Type",    colType, colY, colCh - colType, 20, juce::Justification::centredLeft);
-                g.drawText("Ch",      colCh, colY, colNum - colCh, 20, juce::Justification::centredLeft);
-                g.drawText("#",       colNum, colY, colAction - colNum, 20, juce::Justification::centredLeft);
-                g.drawText("Action",  colAction, colY, 80, 20, juce::Justification::centredLeft);
-            } else {
-                // Score header — same style as Mappings header
-                g.drawText("Score", bounds.reduced(12, 0), juce::Justification::centredLeft);
-            }
-            continue;
-        }
+        auto& mr = mappingRows[i];
+        auto devCol = getDeviceColor(mr.deviceId);
+        bool hovered = (i == hoveredMappingRow);
 
-        // Control rows — score rows get a distinct tint
-        if (i % 2 == 0) {
-            g.setColour(Theme::color(Theme::Color::bgPanel));
-            g.fillRect(bounds);
-        }
-        if (i == hoveredRow) {
-            g.setColour(Theme::color(Theme::Color::bgSlotHover));
-            g.fillRect(bounds);
-        }
+        g.setColour(hovered ? devCol.brighter(0.1f) : devCol.withAlpha(0.4f));
+        g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
-        auto textCol = Theme::color(Theme::Color::textPrimary);
-        auto secCol = Theme::color(Theme::Color::textSecondary);
-        auto actionCol = Theme::color(Theme::Color::instrument);
+        bool active = (mr.lastActivityMs > 0 && now - mr.lastActivityMs < 300);
+        g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+        g.fillEllipse((float)(area.getX() + 10), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
 
-        {
-            bool active = (row.lastActivityMs > 0 && now - row.lastActivityMs < 300);
-            g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
-            g.fillEllipse((float)colActivity, (float)(bounds.getY() + (rowHeight - 6) / 2), 6.0f, 6.0f);
-        }
-
+        g.setColour(Theme::color(Theme::Color::textSecondary));
         g.setFont(Theme::font(Theme::fontSizeSm));
-
-        // Score Step column — always visible
-        if (row.section == Row::SongControl) {
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            if (row.scorePosition >= 0) {
-                g.setColour(Theme::color(Theme::Color::accent));
-                g.drawText(juce::String(row.scorePosition), colScore, bounds.getY(),
-                           colGroup - colScore, rowHeight, juce::Justification::centredLeft);
-            } else {
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.drawText("--", colScore, bounds.getY(),
-                           colGroup - colScore, rowHeight, juce::Justification::centredLeft);
-            }
-        }
-
-        // MIDI Source (name)
-        g.setColour(textCol);
-        g.drawText(juce::String(row.controlName), colName, bounds.getY(), colScore - colName - 4, rowHeight,
+        g.drawText(juce::String(mr.controlName), area.getX() + 22, y, 120, rowHeight,
                    juce::Justification::centredLeft);
 
-        // Group — same brightness as name
-        g.setColour(textCol);
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.drawText(juce::CharPointer_UTF8("\xe2\x86\x92"), area.getX() + 142, y, 20, rowHeight,
+                   juce::Justification::centred);
+
+        g.setColour(Theme::color(Theme::Color::textPrimary));
+        auto actionText = juce::String(mr.actionLabel);
+        if (!mr.argsDisplay.empty()) actionText += ": " + juce::String(mr.argsDisplay);
+        g.drawText(actionText, area.getX() + 166, y, area.getWidth() - 180, rowHeight,
+                   juce::Justification::centredLeft);
+
+        y += rowHeight;
+    }
+
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)area.getX(), (float)area.getBottom(),
+               (float)area.getRight(), (float)area.getBottom(), 1.0f);
+}
+
+void MappingPane::paintScorePanel(juce::Graphics& g) {
+    auto area = scorePanelBounds;
+
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(11.0f));
+    g.drawText("Score", area.getX() + panelPadding, area.getY() + 4, 200, 20,
+               juce::Justification::centredLeft);
+
+    g.setColour(Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(16.0f));
+    g.drawText("+", area.getRight() - 30, area.getY() + 4, 20, 20, juce::Justification::centred);
+
+    int y = area.getY() + sectionTitleHeight - scoreScrollOffset;
+
+    if (scoreRows.empty()) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(11.0f));
+        g.drawText("Drag controls here or click +",
+                   area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
+    }
+
+    for (int i = 0; i < (int)scoreRows.size(); ++i) {
+        if (y > area.getBottom()) break;
+        if (y + scoreRowHeight < area.getY() + sectionTitleHeight) { y += scoreRowHeight; continue; }
+
+        auto& sr = scoreRows[i];
+        auto devCol = getDeviceColor(sr.deviceId);
+
+        g.setColour(devCol.withAlpha(0.4f));
+        g.fillRect(area.getX() + 4, y, area.getWidth() - 8, scoreRowHeight - 1);
+
+        auto badge = juce::Rectangle<int>(area.getX() + 8, y + 3, 22, scoreRowHeight - 6);
+        g.setColour(Theme::color(Theme::Color::accent));
+        g.fillRoundedRectangle(badge.toFloat(), 4.0f);
+        g.setColour(Theme::color(Theme::Color::textWhite));
+        g.setFont(Theme::font(11.0f));
+        g.drawText(juce::String(sr.scorePosition), badge, juce::Justification::centred);
+
+        g.setColour(Theme::color(Theme::Color::textPrimary));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(row.group.empty() ? "Default" : row.group),
-                   colGroup, bounds.getY(), colType - colGroup, rowHeight,
+        auto actionText = juce::String(sr.actionLabel);
+        if (!sr.argsDisplay.empty()) actionText += ": " + juce::String(sr.argsDisplay);
+        g.drawText(actionText, area.getX() + 36, y, area.getWidth() - 180, scoreRowHeight,
                    juce::Justification::centredLeft);
 
-        // Type, Ch, #
-        g.setColour(secCol);
-        g.drawText(juce::String(row.controlType), colType, bounds.getY(), colCh - colType, rowHeight,
-                   juce::Justification::centredLeft);
-        g.drawText(juce::String(row.channel), colCh, bounds.getY(), colNum - colCh, rowHeight,
-                   juce::Justification::centredLeft);
-        g.drawText(juce::String(row.number), colNum, bounds.getY(), colAction - colNum, rowHeight,
-                   juce::Justification::centredLeft);
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(10.0f));
+        auto srcText = juce::String(sr.controlName) + " (" + juce::String(sr.deviceName) + ")";
+        g.drawText(srcText, area.getX(), y, area.getWidth() - 12, scoreRowHeight,
+                   juce::Justification::centredRight);
 
-        // Action
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        if (row.bindingId.empty()) {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawText("-- assign --", colAction, bounds.getY(), 140, rowHeight,
-                       juce::Justification::centredLeft);
-        } else if (!row.bindingId.empty()) {
-            g.setColour(actionCol);
-            g.drawText(juce::String(row.actionName), colAction, bounds.getY(), 80, rowHeight,
-                       juce::Justification::centredLeft);
-            g.setColour(secCol);
-            g.setFont(Theme::font(Theme::fontSizeXs));
-            g.drawText(juce::String(row.argsDisplay), colAction + 84, bounds.getY(), getWidth() - colAction - 100, rowHeight,
-                       juce::Justification::centredLeft);
-        }
-
-
+        y += scoreRowHeight;
     }
 }
 
-void MappingPane::resized() {
-    if (currentDeviceId.empty()) return;
-    int learnW = 120, learnH = 24;
-    learnButton.setBounds(getWidth() - learnW - 12, 10, learnW, learnH);
-    deviceNameLabel.setBounds(12, 8, getWidth() - learnW - 36, 24);
-    portNameLabel.setBounds(12, 34, 200, 16);
-    midiLabelPrefix.setBounds(220, 34, 100, 16);
-    midiEventLabel.setBounds(320, 34, getWidth() - 332, 16);
-}
+// --- Interactions ---
 
-void MappingPane::timerCallback() {
-    // Repaint for activity light decay
-    repaint();
-}
-
-// --- Mouse interaction ---
+void MappingPane::mouseDown(const juce::MouseEvent&) {}
+void MappingPane::mouseDrag(const juce::MouseEvent&) {}
 
 void MappingPane::mouseUp(const juce::MouseEvent& event) {
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        auto bounds = getRowBounds(i);
-        if (!bounds.contains(event.getPosition())) continue;
-        auto& row = rows[i];
-        if (row.section != Row::SongControl) continue;
+    auto pos = event.getPosition();
 
-        // Right-click context menu
-        if (event.mods.isPopupMenu()) {
-            juce::PopupMenu menu;
-            if (!row.bindingId.empty())
-                menu.addItem(1, "Clear Binding");
-            if (row.controlIndex >= 0)
-                menu.addItem(2, "Delete Control");
-
-            menu.showMenuAsync(juce::PopupMenu::Options()
-                .withTargetScreenArea(juce::Rectangle<int>(
-                    event.getScreenPosition().x, event.getScreenPosition().y, 1, 1)),
-                [this, bindingId = row.bindingId, ctrlIdx = row.controlIndex](int result) {
-                    if (result == 1 && !bindingId.empty()) {
-                        state.removeBinding(bindingId);
-                        refresh();
-                    } else if (result == 2 && ctrlIdx >= 0) {
-                        state.removeDeviceControl(currentDeviceId, ctrlIdx);
-                        refresh();
-                    }
-                });
-            return;
-        }
-
-        int x = event.getPosition().getX();
-
-        // Score Step column click
-        if (row.section == Row::SongControl && x >= colScore && x < colGroup) {
-            if (row.bindingId.empty()) {
-                // Can't set score step without an action — show tooltip-like message
+    // Right-click mapping row → remove
+    if (event.mods.isPopupMenu() && mappingPanelBounds.contains(pos)) {
+        int y = mappingPanelBounds.getY() + sectionTitleHeight - mappingScrollOffset;
+        for (int i = 0; i < (int)mappingRows.size(); ++i) {
+            if (pos.getY() >= y && pos.getY() < y + rowHeight) {
+                auto bindingId = mappingRows[i].bindingId;
                 juce::PopupMenu menu;
-                menu.addItem(0, "Assign an action first", false);
-                menu.showMenuAsync(juce::PopupMenu::Options()
-                    .withTargetScreenArea(juce::Rectangle<int>(
-                        event.getScreenPosition().x, event.getScreenPosition().y, 1, 1)));
-            } else {
-                showScoreMenu(i, event.getScreenPosition());
+                menu.addItem(1, "Remove Mapping");
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                    juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                    [this, bindingId](int r) { if (r == 1) { state.removeBinding(bindingId); refresh(); } });
+                return;
             }
-            return;
+            y += rowHeight;
         }
+    }
 
-        // Action column click
-        if (x >= colAction && row.section == Row::SongControl) {
-            showActionMenu(i, event.getScreenPosition());
-            return;
+    // Right-click score row → remove
+    if (event.mods.isPopupMenu() && scorePanelBounds.contains(pos)) {
+        int y = scorePanelBounds.getY() + sectionTitleHeight - scoreScrollOffset;
+        for (int i = 0; i < (int)scoreRows.size(); ++i) {
+            if (pos.getY() >= y && pos.getY() < y + scoreRowHeight) {
+                auto bindingId = scoreRows[i].bindingId;
+                juce::PopupMenu menu;
+                menu.addItem(1, "Remove from Score");
+                menu.addItem(2, "Remove Mapping");
+                menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                    juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
+                    [this, bindingId](int r) {
+                        if (r == 1) state.clearScoreStep(bindingId);
+                        else if (r == 2) state.removeBinding(bindingId);
+                        refresh();
+                    });
+                return;
+            }
+            y += scoreRowHeight;
+        }
+    }
+
+    // Click left panel control → action menu to create mapping
+    if (!event.mods.isPopupMenu() && leftPanelBounds.contains(pos)) {
+        int y = leftPanelBounds.getY() + sectionTitleHeight - leftScrollOffset;
+        for (int i = 0; i < (int)leftEntries.size(); ++i) {
+            if (leftEntries[i].type != LeftPanelEntry::Control) { y += rowHeight; continue; }
+            if (pos.getY() >= y && pos.getY() < y + rowHeight) {
+                auto& e = leftEntries[i];
+                showActionMenu(e.deviceId, e.controlType, e.channel, e.number,
+                               e.controlName, "", event.getScreenPosition(), false);
+                return;
+            }
+            y += rowHeight;
+        }
+    }
+
+    // Click action on mapping row → reassign
+    if (!event.mods.isPopupMenu() && mappingPanelBounds.contains(pos)) {
+        int y = mappingPanelBounds.getY() + sectionTitleHeight - mappingScrollOffset;
+        for (int i = 0; i < (int)mappingRows.size(); ++i) {
+            if (pos.getY() >= y && pos.getY() < y + rowHeight && pos.getX() > mappingPanelBounds.getX() + 140) {
+                auto& mr = mappingRows[i];
+                showActionMenu(mr.deviceId, mr.controlType, mr.channel, mr.number,
+                               mr.controlName, mr.bindingId, event.getScreenPosition(), false);
+                return;
+            }
+            y += rowHeight;
         }
     }
 }
 
 void MappingPane::mouseMove(const juce::MouseEvent& event) {
-    int newHovered = -1;
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::SongControl
-            && getRowBounds(i).contains(event.getPosition())) {
-            newHovered = i;
-            break;
+    auto pos = event.getPosition();
+    int newLeft = -1, newMapping = -1;
+
+    if (leftPanelBounds.contains(pos)) {
+        int y = leftPanelBounds.getY() + sectionTitleHeight - leftScrollOffset;
+        for (int i = 0; i < (int)leftEntries.size(); ++i) {
+            if (pos.getY() >= y && pos.getY() < y + rowHeight) { newLeft = i; break; }
+            y += rowHeight;
+        }
+    } else if (mappingPanelBounds.contains(pos)) {
+        int y = mappingPanelBounds.getY() + sectionTitleHeight - mappingScrollOffset;
+        for (int i = 0; i < (int)mappingRows.size(); ++i) {
+            if (pos.getY() >= y && pos.getY() < y + rowHeight) { newMapping = i; break; }
+            y += rowHeight;
         }
     }
-    if (newHovered != hoveredRow) {
-        hoveredRow = newHovered;
+
+    if (newLeft != hoveredLeftRow || newMapping != hoveredMappingRow) {
+        hoveredLeftRow = newLeft;
+        hoveredMappingRow = newMapping;
         repaint();
     }
 }
 
-void MappingPane::mouseDoubleClick(const juce::MouseEvent& event) {
-    if (currentDeviceId.empty()) return;
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        auto bounds = getRowBounds(i);
-        if (!bounds.contains(event.getPosition())) continue;
-        auto& row = rows[i];
-        if (row.section != Row::GlobalControl && row.section != Row::SongControl) continue;
-        int x = event.getPosition().getX();
-
-        // Double-click name → rename
-        if (x >= colName && x < colScore) {
-            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colScore - colName, rowHeight);
-            inlineEditor.onCommit = [this, idx = row.controlIndex](const juce::String& newText) {
-                state.renameDeviceControl(currentDeviceId, idx, newText.toStdString());
-                refresh();
-            };
-            inlineEditor.onCancel = nullptr;
-            inlineEditor.show(*this, nameBounds, juce::String(row.controlName));
-            return;
-        }
-
-        // Double-click group → group menu
-        if (x >= colGroup && x < colType) {
-            showGroupMenu(i, event.getScreenPosition());
-            return;
-        }
-    }
-}
-
-void MappingPane::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) {
-    int maxScroll = std::max(0, getTotalHeight() - (getHeight() - headerHeight));
-    scrollOffset = juce::jlimit(0, maxScroll, scrollOffset - (int)(wheel.deltaY * 40));
+void MappingPane::mouseWheelMove(const juce::MouseEvent& event,
+                                   const juce::MouseWheelDetails& wheel) {
+    auto pos = event.getPosition();
+    int delta = (int)(wheel.deltaY * 100);
+    if (leftPanelBounds.contains(pos))
+        leftScrollOffset = std::max(0, leftScrollOffset - delta);
+    else if (mappingPanelBounds.contains(pos))
+        mappingScrollOffset = std::max(0, mappingScrollOffset - delta);
+    else if (scorePanelBounds.contains(pos))
+        scoreScrollOffset = std::max(0, scoreScrollOffset - delta);
     repaint();
 }
 
-bool MappingPane::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress::escapeKey && isLearning) {
-        cancelLearn();
-        return true;
-    }
-    return false;
-}
-
-// --- Learn mode ---
-
-void MappingPane::startLearn() {
-    isLearning = true;
-    learnButton.setButtonText("Stop learning");
-    armLearnCapture();
-}
-
-void MappingPane::cancelLearn() {
-    isLearning = false;
-    learnButton.setButtonText("Learn mappings");
-    coordinator.cancelMidiLearn();
-}
-
-void MappingPane::armLearnCapture() {
-    coordinator.startMidiLearn(currentDeviceId,
-        [this](const std::string& type, int ch, int num) {
-            juce::MessageManager::callAsync([this, type, ch, num] {
-                onLearnCapture(type, ch, num);
-            });
-        });
-}
-
-void MappingPane::onLearnCapture(const std::string& type, int channel, int number) {
-    if (!isLearning) return;
-
-    // Check if this control already exists
-    auto* device = state.findDevice(currentDeviceId);
-    if (device) {
-        for (int i = 0; i < (int)device->controls.size(); ++i) {
-            auto& ctrl = device->controls[i];
-            if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
-                // Already mapped — re-arm
-                armLearnCapture();
-                return;
-            }
+void MappingPane::scrollToDevice(const std::string& deviceId) {
+    int y = 0;
+    for (auto& entry : leftEntries) {
+        if (entry.type == LeftPanelEntry::DeviceHeader && entry.deviceId == deviceId) {
+            leftScrollOffset = y;
+            repaint();
+            return;
         }
+        y += rowHeight;
     }
-
-    // Generate default name
-    auto* deviceBefore = state.findDevice(currentDeviceId);
-    int controlNum = deviceBefore ? (int)deviceBefore->controls.size() + 1 : 1;
-    juce::String defaultName;
-    if (type == "cc") defaultName = "CC " + juce::String(number);
-    else if (type == "note") defaultName = "Pad " + juce::String(controlNum);
-    else if (type == "pitchbend") defaultName = "Pitch Bend";
-    else if (type == "pressure") defaultName = "Pressure";
-    else defaultName = "Control " + juce::String(controlNum);
-
-    // Add new control with default name
-    state.addDeviceControl(currentDeviceId, defaultName.toStdString(), type, channel, number);
-    refresh();
-
-    // Open inline editor for naming (pre-filled with default, selected for easy replacement)
-    int newIdx = (int)state.findDevice(currentDeviceId)->controls.size() - 1;
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        if (rows[i].section == Row::SongControl && rows[i].controlIndex == newIdx) {
-            auto bounds = getRowBounds(i);
-            auto nameBounds = juce::Rectangle<int>(colName, bounds.getY(), colScore - colName - 4, rowHeight);
-            pendingLearnControlIndex = newIdx;
-            inlineEditor.onCommit = [this, newIdx](const juce::String& newText) {
-                state.renameDeviceControl(currentDeviceId, newIdx, newText.toStdString());
-                pendingLearnControlIndex = -1;
-                refresh();
-                if (isLearning) armLearnCapture();
-            };
-            inlineEditor.onCancel = [this]() {
-                pendingLearnControlIndex = -1;
-                if (isLearning) armLearnCapture();
-            };
-            inlineEditor.show(*this, nameBounds, defaultName);
-            break;
-        }
-    }
-
-    // If row wasn't found (shouldn't happen), still re-arm
-    if (pendingLearnControlIndex < 0 && isLearning)
-        armLearnCapture();
 }
 
-// --- Action menu ---
+// --- Action Menu ---
 
-void MappingPane::showActionMenu(int rowIndex, juce::Point<int> screenPos) {
-    auto& row = rows[rowIndex];
+void MappingPane::showActionMenu(const std::string& deviceId, const std::string& ctrlType,
+                                  int channel, int number, const std::string& controlName,
+                                  const std::string& existingBindingId,
+                                  juce::Point<int> screenPos, bool asScoreStep) {
+    auto actions = state.allActions();
+    auto tracks = state.listTracks();
 
     juce::PopupMenu menu;
-    auto& actions = state.allActions();
-    menu.addItem(1, "-- none --", true, row.bindingId.empty());
-    for (int i = 0; i < (int)actions.size(); ++i) {
-        auto label = actions[i].label.empty() ? actions[i].name : actions[i].label;
-        menu.addItem(i + 2, juce::String(label));
-    }
+    int baseId = 1;
 
-    menu.showMenuAsync(juce::PopupMenu::Options()
-        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, rowIndex](int result) {
-            if (result == 0) return;
-            auto& row = rows[rowIndex];
-
-            if (result == 1) {
-                if (!row.bindingId.empty()) {
-                    state.removeBinding(row.bindingId);
-                    refresh();
-                }
-                return;
+    for (int ai = 0; ai < (int)actions.size(); ++ai) {
+        if (actions[ai].name == "morph") continue;
+        auto schema = juce::JSON::parse(juce::String(actions[ai].paramSchema));
+        bool isTrackParam = false;
+        if (schema.isArray() && schema.size() > 0) {
+            auto pn = schema[0].getProperty("name", "").toString();
+            auto pt = schema[0].getProperty("type", "").toString();
+            isTrackParam = (pn.containsIgnoreCase("track") || pn == "channel")
+                            && (pt == "string" || pt == "channel");
+        }
+        if (isTrackParam) {
+            juce::PopupMenu sub;
+            for (int ti = 0; ti < (int)tracks.size(); ++ti) {
+                auto* ts = state.findTrack(tracks[ti].id);
+                if (ts && ts->sourceType == TrackSourceType::Action) continue;
+                sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(tracks[ti].name));
             }
-
-            int actionIdx = result - 2;
-            auto& actions = state.allActions();
-            if (actionIdx < 0 || actionIdx >= (int)actions.size()) return;
-            auto action = actions[actionIdx];
-
-            auto schema = juce::JSON::parse(juce::String(action.paramSchema));
-            auto* params = schema.getArray();
-            if (!params || params->isEmpty()) {
-                // No params — create binding immediately
-                if (!row.bindingId.empty()) state.removeBinding(row.bindingId);
-                auto args = juce::var(juce::Array<juce::var>());
-                auto argsJson = juce::JSON::toString(args, true).toStdString();
-                auto desc = row.controlName + " -> " + action.name;
-                auto* song = state.currentSong();
-                if (song)
-                    state.addBinding(song->id, row.controlType, row.channel, row.number,
-                                      action.id, argsJson, desc, currentDeviceId);
-            } else {
-                showArgsPopup(row, action);
-            }
-        });
-}
-
-void MappingPane::showArgsPopup(const Row& row, const ActionInfo& action) {
-    auto label = action.label.empty() ? action.name : action.label;
-    auto dialog = std::make_shared<juce::AlertWindow>(
-        juce::String(label), "Configure for " + juce::String(row.controlName),
-        juce::MessageBoxIconType::NoIcon);
-    dialog->setColour(juce::AlertWindow::backgroundColourId, Theme::color(Theme::Color::bgPanel));
-    dialog->setColour(juce::AlertWindow::textColourId, Theme::color(Theme::Color::textPrimary));
-
-    auto schema = juce::JSON::parse(juce::String(action.paramSchema));
-    auto* params = schema.getArray();
-
-    juce::StringArray trackNames;
-    for (auto& t : state.listTracks()) trackNames.add(juce::String(t.name));
-    juce::StringArray easingOptions = { "linear", "easein", "easeout", "cosine", "scurve" };
-
-    struct FieldInfo { std::string name; std::string type; };
-    auto fields = std::make_shared<std::vector<FieldInfo>>();
-
-    if (params) {
-        for (auto& param : *params) {
-            auto name = param.getProperty("name", "").toString().toStdString();
-            auto type = param.getProperty("type", "string").toString().toStdString();
-            fields->push_back({ name, type });
-
-            if (type == "channel") {
-                // All mixer channels: tracks, busses, output — in mixer order
-                juce::StringArray channelNames;
-                for (auto& t : state.listTracks()) channelNames.add(juce::String(t.name));
-                for (auto& b : state.listBusses()) channelNames.add(juce::String(b.name));
-                channelNames.add("Output");
-                dialog->addComboBox(juce::String(name), channelNames, "Channel");
-            }
-            else if (name.find("track") != std::string::npos || name.find("Track") != std::string::npos)
-                dialog->addComboBox(juce::String(name), trackNames, juce::String(name));
-            else if (name == "easing") {
-                dialog->addComboBox("easing", easingOptions, "Easing");
-                if (auto* cb = dialog->getComboBoxComponent("easing")) cb->setSelectedItemIndex(3);
-            }
-            else if (name == "duration" || type == "float")
-                dialog->addTextEditor(juce::String(name), "3.0", juce::String(name));
-            else
-                dialog->addTextEditor(juce::String(name), "", juce::String(name));
+            menu.addSubMenu(juce::String(actions[ai].label), sub);
+        } else {
+            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
         }
     }
 
-    dialog->addButton("OK", 1);
-    dialog->addButton("Cancel", 0);
+    auto capDevId = deviceId;
+    auto capCtrlType = ctrlType;
+    auto capBindId = existingBindingId;
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, capDevId, capCtrlType, channel, number, controlName,
+         capBindId, asScoreStep, actions, tracks, baseId](int result) {
+            if (result <= 0) return;
+            int ai = (result - baseId) / 1000;
+            int sub = (result - baseId) % 1000;
+            if (ai < 0 || ai >= (int)actions.size()) return;
 
-    auto rowCopy = row;
-    auto actionCopy = action;
-    auto* statePtr = &state;
-    auto devId = currentDeviceId;
-
-    dialog->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dialog, statePtr, fields, rowCopy, actionCopy, devId](int result) {
-            if (result == 0) return;
-
-            auto argsArray = juce::var(juce::Array<juce::var>());
-            auto schema = juce::JSON::parse(juce::String(actionCopy.paramSchema));
-            auto* params = schema.getArray();
-
-            for (int fi = 0; fi < (int)fields->size(); ++fi) {
-                auto& field = (*fields)[fi];
-                auto jName = juce::String(field.name);
-                bool isTrack = (field.name.find("track") != std::string::npos ||
-                                field.name.find("Track") != std::string::npos);
-
-                if (field.type == "channel") {
-                    if (auto* cb = dialog->getComboBoxComponent(jName)) {
-                        auto chName = cb->getText();
-                        juce::String chId;
-                        if (chName == "Output") {
-                            chId = "output";
-                        } else {
-                            for (auto& t : statePtr->listTracks())
-                                if (juce::String(t.name) == chName) { chId = juce::String(t.id); break; }
-                            if (chId.isEmpty())
-                                for (auto& b : statePtr->listBusses())
-                                    if (juce::String(b.name) == chName) { chId = juce::String(b.id); break; }
-                        }
-                        argsArray.append(juce::var(chId.isNotEmpty() ? chId : chName));
-                    }
-                } else if (isTrack) {
-                    if (auto* cb = dialog->getComboBoxComponent(jName)) {
-                        auto trackName = cb->getText();
-                        juce::String trackId;
-                        for (auto& t : statePtr->listTracks())
-                            if (juce::String(t.name) == trackName) { trackId = juce::String(t.id); break; }
-                        argsArray.append(juce::var(trackId.isNotEmpty() ? trackId : trackName));
-                    }
-                } else if (field.name == "easing") {
-                    if (auto* cb = dialog->getComboBoxComponent(jName))
-                        argsArray.append(juce::var(cb->getText()));
-                } else {
-                    auto text = dialog->getTextEditorContents(jName);
-                    if (field.type == "float") argsArray.append(text.getFloatValue());
-                    else argsArray.append(juce::var(text));
-                }
+            juce::String firstArg;
+            if (sub > 0) {
+                int ti = sub - 1;
+                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id);
             }
 
-            if (!rowCopy.bindingId.empty()) statePtr->removeBinding(rowCopy.bindingId);
+            juce::var args;
+            if (firstArg.isNotEmpty()) args.append(firstArg);
+            auto argsJson = juce::JSON::toString(args, true).toStdString();
 
-            auto argsJson = juce::JSON::toString(argsArray, true).toStdString();
-            auto desc = rowCopy.controlName + " -> " + actionCopy.name;
+            auto* song = state.currentSong();
+            if (!song) return;
 
-            auto* song = statePtr->currentSong();
-            if (song)
-                statePtr->addBinding(song->id, rowCopy.controlType, rowCopy.channel, rowCopy.number,
-                                      actionCopy.id, argsJson, desc, devId);
-        }), false);
-}
+            if (!capBindId.empty()) state.removeBinding(capBindId);
 
-void MappingPane::showScoreMenu(int rowIndex, juce::Point<int> screenPos) {
-    auto& row = rows[rowIndex];
-    if (row.bindingId.empty()) return;
-
-    // Collect existing score positions
-    std::vector<int> usedPositions;
-    for (auto& r : rows)
-        if (r.scorePosition >= 0 && r.bindingId != row.bindingId)
-            usedPositions.push_back(r.scorePosition);
-    std::sort(usedPositions.begin(), usedPositions.end());
-
-    int nextPos = 1;
-    if (!usedPositions.empty()) nextPos = usedPositions.back() + 1;
-
-    juce::PopupMenu menu;
-    menu.addItem(1, "Not in score", true, row.scorePosition < 0);
-    menu.addSeparator();
-
-    // Offer the next available position
-    menu.addItem(1000 + nextPos, "Step " + juce::String(nextPos) + " (append)");
-
-    // Offer existing positions for insert/replace
-    for (int pos : usedPositions) {
-        // Find which control owns this position
-        juce::String owner;
-        for (auto& r : rows)
-            if (r.scorePosition == pos) { owner = juce::String(r.controlName); break; }
-
-        juce::PopupMenu subMenu;
-        subMenu.addItem(2000 + pos, "Insert before step " + juce::String(pos));
-        subMenu.addItem(3000 + pos, "Insert after step " + juce::String(pos));
-        subMenu.addItem(4000 + pos, "Replace step " + juce::String(pos));
-        menu.addSubMenu("Step " + juce::String(pos) + " (" + owner + ")", subMenu);
-    }
-
-    menu.showMenuAsync(juce::PopupMenu::Options()
-        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, rowIndex](int result) {
-            if (result == 0) return;
-            auto& row = rows[rowIndex];
-
-            if (result == 1) {
-                state.clearScoreStep(row.bindingId);
-            } else if (result >= 4000) {
-                // Replace: take this position, bump nothing
-                int pos = result - 4000;
-                // Clear the existing step at this position
-                for (auto& r : rows)
-                    if (r.scorePosition == pos && r.bindingId != row.bindingId)
-                        state.clearScoreStep(r.bindingId);
-                state.setBindingAsScoreStep(row.bindingId, pos);
-            } else if (result >= 3000) {
-                // Insert after: take pos+1, bump everything >= pos+1
-                int pos = result - 3000;
-                int insertAt = pos + 1;
-                // Bump existing steps at insertAt and above
-                for (auto& r : rows)
-                    if (r.scorePosition >= insertAt && r.bindingId != row.bindingId)
-                        state.setBindingAsScoreStep(r.bindingId, r.scorePosition + 1);
-                state.setBindingAsScoreStep(row.bindingId, insertAt);
-            } else if (result >= 2000) {
-                // Insert before: take this position, bump everything >= pos
-                int pos = result - 2000;
-                for (auto& r : rows)
-                    if (r.scorePosition >= pos && r.bindingId != row.bindingId)
-                        state.setBindingAsScoreStep(r.bindingId, r.scorePosition + 1);
-                state.setBindingAsScoreStep(row.bindingId, pos);
-            } else if (result >= 1000) {
-                // Append
-                state.setBindingAsScoreStep(row.bindingId, result - 1000);
+            auto bindingId = state.addBinding(song->id, capCtrlType, channel, number,
+                                               actions[ai].id, argsJson, controlName, capDevId);
+            if (asScoreStep) {
+                int nextPos = (int)scoreRows.size() + 1;
+                state.setBindingAsScoreStep(bindingId, nextPos);
             }
             refresh();
         });
 }
 
-void MappingPane::showGroupMenu(int rowIndex, juce::Point<int> screenPos) {
-    auto& row = rows[rowIndex];
-    auto groups = getExistingGroups();
+void MappingPane::showControlPicker(bool forScore, juce::Point<int> screenPos) {
+    // TODO: device→control submenu for [+] buttons
+}
 
-    juce::PopupMenu menu;
-    menu.addItem(1, "Default", true, row.group.empty());
-    int itemId = 2;
-    std::vector<std::string> groupList(groups.begin(), groups.end());
-    for (auto& g : groupList) {
-        if (g == "Default") continue;
-        menu.addItem(itemId++, juce::String(g), true, row.group == g);
-    }
-    menu.addSeparator();
-    int newGroupId = itemId;
-    menu.addItem(newGroupId, "New Group...");
+// --- Learn Mode ---
 
-    menu.showMenuAsync(juce::PopupMenu::Options()
-        .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, rowIndex, groupList, newGroupId](int result) {
-            if (result == 0) return;
-            auto& row = rows[rowIndex];
-            if (result == newGroupId) {
-                auto bounds = juce::Rectangle<int>(colGroup, getRowBounds(rowIndex).getY(),
-                                                    colType - colGroup, rowHeight);
-                inlineEditor.onCommit = [this, idx = row.controlIndex](const juce::String& newText) {
-                    state.setDeviceControlGroup(currentDeviceId, idx, newText.toStdString());
-                    refresh();
-                };
-                inlineEditor.onCancel = nullptr;
-                inlineEditor.show(*this, bounds, "");
-            } else if (result == 1) {
-                state.setDeviceControlGroup(currentDeviceId, row.controlIndex, "");
-                refresh();
-            } else {
-                std::vector<std::string> filtered;
-                for (auto& g : groupList) if (g != "Default") filtered.push_back(g);
-                int idx = result - 2;
-                if (idx >= 0 && idx < (int)filtered.size()) {
-                    state.setDeviceControlGroup(currentDeviceId, row.controlIndex, filtered[idx]);
-                    refresh();
-                }
-            }
+void MappingPane::startLearn() {
+    isLearning = true;
+    learnButton.setButtonText("Stop");
+    armLearnCapture();
+}
+
+void MappingPane::cancelLearn() {
+    isLearning = false;
+    learnButton.setButtonText("Learn");
+    coordinator.cancelMidiLearn();
+}
+
+void MappingPane::armLearnCapture() {
+    coordinator.startMidiLearn("",
+        [this](const std::string& type, int ch, int num) {
+            juce::MessageManager::callAsync([this, type, ch, num] {
+                onLearnCapture(type, ch, num, "");
+            });
         });
 }
+
+void MappingPane::onLearnCapture(const std::string& type, int channel, int number,
+                                  const std::string& portName) {
+    if (!isLearning) return;
+    auto& devices = state.allDevices();
+    if (devices.empty()) { if (isLearning) armLearnCapture(); return; }
+
+    auto& targetDevice = devices[0];
+    for (auto& ctrl : targetDevice.controls)
+        if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
+            if (isLearning) armLearnCapture();
+            return;
+        }
+
+    juce::String defaultName;
+    if (type == "cc") defaultName = "CC " + juce::String(number);
+    else if (type == "note") defaultName = "Note " + juce::String(number);
+    else defaultName = "Control";
+
+    state.addDeviceControl(targetDevice.id, defaultName.toStdString(), type, channel, number);
+    refresh();
+    if (isLearning) armLearnCapture();
+}
+
+// --- Activity ---
+
+void MappingPane::onMidiEvent(const std::string& type, int channel, int number,
+                                const std::string& deviceId) {
+    auto now = juce::Time::currentTimeMillis();
+    for (auto& e : leftEntries)
+        if (e.type == LeftPanelEntry::Control && e.deviceId == deviceId
+            && e.controlType == type && e.channel == channel && e.number == number)
+            e.lastActivityMs = now;
+    for (auto& mr : mappingRows)
+        if (mr.deviceId == deviceId && mr.controlType == type
+            && mr.channel == channel && mr.number == number)
+            mr.lastActivityMs = now;
+    for (auto& sr : scoreRows)
+        if (sr.deviceId == deviceId && sr.controlType == type
+            && sr.channel == channel && sr.number == number)
+            sr.lastActivityMs = now;
+}
+
+void MappingPane::timerCallback() { repaint(); }

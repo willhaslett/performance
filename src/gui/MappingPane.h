@@ -12,123 +12,132 @@ class StateAPI;
 class EngineAPI;
 class PerformanceCoordinator;
 
-// Unified device mapping + bindings + score pane.
-// Shows one MIDI device's mapped controls in two sections:
-// 1. Global bindings (always active, no score steps)
-// 2. Song bindings (song-scoped, with score step column)
-//
-// Each row: [activity] [name] [group] [type] [ch] [#] [action] [score]
+// Performance Map — three-panel view of all MIDI device controls and bindings.
+// Left: available (unmapped) controls grouped by device.
+// Right top: always-active mappings (non-score bindings), sorted by device/group.
+// Right bottom: score steps in performance order.
+
 class MappingPane : public juce::Component, private juce::Timer {
 public:
     MappingPane(StateAPI& state, EngineAPI& engine, PerformanceCoordinator& coordinator);
     ~MappingPane() override;
 
-    void setDevice(const std::string& deviceId, const std::string& portName);
+    void scrollToDevice(const std::string& deviceId);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& event) override;
+    void mouseDrag(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
-    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
-    bool keyPressed(const juce::KeyPress& key) override;
 
 private:
     StateAPI& state;
     EngineAPI& engine;
     PerformanceCoordinator& coordinator;
-
-    std::string currentDeviceId;
     int stateSubscriptionId = -1;
 
-    // Header
-    juce::Label deviceNameLabel;
-    juce::Label portNameLabel;
-    juce::TextButton learnButton;
-    juce::Label midiLabelPrefix;
-    juce::Label midiEventLabel;
-    std::string lastEvent1, lastEvent2;
-
-    // Learn mode
-    bool isLearning = false;
-    int pendingLearnControlIndex = -1;
-    InlineEditor inlineEditor;
-
-public:
-    // Flattened row model (public for isSectionHeader helper)
-    struct Row {
-        enum Section { GlobalHeader, GlobalControl, SongHeader, SongControl, ScoreHeader, ScoreControl };
-        Section section;
-        // Control data (for control rows)
+    // --- Row models ---
+    struct LeftPanelEntry {
+        enum Type { DeviceHeader, Control };
+        Type type;
+        std::string deviceId;
+        std::string deviceName;
+        bool deviceConnected = false;
+        // Control fields (when type == Control)
         std::string controlName;
         std::string group;
         std::string controlType;
         int channel = 0;
         int number = 0;
-        int controlIndex = -1;  // index in device.controls
-        // Binding data
-        std::string bindingId;
-        std::string actionName;
-        std::string argsDisplay;
-        bool isGlobal = false;
-        // Score step
-        int scorePosition = -1;  // -1 = not a score step
-        // Activity
+        int controlIndex = -1;
         int64_t lastActivityMs = 0;
     };
-private:
-    std::vector<Row> rows;
-    int hoveredRow = -1;
-    int scrollOffset = 0;
 
+    struct MappingRow {
+        std::string deviceId;
+        std::string deviceName;
+        std::string controlName;
+        std::string group;
+        std::string controlType;
+        int channel = 0;
+        int number = 0;
+        int controlIndex = -1;
+        std::string bindingId;
+        std::string actionLabel;
+        std::string argsDisplay;
+        int64_t lastActivityMs = 0;
+    };
+
+    struct ScoreRow {
+        std::string deviceId;
+        std::string deviceName;
+        std::string controlName;
+        std::string controlType;
+        int channel = 0;
+        int number = 0;
+        std::string bindingId;
+        std::string actionLabel;
+        std::string argsDisplay;
+        int scorePosition = 0;
+        int64_t lastActivityMs = 0;
+    };
+
+    std::vector<LeftPanelEntry> leftEntries;
+    std::vector<MappingRow> mappingRows;
+    std::vector<ScoreRow> scoreRows;
+
+    // --- Panel bounds ---
+    juce::Rectangle<int> leftPanelBounds, mappingPanelBounds, scorePanelBounds;
+    int leftScrollOffset = 0, mappingScrollOffset = 0, scoreScrollOffset = 0;
+
+    // --- Hover ---
+    int hoveredLeftRow = -1, hoveredMappingRow = -1, hoveredScoreRow = -1;
+
+    // --- Build ---
     void buildRows();
     void refresh();
+
+    // --- Paint helpers ---
+    void paintHeader(juce::Graphics& g);
+    void paintLeftPanel(juce::Graphics& g);
+    void paintMappingPanel(juce::Graphics& g);
+    void paintScorePanel(juce::Graphics& g);
+
+    // --- Interactions ---
+    void showActionMenu(const std::string& deviceId, const std::string& ctrlType,
+                        int channel, int number, const std::string& controlName,
+                        const std::string& existingBindingId,
+                        juce::Point<int> screenPos, bool asScoreStep);
+    void showControlPicker(bool forScore, juce::Point<int> screenPos);
+
+    // --- Learn mode ---
+    juce::TextButton learnButton;
+    bool isLearning = false;
+    InlineEditor inlineEditor;
     void startLearn();
     void cancelLearn();
     void armLearnCapture();
-    void onLearnCapture(const std::string& type, int channel, int number);
-    void onMidiEvent(const std::string& description,
-                     const std::string& type, int channel, int number);
+    void onLearnCapture(const std::string& type, int channel, int number,
+                        const std::string& portName);
 
-    void showActionMenu(int rowIndex, juce::Point<int> screenPos);
-    void showArgsPopup(const Row& row, const ActionInfo& action);
-    void showScoreMenu(int rowIndex, juce::Point<int> screenPos);
-    void showGroupMenu(int rowIndex, juce::Point<int> screenPos);
+    // --- Activity ---
+    void onMidiEvent(const std::string& type, int channel, int number,
+                     const std::string& deviceId);
 
+    // --- Utility ---
+    juce::Colour getDeviceColor(const std::string& deviceId) const;
     std::string formatArgs(const std::string& argsJson) const;
-    std::set<std::string> getExistingGroups() const;
+    bool isDeviceConnected(const std::string& deviceId) const;
 
-    // Binding lookup
-    struct ControlKey {
-        std::string type; int channel; int number; std::string deviceId;
-        bool operator<(const ControlKey& o) const {
-            if (type != o.type) return type < o.type;
-            if (channel != o.channel) return channel < o.channel;
-            if (number != o.number) return number < o.number;
-            return deviceId < o.deviceId;
-        }
-    };
-    std::map<ControlKey, BindingState> songBindingMap;
-
-    // Layout
-    static constexpr int headerHeight = 60;
-    static constexpr int sectionHeaderHeight = 24;
-    static constexpr int scoreSectionGap = 20;
+    // --- Layout constants ---
+    static constexpr int headerHeight = 44;
+    static constexpr int sectionTitleHeight = 28;
     static constexpr int rowHeight = 24;
-
-    juce::Rectangle<int> getRowBounds(int rowIndex) const;
-    int getRowY(int rowIndex) const;
-    int getTotalHeight() const;
-
-    // Column positions
-    static constexpr int colActivity = 8;
-    static constexpr int colName = 24;       // MIDI Source
-    static constexpr int colScore = 140;     // Score Step toggle (after MIDI Source)
-    static constexpr int colGroup = 200;
-    static constexpr int colType = 290;
-    static constexpr int colCh = 338;
-    static constexpr int colNum = 366;
-    static constexpr int colAction = 400;
+    static constexpr int scoreRowHeight = 28;
+    static constexpr int leftPanelWidth = 220;
+    static constexpr int panelPadding = 8;
 
     void timerCallback() override;
 };
