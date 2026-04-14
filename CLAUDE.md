@@ -268,16 +268,15 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Preset name display — editor window shows correct preset name (resolved from state on open, updated on save/load).
 - Region looping — 'l' toggles loop, ghost copies with dashed borders and dimmed note previews. Loops until next region (or explicit loopEndBeat). Ghost right-edge resizable. Right-click ghost: Trim/Convert/Unloop. Looped regions repeat during playback via rep loop in scanMidiEvents.
 - Undo/redo — `UndoHistory` with `deque<AppState>` (max 50 snapshots). `pushUndo()` before 39 undoable StateAPI mutations. Transactions (beginTransaction/endTransaction) for fader drags. Suspended during recording (pre-recording snapshot pushed, resumed on stop). Post-restore: arrangement pointer + audio reload + tempo sync + automation cancel. Cmd+Z / Cmd+Shift+Z.
-- Menu bar — File, Edit, Track, View, Transport. Edit has undo/redo/split/duplicate/delete/cycle-from-selection. Transport has play/stop/record/rewind/cycle/metronome/step controls. All dispatch through the same key handlers.
+- Menu bar — File/Edit/Track/View/Transport. Right-aligned gray shortcut text via NSAttributedString with tab stops. All commands dispatch through KeyBindingManager.
 - Song deletion — right-click song in sidebar (except Sandbox). Switches to Sandbox first if deleting current song.
-- Menu bar — File/Edit/Track/View/Transport. Right-aligned gray shortcut text via NSAttributedString with tab stops. All commands accessible.
-- Keybinding system — `KeyBindingManager` with defaults + user overrides stored in config. `KeyBindingEditor` modal: categorized outline, click-to-capture, conflict detection, restore defaults with confirmation. Performance menu → Keyboard Shortcuts.
+- Keybinding system — `KeyBindingManager` with 36 commands across File/Edit/Transport/View/Region/Track. User overrides stored in config, loaded on startup. `KeyBindingEditor` modal: categorized outline, click-to-capture, conflict detection, restore defaults. `handleGlobalKey` dispatches through manager — all shortcuts work globally (except when text editor focused). Pane toggle shortcuts: ⌘Y Produce, ⌘U Mappings, ⌘I Chat, ⌘⇧L Logs, ⌘O Mixer, ⌘P Sidebar.
+- Sidebar tabs — Songs/Library/Actions/Devices. Tab-based navigation replaces flat tree. Active tab + content share lighter background. RegistryTree transparent.
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (high priority):**
 - Atomic transport commands: InternalSequencer and GraphWrapper have independent beat clocks synced at 60Hz. Separate `setPlaybackBeatPosition` + `setPlaybackState` calls create race windows where the audio thread processes a buffer with partial state. Refactor to a single `startPlayback(beat, bpm, loop)` / `stopPlayback()` command that GraphWrapper reads atomically. Eliminates call-order bugs by construction. Known symptom: first note at loop boundary sounds on every other cycle — flush and scan alternate winning the race depending on buffer alignment.
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
-- Customizable keyboard shortcuts — KeyBindings.h defaults → config overrides → runtime lookup.
 - TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
 
 **Feature backlog (longer-term):**

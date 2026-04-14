@@ -413,6 +413,30 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
                        current == PaneContent::Hidden ? PaneContent::Mixer : PaneContent::Hidden);
         return true;
     }
+    if (matches("view.produce", key)) {
+        auto current = getPaneContent(PaneSlot::Left);
+        setPaneContent(PaneSlot::Left,
+                       current == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
+        return true;
+    }
+    if (matches("view.mappings", key)) {
+        auto current = getPaneContent(PaneSlot::Left);
+        setPaneContent(PaneSlot::Left,
+                       current == PaneContent::Mappings ? PaneContent::Hidden : PaneContent::Mappings);
+        return true;
+    }
+    if (matches("view.chat", key)) {
+        auto current = getPaneContent(PaneSlot::Right);
+        setPaneContent(PaneSlot::Right,
+                       current == PaneContent::Chat ? PaneContent::Hidden : PaneContent::Chat);
+        return true;
+    }
+    if (matches("view.logs", key)) {
+        auto current = getPaneContent(PaneSlot::Right);
+        setPaneContent(PaneSlot::Right,
+                       current == PaneContent::Logs ? PaneContent::Hidden : PaneContent::Logs);
+        return true;
+    }
     if (matches("view.closeEditor", key)) {
         engine.closeTopPluginEditor();
         return true;
@@ -431,12 +455,30 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
     }
 
     // --- File ---
+    if (matches("file.newSong", key)) {
+        if (onNewSong) onNewSong();
+        return true;
+    }
     if (matches("file.save", key)) {
         if (onSave) onSave();
         return true;
     }
     if (matches("file.settings", key)) {
         if (onOpenSettings) onOpenSettings();
+        return true;
+    }
+
+    // --- Track ---
+    if (matches("track.newInstrument", key)) {
+        if (onNewInstrumentTrack) onNewInstrumentTrack();
+        return true;
+    }
+    if (matches("track.newAudioInput", key)) {
+        if (onNewAudioTrack) onNewAudioTrack();
+        return true;
+    }
+    if (matches("track.newBus", key)) {
+        if (onNewBus) onNewBus();
         return true;
     }
 

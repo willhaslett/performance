@@ -110,19 +110,19 @@ juce::KeyPress KeyBindingManager::stringToKey(const juce::String& str) {
 
     if (remaining.startsWith(juce::CharPointer_UTF8("\xe2\x8c\x98"))) {
         mods |= juce::ModifierKeys::commandModifier;
-        remaining = remaining.substring(3);  // UTF-8 3 bytes
+        remaining = remaining.substring(1);  // 1 Unicode character
     }
     if (remaining.startsWith(juce::CharPointer_UTF8("\xe2\x87\xa7"))) {
         mods |= juce::ModifierKeys::shiftModifier;
-        remaining = remaining.substring(3);
+        remaining = remaining.substring(1);
     }
     if (remaining.startsWith(juce::CharPointer_UTF8("\xe2\x8c\xa5"))) {
         mods |= juce::ModifierKeys::altModifier;
-        remaining = remaining.substring(3);
+        remaining = remaining.substring(1);
     }
     if (remaining.startsWith(juce::CharPointer_UTF8("\xe2\x8c\x83"))) {
         mods |= juce::ModifierKeys::ctrlModifier;
-        remaining = remaining.substring(3);
+        remaining = remaining.substring(1);
     }
 
     int keyCode = 0;

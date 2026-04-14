@@ -183,25 +183,27 @@ public:
     AppMenuBar(PerformanceCoordinator& coord, LuaEngine& lua, MainLayout& layout)
         : coord(coord), lua(lua), layout(layout) {}
 
+    void setKeyBindingManager(KeyBindingManager* mgr) { kb = mgr; }
+
     juce::StringArray getMenuBarNames() override {
         return { "File", "Edit", "Track", "View", "Transport" };
     }
 
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
         juce::PopupMenu menu;
-        // Helper: menu item with right-aligned shortcut hint
-        // (native macOS menus ignore shortcutKeyDescription, so we append to the label)
-        auto shortcut = [](int id, const juce::String& label, const juce::String& key, bool enabled = true) {
-            // Use tab character for right-alignment in native menus
-            juce::PopupMenu::Item item(label + "\t" + key);
+        // Helper: menu item with shortcut from KeyBindingManager (or fallback string)
+        auto shortcut = [this](int id, const juce::String& label, const std::string& cmdId, bool enabled = true) {
+            juce::String key;
+            if (kb) key = kb->getShortcutText(cmdId);
+            juce::PopupMenu::Item item(key.isEmpty() ? label : label + "\t" + key);
             item.itemID = id;
             item.isEnabled = enabled;
             return item;
         };
 
         if (index == 0) {  // File
-            menu.addItem(CommandIDs::newSong, "New Song");
-            menu.addItem(shortcut(CommandIDs::saveSong, "Save", juce::CharPointer_UTF8("\xe2\x8c\x98" "S")));
+            menu.addItem(shortcut(CommandIDs::newSong, "New Song", "file.newSong"));
+            menu.addItem(shortcut(CommandIDs::saveSong, "Save", "file.save"));
             menu.addSeparator();
             auto& songs = coord.state().allSongs();
             for (int i = 0; i < (int)songs.size(); ++i) {
@@ -212,14 +214,14 @@ public:
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Edit
-            menu.addItem(shortcut(CommandIDs::menuUndo, "Undo", juce::CharPointer_UTF8("\xe2\x8c\x98" "Z"), coord.state().canUndo()));
-            menu.addItem(shortcut(CommandIDs::menuRedo, "Redo", juce::CharPointer_UTF8("\xe2\x8c\x98\xe2\x87\xa7" "Z"), coord.state().canRedo()));
+            menu.addItem(shortcut(CommandIDs::menuUndo, "Undo", "edit.undo", coord.state().canUndo()));
+            menu.addItem(shortcut(CommandIDs::menuRedo, "Redo", "edit.redo", coord.state().canRedo()));
             menu.addSeparator();
-            menu.addItem(shortcut(CommandIDs::menuSplit, "Split at Playhead", juce::CharPointer_UTF8("\xe2\x8c\x98" "T")));
-            menu.addItem(shortcut(CommandIDs::menuDuplicate, "Duplicate", juce::CharPointer_UTF8("\xe2\x8c\x98" "D")));
-            menu.addItem(shortcut(CommandIDs::menuDelete, "Delete", juce::CharPointer_UTF8("\xe2\x8c\xab")));
+            menu.addItem(shortcut(CommandIDs::menuSplit, "Split at Playhead", "edit.split"));
+            menu.addItem(shortcut(CommandIDs::menuDuplicate, "Duplicate", "edit.duplicate"));
+            menu.addItem(shortcut(CommandIDs::menuDelete, "Delete", "edit.delete"));
             menu.addSeparator();
-            menu.addItem(shortcut(CommandIDs::menuCycleFromSel, "Set Cycle from Selection", "U"));
+            menu.addItem(shortcut(CommandIDs::menuCycleFromSel, "Set Cycle from Selection", "edit.cycleFromSel"));
         }
         else if (index == 2) {  // Track
             menu.addItem(CommandIDs::newInstrumentTrack, "New Virtual Instrument Track");
@@ -227,32 +229,31 @@ public:
             menu.addItem(CommandIDs::newEffectsBus, "New Effects Bus");
         }
         else if (index == 3) {  // View
-            menu.addItem(shortcut(CommandIDs::viewSidebar, "Sidebar", juce::CharPointer_UTF8("\xe2\x8c\x98" "1")));
-            menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", juce::CharPointer_UTF8("\xe2\x8c\x98" "X")));
-            menu.addItem(shortcut(CommandIDs::viewMusicalTyping, "Musical Typing", juce::CharPointer_UTF8("\xe2\x8c\x98\xe2\x87\xa7" "K")));
+            menu.addItem(shortcut(CommandIDs::viewSidebar, "Sidebar", "view.sidebar"));
+            menu.addItem(shortcut(50, "Produce", "view.produce"));
+            menu.addItem(shortcut(51, "Mappings", "view.mappings"));
+            menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", "view.mixer"));
+            menu.addItem(shortcut(52, "Chat", "view.chat"));
+            menu.addItem(shortcut(53, "Logs", "view.logs"));
+            menu.addItem(shortcut(CommandIDs::viewMusicalTyping, "Musical Typing", "view.musicalTyping"));
             menu.addSeparator();
-            menu.addSubMenu("Sidebar Content", layout.buildPaneMenu(PaneSlot::Sidebar));
-            menu.addSubMenu("Left Pane", layout.buildPaneMenu(PaneSlot::Left));
-            menu.addSubMenu("Right Pane", layout.buildPaneMenu(PaneSlot::Right));
-            menu.addSubMenu("Bottom Pane", layout.buildPaneMenu(PaneSlot::Bottom));
-            menu.addSeparator();
-            menu.addItem(shortcut(CommandIDs::viewZoomIn, "Zoom In", juce::CharPointer_UTF8("\xe2\x8c\x98" "L")));
-            menu.addItem(shortcut(CommandIDs::viewZoomOut, "Zoom Out", juce::CharPointer_UTF8("\xe2\x8c\x98" "H")));
-            menu.addItem(shortcut(CommandIDs::viewZoomTaller, "Zoom Tracks Taller", juce::CharPointer_UTF8("\xe2\x8c\x98" "J")));
-            menu.addItem(shortcut(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter", juce::CharPointer_UTF8("\xe2\x8c\x98" "K")));
+            menu.addItem(shortcut(CommandIDs::viewZoomIn, "Zoom In", "view.zoomIn"));
+            menu.addItem(shortcut(CommandIDs::viewZoomOut, "Zoom Out", "view.zoomOut"));
+            menu.addItem(shortcut(CommandIDs::viewZoomTaller, "Zoom Tracks Taller", "view.zoomTaller"));
+            menu.addItem(shortcut(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter", "view.zoomShorter"));
         }
         else if (index == 4) {  // Transport
-            menu.addItem(shortcut(CommandIDs::transportPlayStop, "Play/Stop", "Space"));
-            menu.addItem(shortcut(CommandIDs::transportRecord, "Record", "R"));
-            menu.addItem(shortcut(CommandIDs::transportRewind, "Rewind", "Return"));
+            menu.addItem(shortcut(CommandIDs::transportPlayStop, "Play/Stop", "transport.playStop"));
+            menu.addItem(shortcut(CommandIDs::transportRecord, "Record", "transport.record"));
+            menu.addItem(shortcut(CommandIDs::transportRewind, "Rewind", "transport.rewind"));
             menu.addSeparator();
-            menu.addItem(shortcut(CommandIDs::transportCycle, "Cycle Mode", "C"));
-            menu.addItem(shortcut(CommandIDs::transportMetronome, "Metronome", "M"));
+            menu.addItem(shortcut(CommandIDs::transportCycle, "Cycle Mode", "transport.cycle"));
+            menu.addItem(shortcut(CommandIDs::transportMetronome, "Metronome", "transport.metronome"));
             menu.addSeparator();
-            menu.addItem(shortcut(CommandIDs::transportStepFwd, "Step Forward", "L"));
-            menu.addItem(shortcut(CommandIDs::transportStepBack, "Step Back", "H"));
-            menu.addItem(shortcut(CommandIDs::transportStepFwdBar, "Step Forward Bar", juce::CharPointer_UTF8("\xe2\x87\xa7" "L")));
-            menu.addItem(shortcut(CommandIDs::transportStepBackBar, "Step Back Bar", juce::CharPointer_UTF8("\xe2\x87\xa7" "H")));
+            menu.addItem(shortcut(CommandIDs::transportStepFwd, "Step Forward", "transport.stepFwd"));
+            menu.addItem(shortcut(CommandIDs::transportStepBack, "Step Back", "transport.stepBack"));
+            menu.addItem(shortcut(CommandIDs::transportStepFwdBar, "Step Forward Bar", "transport.stepFwdBar"));
+            menu.addItem(shortcut(CommandIDs::transportStepBackBar, "Step Back Bar", "transport.stepBackBar"));
         }
         return menu;
     }
@@ -304,8 +305,14 @@ public:
         }
 
         // View
-        case CommandIDs::viewSidebar: layout.handleGlobalKey(KeyBindings::toggleSidebar); break;
-        case CommandIDs::viewMixer: layout.handleGlobalKey(KeyBindings::toggleMixer); break;
+        case CommandIDs::viewSidebar:
+            if (kb) layout.handleGlobalKey(kb->getKey("view.sidebar")); break;
+        case CommandIDs::viewMixer:
+            if (kb) layout.handleGlobalKey(kb->getKey("view.mixer")); break;
+        case 50: if (kb) layout.handleGlobalKey(kb->getKey("view.produce")); break;
+        case 51: if (kb) layout.handleGlobalKey(kb->getKey("view.mappings")); break;
+        case 52: if (kb) layout.handleGlobalKey(kb->getKey("view.chat")); break;
+        case 53: if (kb) layout.handleGlobalKey(kb->getKey("view.logs")); break;
         case CommandIDs::viewMusicalTyping: layout.handleGlobalKey(KeyBindings::musicalTyping); break;
         case CommandIDs::viewZoomIn:
             layout.producePane.keyPressed(juce::KeyPress('l', juce::ModifierKeys::commandModifier, 0));
@@ -372,6 +379,7 @@ private:
     PerformanceCoordinator& coord;
     LuaEngine& lua;
     MainLayout& layout;
+    KeyBindingManager* kb = nullptr;
 };
 
 // --- App ---
@@ -430,6 +438,7 @@ public:
         installMenuStyling();
         setupKeyBindings();
         layout->setKeyBindingManager(&keyBindings);
+        menuBar->setKeyBindingManager(&keyBindings);
         appMenuItems = std::move(appMenu);
 
         // Wire settings
@@ -442,6 +451,23 @@ public:
         };
 
         // Wire save
+        layout->onNewSong = [this]() {
+            auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
+            coordinator->createSong(name);
+        };
+        layout->onNewInstrumentTrack = [this]() {
+            auto tracks = coordinator->state().listTracks();
+            coordinator->state().createTrack(("Track " + juce::String((int)tracks.size() + 1)).toStdString());
+        };
+        layout->onNewAudioTrack = [this]() {
+            auto tracks = coordinator->state().listTracks();
+            coordinator->state().createAudioInputTrack(("Audio " + juce::String((int)tracks.size() + 1)).toStdString(), -1, 0);
+        };
+        layout->onNewBus = [this]() {
+            auto busses = coordinator->state().listBusses();
+            coordinator->state().createBus(("Bus " + juce::String((int)busses.size() + 1)).toStdString());
+        };
+
         layout->onSave = [this, layout]() {
             layout->showOverlay("Saving...");
             juce::MessageManager::callAsync([this, layout]() {
@@ -612,8 +638,10 @@ private:
             juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
 
         // View
-        k.registerCommand("view.sidebar", "View", "Sidebar", KB::toggleSidebar);
-        k.registerCommand("view.mixer", "View", "Mixer", KB::toggleMixer);
+        k.registerCommand("view.sidebar", "View", "Sidebar",
+            juce::KeyPress('p', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.mixer", "View", "Mixer",
+            juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.musicalTyping", "View", "Musical Typing", KB::musicalTyping);
         k.registerCommand("view.zoomIn", "View", "Zoom In",
             juce::KeyPress('l', juce::ModifierKeys::commandModifier, 0));
@@ -623,6 +651,14 @@ private:
             juce::KeyPress('j', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.zoomShorter", "View", "Zoom Tracks Shorter",
             juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.produce", "View", "Produce",
+            juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.mappings", "View", "Mappings",
+            juce::KeyPress('u', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.chat", "View", "Chat",
+            juce::KeyPress('i', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.logs", "View", "Logs",
+            juce::KeyPress('l', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0));
         k.registerCommand("view.closeEditor", "View", "Close Plugin Editor", KB::closeEditor);
 
         // Region

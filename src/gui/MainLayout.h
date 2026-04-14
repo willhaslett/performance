@@ -60,6 +60,10 @@ public:
     std::function<void()> onOpenSettings;
     std::function<void()> onUndo;
     std::function<void()> onRedo;
+    std::function<void()> onNewSong;
+    std::function<void()> onNewInstrumentTrack;
+    std::function<void()> onNewAudioTrack;
+    std::function<void()> onNewBus;
 
     void setKeyBindingManager(KeyBindingManager* mgr) { keyBindingMgr = mgr; }
 

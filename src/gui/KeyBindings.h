@@ -6,8 +6,8 @@
 
 namespace KeyBindings {
     // View toggles
-    inline const auto toggleSidebar = juce::KeyPress('1', juce::ModifierKeys::commandModifier, 0);
-    inline const auto toggleMixer   = juce::KeyPress('x', juce::ModifierKeys::commandModifier, 0);
+    inline const auto toggleSidebar = juce::KeyPress('p', juce::ModifierKeys::commandModifier, 0);
+    inline const auto toggleMixer   = juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0);
 
     // Actions
     inline const auto save          = juce::KeyPress('s', juce::ModifierKeys::commandModifier, 0);

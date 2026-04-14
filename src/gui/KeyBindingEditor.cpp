@@ -96,9 +96,7 @@ void KeyBindingEditor::paint(juce::Graphics& g) {
                 g.drawRoundedRectangle(fieldBounds.toFloat(), 4.0f, 0.5f);
 
                 auto keyText = KeyBindingManager::keyToString(cmd.currentKey);
-                bool isDefault = (cmd.currentKey == cmd.defaultKey);
-                g.setColour(isDefault ? Theme::color(Theme::Color::textSecondary)
-                                       : Theme::color(Theme::Color::textPrimary));
+                g.setColour(Theme::color(Theme::Color::textSecondary));
                 g.setFont(Theme::font(12.0f));
                 g.drawText(keyText, fieldBounds, juce::Justification::centred);
             }
