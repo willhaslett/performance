@@ -18,6 +18,19 @@ MappingPane::MappingPane(StateAPI& state, EngineAPI& engine, PerformanceCoordina
         juce::MessageManager::callAsync([this] { refresh(); });
     });
 
+    // Global MIDI monitor for activity dots
+    coordinator.setGlobalMidiMonitor(
+        [this](const std::string& deviceName, const std::string&,
+               const std::string& type, int ch, int num, int) {
+            auto* dev = this->state.findDeviceByPortName(deviceName);
+            if (dev) {
+                auto devId = dev->id;
+                juce::MessageManager::callAsync([this, type, ch, num, devId] {
+                    onMidiEvent(type, ch, num, devId);
+                });
+            }
+        });
+
     startTimerHz(10);
     buildRows();
 }
@@ -206,6 +219,11 @@ void MappingPane::resized() {
 
 void MappingPane::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
+
+    // Right border
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
+
     paintHeader(g);
     paintLeftPanel(g);
     paintMappingPanel(g);
@@ -465,6 +483,26 @@ void MappingPane::mouseUp(const juce::MouseEvent& event) {
         }
     }
 
+    // [+] button on mappings panel
+    if (!event.mods.isPopupMenu() && mappingPanelBounds.contains(pos)) {
+        auto plusBounds = juce::Rectangle<int>(mappingPanelBounds.getRight() - 30,
+                                               mappingPanelBounds.getY() + 4, 20, 20);
+        if (plusBounds.contains(pos)) {
+            showControlPicker(false, event.getScreenPosition());
+            return;
+        }
+    }
+
+    // [+] button on score panel
+    if (!event.mods.isPopupMenu() && scorePanelBounds.contains(pos)) {
+        auto plusBounds = juce::Rectangle<int>(scorePanelBounds.getRight() - 30,
+                                               scorePanelBounds.getY() + 4, 20, 20);
+        if (plusBounds.contains(pos)) {
+            showControlPicker(true, event.getScreenPosition());
+            return;
+        }
+    }
+
     // Click action on mapping row → reassign
     if (!event.mods.isPopupMenu() && mappingPanelBounds.contains(pos)) {
         int y = mappingPanelBounds.getY() + sectionTitleHeight - mappingScrollOffset;
@@ -604,7 +642,51 @@ void MappingPane::showActionMenu(const std::string& deviceId, const std::string&
 }
 
 void MappingPane::showControlPicker(bool forScore, juce::Point<int> screenPos) {
-    // TODO: device→control submenu for [+] buttons
+    juce::PopupMenu menu;
+    int itemId = 1;
+
+    // Build submenu per device, listing only unmapped controls
+    for (auto& entry : leftEntries) {
+        if (entry.type != LeftPanelEntry::Control) continue;
+        // Group by device using submenus
+    }
+
+    // Simpler: flat list grouped by device
+    std::string lastDevId;
+    auto& devices = state.allDevices();
+    for (auto& entry : leftEntries) {
+        if (entry.type == LeftPanelEntry::DeviceHeader) {
+            if (itemId > 1) menu.addSeparator();
+            menu.addSectionHeader(juce::String(entry.deviceName));
+            lastDevId = entry.deviceId;
+        } else if (entry.type == LeftPanelEntry::Control) {
+            menu.addItem(itemId, juce::String(entry.controlName));
+            itemId++;
+        }
+    }
+
+    if (itemId == 1) {
+        menu.addItem(-1, "No unmapped controls", false);
+    }
+
+    menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetScreenArea(
+            juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+        [this, forScore](int result) {
+            if (result <= 0) return;
+            // Find the control by counting through left entries
+            int idx = 0;
+            for (auto& entry : leftEntries) {
+                if (entry.type != LeftPanelEntry::Control) continue;
+                idx++;
+                if (idx == result) {
+                    showActionMenu(entry.deviceId, entry.controlType, entry.channel,
+                                   entry.number, entry.controlName, "",
+                                   juce::Desktop::getMousePosition(), forScore);
+                    return;
+                }
+            }
+        });
 }
 
 // --- Learn Mode ---

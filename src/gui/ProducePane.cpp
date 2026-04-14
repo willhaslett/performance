@@ -297,6 +297,10 @@ void ProducePane::ensurePlayheadVisible() {
 void ProducePane::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
+    // Right border
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
+
     auto area = getLocalBounds();
 
     // Transport bar at top
