@@ -27,17 +27,48 @@ public:
               .withOutput("Output", juce::AudioChannelSet::stereo())),
           graph(graph) {}
 
-    // --- Transport state (set from message thread, read on audio thread) ---
+    // --- Transport command (atomic double-buffer, message thread → audio thread) ---
+    struct TransportState {
+        bool playing = false;
+        double bpm = 120.0;
+        double beat = 0.0;
+        bool loopEnabled = false;
+        double loopStart = 0.0;
+        double loopEnd = 0.0;
+    };
+
+    // Atomic start: sets position, tempo, loop, and playing in one shot
+    void startPlayback(double beat, double bpm, bool loopOn, double loopS, double loopE) {
+        auto& buf = transportBuf[1 - transportActive.load(std::memory_order_acquire)];
+        buf.playing = true;
+        buf.bpm = bpm;
+        buf.beat = beat;
+        buf.loopEnabled = loopOn;
+        buf.loopStart = loopS;
+        buf.loopEnd = loopE;
+        transportSeq.fetch_add(1, std::memory_order_release);
+        transportActive.store(1 - transportActive.load(std::memory_order_acquire), std::memory_order_release);
+    }
+
+    void stopPlayback() {
+        auto& buf = transportBuf[1 - transportActive.load(std::memory_order_acquire)];
+        buf = transportBuf[transportActive.load(std::memory_order_acquire)];  // copy current
+        buf.playing = false;
+        transportSeq.fetch_add(1, std::memory_order_release);
+        transportActive.store(1 - transportActive.load(std::memory_order_acquire), std::memory_order_release);
+        flushAllNotes();
+    }
+
+    // Legacy individual setters (still used for tempo/loop updates during playback)
     void setPlaying(bool p) {
-        bool wasPlaying = playing.exchange(p, std::memory_order_release);
-        if (wasPlaying && !p)
-            flushAllNotes();
+        if (!p) { stopPlayback(); return; }
+        auto cur = transportBuf[transportActive.load(std::memory_order_acquire)];
+        startPlayback(cur.beat, cur.bpm, cur.loopEnabled, cur.loopStart, cur.loopEnd);
     }
     void setTempo(double bpm) { tempo.store(bpm, std::memory_order_release); }
     void setBeatPosition(double beat) {
         bool isPlaying = playing.load(std::memory_order_acquire);
-        if (isPlaying)
-            flushAllNotes();
+        if (isPlaying) flushAllNotes();
         beatPosition.store(beat, std::memory_order_release);
         samplesSinceStart.store(0, std::memory_order_release);
         baseBeat.store(beat, std::memory_order_release);
@@ -116,6 +147,23 @@ public:
     }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override {
+        // Check for new atomic transport command
+        int64_t seq = transportSeq.load(std::memory_order_acquire);
+        if (seq != lastTransportSeq) {
+            lastTransportSeq = seq;
+            auto& cmd = transportBuf[transportActive.load(std::memory_order_acquire)];
+            playing.store(cmd.playing, std::memory_order_release);
+            tempo.store(cmd.bpm, std::memory_order_release);
+            loopEnabled.store(cmd.loopEnabled, std::memory_order_release);
+            loopStart.store(cmd.loopStart, std::memory_order_release);
+            loopEnd.store(cmd.loopEnd, std::memory_order_release);
+            if (cmd.playing) {
+                beatPosition.store(cmd.beat, std::memory_order_release);
+                baseBeat.store(cmd.beat, std::memory_order_release);
+                samplesSinceStart.store(0, std::memory_order_release);
+            }
+        }
+
         if (playing.load(std::memory_order_acquire) && currentSampleRate > 0) {
             double bpm = tempo.load(std::memory_order_acquire);
             double base = baseBeat.load(std::memory_order_acquire);
@@ -339,7 +387,13 @@ public:
 private:
     juce::AudioProcessorGraph& graph;
 
-    // Transport (atomics — written by message thread, read by audio thread)
+    // Transport — double-buffered command + legacy atomics
+    TransportState transportBuf[2];
+    std::atomic<int> transportActive { 0 };
+    std::atomic<int64_t> transportSeq { 0 };
+    int64_t lastTransportSeq = 0;
+
+    // Legacy atomics (still used for per-buffer position tracking)
     std::atomic<bool> playing { false };
     std::atomic<double> tempo { 120.0 };
     std::atomic<double> beatPosition { 0.0 };

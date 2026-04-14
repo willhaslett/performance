@@ -112,23 +112,21 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     seq->setTransportCallback([this](bool playing) {
         if (playing) {
             // Jump to cycle start if cycle is enabled and playhead is outside the region
-            if (sequencerImpl->isLoopEnabled()) {
-                double pos = sequencerImpl->getBeatPosition();
-                double lo = sequencerImpl->getLoopStart();
-                double hi = sequencerImpl->getLoopEnd();
-                if (hi > lo && (pos < lo || pos >= hi)) {
-                    sequencerImpl->setBeatPosition(lo);
-                }
-                audioEngine->setPlaybackLoop(true, lo, hi);
+            double beat = sequencerImpl->getBeatPosition();
+            bool loopOn = sequencerImpl->isLoopEnabled();
+            double loopS = sequencerImpl->getLoopStart();
+            double loopE = sequencerImpl->getLoopEnd();
+            if (loopOn && loopE > loopS && (beat < loopS || beat >= loopE)) {
+                beat = loopS;
+                sequencerImpl->setBeatPosition(beat);
             }
-            // Set position BEFORE enabling playback — prevents race where
-            // audio thread processes a buffer with stale position
-            audioEngine->setPlaybackBeatPosition(sequencerImpl->getBeatPosition());
-            audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+            // Single atomic command — no race window
+            audioEngine->startPlayback(beat, sequencerImpl->getTempo(),
+                                        loopOn, loopS, loopE);
             if (recordModeActive)
                 startRecording();
         } else {
-            audioEngine->setPlaybackState(false, sequencerImpl->getTempo());
+            audioEngine->stopPlayback();
             stopRecording();
             recordModeActive = false;
         }

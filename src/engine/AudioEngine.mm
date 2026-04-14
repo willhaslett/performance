@@ -1530,6 +1530,14 @@ void AudioEngine::setPlaybackLoop(bool enabled, double start, double end) {
     graphWrapper->setLoop(enabled, start, end);
 }
 
+void AudioEngine::startPlayback(double beat, double bpm, bool loopOn, double loopS, double loopE) {
+    graphWrapper->startPlayback(beat, bpm, loopOn, loopS, loopE);
+}
+
+void AudioEngine::stopPlayback() {
+    graphWrapper->stopPlayback();
+}
+
 void AudioEngine::setArrangement(const Arrangement* arrangement) {
     graphWrapper->setArrangement(arrangement);
 }
