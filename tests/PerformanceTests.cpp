@@ -7,6 +7,8 @@
 #include "engine/AudioEngineInterface.h"
 #include "engine/EngineSync.h"
 #include "engine/Log.h"
+#include "state/UndoHistory.h"
+#include "song/SongRuntime.h"
 
 // ============================================================================
 // Test helpers
@@ -2100,6 +2102,553 @@ public:
 };
 
 static ArrangementTests arrangementTests;
+
+// ============================================================================
+// UndoHistory tests
+// ============================================================================
+
+class UndoHistoryTests : public juce::UnitTest {
+public:
+    UndoHistoryTests() : UnitTest("UndoHistory", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Empty history cannot undo or redo");
+        {
+            UndoHistory h;
+            expect(!h.canUndo());
+            expect(!h.canRedo());
+        }
+
+        beginTest("Push and undo restores previous state");
+        {
+            UndoHistory h;
+            AppState s1; s1.currentSongId = "song1";
+            AppState s2; s2.currentSongId = "song2";
+
+            h.push(s1);
+            expect(h.canUndo());
+            auto restored = h.undo(s2);
+            expectEquals(restored.currentSongId, std::string("song1"));
+        }
+
+        beginTest("Undo then redo restores forward state");
+        {
+            UndoHistory h;
+            AppState s1; s1.currentSongId = "song1";
+            AppState s2; s2.currentSongId = "song2";
+
+            h.push(s1);
+            auto afterUndo = h.undo(s2);
+            expect(h.canRedo());
+            auto afterRedo = h.redo(afterUndo);
+            expectEquals(afterRedo.currentSongId, std::string("song2"));
+        }
+
+        beginTest("Push after undo clears redo stack");
+        {
+            UndoHistory h;
+            AppState s1; s1.currentSongId = "s1";
+            AppState s2; s2.currentSongId = "s2";
+            AppState s3; s3.currentSongId = "s3";
+
+            h.push(s1);
+            h.push(s2);
+            h.undo(s3);  // undo s2, can redo
+            expect(h.canRedo());
+
+            AppState s4; s4.currentSongId = "s4";
+            h.push(s4);  // new branch — redo should be gone
+            expect(!h.canRedo());
+        }
+
+        beginTest("Multiple undo steps");
+        {
+            UndoHistory h;
+            AppState s1; s1.currentSongId = "s1";
+            AppState s2; s2.currentSongId = "s2";
+            AppState s3; s3.currentSongId = "s3";
+
+            h.push(s1);
+            h.push(s2);
+
+            auto r1 = h.undo(s3);
+            expectEquals(r1.currentSongId, std::string("s2"));
+            auto r2 = h.undo(r1);
+            expectEquals(r2.currentSongId, std::string("s1"));
+            expect(!h.canUndo());
+        }
+
+        beginTest("Max steps trims oldest");
+        {
+            UndoHistory h;
+            for (int i = 0; i < UndoHistory::maxSteps + 10; ++i) {
+                AppState s;
+                s.currentSongId = "s" + std::to_string(i);
+                h.push(s);
+            }
+            // Should have exactly maxSteps entries
+            int count = 0;
+            AppState current; current.currentSongId = "current";
+            while (h.canUndo()) {
+                current = h.undo(current);
+                count++;
+            }
+            expectEquals(count, UndoHistory::maxSteps);
+            // Oldest surviving should be s10 (0-9 trimmed)
+            expectEquals(current.currentSongId, std::string("s10"));
+        }
+
+        beginTest("Suspend prevents push");
+        {
+            UndoHistory h;
+            h.suspend();
+            expect(h.isSuspended());
+
+            AppState s1; s1.currentSongId = "s1";
+            h.push(s1);
+            expect(!h.canUndo());
+
+            h.resume();
+            expect(!h.isSuspended());
+            h.push(s1);
+            expect(h.canUndo());
+        }
+
+        beginTest("Clear empties both stacks");
+        {
+            UndoHistory h;
+            AppState s1; s1.currentSongId = "s1";
+            AppState s2; s2.currentSongId = "s2";
+            h.push(s1);
+            h.undo(s2);  // creates redo entry
+
+            h.clear();
+            expect(!h.canUndo());
+            expect(!h.canRedo());
+        }
+
+        beginTest("Undo on empty returns current state unchanged");
+        {
+            UndoHistory h;
+            AppState current; current.currentSongId = "unchanged";
+            auto result = h.undo(current);
+            expectEquals(result.currentSongId, std::string("unchanged"));
+        }
+
+        beginTest("Redo on empty returns current state unchanged");
+        {
+            UndoHistory h;
+            AppState current; current.currentSongId = "unchanged";
+            auto result = h.redo(current);
+            expectEquals(result.currentSongId, std::string("unchanged"));
+        }
+    }
+};
+
+static UndoHistoryTests undoHistoryTests;
+
+// ============================================================================
+// SongRuntime tests (MIDI dispatch with wildcard fallback)
+// ============================================================================
+
+class SongRuntimeTests : public juce::UnitTest {
+public:
+    SongRuntimeTests() : UnitTest("SongRuntime", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Exact match dispatches to handler");
+        {
+            SongRuntime rt;
+            float received = -1.0f;
+            rt.addBinding({ MIDIControl::CC, 1, 7, "dev1" },
+                          [&](float v) { received = v; });
+            rt.handleControl("dev1", 1, 7, 127);
+            expectWithinAbsoluteError(received, 1.0f, 0.01f);
+        }
+
+        beginTest("No match does not dispatch");
+        {
+            SongRuntime rt;
+            bool called = false;
+            rt.addBinding({ MIDIControl::CC, 1, 7, "dev1" },
+                          [&](float) { called = true; });
+            rt.handleControl("dev1", 1, 8, 100);  // wrong CC number
+            expect(!called);
+        }
+
+        beginTest("Wildcard any-device matches");
+        {
+            SongRuntime rt;
+            float received = -1.0f;
+            rt.addBinding({ MIDIControl::CC, 1, 7, "" },  // empty deviceId = any device
+                          [&](float v) { received = v; });
+            rt.handleControl("someDevice", 1, 7, 64);
+            expectWithinAbsoluteError(received, 64.0f / 127.0f, 0.01f);
+        }
+
+        beginTest("Wildcard any-channel matches");
+        {
+            SongRuntime rt;
+            float received = -1.0f;
+            rt.addBinding({ MIDIControl::CC, 0, 7, "dev1" },  // channel 0 = any
+                          [&](float v) { received = v; });
+            rt.handleControl("dev1", 5, 7, 100);  // channel 5
+            expectWithinAbsoluteError(received, 100.0f / 127.0f, 0.01f);
+        }
+
+        beginTest("Wildcard any-device + any-channel matches");
+        {
+            SongRuntime rt;
+            float received = -1.0f;
+            rt.addBinding({ MIDIControl::CC, 0, 7, "" },
+                          [&](float v) { received = v; });
+            rt.handleControl("anyDev", 3, 7, 50);
+            expectWithinAbsoluteError(received, 50.0f / 127.0f, 0.01f);
+        }
+
+        beginTest("Exact match fires alongside wildcards");
+        {
+            SongRuntime rt;
+            int exactCount = 0, wildcardCount = 0;
+            rt.addBinding({ MIDIControl::CC, 1, 7, "dev1" },
+                          [&](float) { exactCount++; });
+            rt.addBinding({ MIDIControl::CC, 0, 7, "" },
+                          [&](float) { wildcardCount++; });
+            rt.handleControl("dev1", 1, 7, 100);
+            expectEquals(exactCount, 1);
+            expectEquals(wildcardCount, 1);
+        }
+
+        beginTest("Note on/off dispatch with velocity normalization");
+        {
+            SongRuntime rt;
+            float onValue = -1.0f, offValue = -1.0f;
+            rt.addBinding({ MIDIControl::Note, 1, 60, "dev1" },
+                          [&](float v) {
+                              if (v > 0) onValue = v; else offValue = v;
+                          });
+            rt.handleNoteOn("dev1", 1, 60, 100);
+            expectWithinAbsoluteError(onValue, 100.0f / 127.0f, 0.01f);
+            rt.handleNoteOff("dev1", 1, 60);
+            expectWithinAbsoluteError(offValue, 0.0f, 0.01f);
+        }
+
+        beginTest("Pitch bend normalization");
+        {
+            SongRuntime rt;
+            float received = -1.0f;
+            rt.addBinding({ MIDIControl::PitchBend, 1, 0, "dev1" },
+                          [&](float v) { received = v; });
+            rt.handlePitchBend("dev1", 1, 8192);  // center
+            expectWithinAbsoluteError(received, 8192.0f / 16383.0f, 0.01f);
+        }
+
+        beginTest("Remove binding stops dispatch");
+        {
+            SongRuntime rt;
+            bool called = false;
+            MIDIControl ctrl = { MIDIControl::CC, 1, 7, "dev1" };
+            rt.addBinding(ctrl, [&](float) { called = true; });
+            rt.removeBinding(ctrl);
+            rt.handleControl("dev1", 1, 7, 100);
+            expect(!called);
+        }
+
+        beginTest("Clear bindings removes all");
+        {
+            SongRuntime rt;
+            int count = 0;
+            rt.addBinding({ MIDIControl::CC, 1, 7, "dev1" }, [&](float) { count++; });
+            rt.addBinding({ MIDIControl::CC, 2, 10, "dev2" }, [&](float) { count++; });
+            rt.clearBindings();
+            rt.handleControl("dev1", 1, 7, 100);
+            rt.handleControl("dev2", 2, 10, 50);
+            expectEquals(count, 0);
+        }
+
+        beginTest("Multiple handlers on same control all fire");
+        {
+            SongRuntime rt;
+            int count = 0;
+            MIDIControl ctrl = { MIDIControl::CC, 1, 7, "dev1" };
+            rt.addBinding(ctrl, [&](float) { count++; });
+            rt.addBinding(ctrl, [&](float) { count++; });
+            rt.handleControl("dev1", 1, 7, 100);
+            expectEquals(count, 2);
+        }
+    }
+};
+
+static SongRuntimeTests songRuntimeTests;
+
+// ============================================================================
+// Extended Arrangement tests (looping, quantize, split, move, duplicate)
+// ============================================================================
+
+class ArrangementExtTests : public juce::UnitTest {
+public:
+    ArrangementExtTests() : UnitTest("Arrangement / Extended", "Performance") {}
+
+    struct TestContext {
+        std::vector<TrackState> tracks;
+        Arrangement arr;
+        TestContext(std::initializer_list<std::string> trackIds) {
+            for (auto& id : trackIds) {
+                TrackState t;
+                t.id = id;
+                t.name = id;
+                tracks.push_back(std::move(t));
+            }
+            arr.setTracks(&tracks);
+        }
+    };
+
+    void runTest() override {
+
+        beginTest("Move region changes start beat");
+        {
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            expect(r != nullptr);
+            auto id = r->id;
+            ctx.arr.moveRegion(id, "t1", 8.0);
+            auto* moved = ctx.arr.findRegion(id);
+            expectWithinAbsoluteError(moved->startBeat, 8.0, 0.01);
+        }
+
+        beginTest("Move region to different track");
+        {
+            TestContext ctx({"t1", "t2"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto id = r->id;
+            ctx.arr.moveRegion(id, "t2", 2.0);
+
+            // Gone from t1
+            auto t1regions = ctx.arr.regionsForTrack("t1");
+            expectEquals((int)t1regions.size(), 0);
+            // Present in t2
+            auto t2regions = ctx.arr.regionsForTrack("t2");
+            expectEquals((int)t2regions.size(), 1);
+            expectWithinAbsoluteError(t2regions[0]->startBeat, 2.0, 0.01);
+        }
+
+        beginTest("Duplicate region creates copy at offset");
+        {
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto origId = r->id;
+            auto* dup = ctx.arr.duplicateRegion(origId, "t1", 4.0);
+            expect(dup != nullptr);
+            expect(dup->id != origId);
+            expectWithinAbsoluteError(dup->startBeat, 4.0, 0.01);
+            expectWithinAbsoluteError(dup->lengthBeats, 4.0, 0.01);
+            auto allRegions = ctx.arr.regionsForTrack("t1");
+            expectEquals((int)allRegions.size(), 2);
+        }
+
+        beginTest("Split region at beat creates two regions");
+        {
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 8.0);
+
+            // Add a note spanning the split point
+            auto& take = r->takes.back();
+            take.events.push_back({ 0.0, 0x90, 1, 60, 100 });  // noteOn at 0
+            take.events.push_back({ 6.0, 0x80, 1, 60, 0 });    // noteOff at 6
+
+            auto origId = r->id;
+            auto* right = ctx.arr.splitRegion(origId, 4.0, true);
+            expect(right != nullptr);
+
+            auto regions = ctx.arr.regionsForTrack("t1");
+            expectEquals((int)regions.size(), 2);
+
+            // Left region: 0-4
+            auto* left = ctx.arr.findRegion(origId);
+            expectWithinAbsoluteError(left->startBeat, 0.0, 0.01);
+            expectWithinAbsoluteError(left->lengthBeats, 4.0, 0.01);
+
+            // Right region: 4-8
+            expectWithinAbsoluteError(right->startBeat, 4.0, 0.01);
+            expectWithinAbsoluteError(right->lengthBeats, 4.0, 0.01);
+        }
+
+        beginTest("Scan MIDI events with quantize applies snap");
+        {
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            r->quantize = 1.0;  // snap to whole beats
+
+            auto& take = r->takes.back();
+            // noteOn slightly off-grid at 0.3, noteOff at 1.3
+            take.events.push_back({ 0.3, 0x90, 1, 60, 100 });
+            take.events.push_back({ 1.3, 0x80, 1, 60, 0 });
+
+            std::vector<std::pair<double, uint8_t>> captured;
+            ctx.arr.scanMidiEvents(0.0, 4.0,
+                [&](const std::string&, const MidiEventState& ev, double beat) {
+                    captured.push_back({ beat, ev.status });
+                });
+
+            expect(captured.size() >= 2);
+            // noteOn should snap to 0.0
+            expectWithinAbsoluteError(captured[0].first, 0.0, 0.01);
+            // noteOff should shift by the same delta (-0.3), so 1.3 - 0.3 = 1.0
+            expectWithinAbsoluteError(captured[1].first, 1.0, 0.01);
+        }
+
+        beginTest("Looped region repeats events");
+        {
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 2.0);
+            r->looped = true;
+            r->loopEndBeat = 6.0;
+
+            auto& take = r->takes.back();
+            take.events.push_back({ 0.0, 0x90, 1, 60, 100 });
+            take.events.push_back({ 1.0, 0x80, 1, 60, 0 });
+
+            std::vector<double> noteOnBeats;
+            ctx.arr.scanMidiEvents(0.0, 6.0,
+                [&](const std::string&, const MidiEventState& ev, double beat) {
+                    if ((ev.status & 0xF0) == 0x90) noteOnBeats.push_back(beat);
+                });
+
+            // Should have noteOns at 0, 2, 4 (three repetitions within 0-6)
+            expectEquals((int)noteOnBeats.size(), 3);
+            expectWithinAbsoluteError(noteOnBeats[0], 0.0, 0.01);
+            expectWithinAbsoluteError(noteOnBeats[1], 2.0, 0.01);
+            expectWithinAbsoluteError(noteOnBeats[2], 4.0, 0.01);
+        }
+    }
+};
+
+static ArrangementExtTests arrangementExtTests;
+
+// ============================================================================
+// Extended Persistence tests (stub bindings, new schema features)
+// ============================================================================
+
+class PersistenceExtTests : public juce::UnitTest {
+public:
+    PersistenceExtTests() : UnitTest("Persistence / Extended", "Performance") {}
+
+    void runTest() override {
+
+        beginTest("Stub binding (empty actionId) persists");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            auto devId = original.registerDevice("MPK", "MPK mini 3");
+            original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
+
+            // Create a stub binding — control in the song but no action assigned
+            auto bindId = original.addBinding(songId, "note", 10, 36, "", "[]", "Pad 1", devId);
+            expect(!bindId.empty());
+
+            auto* song = original.findSong(songId);
+            expectEquals((int)song->bindings.size(), 1);
+            expectEquals(song->bindings[0].actionId, std::string(""));
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.currentSong();
+            expect(loadedSong != nullptr);
+            expectEquals((int)loadedSong->bindings.size(), 1);
+            expectEquals(loadedSong->bindings[0].actionId, std::string(""));
+            expectEquals(loadedSong->bindings[0].deviceId, devId);
+            expectEquals(loadedSong->bindings[0].controlType, std::string("note"));
+            expectEquals(loadedSong->bindings[0].channel, 10);
+            expectEquals(loadedSong->bindings[0].number, 36);
+        }
+
+        beginTest("Stub binding with score step persists");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            original.setCurrentSong(songId);
+            auto devId = original.registerDevice("MPK", "MPK mini 3");
+            original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
+
+            auto bindId = original.addBinding(songId, "note", 10, 36, "", "[]", "Pad 1", devId);
+            original.setBindingAsScoreStep(bindId, 1);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* song = loaded.currentSong();
+            expectEquals((int)song->bindings.size(), 1);
+            expect(song->bindings[0].isScoreStep);
+            expectEquals(song->bindings[0].scorePosition, 1);
+            expectEquals(song->bindings[0].actionId, std::string(""));
+        }
+
+        beginTest("Duplicate device control rejected by StateAPI");
+        {
+            StateAPI s;
+            auto devId = s.registerDevice("MPK", "MPK mini 3");
+            s.addDeviceControl(devId, "Pad 1", "note", 10, 36);
+            s.addDeviceControl(devId, "Pad 1 Again", "note", 10, 36);  // same type/ch/num
+
+            auto* dev = s.findDevice(devId);
+            expectEquals((int)dev->controls.size(), 1);  // should reject duplicate
+        }
+
+        beginTest("Region looped and quantize fields persist");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            original.setCurrentSong(songId);
+            auto trackId = original.createTrack("Track 1");
+
+            // Create region with looping and quantize
+            auto* song = original.findSong(songId);
+            auto* track = original.findTrack(trackId);
+            RegionState region;
+            region.id = StateAPI::generateId();
+            region.startBeat = 0.0;
+            region.lengthBeats = 4.0;
+            region.looped = true;
+            region.loopEndBeat = 12.0;
+            region.quantize = 0.5;
+            TakeState take;
+            take.id = StateAPI::generateId();
+            take.name = "Take 1";
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+            track->regions.push_back(region);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.currentSong();
+            expect(loadedSong != nullptr);
+            expect(!loadedSong->tracks.empty());
+            auto& loadedTrack = loadedSong->tracks[0];
+            expectEquals((int)loadedTrack.regions.size(), 1);
+            expect(loadedTrack.regions[0].looped);
+            expectWithinAbsoluteError(loadedTrack.regions[0].loopEndBeat, 12.0, 0.01);
+            expectWithinAbsoluteError(loadedTrack.regions[0].quantize, 0.5, 0.01);
+        }
+    }
+};
+
+static PersistenceExtTests persistenceExtTests;
 
 // ============================================================================
 // Test runner — main()

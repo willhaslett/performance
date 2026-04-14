@@ -21,7 +21,8 @@ public:
 
     // MIDI Learn: capture next event from a specific device
     using LearnCallback = std::function<void(const std::string& controlType,
-                                              int channel, int number)>;
+                                              int channel, int number,
+                                              const std::string& portName)>;
     void startLearn(const std::string& deviceId, LearnCallback callback);
     void cancelLearn();
 

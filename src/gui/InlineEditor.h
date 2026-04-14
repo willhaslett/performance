@@ -9,6 +9,8 @@ class InlineEditor : public juce::TextEditor {
 public:
     std::function<void(const juce::String& newText)> onCommit;
     std::function<void()> onCancel;
+    std::function<void(const juce::String& newText)> onCommitNext;  // down arrow
+    std::function<void(const juce::String& newText)> onCommitPrev;  // up arrow
 
     InlineEditor() {
         setFont(Theme::font(Theme::fontSize));
@@ -22,6 +24,7 @@ public:
 
 private:
     bool isCancelling = false;
+    bool isCommitting = false;
 public:
 
     void show(juce::Component& parent, juce::Rectangle<int> bounds, const juce::String& text) {
@@ -41,19 +44,39 @@ public:
             cancel();
             return true;
         }
+        if (key == juce::KeyPress::downKey && onCommitNext) {
+            commitNav(onCommitNext);
+            return true;
+        }
+        if (key == juce::KeyPress::upKey && onCommitPrev) {
+            commitNav(onCommitPrev);
+            return true;
+        }
         return juce::TextEditor::keyPressed(key);
     }
 
     void focusLost(FocusChangeType) override {
-        if (!isCancelling)
+        if (!isCancelling && !isCommitting)
             commit();
     }
 
     void commit() {
+        if (isCommitting) return;
+        isCommitting = true;
         auto text = getText().trim();
         auto* parent = getParentComponent();
         if (parent) parent->removeChildComponent(this);
+        isCommitting = false;
         if (onCommit && text.isNotEmpty()) onCommit(text);
+    }
+
+    void commitNav(std::function<void(const juce::String&)>& navCallback) {
+        isCancelling = true;  // prevent focusLost from double-committing
+        auto text = getText().trim();
+        auto* parent = getParentComponent();
+        if (parent) parent->removeChildComponent(this);
+        isCancelling = false;
+        if (navCallback && text.isNotEmpty()) navCallback(text);
     }
 
     void cancel() {

@@ -20,7 +20,6 @@ public:
     // Callbacks
     std::function<void(const std::string& songId)> onLoadSong;
     std::function<void(const std::string& songId)> onDeleteSong;
-    std::function<void(const std::string& deviceId, const std::string& portName)> onMapSelected;
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 

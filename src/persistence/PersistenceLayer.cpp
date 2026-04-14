@@ -146,7 +146,7 @@ void PersistenceLayer::createSchema() {
             control_type TEXT NOT NULL,
             channel INTEGER NOT NULL,
             number INTEGER NOT NULL,
-            action_id TEXT NOT NULL REFERENCES actions(id),
+            action_id TEXT REFERENCES actions(id),
             args TEXT,
             description TEXT,
             is_score_step INTEGER DEFAULT 0,
@@ -209,7 +209,11 @@ void PersistenceLayer::createSchema() {
             name TEXT DEFAULT '',
             start_beat REAL NOT NULL,
             length_beats REAL NOT NULL,
-            active_take_id TEXT DEFAULT ''
+            active_take_id TEXT DEFAULT '',
+            muted INTEGER DEFAULT 0,
+            quantize REAL DEFAULT 0,
+            looped INTEGER DEFAULT 0,
+            loop_end_beat REAL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS takes (
@@ -880,7 +884,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_text(bs, 4, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(bs, 5, bind.channel);
             sqlite3_bind_int(bs, 6, bind.number);
-            sqlite3_bind_text(bs, 7, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+            if (!bind.actionId.empty())
+                sqlite3_bind_text(bs, 7, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+            else sqlite3_bind_null(bs, 7);
             if (!bind.args.empty())
                 sqlite3_bind_text(bs, 8, bind.args.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(bs, 8);
@@ -918,7 +924,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_text(bs, 3, bind.controlType.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(bs, 4, bind.channel);
         sqlite3_bind_int(bs, 5, bind.number);
-        sqlite3_bind_text(bs, 6, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+        if (!bind.actionId.empty())
+            sqlite3_bind_text(bs, 6, bind.actionId.c_str(), -1, SQLITE_TRANSIENT);
+        else sqlite3_bind_null(bs, 6);
         if (!bind.args.empty())
             sqlite3_bind_text(bs, 7, bind.args.c_str(), -1, SQLITE_TRANSIENT);
         else sqlite3_bind_null(bs, 7);

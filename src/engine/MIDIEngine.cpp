@@ -153,8 +153,9 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
             auto cb = std::move(learnCallback);
             learnCallback = nullptr;
             learnDeviceId.clear();
-            juce::MessageManager::callAsync([cb, controlType, ch, num] {
-                cb(controlType, ch, num);
+            auto portStr = sourcePortName.toStdString();
+            juce::MessageManager::callAsync([cb, controlType, ch, num, portStr] {
+                cb(controlType, ch, num, portStr);
             });
             return;  // don't dispatch during learn
         }

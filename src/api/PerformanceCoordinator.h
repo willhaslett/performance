@@ -82,7 +82,8 @@ public:
     // --- MIDI devices ---
     void refreshMidiDevices();
     void startMidiLearn(const std::string& deviceId,
-                        std::function<void(const std::string& controlType, int channel, int number)> callback);
+                        std::function<void(const std::string& controlType, int channel, int number,
+                                           const std::string& portName)> callback);
     void cancelMidiLearn();
     void setMidiDeviceMonitor(const std::string& deviceId,
                               std::function<void(const std::string& description,

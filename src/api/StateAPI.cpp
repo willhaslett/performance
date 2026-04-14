@@ -838,6 +838,9 @@ std::string StateAPI::addDeviceControl(const std::string& deviceId, const std::s
                                         const std::string& group) {
     auto* device = findDevice(deviceId);
     if (!device) return {};
+    for (auto& c : device->controls)
+        if (c.controlType == controlType && c.channel == channel && c.number == number)
+            return deviceId;  // duplicate — same type/channel/number already exists
     device->controls.push_back({ name, controlType, channel, number, group });
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });

@@ -44,28 +44,9 @@ Sidebar::Sidebar() {
             selectedDeviceId = id;
             auto devName = id.substr(id.find(':') + 1);
             if (onAudioInputSelected) onAudioInputSelected(devName);
-        } else if (type == "map_device" || type == "map_device_active") {
-            selectedDeviceId = id;
-            auto* device = state->findDevice(id);
-            if (device && onMapSelected) {
-                onMapSelected(device->id, device->midiPortName);
-            }
-        } else if (type == "map_unregistered" || type == "map_unregistered_active") {
-            selectedDeviceId = id;
-            if (onMapSelected) {
-                juce::PopupMenu menu;
-                menu.addItem(1, "Register Device");
-                auto portName = id;
-                menu.showMenuAsync(juce::PopupMenu::Options(),
-                    [this, portName](int result) {
-                        if (result == 1 && state) {
-                            auto devId = state->registerDevice(portName, portName);
-                            if (onMapSelected)
-                                onMapSelected(devId, portName);
-                            refreshTree();
-                        }
-                    });
-            }
+        } else if (type == "map_device" || type == "map_device_active"
+                   || type == "map_unregistered" || type == "map_unregistered_active") {
+            // MIDI devices are informational only — no selection needed
         }
     });
 }

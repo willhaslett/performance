@@ -139,6 +139,9 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     midiEngine->initialise();
     perfLog("[Coordinator] MIDIEngine initialised\n");
 
+    // Auto-register any connected MIDI devices
+    refreshMidiDevices();
+
     // Subscribe to state events for auto-creating Default presets
     stateSubscriptionId = stateAPI->events().subscribe([this](const StateEvent& event) {
         onStateEvent(event);
@@ -1126,10 +1129,23 @@ void PerformanceCoordinator::refreshMidiDevices() {
     if (midiEngine) {
         midiEngine->rescanDevices();
     }
+
+    // Auto-register any connected MIDI devices not yet in state
+    auto midiDevices = juce::MidiInput::getAvailableDevices();
+    for (auto& d : midiDevices) {
+        auto portName = d.name.toStdString();
+        // Skip virtual MIDI buses (macOS IAC)
+        if (d.name.containsIgnoreCase("IAC Driver")) continue;
+        if (!stateAPI->findDeviceByPortName(portName)) {
+            stateAPI->registerDevice(portName, portName);
+            perfLog("[Coordinator] Auto-registered MIDI device: %s\n", portName.c_str());
+        }
+    }
 }
 
 void PerformanceCoordinator::startMidiLearn(const std::string& deviceId,
-    std::function<void(const std::string& controlType, int channel, int number)> callback) {
+    std::function<void(const std::string& controlType, int channel, int number,
+                       const std::string& portName)> callback) {
     if (midiEngine) midiEngine->startLearn(deviceId, std::move(callback));
 }
 

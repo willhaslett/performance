@@ -87,7 +87,7 @@ SQLite normalized relational schema. `loadInto()` builds a plain `AppState` stru
 
 Database: `~/.config/performance/state.db`
 
-Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks` (with `color`, `source_type`), `busses`, `effects`, `sends`, `regions` (with `muted`, `quantize`), `takes`, `take_events`, `action_events` (with `track_id`), `bindings` (nullable `song_id` for global/song scope), `config`, `devices`, `device_controls`, `song_devices`.
+Tables: `plugins` (with `is_instrument`), `presets` (with `kind`), `actions`, `songs`, `tracks` (with `color`, `source_type`), `busses`, `effects`, `sends`, `regions` (with `muted`, `quantize`), `takes`, `take_events`, `action_events` (with `track_id`), `bindings` (nullable `song_id` for global/song scope, nullable `action_id` for stub bindings), `config`, `devices`, `device_controls`, `song_devices`.
 
 ### Identity
 
@@ -111,7 +111,7 @@ UUID everywhere. Every track, bus, effect, send has a UUID assigned at creation.
 - **AudioRecordFIFO** (`src/engine/AudioRecordFIFO.h`) — lock-free SPSC ring buffer for audio samples (~5 sec at 48kHz stereo, interleaved floats). Audio thread pushes, writer thread drains.
 - **AudioWriterThread** (`src/engine/AudioWriterThread.h`) — background thread draining AudioRecordFIFO to WAV file. De-interleaves and writes via JUCE AudioFormatWriter. Computes peaks during write for live waveform display.
 - **AudioFileNode** (`src/engine/AudioFileNode.h`) — per-audio-track AudioProcessor for sequencer playback. Holds multiple loaded WAV files (one per region). GraphWrapper selects the active region by ID based on beat position. Converts beats to sample position using recordTempo.
-- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for debug pane). MIDI Learn with single-shot capture.
+- **MIDIEngine** (`src/engine/MIDIEngine.h/.cpp`) — MIDI input, forwards notes to audio graph, dispatches controls to SongRuntime. Supports device-specific monitoring and a global monitor (for MappingPane activity dots + debug pane — note: single callback, last setter wins). MIDI Learn with single-shot capture; `LearnCallback` includes `portName` for correct device resolution.
 - **AutomationEngine** (`src/automation/AutomationEngine.h/.cpp`) — 60fps timer, interpolations with easing.
 - **InternalSequencer** (`src/daw/InternalSequencer.h/.cpp`) — own transport, tempo, beat clock. Thread-safe atomics. Transport callback notifies coordinator on play/stop.
 - **Arrangement** (`src/daw/Arrangement.h/.cpp`) — view over `TrackState.regions` in the current song. Provides `scanMidiEvents()` for playback, recording API (`startRecording`/`addRecordedEvent`/`stopRecording`), and region management (`moveRegion`, `duplicateRegion`, `removeRegion`). Does not own data — regions live in `TrackState`.
@@ -134,8 +134,13 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **MorphEditor** — slot-based editor for compound morph actions. Growing list of action slots with inline action picker per slot. Parallel/sequential mode toggle. OK/Cancel with proper window close handling.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
 - **SendsPanel** — StateAPI only. Pill+knob rows with signal glow.
-- **Sidebar** — StateAPI + EngineAPI + PerformanceCoordinator. Songs, Library (instruments/effects with presets), Actions, Maps (MIDI devices with activity lights), Devices (Audio with per-device Input/Output children), Panes (Debug, Logs, Chat). Audio device nodes always expanded; click device name to set both I/O, click Input or Output leaf individually. Green dot on active role/activity.
-- **MappingPane** — Unified device mapping + bindings + score pane. Page title "Mappings" with device/song context. Single table with columns: MIDI Source, Score Step, Group, Type, Ch, #, Action. Score steps sort to top. Score Step column is a clickable integer selector with insert/replace semantics. Learn mode with default names, inline name/group editing, action assignment via popup with param dialogs, right-click to delete. Effect plugins grouped by manufacturer in picker menus.
+- **Sidebar** — StateAPI + EngineAPI + PerformanceCoordinator. Songs, Library (instruments/effects with presets), Actions, Devices (MIDI informational-only with activity lights, Audio with per-device Input/Output children). MIDI device entries are display-only — no click selection, devices auto-register on detection. Audio device nodes always expanded; click device name to set both I/O, click Input or Output leaf individually. Green dot on active role/activity.
+- **MappingPane** — Two-pane layout: Controllers (left) + Song Mappings (right). No shared header — each pane has its own title bar.
+  - **Controllers pane** (left): "Controllers" header with "Learn new controls" button. Collapsible device tree showing ALL controls for all registered devices. Controls sorted by group then name. Each row: activity dot, control name, clickable group field, "In Song" checkmark. Double-click name to rename (up/down arrow navigates within device). Click group field for picker menu (New Group / existing groups). Right-click for Set Group submenu + Delete Control. Drag unbound controls to mapping areas. Already-learned controls flash accent when re-triggered in learn mode. Virtual MIDI buses (IAC Driver) filtered out.
+  - **Song Mappings pane** (right): "Song Mappings: [song name]" header with bgPanel background. Two subsections:
+    - **Atemporal**: Mappings active throughout the song. Rows show "Device Group Control" → action with activity dots. Click action area to assign/reassign. [+] creates stub binding. Right-click to remove. Drag to Score.
+    - **Score**: Ordered one-time actions. Same row format as Atemporal plus numbered position badge. Grows vertically to fit (always room for one more). Drag to reorder (accent insertion line). Drag to Atemporal to demote. Drag from Controllers/Atemporal drops at cursor position. [+] creates stub. Click action area to assign.
+  - Bindings with empty actionId ("stubs") persist — controls can be in a song without an assigned action.
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
 - **SettingsWindow** — popup window (Cmd+,) with tabbed interface. Audio tab: output/input device, buffer size, sample rate, computed latency. MIDI tab placeholder. Also accessible via Performance menu → Settings.
@@ -190,9 +195,13 @@ SongRuntime dispatches MIDI events to bindings with wildcard fallback: exact mat
 
 **All bindings are song-scoped.** Global bindings are deferred — the data model supports them but the UI only creates song bindings. Track UUIDs in binding args belong to the song where they were created. Future: "Copy to song" or global bindings for song-agnostic actions (reset, save, next song).
 
-### Maps (unified device mapping + bindings + score)
+### Controllers & Song Mappings
 
-MappingPane (`src/gui/MappingPane.h/.cpp`) — single table per device. Accessible via "Maps" sidebar section with per-device MIDI activity lights. All bindings are song-scoped — switching songs refreshes bindings (device controls persist). Score steps sort to top of the table. Score Step is a clickable integer selector: "Not in score", "Step N (append)", or insert before/after/replace existing steps with automatic position bumping.
+MappingPane (`src/gui/MappingPane.h/.cpp`) — two-pane layout replacing the old single-table-per-device design. Left pane shows all registered MIDI controllers and their controls in a collapsible tree. Right pane shows song-scoped bindings split into Atemporal (always active) and Score (ordered one-shot) sections. Controls are draggable between all areas with insertion-position awareness. All bindings are song-scoped — switching songs refreshes bindings while device controls persist globally. Bindings can exist without an assigned action ("stubs") and persist to SQLite (`action_id` is nullable).
+
+MIDI devices auto-register on detection (startup + 4Hz hot-plug polling via `PerformanceCoordinator::refreshMidiDevices`). Virtual MIDI buses (IAC Driver) are filtered from registration and learn mode but still route MIDI to instruments. The sidebar's MIDI device entries are informational only — no click selection or "current device" concept.
+
+Learn mode: single-shot MIDI capture via `MIDIEngine::startLearn`. Callback includes port name for correct device resolution. Controls that already exist flash in the UI rather than creating duplicates. `StateAPI::addDeviceControl` guards against duplicate type/channel/number on the same device.
 
 ### Logging
 
@@ -214,14 +223,27 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 
 ## Test Suite
 
-103 tests:
-- StateAPI tests (34): full in-memory state store coverage
-- Persistence round-trip tests (3): save→load fidelity, multi-song, empty DB
-- Integration tests (12): full coordinator→state→EngineSync→engine path
-- EngineSync tests (23): mock engine verifying state→engine event dispatch (includes audio input tracks, audioEnabled, bus/master audioEnabled, instrument changes, song switching)
-- Audio device config tests (4): device name persistence, config round-trip, audioEnabled persistence
-- Sequencer tests (14): internal sequencer transport, tempo, beat position, loop, time signature
-- Arrangement tests (13): region CRUD, MIDI event scanning, recording lifecycle, note capture
+Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests isolated (fresh state per case, temp DB files cleaned up). `MockAudioEngine` captures call log for EngineSync verification.
+
+134 tests across 11 classes:
+- **StateAPI tests (51)**: Unit — in-memory state mutations/queries. Songs, tracks, busses, effects, sends, bindings, devices, config, events, selection, score steps. Comprehensive.
+- **Persistence tests (11)**: Integration — save/load round-trips. Full state, multi-song, empty DB, processor state, score steps, global bindings, custom actions, device control groups, audio config.
+- **Integration tests (10)**: Coordinator→state→EngineSync→engine path. Track/bus CRUD, gains, effects, song switching, persistence through coordinator.
+- **EngineSync tests (11)**: Unit — state events → MockAudioEngine calls. Song load, track rename, effect CRUD, instrument changes, audioEnabled, song switching, binding changes.
+- **Audio device config tests (4)**: Integration — device name persistence, config round-trip, audioEnabled persistence and sync.
+- **Sequencer tests (10)**: Unit — transport play/stop, tempo clamping, beat position advance, loop wrap, time signature, beat/transport callbacks, capabilities.
+- **Arrangement tests (6)**: Unit — region CRUD, MIDI event scanning, range filtering, recording lifecycle with take capture.
+- **UndoHistory tests (9)**: Unit — push/undo/redo, max steps trimming, suspend/resume, clear, empty-state edge cases.
+- **SongRuntime tests (11)**: Unit — MIDI dispatch exact match, wildcard any-device, wildcard any-channel, combined wildcards, note on/off velocity normalization, pitch bend normalization, remove/clear bindings, multiple handlers.
+- **Arrangement extended tests (6)**: Unit — move region (same/cross track), duplicate, split with note splitting, quantize snap with per-note shift, looped region repetition.
+- **Persistence extended tests (4)**: Integration — stub binding (empty actionId) round-trip, stub score step round-trip, duplicate device control rejection, region looped/quantize field round-trip.
+
+**Coverage gaps** (components with zero tests):
+- AutomationEngine — interpolations, easing, delay
+- MIDIEngine — MIDI routing, learn mode, device resolution
+- LuaEngine, IPCServer — scripting and IPC layers
+- Error handling — no tests for invalid inputs or error conditions
+- GUI — not worth unit testing custom paint code
 
 ## TODOs
 
@@ -238,7 +260,6 @@ Index .component bundle Info.plist metadata at startup, on-demand register via A
 8. Settings window: MIDI tab placeholder exists, needs content (MIDI channel filtering, transpose, etc).
 
 **Known functional issues:**
-- Device Learn: new mappings persist immediately on capture instead of waiting for name commit. Root cause: JUCE TextEditor focusLost fires commit before cancel can intercept. Workaround: right-click → Delete.
 - AUShelfFilter crashes on instantiation — plugin bug.
 - AUPitch: preset state restore doesn't take effect — AU bug.
 - juce_String.cpp:327 assertion on startup — non-fatal, JUCE internals.
@@ -271,8 +292,10 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Menu bar — File/Edit/Track/View/Transport. Right-aligned gray shortcut text via NSAttributedString with tab stops. All commands dispatch through KeyBindingManager.
 - Song deletion — right-click song in sidebar (except Sandbox). Switches to Sandbox first if deleting current song.
 - Keybinding system — `KeyBindingManager` with 36 commands across File/Edit/Transport/View/Region/Track. User overrides stored in config, loaded on startup. `KeyBindingEditor` modal: categorized outline, click-to-capture, conflict detection, restore defaults. `handleGlobalKey` dispatches through manager — all shortcuts work globally (except when text editor focused). Pane toggle shortcuts: ⌘Y Produce, ⌘U Mappings, ⌘I Chat, ⌘⇧L Logs, ⌘O Mixer, ⌘P Sidebar.
-- Sidebar tabs — Songs/Library/Actions/Devices. Tab-based navigation replaces flat tree. Active tab + content share lighter background. RegistryTree transparent.
+- Sidebar tabs — Songs/Library/Actions/Devices. Tab-based navigation replaces flat tree. Active tab + content share lighter background. RegistryTree transparent. MIDI device entries are informational only (no selection).
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
+- Performance Map rewrite — two-pane Controllers + Song Mappings layout. Collapsible device tree, drag-and-drop between all areas (controllers → atemporal/score, atemporal → score, score → atemporal, score reorder with insertion line). Learn mode with port-aware device resolution, duplicate flash, IAC filtering. Inline name editing with up/down arrow navigation, group field with smart picker menu. Stub bindings (no action) persist. Score grows vertically, atemporal scrolls. `InlineEditor` re-entrancy guard (`isCommitting`) prevents double-commit on focusLost.
+- MIDI device auto-registration — `PerformanceCoordinator::refreshMidiDevices` registers connected devices on startup and hot-plug. No manual registration step. IAC Driver buses filtered.
 
 **Feature backlog (high priority):**
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
@@ -365,4 +388,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~24,000 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~24,500 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.

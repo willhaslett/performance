@@ -513,12 +513,6 @@ public:
             coordinator->save();
         };
 
-        // Wire sidebar Maps device selection
-        layout->getSidebar().onMapSelected = [layout](const std::string& deviceId, const std::string& portName) {
-            layout->setPaneContent(PaneSlot::Left, PaneContent::Mappings);
-            layout->mappingPane.scrollToDevice(deviceId);
-        };
-
         // Wire sidebar audio output device selection
         layout->getSidebar().onAudioOutputSelected = [this](const std::string& deviceName) {
             auto& dm = coordinator->engine().getDeviceManager();
