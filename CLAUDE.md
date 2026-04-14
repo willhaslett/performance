@@ -275,7 +275,6 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 
 **Feature backlog (high priority):**
-- Atomic transport commands: InternalSequencer and GraphWrapper have independent beat clocks synced at 60Hz. Separate `setPlaybackBeatPosition` + `setPlaybackState` calls create race windows where the audio thread processes a buffer with partial state. Refactor to a single `startPlayback(beat, bpm, loop)` / `stopPlayback()` command that GraphWrapper reads atomically. Eliminates call-order bugs by construction. Known symptom: first note at loop boundary sounds on every other cycle — flush and scan alternate winning the race depending on buffer alignment.
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
 - TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
 

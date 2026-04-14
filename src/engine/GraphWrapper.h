@@ -59,11 +59,11 @@ public:
         flushAllNotes();
     }
 
-    // Legacy individual setters (still used for tempo/loop updates during playback)
+    // Legacy individual setters (used for tempo/loop updates during playback)
+    // These do NOT reset position — only startPlayback/stopPlayback do that.
     void setPlaying(bool p) {
         if (!p) { stopPlayback(); return; }
-        auto cur = transportBuf[transportActive.load(std::memory_order_acquire)];
-        startPlayback(cur.beat, cur.bpm, cur.loopEnabled, cur.loopStart, cur.loopEnd);
+        playing.store(true, std::memory_order_release);
     }
     void setTempo(double bpm) { tempo.store(bpm, std::memory_order_release); }
     void setBeatPosition(double beat) {

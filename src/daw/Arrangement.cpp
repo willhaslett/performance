@@ -315,6 +315,24 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                 if (repBase >= effectiveEnd || repBase >= currentBeat) break;
                 if (repBase + r.lengthBeats <= prevBeat) continue;
 
+                // Track open notes for synthetic noteOff at boundary
+                // Key: (channel << 8 | note), Value: true if on
+                std::map<int, MidiEventState> openNotes;
+
+                // Emit events + track note state
+                auto emitEvent = [&](const MidiEventState& event, double absBeat) {
+                    bool isNoteOn = (event.status & 0xF0) == 0x90 && event.data2 > 0;
+                    bool isNoteOff = (event.status & 0xF0) == 0x80
+                                  || ((event.status & 0xF0) == 0x90 && event.data2 == 0);
+                    int noteKey = (event.channel << 8) | event.data1;
+
+                    if (isNoteOn) openNotes[noteKey] = event;
+                    else if (isNoteOff) openNotes.erase(noteKey);
+
+                    if (absBeat >= prevBeat && absBeat < currentBeat)
+                        callback(t.id, event, absBeat);
+                };
+
                 if (r.quantize > 0.0) {
                     std::map<int, double> noteShifts;
                     for (auto& event : take->events) {
@@ -337,9 +355,8 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                         }
 
                         double absBeat = repBase + quantized;
-                        if (absBeat >= effectiveEnd) continue;  // past loop end
-                        if (absBeat >= prevBeat && absBeat < currentBeat)
-                            callback(t.id, event, absBeat);
+                        if (absBeat >= effectiveEnd) continue;
+                        emitEvent(event, absBeat);
                     }
                 } else {
                     for (auto& event : take->events) {
@@ -347,12 +364,24 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                         if (offset < 0.0 || offset >= r.lengthBeats) continue;
                         double absBeat = repBase + offset;
                         if (absBeat >= effectiveEnd) continue;
-                        if (absBeat >= prevBeat && absBeat < currentBeat)
-                            callback(t.id, event, absBeat);
+                        emitEvent(event, absBeat);
+                    }
+                }
+
+                // Synthetic noteOffs at the repetition/region boundary
+                double boundaryBeat = std::min(repBase + r.lengthBeats, effectiveEnd);
+                if (boundaryBeat >= prevBeat && boundaryBeat < currentBeat) {
+                    for (auto& [noteKey, onEvent] : openNotes) {
+                        MidiEventState offEvent;
+                        offEvent.status = 0x80;
+                        offEvent.channel = onEvent.channel;
+                        offEvent.data1 = onEvent.data1;
+                        offEvent.data2 = 0;
+                        offEvent.beatOffset = 0;  // not meaningful for synthetic
+                        callback(t.id, offEvent, boundaryBeat);
                     }
                 }
             }  // end rep loop
-            // TODO: fire synthetic noteOffs at region end for unclosed notes
         }
     }
 }
