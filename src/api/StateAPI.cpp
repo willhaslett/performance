@@ -23,7 +23,62 @@ std::string StateAPI::generateId() {
     return ss.str();
 }
 
-// --- Helpers ---
+// --- Asserting accessors (crash on programming error) ---
+
+SongState& StateAPI::song() {
+    PERF_ASSERT(!state.currentSongId.empty(), "No current song set");
+    auto* s = findSong(state.currentSongId);
+    PERF_ASSERT(s, "currentSongId references nonexistent song");
+    return *s;
+}
+
+const SongState& StateAPI::song() const {
+    PERF_ASSERT(!state.currentSongId.empty(), "No current song set");
+    auto* s = findSong(state.currentSongId);
+    PERF_ASSERT(s, "currentSongId references nonexistent song");
+    return *s;
+}
+
+TrackState& StateAPI::track(const std::string& id) {
+    auto& s = song();
+    for (auto& t : s.tracks)
+        if (t.id == id) return t;
+    PERF_ASSERT(false, "Track not found");
+    __builtin_unreachable();
+}
+
+const TrackState& StateAPI::track(const std::string& id) const {
+    auto& s = song();
+    for (auto& t : s.tracks)
+        if (t.id == id) return t;
+    PERF_ASSERT(false, "Track not found");
+    __builtin_unreachable();
+}
+
+BusState& StateAPI::bus(const std::string& id) {
+    auto& s = song();
+    for (auto& b : s.busses)
+        if (b.id == id) return b;
+    PERF_ASSERT(false, "Bus not found");
+    __builtin_unreachable();
+}
+
+const BusState& StateAPI::bus(const std::string& id) const {
+    auto& s = song();
+    for (auto& b : s.busses)
+        if (b.id == id) return b;
+    PERF_ASSERT(false, "Bus not found");
+    __builtin_unreachable();
+}
+
+DeviceState& StateAPI::device(const std::string& id) {
+    for (auto& d : state.devices)
+        if (d.id == id) return d;
+    PERF_ASSERT(false, "Device not found");
+    __builtin_unreachable();
+}
+
+// --- Public nullable helpers (unchanged) ---
 
 SongState* StateAPI::currentSong() {
     if (state.currentSongId.empty()) return nullptr;
@@ -48,50 +103,46 @@ const SongState* StateAPI::findSong(const std::string& id) const {
 }
 
 TrackState* StateAPI::findTrack(const std::string& id) {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& t : song->tracks)
+    auto* s = currentSong();
+    if (!s) return nullptr;
+    for (auto& t : s->tracks)
         if (t.id == id) return &t;
     return nullptr;
 }
 
 const TrackState* StateAPI::findTrack(const std::string& id) const {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& t : song->tracks)
+    auto* s = currentSong();
+    if (!s) return nullptr;
+    for (auto& t : s->tracks)
         if (t.id == id) return &t;
     return nullptr;
 }
 
 BusState* StateAPI::findBus(const std::string& id) {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& b : song->busses)
+    auto* s = currentSong();
+    if (!s) return nullptr;
+    for (auto& b : s->busses)
         if (b.id == id) return &b;
     return nullptr;
 }
 
 const BusState* StateAPI::findBus(const std::string& id) const {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& b : song->busses)
+    auto* s = currentSong();
+    if (!s) return nullptr;
+    for (auto& b : s->busses)
         if (b.id == id) return &b;
     return nullptr;
 }
 
 std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, std::string* outParentId) {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-
-    // Master effects
-    for (auto& fx : song->masterEffects) {
+    auto& s = song();
+    for (auto& fx : s.masterEffects) {
         if (fx.id == effectId) {
-            if (outParentId) *outParentId = song->id;
-            return &song->masterEffects;
+            if (outParentId) *outParentId = s.id;
+            return &s.masterEffects;
         }
     }
-    // Track effects
-    for (auto& t : song->tracks) {
+    for (auto& t : s.tracks) {
         for (auto& fx : t.effects) {
             if (fx.id == effectId) {
                 if (outParentId) *outParentId = t.id;
@@ -99,8 +150,7 @@ std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, 
             }
         }
     }
-    // Bus effects
-    for (auto& b : song->busses) {
+    for (auto& b : s.busses) {
         for (auto& fx : b.effects) {
             if (fx.id == effectId) {
                 if (outParentId) *outParentId = b.id;
@@ -112,11 +162,10 @@ std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, 
 }
 
 std::vector<SendState>* StateAPI::findSendList(const std::string& sendId, std::string* outTrackId) {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& t : song->tracks) {
-        for (auto& s : t.sends) {
-            if (s.id == sendId) {
+    auto& s = song();
+    for (auto& t : s.tracks) {
+        for (auto& send : t.sends) {
+            if (send.id == sendId) {
                 if (outTrackId) *outTrackId = t.id;
                 return &t.sends;
             }
@@ -126,14 +175,13 @@ std::vector<SendState>* StateAPI::findSendList(const std::string& sendId, std::s
 }
 
 const EffectState* StateAPI::findEffect(const std::string& effectId) const {
-    auto* song = currentSong();
-    if (!song) return nullptr;
-    for (auto& fx : song->masterEffects)
+    auto& s = song();
+    for (auto& fx : s.masterEffects)
         if (fx.id == effectId) return &fx;
-    for (auto& t : song->tracks)
+    for (auto& t : s.tracks)
         for (auto& fx : t.effects)
             if (fx.id == effectId) return &fx;
-    for (auto& b : song->busses)
+    for (auto& b : s.busses)
         for (auto& fx : b.effects)
             if (fx.id == effectId) return &fx;
     return nullptr;
@@ -141,7 +189,7 @@ const EffectState* StateAPI::findEffect(const std::string& effectId) const {
 
 void StateAPI::setEffectPresetId(const std::string& effectId, const std::string& presetId) {
     auto* list = findEffectList(effectId, nullptr);
-    if (!list) return;
+    if (!list) { perfLog("[StateAPI] setEffectPresetId: effect '%s' not found\n", effectId.c_str()); return; }
     for (auto& fx : *list) {
         if (fx.id == effectId) {
             fx.presetId = presetId;
@@ -154,21 +202,19 @@ void StateAPI::setEffectPresetId(const std::string& effectId, const std::string&
 // --- Song ---
 
 std::string StateAPI::createSong(const std::string& name) {
-    // No pushUndo — song creation is orchestrated by coordinator
-    SongState song;
-    song.id = generateId();
-    song.name = name;
-    state.songs.push_back(std::move(song));
+    SongState s;
+    s.id = generateId();
+    s.name = name;
+    state.songs.push_back(std::move(s));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id, "" });
     return state.songs.back().id;
 }
 
 void StateAPI::deleteSong(const std::string& id) {
-    // No pushUndo — song deletion is orchestrated by coordinator
     auto it = std::find_if(state.songs.begin(), state.songs.end(),
                            [&](auto& s) { return s.id == id; });
-    if (it == state.songs.end()) return;
+    if (it == state.songs.end()) return;  // idempotent
     std::string songId = it->id;
     state.songs.erase(it);
     if (state.currentSongId == songId)
@@ -190,69 +236,64 @@ void StateAPI::setCurrentSong(const std::string& songId) {
 
 void StateAPI::setMasterGain(float gain) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    song->masterGain = gain;
+    auto& s = song();
+    s.masterGain = gain;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id, "" });
 }
 
 float StateAPI::getMasterGain() const {
-    auto* song = currentSong();
-    return song ? song->masterGain : 1.0f;
+    auto* s = currentSong();
+    return s ? s->masterGain : 1.0f;
 }
 
 void StateAPI::setMasterAudioEnabled(bool enabled) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    song->masterAudioEnabled = enabled;
+    auto& s = song();
+    s.masterAudioEnabled = enabled;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id, "" });
 }
 
 bool StateAPI::isMasterAudioEnabled() const {
-    auto* song = currentSong();
-    return song ? song->masterAudioEnabled : true;
+    auto* s = currentSong();
+    return s ? s->masterAudioEnabled : true;
 }
 
 void StateAPI::setSongTempo(double bpm) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    if (song->tempoEvents.empty())
-        song->tempoEvents.push_back({ 0.0, bpm });
+    auto& s = song();
+    if (s.tempoEvents.empty())
+        s.tempoEvents.push_back({ 0.0, bpm });
     else
-        song->tempoEvents[0].bpm = bpm;
+        s.tempoEvents[0].bpm = bpm;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id, "" });
 }
 
 double StateAPI::getSongTempo() const {
-    auto* song = currentSong();
-    if (song && !song->tempoEvents.empty())
-        return song->tempoEvents[0].bpm;
+    auto* s = currentSong();
+    if (s && !s->tempoEvents.empty()) return s->tempoEvents[0].bpm;
     return 120.0;
 }
 
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    if (song->timeSigEvents.empty())
-        song->timeSigEvents.push_back({ 0.0, numerator, denominator });
+    auto& s = song();
+    if (s.timeSigEvents.empty())
+        s.timeSigEvents.push_back({ 0.0, numerator, denominator });
     else {
-        song->timeSigEvents[0].numerator = numerator;
-        song->timeSigEvents[0].denominator = denominator;
+        s.timeSigEvents[0].numerator = numerator;
+        s.timeSigEvents[0].denominator = denominator;
     }
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Song, song->id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id, "" });
 }
 
 std::pair<int,int> StateAPI::getSongTimeSignature() const {
-    auto* song = currentSong();
-    if (song && !song->timeSigEvents.empty())
-        return { song->timeSigEvents[0].numerator, song->timeSigEvents[0].denominator };
+    auto* s = currentSong();
+    if (s && !s->timeSigEvents.empty())
+        return { s->timeSigEvents[0].numerator, s->timeSigEvents[0].denominator };
     return { 4, 4 };
 }
 
@@ -264,103 +305,88 @@ std::string StateAPI::getMasterOutputId() const {
 
 std::string StateAPI::createTrack(const std::string& name) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return {};
-    TrackState track;
-    track.id = generateId();
-    track.name = name;
-    track.position = (int)song->tracks.size();
-    song->tracks.push_back(std::move(track));
+    auto& s = song();
+    TrackState t;
+    t.id = generateId();
+    t.name = name;
+    t.position = (int)s.tracks.size();
+    s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
-    return song->tracks.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    return s.tracks.back().id;
 }
 
 std::string StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
                                              int inputChannelCount) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return {};
-    TrackState track;
-    track.id = generateId();
-    track.name = name;
-    track.position = (int)song->tracks.size();
-    track.sourceType = TrackSourceType::AudioInput;
-    track.channelMode = (inputChannelCount == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
-    track.inputChannelStart = inputChannelStart;
-    track.inputChannelCount = inputChannelCount;
-    track.midiEnabled = false;  // audio input tracks don't receive MIDI
-    song->tracks.push_back(std::move(track));
+    auto& s = song();
+    TrackState t;
+    t.id = generateId();
+    t.name = name;
+    t.position = (int)s.tracks.size();
+    t.sourceType = TrackSourceType::AudioInput;
+    t.channelMode = (inputChannelCount == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
+    t.inputChannelStart = inputChannelStart;
+    t.inputChannelCount = inputChannelCount;
+    t.midiEnabled = false;
+    s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
-    return song->tracks.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    return s.tracks.back().id;
 }
 
 std::string StateAPI::createActionTrack(const std::string& name) {
-    // No pushUndo — action track creation is part of song setup
-    auto* song = currentSong();
-    if (!song) return {};
-    TrackState track;
-    track.id = generateId();
-    track.name = name;
-    track.position = (int)song->tracks.size();
-    track.sourceType = TrackSourceType::Action;
-    track.midiEnabled = false;
-    track.audioEnabled = true;  // visible in mixer, no audio output
-    song->tracks.push_back(std::move(track));
+    auto& s = song();
+    TrackState t;
+    t.id = generateId();
+    t.name = name;
+    t.position = (int)s.tracks.size();
+    t.sourceType = TrackSourceType::Action;
+    t.midiEnabled = false;
+    t.audioEnabled = true;
+    s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, song->tracks.back().id, "" });
-    return song->tracks.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    return s.tracks.back().id;
 }
 
 void StateAPI::removeTrack(const std::string& id) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    auto it = std::find_if(song->tracks.begin(), song->tracks.end(),
+    auto& s = song();
+    auto it = std::find_if(s.tracks.begin(), s.tracks.end(),
                            [&](auto& t) { return t.id == id; });
-    if (it == song->tracks.end()) return;
-    song->tracks.erase(it);
+    if (it == s.tracks.end()) return;  // idempotent
+    s.tracks.erase(it);
     markDirty();
     eventBus.emit({ StateEvent::Deleted, StateEvent::Track, id, "" });
 }
 
 void StateAPI::renameTrack(const std::string& id, const std::string& name) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->name = name;
+    auto& t = track(id);
+    t.name = name;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 void StateAPI::moveTrack(const std::string& id, int newPosition) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
+    auto& s = song();
+    auto& t = track(id);
 
-    // Find the track and its current position
-    TrackState* target = nullptr;
-    for (auto& t : song->tracks)
-        if (t.id == id) { target = &t; break; }
-    if (!target) return;
-
-    int oldPos = target->position;
+    int oldPos = t.position;
     if (oldPos == newPosition) return;
 
-    // Shift other tracks to make room
     if (newPosition < oldPos) {
-        // Moving up: shift tracks in [newPos, oldPos) down by 1
-        for (auto& t : song->tracks)
-            if (t.position >= newPosition && t.position < oldPos)
-                t.position++;
+        for (auto& tr : s.tracks)
+            if (tr.position >= newPosition && tr.position < oldPos)
+                tr.position++;
     } else {
-        // Moving down: shift tracks in (oldPos, newPos] up by 1
-        for (auto& t : song->tracks)
-            if (t.position > oldPos && t.position <= newPosition)
-                t.position--;
+        for (auto& tr : s.tracks)
+            if (tr.position > oldPos && tr.position <= newPosition)
+                tr.position--;
     }
-    target->position = newPosition;
+    t.position = newPosition;
 
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
@@ -368,80 +394,63 @@ void StateAPI::moveTrack(const std::string& id, int newPosition) {
 
 void StateAPI::setTrackGain(const std::string& id, float gain) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->outputGain = gain;
+    track(id).outputGain = gain;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 float StateAPI::getTrackGain(const std::string& id) const {
-    auto* track = findTrack(id);
-    return track ? track->outputGain : 1.0f;
+    return track(id).outputGain;
 }
 
 void StateAPI::setTrackMidiEnabled(const std::string& id, bool enabled) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->midiEnabled = enabled;
+    track(id).midiEnabled = enabled;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 bool StateAPI::isTrackMidiEnabled(const std::string& id) const {
-    auto* track = findTrack(id);
-    return track ? track->midiEnabled : true;
+    return track(id).midiEnabled;
 }
 
 void StateAPI::setTrackAudioEnabled(const std::string& id, bool enabled) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->audioEnabled = enabled;
+    track(id).audioEnabled = enabled;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
-    auto* track = findTrack(id);
-    return track ? track->audioEnabled : true;
+    return track(id).audioEnabled;
 }
 
 void StateAPI::setTrackOutputTarget(const std::string& id, const std::string& target) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->outputTarget = target;
+    track(id).outputTarget = target;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 std::string StateAPI::getTrackOutputTarget(const std::string& id) const {
-    auto* track = findTrack(id);
-    return track ? track->outputTarget : "";
+    return track(id).outputTarget;
 }
 
 void StateAPI::setTrackArmed(const std::string& id, bool armed) {
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->armed = armed;
-    // Don't markDirty — armed is runtime state, not persisted
+    track(id).armed = armed;
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 bool StateAPI::isTrackArmed(const std::string& id) const {
-    auto* track = findTrack(id);
-    return track ? track->armed : false;
+    return track(id).armed;
 }
 
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->pluginId = pluginId;
-    track->presetId = presetId;
+    auto& t = track(id);
+    t.pluginId = pluginId;
+    t.presetId = presetId;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
@@ -452,34 +461,29 @@ void StateAPI::clearTrackPlugin(const std::string& id) {
 }
 
 void StateAPI::setTrackPresetId(const std::string& id, const std::string& presetId) {
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->presetId = presetId;
+    track(id).presetId = presetId;
     markDirty();
 }
 
 void StateAPI::setTrackInputChannels(const std::string& id, int start, int count) {
     pushUndo();
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->inputChannelStart = start;
-    track->inputChannelCount = count;
-    track->channelMode = (count == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
+    auto& t = track(id);
+    t.inputChannelStart = start;
+    t.inputChannelCount = count;
+    t.channelMode = (count == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 void StateAPI::setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status) {
-    auto* track = findTrack(id);
-    if (!track) return;
-    track->instrumentLoadStatus = status;
+    track(id).instrumentLoadStatus = status;
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
 
 void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus status) {
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
-    if (!list) return;
+    if (!list) { perfLog("[StateAPI] setEffectLoadStatus: effect '%s' not found\n", effectId.c_str()); return; }
     for (auto& fx : *list) {
         if (fx.id == effectId) {
             fx.loadStatus = status;
@@ -493,79 +497,66 @@ void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus statu
 
 std::string StateAPI::createBus(const std::string& name) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return {};
-    BusState bus;
-    bus.id = generateId();
-    bus.name = name;
-    bus.position = (int)song->busses.size();
-    song->busses.push_back(std::move(bus));
+    auto& s = song();
+    BusState b;
+    b.id = generateId();
+    b.name = name;
+    b.position = (int)s.busses.size();
+    s.busses.push_back(std::move(b));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Bus, song->busses.back().id, "" });
-    return song->busses.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Bus, s.busses.back().id, "" });
+    return s.busses.back().id;
 }
 
 void StateAPI::removeBus(const std::string& id) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    auto it = std::find_if(song->busses.begin(), song->busses.end(),
+    auto& s = song();
+    auto it = std::find_if(s.busses.begin(), s.busses.end(),
                            [&](auto& b) { return b.id == id; });
-    if (it == song->busses.end()) return;
-    song->busses.erase(it);
+    if (it == s.busses.end()) return;  // idempotent
+    s.busses.erase(it);
     markDirty();
     eventBus.emit({ StateEvent::Deleted, StateEvent::Bus, id, "" });
 }
 
 void StateAPI::renameBus(const std::string& id, const std::string& name) {
     pushUndo();
-    auto* bus = findBus(id);
-    if (!bus) return;
-    bus->name = name;
+    bus(id).name = name;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
 }
 
 void StateAPI::setBusGain(const std::string& id, float gain) {
     pushUndo();
-    auto* bus = findBus(id);
-    if (!bus) return;
-    bus->outputGain = gain;
+    bus(id).outputGain = gain;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
 }
 
 float StateAPI::getBusGain(const std::string& id) const {
-    auto* bus = findBus(id);
-    return bus ? bus->outputGain : 1.0f;
+    return bus(id).outputGain;
 }
 
 void StateAPI::setBusAudioEnabled(const std::string& id, bool enabled) {
     pushUndo();
-    auto* bus = findBus(id);
-    if (!bus) return;
-    bus->audioEnabled = enabled;
+    bus(id).audioEnabled = enabled;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
 }
 
 bool StateAPI::isBusAudioEnabled(const std::string& id) const {
-    auto* bus = findBus(id);
-    return bus ? bus->audioEnabled : true;
+    return bus(id).audioEnabled;
 }
 
 void StateAPI::setBusOutputTarget(const std::string& id, const std::string& target) {
     pushUndo();
-    auto* bus = findBus(id);
-    if (!bus) return;
-    bus->outputTarget = target;
+    bus(id).outputTarget = target;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
 }
 
 std::string StateAPI::getBusOutputTarget(const std::string& id) const {
-    auto* bus = findBus(id);
-    return bus ? bus->outputTarget : "";
+    return bus(id).outputTarget;
 }
 
 // --- Effects ---
@@ -573,8 +564,7 @@ std::string StateAPI::getBusOutputTarget(const std::string& id) const {
 std::string StateAPI::addEffect(const std::string& parentId, const std::string& name,
                                  const std::string& pluginId) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return {};
+    auto& s = song();
 
     EffectState effect;
     effect.id = generateId();
@@ -583,22 +573,21 @@ std::string StateAPI::addEffect(const std::string& parentId, const std::string& 
 
     std::vector<EffectState>* list = nullptr;
 
-    // Master effects (parent = songId)
-    if (parentId == song->id) {
-        list = &song->masterEffects;
+    if (parentId == s.id) {
+        list = &s.masterEffects;
     } else {
-        // Track or bus
-        for (auto& t : song->tracks) {
+        for (auto& t : s.tracks)
             if (t.id == parentId) { list = &t.effects; break; }
-        }
         if (!list) {
-            for (auto& b : song->busses) {
+            for (auto& b : s.busses)
                 if (b.id == parentId) { list = &b.effects; break; }
-            }
         }
     }
 
-    if (!list) return {};
+    if (!list) {
+        perfLog("[StateAPI] addEffect: parentId '%s' not found\n", parentId.c_str());
+        return {};
+    }
     effect.position = (int)list->size();
     list->push_back(std::move(effect));
     auto& added = list->back();
@@ -611,7 +600,7 @@ void StateAPI::removeEffect(const std::string& effectId) {
     pushUndo();
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
-    if (!list) return;
+    if (!list) { perfLog("[StateAPI] removeEffect: effect '%s' not found\n", effectId.c_str()); return; }
     list->erase(std::remove_if(list->begin(), list->end(),
                                [&](auto& fx) { return fx.id == effectId; }),
                 list->end());
@@ -623,23 +612,22 @@ void StateAPI::removeEffect(const std::string& effectId) {
 
 std::string StateAPI::addSend(const std::string& trackId, const std::string& busId, float gain) {
     pushUndo();
-    auto* track = findTrack(trackId);
-    if (!track) return {};
+    auto& t = track(trackId);
     SendState send;
     send.id = generateId();
     send.busId = busId;
     send.gain = gain;
-    track->sends.push_back(std::move(send));
+    t.sends.push_back(std::move(send));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Send, track->sends.back().id, trackId });
-    return track->sends.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id, trackId });
+    return t.sends.back().id;
 }
 
 void StateAPI::removeSend(const std::string& sendId) {
     pushUndo();
     std::string trackId;
     auto* list = findSendList(sendId, &trackId);
-    if (!list) return;
+    if (!list) { perfLog("[StateAPI] removeSend: send '%s' not found\n", sendId.c_str()); return; }
     list->erase(std::remove_if(list->begin(), list->end(),
                                [&](auto& s) { return s.id == sendId; }),
                 list->end());
@@ -649,9 +637,8 @@ void StateAPI::removeSend(const std::string& sendId) {
 
 void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& busId, float gain) {
     pushUndo();
-    auto* track = findTrack(trackId);
-    if (!track) return;
-    for (auto& s : track->sends) {
+    auto& t = track(trackId);
+    for (auto& s : t.sends) {
         if (s.busId == busId) {
             setSendGain(s.id, gain);
             return;
@@ -661,12 +648,11 @@ void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& b
 
 void StateAPI::setSendGain(const std::string& sendId, float gain) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    for (auto& t : song->tracks) {
-        for (auto& s : t.sends) {
-            if (s.id == sendId) {
-                s.gain = gain;
+    auto& s = song();
+    for (auto& t : s.tracks) {
+        for (auto& send : t.sends) {
+            if (send.id == sendId) {
+                send.gain = gain;
                 markDirty();
                 eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId, t.id });
                 return;
@@ -682,8 +668,8 @@ std::string StateAPI::addBinding(const std::string& songId, const std::string& c
                                   const std::string& args, const std::string& description,
                                   const std::string& deviceId) {
     pushUndo();
-    auto* song = findSong(songId);
-    if (!song) return {};
+    auto* s = findSong(songId);
+    PERF_ASSERT(s, "addBinding: song not found");
     BindingState binding;
     binding.id = generateId();
     binding.songId = songId;
@@ -694,10 +680,10 @@ std::string StateAPI::addBinding(const std::string& songId, const std::string& c
     binding.actionId = actionId;
     binding.args = args;
     binding.description = description;
-    song->bindings.push_back(std::move(binding));
+    s->bindings.push_back(std::move(binding));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Binding, song->bindings.back().id, songId });
-    return song->bindings.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Binding, s->bindings.back().id, songId });
+    return s->bindings.back().id;
 }
 
 std::string StateAPI::addGlobalBinding(const std::string& controlType, int channel, int number,
@@ -707,7 +693,6 @@ std::string StateAPI::addGlobalBinding(const std::string& controlType, int chann
     pushUndo();
     BindingState binding;
     binding.id = generateId();
-    // songId left empty = global
     binding.deviceId = deviceId;
     binding.controlType = controlType;
     binding.channel = channel;
@@ -732,22 +717,21 @@ void StateAPI::removeBinding(const std::string& id) {
         eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, "" });
         return;
     }
-    // Then check current song
-    auto* song = currentSong();
-    if (!song) return;
-    auto sit = std::find_if(song->bindings.begin(), song->bindings.end(),
+    // Then current song
+    auto& s = song();
+    auto sit = std::find_if(s.bindings.begin(), s.bindings.end(),
                             [&](auto& b) { return b.id == id; });
-    if (sit != song->bindings.end()) {
-        song->bindings.erase(sit);
+    if (sit != s.bindings.end()) {
+        s.bindings.erase(sit);
         markDirty();
-        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, song->id });
+        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, s.id });
     }
 }
 
 std::vector<BindingState> StateAPI::bindingsForSong(const std::string& songId) const {
-    auto* song = findSong(songId);
-    if (!song) return {};
-    return song->bindings;
+    auto* s = findSong(songId);
+    PERF_ASSERT(s, "bindingsForSong: song not found");
+    return s->bindings;
 }
 
 std::vector<BindingState> StateAPI::globalBindings() const {
@@ -755,24 +739,19 @@ std::vector<BindingState> StateAPI::globalBindings() const {
 }
 
 std::vector<BindingState> StateAPI::effectiveBindings() const {
-    // Start with global bindings
     std::vector<BindingState> result = state.globalBindings;
-
-    // Song bindings override globals on same control
-    auto* song = currentSong();
-    if (song) {
-        for (auto& sb : song->bindings) {
-            // Remove any global binding on the same control
-            result.erase(
-                std::remove_if(result.begin(), result.end(),
-                    [&](auto& gb) {
-                        return gb.controlType == sb.controlType &&
-                               gb.channel == sb.channel &&
-                               gb.number == sb.number;
-                    }),
-                result.end());
-            result.push_back(sb);
-        }
+    auto* s = currentSong();
+    if (!s) return result;
+    for (auto& sb : s->bindings) {
+        result.erase(
+            std::remove_if(result.begin(), result.end(),
+                [&](auto& gb) {
+                    return gb.controlType == sb.controlType &&
+                           gb.channel == sb.channel &&
+                           gb.number == sb.number;
+                }),
+            result.end());
+        result.push_back(sb);
     }
     return result;
 }
@@ -783,12 +762,12 @@ std::vector<BindingState> StateAPI::effectiveBindings() const {
 
 std::string StateAPI::registerDevice(const std::string& name, const std::string& midiPortName) {
     for (auto& d : state.devices)
-        if (d.midiPortName == midiPortName) return d.id;
-    DeviceState device;
-    device.id = generateId();
-    device.name = name;
-    device.midiPortName = midiPortName;
-    state.devices.push_back(std::move(device));
+        if (d.midiPortName == midiPortName) return d.id;  // dedup
+    DeviceState dev;
+    dev.id = generateId();
+    dev.name = name;
+    dev.midiPortName = midiPortName;
+    state.devices.push_back(std::move(dev));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Device, state.devices.back().id, "" });
     return state.devices.back().id;
@@ -804,9 +783,7 @@ void StateAPI::removeDevice(const std::string& id) {
 }
 
 void StateAPI::renameDevice(const std::string& id, const std::string& name) {
-    auto* device = findDevice(id);
-    if (!device) return;
-    device->name = name;
+    device(id).name = name;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, id, "" });
 }
@@ -836,62 +813,62 @@ const std::vector<DeviceState>& StateAPI::allDevices() const {
 std::string StateAPI::addDeviceControl(const std::string& deviceId, const std::string& name,
                                         const std::string& controlType, int channel, int number,
                                         const std::string& group) {
-    auto* device = findDevice(deviceId);
-    if (!device) return {};
-    for (auto& c : device->controls)
+    auto& dev = device(deviceId);
+    for (auto& c : dev.controls)
         if (c.controlType == controlType && c.channel == channel && c.number == number)
-            return deviceId;  // duplicate — same type/channel/number already exists
-    device->controls.push_back({ name, controlType, channel, number, group });
+            return deviceId;  // duplicate
+    dev.controls.push_back({ name, controlType, channel, number, group });
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
     return deviceId;
 }
 
 void StateAPI::removeDeviceControl(const std::string& deviceId, int index) {
-    auto* device = findDevice(deviceId);
-    if (!device || index < 0 || index >= (int)device->controls.size()) return;
-    device->controls.erase(device->controls.begin() + index);
+    auto& dev = device(deviceId);
+    if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
+    dev.controls.erase(dev.controls.begin() + index);
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
 }
 
 void StateAPI::renameDeviceControl(const std::string& deviceId, int index, const std::string& name) {
-    auto* device = findDevice(deviceId);
-    if (!device || index < 0 || index >= (int)device->controls.size()) return;
-    device->controls[index].name = name;
+    auto& dev = device(deviceId);
+    if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
+    dev.controls[index].name = name;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
 }
 
 void StateAPI::setDeviceControlGroup(const std::string& deviceId, int index, const std::string& group) {
-    auto* device = findDevice(deviceId);
-    if (!device || index < 0 || index >= (int)device->controls.size()) return;
-    device->controls[index].group = group;
+    auto& dev = device(deviceId);
+    if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
+    dev.controls[index].group = group;
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
 }
 
 void StateAPI::addDeviceToSong(const std::string& songId, const std::string& deviceId) {
-    auto* song = findSong(songId);
-    if (!song) return;
-    for (auto& id : song->deviceIds)
+    auto* s = findSong(songId);
+    PERF_ASSERT(s, "addDeviceToSong: song not found");
+    for (auto& id : s->deviceIds)
         if (id == deviceId) return;  // already added
-    song->deviceIds.push_back(deviceId);
+    s->deviceIds.push_back(deviceId);
     markDirty();
 }
 
 void StateAPI::removeDeviceFromSong(const std::string& songId, const std::string& deviceId) {
-    auto* song = findSong(songId);
-    if (!song) return;
-    song->deviceIds.erase(
-        std::remove(song->deviceIds.begin(), song->deviceIds.end(), deviceId),
-        song->deviceIds.end());
+    auto* s = findSong(songId);
+    PERF_ASSERT(s, "removeDeviceFromSong: song not found");
+    s->deviceIds.erase(
+        std::remove(s->deviceIds.begin(), s->deviceIds.end(), deviceId),
+        s->deviceIds.end());
     markDirty();
 }
 
 std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) const {
-    auto* song = findSong(songId);
-    return song ? song->deviceIds : std::vector<std::string>{};
+    auto* s = findSong(songId);
+    PERF_ASSERT(s, "devicesForSong: song not found");
+    return s->deviceIds;
 }
 
 // --- Score ---
@@ -901,23 +878,21 @@ std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) con
 std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
                                       const std::string& argsJson) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return "";
+    auto& s = song();
     SongState::ActionEvent ev;
     ev.id = generateId();
     ev.beat = beat;
     ev.actionId = actionId;
     ev.argsJson = argsJson;
-    song->actionEvents.push_back(std::move(ev));
+    s.actionEvents.push_back(std::move(ev));
     markDirty();
-    return song->actionEvents.back().id;
+    return s.actionEvents.back().id;
 }
 
 void StateAPI::removeActionEvent(const std::string& id) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    auto& events = song->actionEvents;
+    auto& s = song();
+    auto& events = s.actionEvents;
     events.erase(std::remove_if(events.begin(), events.end(),
         [&](auto& e) { return e.id == id; }), events.end());
     markDirty();
@@ -925,24 +900,22 @@ void StateAPI::removeActionEvent(const std::string& id) {
 
 void StateAPI::setActionEventBeat(const std::string& id, double beat) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    for (auto& ev : song->actionEvents) {
+    auto& s = song();
+    for (auto& ev : s.actionEvents) {
         if (ev.id == id) { ev.beat = beat; markDirty(); return; }
     }
 }
 
 std::vector<SongState::ActionEvent>& StateAPI::actionEvents() {
-    static std::vector<SongState::ActionEvent> empty;
-    auto* song = currentSong();
-    return song ? song->actionEvents : empty;
+    return song().actionEvents;  // mutator — must have a song
 }
 
 std::vector<BindingState> StateAPI::scoreSteps() const {
-    auto* song = currentSong();
-    if (!song) return {};
+    auto* sp = currentSong();
+    if (!sp) return {};
+    auto& s = *sp;
     std::vector<BindingState> result;
-    for (auto& b : song->bindings)
+    for (auto& b : s.bindings)
         if (b.isScoreStep) result.push_back(b);
     std::sort(result.begin(), result.end(),
               [](auto& a, auto& b) { return a.scorePosition < b.scorePosition; });
@@ -951,14 +924,13 @@ std::vector<BindingState> StateAPI::scoreSteps() const {
 
 void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    for (auto& b : song->bindings) {
+    auto& s = song();
+    for (auto& b : s.bindings) {
         if (b.id == bindingId) {
             b.isScoreStep = true;
             b.scorePosition = position;
             markDirty();
-            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, song->id });
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, s.id });
             return;
         }
     }
@@ -966,14 +938,13 @@ void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position)
 
 void StateAPI::clearScoreStep(const std::string& bindingId) {
     pushUndo();
-    auto* song = currentSong();
-    if (!song) return;
-    for (auto& b : song->bindings) {
+    auto& s = song();
+    for (auto& b : s.bindings) {
         if (b.id == bindingId) {
             b.isScoreStep = false;
             b.scorePosition = -1;
             markDirty();
-            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, song->id });
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, s.id });
             return;
         }
     }
@@ -982,61 +953,56 @@ void StateAPI::clearScoreStep(const std::string& bindingId) {
 // --- Selection ---
 
 void StateAPI::selectTrack(const std::string& trackId, bool addToSelection) {
-    auto* song = currentSong();
-    if (!song) return;
+    auto& s = song();
     if (!addToSelection) {
-        song->selectedTrackIds.clear();
-        song->selectedBusIds.clear();
+        s.selectedTrackIds.clear();
+        s.selectedBusIds.clear();
     }
-    // Toggle if already selected
-    auto it = std::find(song->selectedTrackIds.begin(), song->selectedTrackIds.end(), trackId);
-    if (it != song->selectedTrackIds.end())
-        song->selectedTrackIds.erase(it);
+    auto it = std::find(s.selectedTrackIds.begin(), s.selectedTrackIds.end(), trackId);
+    if (it != s.selectedTrackIds.end())
+        s.selectedTrackIds.erase(it);
     else
-        song->selectedTrackIds.push_back(trackId);
+        s.selectedTrackIds.push_back(trackId);
     eventBus.emit({ StateEvent::Updated, StateEvent::Selection, trackId, "" });
 }
 
 void StateAPI::selectBus(const std::string& busId, bool addToSelection) {
-    auto* song = currentSong();
-    if (!song) return;
+    auto& s = song();
     if (!addToSelection) {
-        song->selectedTrackIds.clear();
-        song->selectedBusIds.clear();
+        s.selectedTrackIds.clear();
+        s.selectedBusIds.clear();
     }
-    auto it = std::find(song->selectedBusIds.begin(), song->selectedBusIds.end(), busId);
-    if (it != song->selectedBusIds.end())
-        song->selectedBusIds.erase(it);
+    auto it = std::find(s.selectedBusIds.begin(), s.selectedBusIds.end(), busId);
+    if (it != s.selectedBusIds.end())
+        s.selectedBusIds.erase(it);
     else
-        song->selectedBusIds.push_back(busId);
+        s.selectedBusIds.push_back(busId);
     eventBus.emit({ StateEvent::Updated, StateEvent::Selection, busId, "" });
 }
 
 void StateAPI::clearSelection() {
-    auto* song = currentSong();
-    if (!song) return;
-    song->selectedTrackIds.clear();
-    song->selectedBusIds.clear();
+    auto& s = song();
+    s.selectedTrackIds.clear();
+    s.selectedBusIds.clear();
     eventBus.emit({ StateEvent::Updated, StateEvent::Selection, "", "" });
 }
 
 std::vector<std::string> StateAPI::selectedTrackIds() const {
-    auto* song = currentSong();
-    return song ? song->selectedTrackIds : std::vector<std::string>{};
+    auto* s = currentSong();
+    return s ? s->selectedTrackIds : std::vector<std::string>{};
 }
 
 std::vector<std::string> StateAPI::selectedBusIds() const {
-    auto* song = currentSong();
-    return song ? song->selectedBusIds : std::vector<std::string>{};
+    auto* s = currentSong();
+    return s ? s->selectedBusIds : std::vector<std::string>{};
 }
 
 // --- Catalog: Plugins ---
 
 std::string StateAPI::registerPlugin(const std::string& name, const std::string& manufacturer,
                                       const std::string& formatId, bool isInstrument) {
-    // Deduplicate by name
     for (auto& p : state.plugins)
-        if (p.name == name) return p.id;
+        if (p.name == name) return p.id;  // dedup
     PluginInfo plugin;
     plugin.id = generateId();
     plugin.name = name;
@@ -1068,9 +1034,8 @@ const std::vector<PluginInfo>& StateAPI::allPlugins() const {
 
 std::string StateAPI::createPreset(const std::string& pluginId, const std::string& name,
                                     const std::string& statePath, PresetKind kind) {
-    // Deduplicate by pluginId + name
     for (auto& p : state.presets)
-        if (p.pluginId == pluginId && p.name == name) return p.id;
+        if (p.pluginId == pluginId && p.name == name) return p.id;  // dedup
     PresetInfo preset;
     preset.id = generateId();
     preset.pluginId = pluginId;
@@ -1125,7 +1090,6 @@ std::string StateAPI::registerAction(const std::string& name, const std::string&
 
 std::string StateAPI::createCustomAction(const std::string& name, const std::string& label,
                                           const std::string& luaCode, const std::string& songId) {
-    // Replace if same name already exists
     for (auto& a : state.actions) {
         if (a.name == name) {
             a.label = label;
@@ -1185,17 +1149,17 @@ std::string StateAPI::getConfig(const std::string& key, const std::string& defau
 // --- Name resolution ---
 
 std::string StateAPI::findTrackIdByName(const std::string& name) const {
-    auto* song = currentSong();
-    if (!song) return {};
-    for (auto& t : song->tracks)
+    auto* s = currentSong();
+    if (!s) return {};
+    for (auto& t : s->tracks)
         if (t.name == name) return t.id;
     return {};
 }
 
 std::string StateAPI::findBusIdByName(const std::string& name) const {
-    auto* song = currentSong();
-    if (!song) return {};
-    for (auto& b : song->busses)
+    auto* s = currentSong();
+    if (!s) return {};
+    for (auto& b : s->busses)
         if (b.name == name) return b.id;
     return {};
 }
@@ -1204,11 +1168,10 @@ std::string StateAPI::findBusIdByName(const std::string& name) const {
 
 std::vector<StateAPI::TrackInfo> StateAPI::listTracks() const {
     std::vector<TrackInfo> result;
-    auto* song = currentSong();
-    if (!song) return result;
-    // Build list sorted by position
+    auto* s = currentSong();
+    if (!s) return result;
     std::vector<const TrackState*> sorted;
-    for (auto& t : song->tracks) sorted.push_back(&t);
+    for (auto& t : s->tracks) sorted.push_back(&t);
     std::sort(sorted.begin(), sorted.end(),
               [](auto* a, auto* b) { return a->position < b->position; });
     for (auto* t : sorted)
@@ -1218,25 +1181,24 @@ std::vector<StateAPI::TrackInfo> StateAPI::listTracks() const {
 
 std::vector<StateAPI::BusInfo> StateAPI::listBusses() const {
     std::vector<BusInfo> result;
-    auto* song = currentSong();
-    if (!song) return result;
-    for (auto& b : song->busses)
+    auto* s = currentSong();
+    if (!s) return result;
+    for (auto& b : s->busses)
         result.push_back({ b.id, b.name });
     return result;
 }
 
 std::string StateAPI::getTrackPluginName(const std::string& trackId) const {
-    auto* track = findTrack(trackId);
-    if (!track || track->pluginId.empty()) return {};
-    auto* plugin = findPluginById(track->pluginId);
+    auto& t = track(trackId);
+    if (t.pluginId.empty()) return {};
+    auto* plugin = findPluginById(t.pluginId);
     return plugin ? plugin->name : std::string{};
 }
 
 std::vector<StateAPI::EffectSlotInfo> StateAPI::getTrackEffects(const std::string& trackId) const {
     std::vector<EffectSlotInfo> result;
-    auto* track = findTrack(trackId);
-    if (!track) return result;
-    for (auto& fx : track->effects) {
+    auto& t = track(trackId);
+    for (auto& fx : t.effects) {
         auto* plugin = findPluginById(fx.pluginId);
         result.push_back({ fx.id, plugin ? plugin->name : fx.name });
     }
@@ -1245,9 +1207,8 @@ std::vector<StateAPI::EffectSlotInfo> StateAPI::getTrackEffects(const std::strin
 
 std::vector<StateAPI::EffectSlotInfo> StateAPI::getBusEffects(const std::string& busId) const {
     std::vector<EffectSlotInfo> result;
-    auto* bus = findBus(busId);
-    if (!bus) return result;
-    for (auto& fx : bus->effects) {
+    auto& b = bus(busId);
+    for (auto& fx : b.effects) {
         auto* plugin = findPluginById(fx.pluginId);
         result.push_back({ fx.id, plugin ? plugin->name : fx.name });
     }
@@ -1256,9 +1217,9 @@ std::vector<StateAPI::EffectSlotInfo> StateAPI::getBusEffects(const std::string&
 
 std::vector<StateAPI::EffectSlotInfo> StateAPI::getMasterEffects() const {
     std::vector<EffectSlotInfo> result;
-    auto* song = currentSong();
-    if (!song) return result;
-    for (auto& fx : song->masterEffects) {
+    auto* s = currentSong();
+    if (!s) return result;
+    for (auto& fx : s->masterEffects) {
         auto* plugin = findPluginById(fx.pluginId);
         result.push_back({ fx.id, plugin ? plugin->name : fx.name });
     }
@@ -1267,12 +1228,11 @@ std::vector<StateAPI::EffectSlotInfo> StateAPI::getMasterEffects() const {
 
 std::vector<StateAPI::TrackSendInfo> StateAPI::getTrackSends(const std::string& trackId) const {
     std::vector<TrackSendInfo> result;
-    auto* track = findTrack(trackId);
-    if (!track) return result;
-    for (auto& send : track->sends) {
+    auto& t = track(trackId);
+    for (auto& send : t.sends) {
         std::string busName;
-        auto* bus = findBus(send.busId);
-        if (bus) busName = bus->name;
+        auto* b = findBus(send.busId);
+        if (b) busName = b->name;
         result.push_back({ busName, send.busId, send.gain });
     }
     return result;
@@ -1289,13 +1249,12 @@ StateEventBus& StateAPI::events() {
 void StateAPI::replaceState(AppState&& newState) {
     state = std::move(newState);
     dirty = false;
-    // Single event: tell EngineSync to rebuild for the current song
     if (!state.currentSongId.empty())
         eventBus.emit({ StateEvent::Updated, StateEvent::Config, "current_song_id", "" });
 }
 
 void StateAPI::pushUndo() {
-    if (inTransaction) return;  // transaction already captured the snapshot
+    if (inTransaction) return;
     undoHistory.push(state);
 }
 

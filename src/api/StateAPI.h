@@ -223,6 +223,16 @@ private:
     bool dirty = false;
     bool inTransaction = false;
 
+    // Asserting accessors — crash on invariant violation (programming error).
+    // Use inside StateAPI methods where the entity must exist.
+    SongState& song();
+    const SongState& song() const;
+    TrackState& track(const std::string& id);
+    const TrackState& track(const std::string& id) const;
+    BusState& bus(const std::string& id);
+    const BusState& bus(const std::string& id) const;
+    DeviceState& device(const std::string& id);
+
     // Find the effects vector that contains effectId, and optionally the parent ID
     std::vector<EffectState>* findEffectList(const std::string& effectId, std::string* outParentId = nullptr);
     // Find the sends vector that contains sendId
