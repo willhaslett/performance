@@ -334,13 +334,16 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
     }
 
-    // M/S pills at the very bottom of the strip
+    // M/S pills centered at the bottom of the content column
     bool isActionTrack = (sourceType == TrackSourceType::Action);
     muteBounds = {};
     soloBounds = {};
     if (!isActionTrack && audioEnabled) {
+        constexpr int fmw = 48;
+        int contentWidth = bounds.getWidth() - fmw - Theme::trackPadding * 2;
+        int pillGroupWidth = Theme::pillSize * 2 + Theme::pillGap;
+        int px = bounds.getX() + (contentWidth - pillGroupWidth) / 2;
         int bottomY = getHeight() - Theme::pillSize - 8;
-        int px = bounds.getX() + 8;
 
         auto drawPill = [&](juce::Rectangle<int>& pillBounds, const char* pillLabel,
                             bool active, uint32_t activeColor) {
@@ -381,12 +384,12 @@ void TrackStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 48;
 
-    // Reserve space at bottom for M/S pill row
-    int bottomReserve = Theme::pillSize + 16;  // pills + padding above and below
+    // Reserve space at bottom for M/S pill row (content column only, not fader)
+    int bottomReserve = Theme::pillSize + 16;
 
-    // FaderMeter runs full height on the right (above M/S row)
+    // FaderMeter runs full height on the right
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
-                        .withTrimmedBottom(bottomReserve)
+                        .withTrimmedBottom(Theme::trackPadding)
                         .removeFromRight(faderMeterWidth + Theme::trackPadding)
                         .withTrimmedRight(Theme::trackPadding);
     faderMeter.setBounds(fmArea);
