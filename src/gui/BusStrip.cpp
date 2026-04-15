@@ -82,10 +82,6 @@ void BusStrip::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(bounds);
 
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
-               (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
-
     // Header — purple tint for busses
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
@@ -126,6 +122,11 @@ void BusStrip::paint(juce::Graphics& g) {
         auto label = outputTargetDisplay.isEmpty() ? "Main" : outputTargetDisplay;
         g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
     }
+
+    // Right-edge border — drawn last
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
+               (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
 }
 
 int BusStrip::getMinimumHeight() const {

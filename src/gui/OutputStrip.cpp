@@ -88,12 +88,6 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(bounds);
 
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)bounds.getX(), (float)bounds.getY(),
-               (float)bounds.getX(), (float)bounds.getBottom(), 1.0f);
-    g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
-               (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
-
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
@@ -124,6 +118,11 @@ void OutputStrip::paint(juce::Graphics& g) {
     g.setFont(Theme::font(Theme::fontSize));
     g.drawText("Main", headerBounds.withTrimmedLeft(26).reduced(4, 0),
                juce::Justification::centredLeft);
+
+    // Edge borders — drawn last
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)bounds.getX(), (float)bounds.getY(),
+               (float)bounds.getX(), (float)bounds.getBottom(), 1.0f);
 }
 
 void OutputStrip::setAudioEnabled(bool enabled) {
