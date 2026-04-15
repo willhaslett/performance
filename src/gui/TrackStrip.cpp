@@ -364,10 +364,10 @@ void TrackStrip::paint(juce::Graphics& g) {
         drawPill(soloBounds, "S", soloed, Theme::Color::pillSolo);
     }
 
-    // Right-edge border — drawn last so it's on top of everything
+    // Left-edge border — drawn last so it's on top of header
     g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
-               (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
+    g.drawLine((float)bounds.getX(), (float)bounds.getY(),
+               (float)bounds.getX(), (float)bounds.getBottom(), 1.0f);
 }
 
 int TrackStrip::getMinimumHeight() const {
