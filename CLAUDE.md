@@ -6,34 +6,39 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 ## Active Work
 
-**Whole-app theming sweep — pane by pane.**
+**Sidebar-slot refactor and the ⌘O Songs palette.**
 
-The larger goal: a minimal, almost-grayscale dark theme that looks like a polished dark-mode UI with no hardcoded color values anywhere in the GUI code. Once that's done, a new theme (different palette, light mode, colored variant) should be installable by editing `Theme.h` alone.
+The theming sweep is paused mid-way — not because it's done, but because a broader architectural direction emerged that changes which panes even exist. The authoring model is now explicit: **chat with Claude is the primary creation surface, every other pane is a result surface**. Full rationale and usage rules live in the `project_authoring_model` memory. Vocabulary note: the app serves **Performance** (`Performer` view) and **Production** (`Producer` view) — two modes of creation. There is no "dev mode." Both are first-class.
 
-For each pane the work is: (1) finalize visual design — spacing, hierarchy, affordances, hover states; (2) route every color/font/spacing through `Theme.h` tokens; (3) fix any paint ordering or layout bugs surfaced along the way. Read the **Theme** section below for the full token system and rules before touching any pane.
+### Architectural moves ahead (decided, ordered by dependency)
 
-### Pane progress
+1. **⌘O Songs palette** — modal overlay, type-to-filter, Enter to load, Esc to dismiss. Self-contained; doesn't depend on anything else. First concrete capability on the new vision. *This is the next thing to build.*
+2. **MappingPane drag rewrite** — convert the current custom state-based drag system (`isDragging`, `dragSourceLeftRow`, paint-based ghost) to JUCE's `DragAndDropContainer` / `DragAndDropTarget` rooted at `MainLayout`. Required for cross-slot drag. Standard refactor, ~1 day.
+3. **Split Controllers out of MappingPane** into its own pane content (likely `Devices`). MappingPane narrows to just Song Mappings (Atemporal + Score). Requires the drag rewrite to be done first.
+4. **Sidebar becomes a flexible pane slot** like Left/Right/Mixer. Tabs go away. Content is chosen by the user. New pane content types: `Songs`, `Devices`, `Library`, `Actions` (inspect/delete only — creation happens via chat). Default content: `Songs` for production layouts, `Devices` for performance layouts.
+5. **Layout presets** (named Production / Performance configurations, toggled with one shortcut) — **deferred** until the underlying capabilities are in place. The slot system already persists last-used assignments per slot, which covers 90% of what presets would do.
 
-- [x] **ProducePane** (`src/gui/ProducePane.cpp/.h`) — ✅ Done. Full token migration, paint fixes (gridline clip, right-border order, lane fill inset), pill hover, shared track-name block height with mixer, no hardcoded colors/fonts remaining.
-- [x] **MixerView** family — ✅ Done. Covers `MixerView`, `TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`. Token-clean, pill hover, plugin slot hover live, shared track-name styling with ProducePane.
-- [ ] **MappingPane** (`src/gui/MappingPane.cpp/.h`) — 🔧 In progress. Token-clean pass done (no hardcoded colors/fonts, semantic fixes to hover row and resting row backgrounds, corner radii tokenized, `InlineEditor` text color corrected to `textPrimary`). *Still deferred:* hover states for `[+]` add-mapping buttons (`:439, :514`), Controllers-pane group field (`:367-377`), and device-row disclosure triangles (`:317-319`). These are standalone clickable widgets that currently rely on row-level hover — adding explicit hover states is a design enhancement to revisit on the follow-up pass.
-- [ ] **Sidebar** (`src/gui/Sidebar.*`) — tabs (Songs/Library/Actions/Devices), device tree, activity indicators, selection states.
-- [ ] **DebugPane** (`src/gui/DebugPane.cpp`) — MIDI event log with type colors, per-channel audio input meters. Currently has several hardcoded colors.
-- [ ] **LogPane** (`src/gui/LogPane.cpp`) — log tail with per-subsystem color scheme. Currently has a whole color table baked in.
-- [ ] **ChatView** (`src/gui/ChatView.cpp`) — Claude chat bubbles (user/assistant/tool/error types). Has token usage but a few hardcoded edges remain.
-- [ ] **SettingsWindow** (`src/gui/SettingsWindow.cpp`) — Audio + MIDI tabs (MIDI is a placeholder). Should get full token + font audit.
-- [ ] **MusicalTyping** (`src/gui/MusicalTyping.cpp`) — on-screen keyboard overlay. Lots of hardcoded colors (black/white key, active, panel backdrop).
-- [ ] **MorphEditor** (`src/gui/MorphEditor.cpp`) — compound morph modal. A few hardcoded backdrop/separator colors.
-- [ ] **KeyBindingEditor** (`src/gui/KeyBindingEditor.cpp`) — rebinding modal. One or two hardcoded colors.
-- [ ] **SaveAsDialog** (`src/gui/SaveAsDialog.h`) — save-as modal. Half a dozen hardcoded colors (text field, list box, backdrop).
-- [ ] **MainLayout** (`src/gui/MainLayout.h`) — root container with the loading/saving spinner overlay. Two hardcoded colors in the overlay.
+### Theming sweep — paused but not abandoned
 
-Design questions still open across multiple panes (address during each pane's sweep):
+What's done:
 
-- **Fader handle shape** — currently a small rounded rect with center groove. Considering a more physical cap shape. Lives in `FaderMeter` (mixer done) but the *design* question is still open.
-- **Selected track vs region contrast** — selection uses `bgSelection` (`0x262626`), regions use `bgSurfaceRaised` (`0x333333`). Verify the three levels (unselected lane → selected lane → region) are clearly distinguishable in practice.
-- **Remove `bgRecessed` if unused** — meter grooves now use `bgSlot`. Grep for remaining references; delete the token if none.
-- **Liveliness of empty/sparse panes** — ProducePane and Mixer feel structured because functional chrome (transport, ruler, track headers, strips, plugin slots) fills every zone. MappingPane, Sidebar, ChatView feel empty when sparse. **Tried and reverted:** lifting pane content to `bgSurface` with `bgApp` gutters — the surface level collided with mixer strip semantics (strips = `bgSurface`, plugin slots inside = `bgControl`; MappingPane sections at `bgSurface` with rows at `bgControl` created an ambiguous visual vocabulary where strips and pane sections looked identical). The right fix is probably structural chrome (functional bands, drop zones, persistent section headers) rather than surface elevation, but it's an open design question. Don't retry surface lifts without first resolving the vocabulary conflict.
+- [x] **ProducePane** — full token migration, paint fixes, pill hover, shared track-name block height with mixer.
+- [x] **MixerView** family (`MixerView`, `TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`) — token-clean, pill hover, plugin slot hover live.
+- [x] **MappingPane** — token-clean pass done: semantic fixes (left-panel hover, mapping/score row backgrounds, `InlineEditor` text color), font sizes bumped to match Performer's first-class status, new tokens (`cornerRadiusXs`, `activityDotSize`), Controllers panel lifted to `bgSurface` (fills to panel bottom to avoid stacked-box look). *Structural changes still ahead:* Controllers is going to move out entirely (see #3 above).
+
+What's deferred — these panes are going to move or transform as part of the sidebar-slot refactor, so theming them first would be wasted work:
+
+- **Sidebar** — being dissolved into the slot model. Don't theme in its current form.
+- **ChatView** — staying, but may get layout changes as it becomes a persistent companion. Hardcoded colors noted.
+- **DebugPane**, **LogPane**, **SettingsWindow**, **MusicalTyping**, **MorphEditor**, **KeyBindingEditor**, **SaveAsDialog**, **MainLayout** overlay — hardcoded color / font literals noted, will sweep after the structural work settles.
+
+### Smaller design questions still open
+
+- **Fader handle shape** — currently a rounded rect with center groove; considering a more physical cap.
+- **Selected track vs region contrast** — selection uses `bgSelection` (`0x262626`), regions use `bgSurfaceRaised` (`0x333333`). Verify distinguishability.
+- **Remove `bgRecessed` if unused** — meter grooves now use `bgSlot`. Grep and delete if nothing references it.
+- **MappingPane hover affordances** — `[+]` add buttons, group field, disclosure triangles lack explicit hover states. Revisit after the drag rewrite.
+- **Liveliness of sparse panes** — tried lifting whole MappingPane sections to `bgSurface` with gutters; reverted because it collided with mixer strip vocabulary. Current Controllers lift works because Controllers has no `bgControl` rows inside. For Atemporal/Score the problem is still open. Don't retry surface-only lifts without resolving the vocabulary conflict first.
 
 ## Backlog
 
