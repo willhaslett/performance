@@ -278,22 +278,27 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
 
     // Title
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(16.0f));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
     g.drawText("Controllers", area.getX() + panelPadding, area.getY() + 10,
                160, 22, juce::Justification::centredLeft);
 
     // Learn button
     int learnW = isLearning ? 42 : 126;
     auto learnBounds = juce::Rectangle<int>(area.getRight() - learnW - 8, area.getY() + 10, learnW, 22);
-    g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textDim));
+    g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textSecondary));
     g.drawRoundedRectangle(learnBounds.toFloat(), 3.0f, 1.0f);
-    g.setFont(Theme::font(12.0f));
+    g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(isLearning ? "Stop" : "Learn new controls", learnBounds, juce::Justification::centred);
 
-    // "In Song" column header — sits in the device-dark band just below the header
-    int inSongHeaderY = area.getY() + leftHeaderHeight;
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeXs));
+    // Header separator
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)area.getX(), (float)(area.getY() + leftHeaderHeight),
+               (float)area.getRight(), (float)(area.getY() + leftHeaderHeight), 1.0f);
+
+    // "In Song" column header
+    int inSongHeaderY = area.getY() + leftHeaderHeight + 2;
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeSm));
     g.drawText("In Song", area.getRight() - 58, inSongHeaderY, 50, 16, juce::Justification::centredRight);
 
     int contentTop = area.getY() + leftHeaderHeight;
@@ -307,19 +312,20 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                 bool collapsed = collapsedDevices.count(entry.deviceId) > 0;
 
                 // Disclosure triangle
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.setFont(Theme::font(Theme::fontSizeXs));
+                g.setColour(Theme::color(Theme::Color::textSecondary));
+                g.setFont(Theme::font(Theme::fontSizeSm));
                 g.drawText(collapsed ? juce::CharPointer_UTF8("\xe2\x96\xb6")
                                      : juce::CharPointer_UTF8("\xe2\x96\xbc"),
                            area.getX() + 6, y, 12, rowHeight, juce::Justification::centred);
 
                 // Connection dot
                 float dotY = (float)(y + rowHeight / 2 - 3);
-                g.setColour(entry.deviceConnected ? juce::Colour(0xff44cc44) : juce::Colour(0xff555555));
+                g.setColour(entry.deviceConnected ? Theme::color(Theme::Color::activityOn)
+                                                  : Theme::color(Theme::Color::textDim));
                 g.fillEllipse((float)(area.getX() + 20), dotY, 6.0f, 6.0f);
 
                 g.setColour(Theme::color(Theme::Color::textPrimary));
-                g.setFont(Theme::font(12.0f));
+                g.setFont(Theme::font(Theme::fontSizeLg));
                 g.drawText(juce::String(entry.deviceName), area.getX() + 30, y,
                            area.getWidth() - 34, rowHeight, juce::Justification::centredLeft);
             }
@@ -341,10 +347,10 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
 
                 // Activity dot
                 bool active = (entry.lastActivityMs > 0 && now - entry.lastActivityMs < 300);
-                g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+                g.setColour(active ? Theme::color(Theme::Color::activityOn)
+                                   : Theme::color(Theme::Color::activityOff));
                 g.fillEllipse((float)(area.getX() + 32), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
 
-                // Layout: [dot 42] [name ... groupFieldX] [group field ... checkX] [check 40]
                 int checkX = area.getRight() - 40;
                 int groupFieldW = 60;
                 int groupFieldX = checkX - groupFieldW;
@@ -352,20 +358,20 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
 
                 // Control name
                 g.setColour(entry.isBound ? Theme::color(Theme::Color::textDim)
-                                          : Theme::color(Theme::Color::textSecondary));
-                g.setFont(Theme::font(Theme::fontSizeSm));
+                                          : Theme::color(Theme::Color::textPrimary));
+                g.setFont(Theme::font(Theme::fontSizeMd));
                 g.drawText(juce::String(entry.controlName), nameX, y,
                            groupFieldX - nameX - 4, rowHeight, juce::Justification::centredLeft);
 
-                // Group field (clickable)
+                // Group field
                 if (!entry.group.empty()) {
-                    g.setColour(Theme::color(Theme::Color::textDim));
-                    g.setFont(Theme::font(Theme::fontSizeXs));
+                    g.setColour(Theme::color(Theme::Color::textSecondary));
+                    g.setFont(Theme::font(Theme::fontSizeSm));
                     g.drawText(juce::String(entry.group), groupFieldX, y,
                                groupFieldW, rowHeight, juce::Justification::centredRight);
                 } else {
-                    g.setColour(Theme::color(Theme::Color::textDim).withAlpha(0.3f));
-                    g.setFont(Theme::font(Theme::fontSizeXs));
+                    g.setColour(Theme::color(Theme::Color::textDim));
+                    g.setFont(Theme::font(Theme::fontSizeSm));
                     g.drawText("group", groupFieldX, y,
                                groupFieldW, rowHeight, juce::Justification::centredRight);
                 }
@@ -373,7 +379,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                 // "In Song" checkmark
                 if (entry.isBound) {
                     g.setColour(Theme::color(Theme::Color::accent));
-                    g.setFont(Theme::font(12.0f));
+                    g.setFont(Theme::font(Theme::fontSizeLg));
                     g.drawText(juce::CharPointer_UTF8("\xe2\x9c\x93"),
                                checkX, y, 30, rowHeight, juce::Justification::centred);
                 }
@@ -386,13 +392,16 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(area.getX(), area.getY(), area.getWidth(), leftHeaderHeight);
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(16.0f));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
     g.drawText("Controllers", area.getX() + panelPadding, area.getY() + 10,
                160, 22, juce::Justification::centredLeft);
-    g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textDim));
+    g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textSecondary));
     g.drawRoundedRectangle(learnBounds.toFloat(), 3.0f, 1.0f);
-    g.setFont(Theme::font(12.0f));
+    g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(isLearning ? "Stop" : "Learn new controls", learnBounds, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)area.getX(), (float)(area.getY() + leftHeaderHeight),
+               (float)area.getRight(), (float)(area.getY() + leftHeaderHeight), 1.0f);
 
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine((float)area.getRight(), (float)area.getY(),
@@ -403,35 +412,38 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
     auto area = mappingPanelBounds;
 
     // Main header: "Song Mappings"
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(area.getX(), area.getY(), area.getWidth(), rightHeaderHeight);
     auto* song = state.currentSong();
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(16.0f));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
     juce::String mainTitle = song ? "Song Mappings: " + juce::String(song->name) : "Song Mappings";
-    g.drawText(mainTitle, area.getX() + panelPadding, area.getY() + 10, 300, 22,
+    g.drawText(mainTitle, area.getX() + panelPadding, area.getY() + 10, 400, 22,
                juce::Justification::centredLeft);
+
+    // Header separator
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)area.getX(), (float)(area.getY() + rightHeaderHeight),
+               (float)area.getRight(), (float)(area.getY() + rightHeaderHeight), 1.0f);
 
     // Subsection: "Atemporal"
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(14.0f));
-    g.drawText("Atemporal", area.getX() + panelPadding, area.getY() + rightHeaderHeight + 2, 200, 18,
+    g.setFont(Theme::font(Theme::fontSizeLg));
+    g.drawText("Atemporal", area.getX() + panelPadding, area.getY() + rightHeaderHeight + 4, 200, 18,
                juce::Justification::centredLeft);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(11.0f));
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeSm));
     g.drawText("Mappings active throughout the song", area.getX() + panelPadding,
-               area.getY() + rightHeaderHeight + 18, 300, 14, juce::Justification::centredLeft);
+               area.getY() + rightHeaderHeight + 20, 300, 14, juce::Justification::centredLeft);
 
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(16.0f));
-    g.drawText("+", area.getRight() - 30, area.getY() + rightHeaderHeight + 2, 20, 18, juce::Justification::centred);
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
+    g.drawText("+", area.getRight() - 30, area.getY() + rightHeaderHeight + 4, 20, 18, juce::Justification::centred);
 
     int y = area.getY() + rightHeaderHeight + sectionTitleHeight - mappingScrollOffset;
     auto now = juce::Time::currentTimeMillis();
 
     if (mappingRows.empty()) {
-        g.setColour(Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(11.0f));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.setFont(Theme::font(Theme::fontSizeMd));
         g.drawText("Drag controls here or click +",
                    area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
     }
@@ -443,27 +455,29 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
         auto& mr = mappingRows[i];
         bool hovered = (i == hoveredMappingRow);
 
-        g.setColour(hovered ? juce::Colour(0xff3a3a3a) : juce::Colour(0xff2e2e2e));
+        g.setColour(hovered ? Theme::color(Theme::Color::bgSurfaceHover)
+                            : Theme::color(Theme::Color::borderSubtle));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
         bool active = (mr.lastActivityMs > 0 && now - mr.lastActivityMs < 300);
-        g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
+        g.setColour(active ? Theme::color(Theme::Color::activityOn)
+                           : Theme::color(Theme::Color::activityOff));
         g.fillEllipse((float)(area.getX() + 10), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
 
         // Source: "Device Group Control"
-        g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        int sourceWidth = std::min(180, (area.getWidth() - 40) / 2);
+        g.setColour(Theme::color(Theme::Color::textPrimary));
+        g.setFont(Theme::font(Theme::fontSizeMd));
+        int sourceWidth = std::min(200, (area.getWidth() - 40) / 2);
         g.drawText(juce::String(mr.controlName), area.getX() + 22, y, sourceWidth, rowHeight,
                    juce::Justification::centredLeft);
 
-        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
         g.drawText(juce::CharPointer_UTF8("\xe2\x86\x92"),
                    area.getX() + 22 + sourceWidth, y, 20, rowHeight, juce::Justification::centred);
 
         int actionX = area.getX() + 22 + sourceWidth + 20;
         if (mr.actionLabel.empty()) {
-            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setColour(Theme::color(Theme::Color::textSecondary));
             g.drawText("Click to assign", actionX, y, area.getRight() - actionX - 8, rowHeight,
                        juce::Justification::centredLeft);
         } else {
@@ -486,25 +500,25 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
     auto area = scorePanelBounds;
 
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(14.0f));
+    g.setFont(Theme::font(Theme::fontSizeLg));
     g.drawText("Score", area.getX() + panelPadding, area.getY() + 4, 200, 18,
                juce::Justification::centredLeft);
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(11.0f));
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeSm));
     g.drawText("Ordered one-time actions performed during this song",
                area.getX() + panelPadding, area.getY() + 20, area.getWidth() - 40, 14,
                juce::Justification::centredLeft);
 
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(16.0f));
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
     g.drawText("+", area.getRight() - 30, area.getY() + 4, 20, 18, juce::Justification::centred);
 
     int y = area.getY() + sectionTitleHeight;
     auto now = juce::Time::currentTimeMillis();
 
     if (scoreRows.empty()) {
-        g.setColour(Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(11.0f));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.setFont(Theme::font(Theme::fontSizeMd));
         g.drawText("Drag mappings here or click +",
                    area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
     }
@@ -515,36 +529,38 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
         auto& sr = scoreRows[i];
         bool hovered = (i == hoveredScoreRow);
 
-        g.setColour(hovered ? juce::Colour(0xff3a3a3a) : juce::Colour(0xff2e2e2e));
+        g.setColour(hovered ? Theme::color(Theme::Color::bgSurfaceHover)
+                            : Theme::color(Theme::Color::borderSubtle));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
         // Score position badge
-        auto badge = juce::Rectangle<int>(area.getX() + 8, y + 4, 20, rowHeight - 8);
+        auto badge = juce::Rectangle<int>(area.getX() + 8, y + 4, 22, rowHeight - 8);
         g.setColour(Theme::color(Theme::Color::accent));
         g.fillRoundedRectangle(badge.toFloat(), 4.0f);
         g.setColour(Theme::color(Theme::Color::textOnColor));
-        g.setFont(Theme::font(Theme::fontSizeXs));
+        g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(juce::String(sr.scorePosition), badge, juce::Justification::centred);
 
         // Activity dot
         bool active = (sr.lastActivityMs > 0 && now - sr.lastActivityMs < 300);
-        g.setColour(active ? juce::Colour(0xff44cc44) : juce::Colour(0xff1a3a1a));
-        g.fillEllipse((float)(area.getX() + 34), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+        g.setColour(active ? Theme::color(Theme::Color::activityOn)
+                           : Theme::color(Theme::Color::activityOff));
+        g.fillEllipse((float)(area.getX() + 36), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
 
-        // Source: "Device Group Control"
-        g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        int sourceWidth = std::min(180, (area.getWidth() - 60) / 2);
-        g.drawText(juce::String(sr.controlName), area.getX() + 46, y, sourceWidth, rowHeight,
+        // Source
+        g.setColour(Theme::color(Theme::Color::textPrimary));
+        g.setFont(Theme::font(Theme::fontSizeMd));
+        int sourceWidth = std::min(200, (area.getWidth() - 60) / 2);
+        g.drawText(juce::String(sr.controlName), area.getX() + 48, y, sourceWidth, rowHeight,
                    juce::Justification::centredLeft);
 
-        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setColour(Theme::color(Theme::Color::textSecondary));
         g.drawText(juce::CharPointer_UTF8("\xe2\x86\x92"),
-                   area.getX() + 46 + sourceWidth, y, 20, rowHeight, juce::Justification::centred);
+                   area.getX() + 48 + sourceWidth, y, 20, rowHeight, juce::Justification::centred);
 
-        int actionX = area.getX() + 46 + sourceWidth + 20;
+        int actionX = area.getX() + 48 + sourceWidth + 20;
         if (sr.actionLabel.empty()) {
-            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setColour(Theme::color(Theme::Color::textSecondary));
             g.drawText("Click to assign", actionX, y, area.getRight() - actionX - 8, rowHeight,
                        juce::Justification::centredLeft);
         } else {

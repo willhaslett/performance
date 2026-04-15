@@ -51,7 +51,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
 }
 
 void ChatView::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgApp));
+    g.fillAll(Theme::color(Theme::Color::bgPanel));
 
     // Draw rounded input background
     auto inputBounds = inputField.getBounds().toFloat().expanded(2.0f, 0.0f);

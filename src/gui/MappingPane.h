@@ -153,7 +153,7 @@ private:
     static constexpr int sectionTitleHeight = 38;
     static constexpr int leftHeaderHeight = 42;
     static constexpr int rightHeaderHeight = 42;
-    static constexpr int rowHeight = 24;
+    static constexpr int rowHeight = 28;
     static constexpr int scoreMinHeight = 130;  // ~sectionTitle + 4 rows
     static constexpr int leftPanelWidth = 240;
     static constexpr int panelPadding = 8;
