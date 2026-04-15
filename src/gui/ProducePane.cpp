@@ -671,6 +671,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
     auto tracks = state->listTracks();
     powerIconBounds.resize(tracks.size());
+    muteBounds.resize(tracks.size());
+    soloBounds.resize(tracks.size());
     armBounds.resize(tracks.size());
     inputMonitorBounds.resize(tracks.size());
     for (size_t i = 0; i < tracks.size(); ++i) {
@@ -721,41 +723,48 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         cx += 14 + 6;
 
         // Record arm "R" — only for instrument and audio input tracks
-        bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
-        bool isArmed = trackState ? trackState->armed : false;
-        armBounds[i] = {};
-        if (!isActionTrack) {
-            armBounds[i] = juce::Rectangle<int>(cx, cy_row - 8, 16, 16);
-            if (enabled) {
-                if (isArmed) {
-                    g.setColour(juce::Colour(0xffee8822));
-                    g.fillRoundedRectangle(armBounds[i].toFloat(), 3.0f);
-                    g.setColour(Theme::color(Theme::Color::textWhite));
-                } else {
-                    g.setColour(Theme::color(Theme::Color::textDim));
-                    g.drawRoundedRectangle(armBounds[i].toFloat().reduced(0.5f), 3.0f, 1.0f);
-                }
-                g.setFont(Theme::font(11.0f));
-                g.drawText("R", armBounds[i], juce::Justification::centred);
-            }
-            cx += 16 + 2;
-        }
-
-        // Input monitoring "I" — pill toggle, only for audio input tracks
-        inputMonitorBounds[i] = {};
-        if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
-            inputMonitorBounds[i] = juce::Rectangle<int>(cx, cy_row - 8, 16, 16);
-            if (trackState->inputMonitoring) {
-                g.setColour(juce::Colour(0xffee8822));
-                g.fillRoundedRectangle(inputMonitorBounds[i].toFloat(), 3.0f);
+        // Pill button helper
+        auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
+                            bool active, uint32_t activeColor) {
+            bounds = juce::Rectangle<int>(cx, cy_row - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
+            if (active) {
+                g.setColour(Theme::color(activeColor));
+                g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::textWhite));
             } else {
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.drawRoundedRectangle(inputMonitorBounds[i].toFloat().reduced(0.5f), 3.0f, 1.0f);
+                g.setColour(Theme::color(Theme::Color::pillInactive));
+                g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), Theme::pillRadius, 1.0f);
+                g.setColour(Theme::color(Theme::Color::pillTextInactive));
             }
-            g.setFont(Theme::font(11.0f));
-            g.drawText("I", inputMonitorBounds[i], juce::Justification::centred);
-            cx += 16 + 2;
+            g.setFont(Theme::font(Theme::fontSizePill));
+            g.drawText(label, bounds, juce::Justification::centred);
+            cx += Theme::pillSize + 3;
+        };
+
+        bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
+
+        // M S — all audio tracks (not action)
+        muteBounds[i] = {};
+        soloBounds[i] = {};
+        if (!isActionTrack && enabled) {
+            bool isMuted = trackState ? trackState->muted : false;
+            bool isSoloed = trackState ? trackState->soloed : false;
+            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMuteActive);
+            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSoloActive);
+            cx += 2;  // extra gap before R/I group
+        }
+
+        // R — instrument + audio input (not action)
+        armBounds[i] = {};
+        if (!isActionTrack && enabled) {
+            bool isArmed = trackState ? trackState->armed : false;
+            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArmActive);
+        }
+
+        // I — audio input tracks only
+        inputMonitorBounds[i] = {};
+        if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
+            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInputActive);
         }
 
         // Track name
@@ -1815,9 +1824,30 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 return;
             }
 
+            // Mute "M"
+            if (trackState && trackState->audioEnabled
+                && idx < (int)muteBounds.size()
+                && !muteBounds[idx].isEmpty()
+                && muteBounds[idx].expanded(4).contains(event.getPosition())) {
+                state->setTrackMuted(tracks[idx].id, !trackState->muted);
+                repaint();
+                return;
+            }
+
+            // Solo "S"
+            if (trackState && trackState->audioEnabled
+                && idx < (int)soloBounds.size()
+                && !soloBounds[idx].isEmpty()
+                && soloBounds[idx].expanded(4).contains(event.getPosition())) {
+                state->setTrackSoloed(tracks[idx].id, !trackState->soloed);
+                repaint();
+                return;
+            }
+
             // Arm "R" — only when track is enabled
             if (trackState && trackState->audioEnabled
                 && idx < (int)armBounds.size()
+                && !armBounds[idx].isEmpty()
                 && armBounds[idx].expanded(4).contains(event.getPosition())) {
                 state->setTrackArmed(tracks[idx].id, !trackState->armed);
                 repaint();

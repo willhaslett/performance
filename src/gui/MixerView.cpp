@@ -139,6 +139,8 @@ void MixerView::timerCallback() {
             trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(id.toStdString()));
             trackStrips[i]->setArmed(state.isTrackArmed(id.toStdString()));
             trackStrips[i]->setInputMonitoring(state.isTrackInputMonitoring(id.toStdString()));
+            trackStrips[i]->setMuted(state.isTrackMuted(id.toStdString()));
+            trackStrips[i]->setSoloed(state.isTrackSoloed(id.toStdString()));
             trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
             {
                 auto target = state.getTrackOutputTarget(id.toStdString());

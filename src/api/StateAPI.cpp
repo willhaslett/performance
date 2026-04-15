@@ -456,6 +456,32 @@ bool StateAPI::isTrackInputMonitoring(const std::string& id) const {
     return track(id).inputMonitoring;
 }
 
+void StateAPI::setTrackMuted(const std::string& id, bool muted) {
+    track(id).muted = muted;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+bool StateAPI::isTrackMuted(const std::string& id) const {
+    return track(id).muted;
+}
+
+void StateAPI::setTrackSoloed(const std::string& id, bool soloed) {
+    track(id).soloed = soloed;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+bool StateAPI::isTrackSoloed(const std::string& id) const {
+    return track(id).soloed;
+}
+
+bool StateAPI::isAnySoloed() const {
+    auto* s = currentSong();
+    if (!s) return false;
+    for (auto& t : s->tracks)
+        if (t.soloed) return true;
+    return false;
+}
+
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
     pushUndo();

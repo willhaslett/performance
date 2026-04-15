@@ -11,6 +11,8 @@ public:
 
     void setGain(float g) { gain.store(g, std::memory_order_relaxed); }
     float getGain() const { return gain.load(std::memory_order_relaxed); }
+    void setMuted(bool m) { mutedFlag.store(m, std::memory_order_relaxed); }
+    bool isMuted() const { return mutedFlag.load(std::memory_order_relaxed); }
     float getPeakLevel() const { return std::max(peakL.load(std::memory_order_relaxed),
                                                     peakR.load(std::memory_order_relaxed)); }
     float getPeakL() const { return peakL.load(std::memory_order_relaxed); }
@@ -19,7 +21,9 @@ public:
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override {
-        buffer.applyGain(gain.load(std::memory_order_relaxed));
+        float g = mutedFlag.load(std::memory_order_relaxed) ? 0.0f
+                                                              : gain.load(std::memory_order_relaxed);
+        buffer.applyGain(g);
         int n = buffer.getNumSamples();
         for (int ch = 0; ch < std::min(buffer.getNumChannels(), 2); ++ch) {
             float mag = buffer.getMagnitude(ch, 0, n);
@@ -46,6 +50,7 @@ public:
 
 private:
     std::atomic<float> gain { 1.0f };
+    std::atomic<bool> mutedFlag { false };
     std::atomic<float> peakL { 0.0f };
     std::atomic<float> peakR { 0.0f };
     static constexpr float decayCoeff = 0.93f;

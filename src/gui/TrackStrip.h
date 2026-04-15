@@ -26,6 +26,8 @@ public:
     void setAudioEnabled(bool enabled);
     void setArmed(bool armed);
     void setInputMonitoring(bool enabled);
+    void setMuted(bool muted);
+    void setSoloed(bool soloed);
     void setPeakLevel(float level);
     void setPeakLevelStereo(float left, float right);
     void setGain(float gain);
@@ -64,6 +66,8 @@ private:
     bool audioEnabled = true;
     bool armed = false;
     bool inputMonitoring = true;
+    bool muted = false;
+    bool soloed = false;
 
     TrackSourceType sourceType = TrackSourceType::Instrument;
 
@@ -87,6 +91,8 @@ private:
     juce::Rectangle<int> midiDotBounds;
     juce::Rectangle<int> armDotBounds;
     juce::Rectangle<int> inputMonitorBounds;
+    juce::Rectangle<int> muteBounds;
+    juce::Rectangle<int> soloBounds;
     juce::Rectangle<int> menuDotsBounds;
     juce::Rectangle<int> outputTargetBounds;
     juce::String outputTargetId;

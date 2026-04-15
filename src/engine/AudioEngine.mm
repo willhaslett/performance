@@ -748,6 +748,20 @@ void AudioEngine::setTrackInputMonitoring(const juce::String& trackId, bool enab
             enabled ? "enabled" : "disabled", trackId.toRawUTF8());
 }
 
+void AudioEngine::setTrackMuted(const juce::String& trackId, bool muted) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    it->second.muted = muted;
+    updateMuteStates();
+}
+
+void AudioEngine::setTrackSoloed(const juce::String& trackId, bool soloed) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    it->second.soloed = soloed;
+    updateMuteStates();
+}
+
 void AudioEngine::setTrackInputChannels(const juce::String& trackId, int start, int count) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
@@ -922,6 +936,20 @@ void AudioEngine::setSendGain(const juce::String& trackId, const juce::String& b
 }
 
 // --- Graph wiring ---
+
+void AudioEngine::updateMuteStates() {
+    bool anySoloed = false;
+    for (auto& [id, track] : tracks)
+        if (track.soloed) { anySoloed = true; break; }
+
+    for (auto& [id, track] : tracks) {
+        if (!track.outputGainNode) continue;
+        auto* proc = dynamic_cast<GainProcessor*>(track.outputGainNode->getProcessor());
+        if (!proc) continue;
+        bool shouldMute = track.muted || (anySoloed && !track.soloed);
+        proc->setMuted(shouldMute);
+    }
+}
 
 void AudioEngine::rebuildConnections() {
     for (auto& conn : graph->getConnections())

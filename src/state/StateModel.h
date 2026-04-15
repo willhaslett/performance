@@ -152,6 +152,8 @@ struct TrackState {
     bool audioEnabled = true;  // passes audio signal (all tracks)
     bool armed = false;        // record-armed (records MIDI when playing)
     bool inputMonitoring = true; // pass live audio input to output (audio input tracks)
+    bool muted = false;        // mute output (runtime, not persisted)
+    bool soloed = false;       // solo this track (runtime, not persisted)
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
     std::string processorState;

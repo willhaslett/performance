@@ -260,6 +260,8 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         engine.setTrackGain(id, t->outputGain);
         engine.setTrackAudioEnabled(id, t->audioEnabled);
         engine.setTrackInputMonitoring(id, t->inputMonitoring);
+        engine.setTrackMuted(id, t->muted);
+        engine.setTrackSoloed(id, t->soloed);
         engine.setTrackOutputTarget(id, juce::String(t->outputTarget));
         engine.renameTrack(id, juce::String(t->name));
 

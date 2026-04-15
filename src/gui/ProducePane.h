@@ -43,7 +43,7 @@ private:
 
     // Layout
     static constexpr int transportHeight = 60;
-    static constexpr int trackHeaderWidth = 120;
+    static constexpr int trackHeaderWidth = 160;
     int trackRowHeight = 48;
     static constexpr int rulerHeight = 28;
     int beatsPerBar() const;
@@ -86,6 +86,8 @@ private:
     std::vector<juce::Rectangle<int>> powerIconBounds;
     std::vector<juce::Rectangle<int>> armBounds;
     std::vector<juce::Rectangle<int>> inputMonitorBounds;
+    std::vector<juce::Rectangle<int>> muteBounds;
+    std::vector<juce::Rectangle<int>> soloBounds;
 
     // Track drag reordering
     int dragTrackIndex = -1;

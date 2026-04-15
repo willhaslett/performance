@@ -73,6 +73,14 @@ void TrackStrip::setArmed(bool a) {
     }
 }
 
+void TrackStrip::setMuted(bool m) {
+    if (muted != m) { muted = m; repaint(); }
+}
+
+void TrackStrip::setSoloed(bool s) {
+    if (soloed != s) { soloed = s; repaint(); }
+}
+
 void TrackStrip::setInputMonitoring(bool enabled) {
     if (inputMonitoring != enabled) {
         inputMonitoring = enabled;
@@ -293,37 +301,45 @@ void TrackStrip::paint(juce::Graphics& g) {
     }
     cx += 14 + 6;
 
-    // Record arm "R" — pill toggle, only shown when track is enabled
-    armDotBounds = juce::Rectangle<int>(cx, cy - 8, 16, 16);
-    if (audioEnabled) {
-        if (armed) {
-            g.setColour(juce::Colour(0xffee8822));
-            g.fillRoundedRectangle(armDotBounds.toFloat(), 3.0f);
+    // Pill button helper
+    auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
+                        bool active, uint32_t activeColor) {
+        bounds = juce::Rectangle<int>(cx, cy - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
+        if (active) {
+            g.setColour(Theme::color(activeColor));
+            g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
             g.setColour(Theme::color(Theme::Color::textWhite));
         } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawRoundedRectangle(armDotBounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+            g.setColour(Theme::color(Theme::Color::pillInactive));
+            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), Theme::pillRadius, 1.0f);
+            g.setColour(Theme::color(Theme::Color::pillTextInactive));
         }
-        g.setFont(Theme::font(11.0f));
-        g.drawText("R", armDotBounds, juce::Justification::centred);
-    }
-    cx += 16 + 2;
+        g.setFont(Theme::font(Theme::fontSizePill));
+        g.drawText(label, bounds, juce::Justification::centred);
+        cx += Theme::pillSize + 3;
+    };
 
-    // Input monitoring "I" — pill toggle, only for audio input tracks
+    bool isActionTrack = (sourceType == TrackSourceType::Action);
+
+    // M S — all audio tracks (not action)
+    muteBounds = {};
+    soloBounds = {};
+    if (!isActionTrack && audioEnabled) {
+        drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
+        drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
+        cx += 2;  // extra gap before R/I group
+    }
+
+    // R — instrument + audio input tracks (not action)
+    armDotBounds = {};
+    if (!isActionTrack && audioEnabled) {
+        drawPill(armDotBounds, "R", armed, Theme::Color::pillArmActive);
+    }
+
+    // I — audio input tracks only
     inputMonitorBounds = {};
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
-        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 8, 16, 16);
-        if (inputMonitoring) {
-            g.setColour(juce::Colour(0xffee8822));
-            g.fillRoundedRectangle(inputMonitorBounds.toFloat(), 3.0f);
-            g.setColour(Theme::color(Theme::Color::textWhite));
-        } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawRoundedRectangle(inputMonitorBounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
-        }
-        g.setFont(Theme::font(11.0f));
-        g.drawText("I", inputMonitorBounds, juce::Justification::centred);
-        cx += 16 + 2;
+        drawPill(inputMonitorBounds, "I", inputMonitoring, Theme::Color::pillInputActive);
     }
 
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
@@ -447,6 +463,22 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Right-click header also opens menu
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
         showTrackMenu(event.getScreenPosition());
+        return;
+    }
+
+    // Mute toggle
+    if (!muteBounds.isEmpty() && muteBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        muted = !muted;
+        state.setTrackMuted(trackId.toStdString(), muted);
+        repaint();
+        return;
+    }
+
+    // Solo toggle
+    if (!soloBounds.isEmpty() && soloBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        soloed = !soloed;
+        state.setTrackSoloed(trackId.toStdString(), soloed);
+        repaint();
         return;
     }
 

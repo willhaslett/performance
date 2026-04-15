@@ -50,6 +50,11 @@ public:
     bool isTrackArmed(const std::string& id) const;
     void setTrackInputMonitoring(const std::string& id, bool enabled);
     bool isTrackInputMonitoring(const std::string& id) const;
+    void setTrackMuted(const std::string& id, bool muted);
+    bool isTrackMuted(const std::string& id) const;
+    void setTrackSoloed(const std::string& id, bool soloed);
+    bool isTrackSoloed(const std::string& id) const;
+    bool isAnySoloed() const;  // true if any track in current song is soloed
     void setTrackPlugin(const std::string& id, const std::string& pluginId,
                         const std::string& presetId = "");
     void clearTrackPlugin(const std::string& id);

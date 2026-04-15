@@ -24,6 +24,8 @@ public:
     virtual void setTrackMidiEnabled(const juce::String& trackId, bool enabled) = 0;
     virtual void setTrackAudioEnabled(const juce::String& trackId, bool enabled) = 0;
     virtual void setTrackInputMonitoring(const juce::String& trackId, bool enabled) = 0;
+    virtual void setTrackMuted(const juce::String& trackId, bool muted) = 0;
+    virtual void setTrackSoloed(const juce::String& trackId, bool soloed) = 0;
     virtual void setTrackInputChannels(const juce::String& trackId, int start, int count) = 0;
     virtual void renameTrack(const juce::String& trackId, const juce::String& newName) = 0;
     virtual void setTrackOutputTarget(const juce::String& trackId, const juce::String& target) = 0;

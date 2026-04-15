@@ -1411,6 +1411,12 @@ public:
     void setTrackInputMonitoring(const juce::String& id, bool enabled) override {
         calls.push_back({"setTrackInputMonitoring", id.toStdString(), "", "", 0, enabled});
     }
+    void setTrackMuted(const juce::String& id, bool muted) override {
+        calls.push_back({"setTrackMuted", id.toStdString(), "", "", 0, muted});
+    }
+    void setTrackSoloed(const juce::String& id, bool soloed) override {
+        calls.push_back({"setTrackSoloed", id.toStdString(), "", "", 0, soloed});
+    }
     void setTrackInputChannels(const juce::String& id, int start, int count) override {
         calls.push_back({"setTrackInputChannels", id.toStdString()});
     }

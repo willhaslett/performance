@@ -48,6 +48,8 @@ public:
     void setTrackMidiEnabled(const juce::String& trackId, bool enabled) override;
     void setTrackAudioEnabled(const juce::String& trackId, bool enabled) override;
     void setTrackInputMonitoring(const juce::String& trackId, bool enabled) override;
+    void setTrackMuted(const juce::String& trackId, bool muted) override;
+    void setTrackSoloed(const juce::String& trackId, bool soloed) override;
     void setTrackInputChannels(const juce::String& trackId, int start, int count) override;
     void setTrackGain(const juce::String& trackId, float gain) override;
     float getTrackGain(const juce::String& trackId) const;
@@ -175,6 +177,8 @@ private:
         bool midiEnabled = true;
         bool audioEnabled = true;
         bool inputMonitoring = true;  // pass live audio input to output
+        bool muted = false;
+        bool soloed = false;
         juce::String outputTarget;  // "" = master, "none" = disconnected, UUID = bus
         TrackSourceType sourceType = TrackSourceType::Instrument;
         int inputChannelStart = -1;
@@ -261,6 +265,7 @@ private:
 
     void setupGraph();
     void rebuildGraph();
+    void updateMuteStates();
     void rebuildConnections();
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     juce::PluginDescription findPluginDescription(const juce::String& pluginName);
