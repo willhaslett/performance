@@ -340,9 +340,11 @@ void TrackStrip::paint(juce::Graphics& g) {
     soloBounds = {};
     if (!isActionTrack && audioEnabled) {
         constexpr int fmw = 48;
-        int contentWidth = bounds.getWidth() - fmw - Theme::trackPadding * 2;
+        int contentLeft = bounds.getX() + Theme::trackPadding;
+        int contentRight = bounds.getRight() - fmw - Theme::trackPadding * 2;
+        int contentWidth = contentRight - contentLeft;
         int pillGroupWidth = Theme::pillSize * 2 + Theme::pillGap;
-        int px = bounds.getX() + (contentWidth - pillGroupWidth) / 2;
+        int px = contentLeft + (contentWidth - pillGroupWidth) / 2;
         int bottomY = getHeight() - Theme::pillSize - 8;
 
         auto drawPill = [&](juce::Rectangle<int>& pillBounds, const char* pillLabel,
