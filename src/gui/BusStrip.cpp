@@ -79,7 +79,7 @@ void BusStrip::rebuildEffectSlots() {
 void BusStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(Theme::color(Theme::Color::bgApp));
+    g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(bounds);
 
     g.setColour(Theme::color(Theme::Color::border));
