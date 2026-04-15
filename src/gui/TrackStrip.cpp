@@ -166,7 +166,7 @@ void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
 }
 
 void TrackStrip::paintInputSlot(juce::Graphics& g) {
-    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSurface));
+    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSlot));
     g.fillRoundedRectangle(inputSlotBounds.toFloat(), Theme::cornerRadiusSm);
 
     g.setFont(Theme::font(Theme::fontSizeSm));
@@ -322,7 +322,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     // Output target label
     if (outputTargetBounds.getHeight() > 0) {
-        g.setColour(Theme::color(Theme::Color::bgSurface));
+        g.setColour(Theme::color(Theme::Color::bgSlot));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.setColour(Theme::color(Theme::Color::textSecondary));

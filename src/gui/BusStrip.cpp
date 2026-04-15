@@ -115,7 +115,7 @@ void BusStrip::paint(juce::Graphics& g) {
 
     // Output target label
     if (outputTargetBounds.getHeight() > 0) {
-        g.setColour(Theme::color(Theme::Color::bgSurface));
+        g.setColour(Theme::color(Theme::Color::bgSlot));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.setColour(Theme::color(Theme::Color::textSecondary));

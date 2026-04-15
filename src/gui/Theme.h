@@ -9,10 +9,12 @@ namespace Theme {
         // Surfaces — darkest to lightest
         constexpr uint32_t bgApp          = 0xff161616;  // app background
         constexpr uint32_t bgPanel        = 0xff161616;  // panels, sidebars, pane headers (same as bgApp)
-        constexpr uint32_t bgSurface      = 0xff1e1e1e;  // track lanes, mixer strips, interactive elements
-        constexpr uint32_t bgSurfaceHover = 0xff3a3a3a;  // hovered row/slot
+        constexpr uint32_t bgSurface      = 0xff1e1e1e;  // track lanes, mixer strips
+        constexpr uint32_t bgSlot         = 0xff2a2a2a;  // interactive slots, buttons, LCD — sits on bgSurface
+        constexpr uint32_t bgSurfaceHover = 0xff333333;  // hovered row/slot
         constexpr uint32_t bgOverlay      = 0xff2a2a2a;  // modal/overlay/popup backdrop
         constexpr uint32_t bgDisabled     = 0xff252525;  // disabled strip/header
+        constexpr uint32_t bgRecessed     = 0xff121212;  // meter grooves, fader tracks
 
         // Borders
         constexpr uint32_t border         = 0xff444444;  // standard divider lines

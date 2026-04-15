@@ -13,7 +13,7 @@ ProducePane::ProducePane() {
     metronomeSlider.setRange(0.0, 1.0, 0.01);
     metronomeSlider.setValue(0.5);
     metronomeSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
-    metronomeSlider.setColour(juce::Slider::trackColourId, Theme::color(Theme::Color::bgSurface));
+    metronomeSlider.setColour(juce::Slider::trackColourId, Theme::color(Theme::Color::bgSlot));
     metronomeSlider.setColour(juce::Slider::thumbColourId, Theme::color(Theme::Color::textSecondary));
     metronomeSlider.setColour(juce::Slider::backgroundColourId, Theme::color(Theme::Color::bgPanel));
     metronomeSlider.onValueChange = [this]() {
@@ -462,7 +462,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
 
     // LCD background — matches fader meter groove
-    auto lcdBg = Theme::color(Theme::Color::bgSurface);
+    auto lcdBg = Theme::color(Theme::Color::bgSlot);
     auto lcdBorder = Theme::color(Theme::Color::border);
     auto lcdDigit = Theme::color(Theme::Color::lcdDigit);
     g.setColour(lcdBg);
