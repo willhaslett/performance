@@ -692,11 +692,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.setColour(headerCol);
         g.fillRect(row);
 
-        // Selection highlight
-        auto sel = state->selectedTrackIds();
-        bool isSelected = std::find(sel.begin(), sel.end(), t.id) != sel.end();
+        // Selection highlight — same subtle tint as grid area
+        auto selIds = state->selectedTrackIds();
+        bool isSelected = std::find(selIds.begin(), selIds.end(), t.id) != selIds.end();
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.18f));
+            g.setColour(Theme::color(Theme::Color::bgSurface).withAlpha(0.5f));
             g.fillRect(row);
         }
 
@@ -729,8 +729,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         // Type indicator
         if (isAudioInput) {
             g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(10.0f));
-            g.drawText("IN", area.getRight() - 24, row1Y, 20, row1H,
+            g.setFont(Theme::font(Theme::fontSizeSm));
+            g.drawText("IN", area.getRight() - 30, row1Y, 24, row1H,
                        juce::Justification::centredRight);
         }
 
@@ -793,11 +793,14 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
-    // Alternating track lane backgrounds
+    // Selected track highlight in grid area
+    auto sel = state->selectedTrackIds();
     for (size_t i = 0; i < tracks.size(); ++i) {
         int rowY = area.getY() + (int)i * trackRowHeight;
-        if (i % 2 == 1) {
-            g.setColour(juce::Colour(0x08ffffff));
+        auto* ts = state->findTrack(tracks[i].id);
+        bool isSelected = std::find(sel.begin(), sel.end(), tracks[i].id) != sel.end();
+        if (isSelected) {
+            g.setColour(Theme::color(Theme::Color::bgSurface).withAlpha(0.5f));
             g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
         }
     }
@@ -813,7 +816,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             if (x < area.getX() || x > area.getRight()) continue;
 
             g.setColour(b == 0 ? Theme::color(Theme::Color::border)
-                                : juce::Colour(0x18ffffff));
+                                : Theme::color(Theme::Color::borderSubtle));
             g.drawLine((float)x, (float)area.getY(), (float)x, (float)area.getBottom(), 0.5f);
         }
     }
@@ -822,7 +825,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     int y = area.getY();
     for (size_t i = 0; i < tracks.size(); ++i) {
         y += trackRowHeight;
-        g.setColour(juce::Colour(0x18ffffff));
+        g.setColour(Theme::color(Theme::Color::borderSubtle));
         g.drawLine((float)area.getX(), (float)y, (float)area.getRight(), (float)y, 0.5f);
     }
 
