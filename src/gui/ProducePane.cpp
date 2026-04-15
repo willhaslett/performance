@@ -731,8 +731,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
                        juce::Justification::centredRight);
         }
 
-        // Row 2: pill buttons
-        int row2Y = row1Y + row1H + 4;
+        // Row 2: pill buttons (M S R I)
+        int row2Y = row1Y + row1H + 6;
         int cy_row = row2Y + Theme::pillSize / 2;
         cx = area.getX() + 8;
 

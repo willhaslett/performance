@@ -273,13 +273,11 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
-    // Row 1: power icon + track name + type label + menu dots
-    int row1Y = headerBounds.getY() + 6;
-    int row1H = 20;
+    // Header: power icon + track name + type indicator + menu dots
     int cx = headerBounds.getX() + 8;
-    int cy1 = row1Y + row1H / 2;
+    int cy = headerBounds.getCentreY();
 
-    midiDotBounds = juce::Rectangle<int>(cx, cy1 - 7, 14, 14);
+    midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
     {
         auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
                                        : Theme::color(Theme::Color::textDim);
@@ -298,60 +296,22 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
                               : Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.getX() + 28, row1Y, headerBounds.getWidth() - 48, row1H,
+    g.drawText(trackName, headerBounds.getX() + 28, headerBounds.getY(),
+               headerBounds.getWidth() - 48, headerBounds.getHeight(),
                juce::Justification::centredLeft);
 
-    // Type indicator — subtle, right-aligned
     if (sourceType == TrackSourceType::AudioInput) {
         g.setColour(Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(10.0f));
-        g.drawText("IN", headerBounds.getRight() - 34, row1Y, 16, row1H,
+        g.drawText("IN", headerBounds.getRight() - 34, headerBounds.getY(), 16, headerBounds.getHeight(),
                    juce::Justification::centredRight);
     }
 
-    menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18, cy1 - 7, 14, 14);
+    menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18, cy - 7, 14, 14);
 
-    // Row 2: pill buttons
-    int row2Y = row1Y + row1H + 4;
-    int cy2 = row2Y + Theme::pillSize / 2;
-    cx = headerBounds.getX() + 8;
-
-    auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
-                        bool active, uint32_t activeColor) {
-        bounds = juce::Rectangle<int>(cx, cy2 - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
-        if (active) {
-            g.setColour(Theme::color(activeColor));
-            g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
-            g.setColour(Theme::color(Theme::Color::textWhite));
-        } else {
-            g.setColour(Theme::color(Theme::Color::pillOffFill));
-            g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
-            g.setColour(Theme::color(Theme::Color::pillTextInactive));
-        }
-        g.setFont(Theme::font(Theme::fontSizePill));
-        g.drawText(label, bounds, juce::Justification::centred);
-        cx += Theme::pillSize + Theme::pillGap;
-    };
-
-    bool isActionTrack = (sourceType == TrackSourceType::Action);
-
-    muteBounds = {};
-    soloBounds = {};
-    if (!isActionTrack && audioEnabled) {
-        drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
-        drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
-        cx += Theme::pillGroupGap - Theme::pillGap;
-    }
-
+    // No R/I pills in mixer — only M/S at the bottom of the strip
     armDotBounds = {};
-    if (!isActionTrack && audioEnabled) {
-        drawPill(armDotBounds, "R", armed, Theme::Color::pillArmActive);
-    }
-
     inputMonitorBounds = {};
-    if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
-        drawPill(inputMonitorBounds, "I", inputMonitoring, Theme::Color::pillInputActive);
-    }
     g.setColour(Theme::color(Theme::Color::textSecondary));
     auto dx = (float)menuDotsBounds.getCentreX();
     auto dy = (float)menuDotsBounds.getY() + 2.0f;
@@ -364,7 +324,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     if (sourceType == TrackSourceType::AudioInput)
         paintInputSlot(g);
 
-    // Output target label (bottom of strip, above fader)
+    // Output target label
     if (outputTargetBounds.getHeight() > 0) {
         g.setColour(Theme::color(Theme::Color::bgSlot));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
@@ -372,6 +332,35 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
         auto label = outputTargetDisplay.isEmpty() ? "Main" : outputTargetDisplay;
         g.drawText(label, outputTargetBounds.reduced(4, 0), juce::Justification::centredLeft);
+    }
+
+    // M/S pills at the very bottom of the strip
+    bool isActionTrack = (sourceType == TrackSourceType::Action);
+    muteBounds = {};
+    soloBounds = {};
+    if (!isActionTrack && audioEnabled) {
+        int bottomY = getHeight() - Theme::pillSize - 8;
+        int px = bounds.getX() + 8;
+
+        auto drawPill = [&](juce::Rectangle<int>& pillBounds, const char* pillLabel,
+                            bool active, uint32_t activeColor) {
+            pillBounds = juce::Rectangle<int>(px, bottomY, Theme::pillSize, Theme::pillSize);
+            if (active) {
+                g.setColour(Theme::color(activeColor));
+                g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
+                g.setColour(Theme::color(Theme::Color::textWhite));
+            } else {
+                g.setColour(Theme::color(Theme::Color::pillOffFill));
+                g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
+                g.setColour(Theme::color(Theme::Color::pillTextInactive));
+            }
+            g.setFont(Theme::font(Theme::fontSizePill));
+            g.drawText(pillLabel, pillBounds, juce::Justification::centred);
+            px += Theme::pillSize + Theme::pillGap;
+        };
+
+        drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
+        drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
     }
 }
 
@@ -384,7 +373,7 @@ int TrackStrip::getMinimumHeight() const {
     // Sends
     if (sendsPanel.isVisible())
         h += sendsPanel.getDesiredHeight() + Theme::slotGap;
-    h += Theme::trackPadding;  // bottom padding
+    h += Theme::pillSize + 12;  // M/S buttons + padding
     return h;
 }
 

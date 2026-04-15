@@ -76,7 +76,7 @@ namespace Theme {
     constexpr int   slotGap         = 4;
     constexpr int   slotPadding     = 4;
     constexpr int   trackPadding    = 12;
-    constexpr int   headerHeight    = 52;
+    constexpr int   headerHeight    = 32;
     constexpr float chatBubbleRadius = 12.0f;
     constexpr int   chatBubblePad   = 12;
     constexpr int   chatGap         = 8;
