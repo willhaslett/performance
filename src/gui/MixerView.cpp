@@ -23,7 +23,7 @@ int MixerView::getDesiredHeight() const {
 }
 
 void MixerView::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgTrack));
+    g.fillAll(Theme::color(Theme::Color::bgApp));
 
     // Top border
     g.setColour(Theme::color(Theme::Color::border));

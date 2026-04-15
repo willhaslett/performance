@@ -85,7 +85,7 @@ void OutputStrip::rebuildEffectSlots() {
 void OutputStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(Theme::color(Theme::Color::bgTrack));
+    g.setColour(Theme::color(Theme::Color::bgApp));
     g.fillRect(bounds);
 
     g.setColour(Theme::color(Theme::Color::border));

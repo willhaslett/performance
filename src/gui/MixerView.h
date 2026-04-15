@@ -44,7 +44,7 @@ private:
     class StripContainer : public juce::Component {
     public:
         void paint(juce::Graphics& g) override {
-            g.fillAll(Theme::color(Theme::Color::bgTrack));
+            g.fillAll(Theme::color(Theme::Color::bgApp));
         }
     };
     juce::Viewport viewport;
