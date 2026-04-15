@@ -82,8 +82,10 @@ private:
     juce::Slider metronomeSlider;
     juce::Label metronomeLabel;
 
-    // Per-track power icon bounds (rebuilt each paint)
+    // Per-track icon bounds (rebuilt each paint)
     std::vector<juce::Rectangle<int>> powerIconBounds;
+    std::vector<juce::Rectangle<int>> armBounds;
+    std::vector<juce::Rectangle<int>> inputMonitorBounds;
 
     // Track drag reordering
     int dragTrackIndex = -1;

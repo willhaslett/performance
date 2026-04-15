@@ -671,6 +671,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
     auto tracks = state->listTracks();
     powerIconBounds.resize(tracks.size());
+    armBounds.resize(tracks.size());
+    inputMonitorBounds.resize(tracks.size());
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto& t = tracks[i];
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
@@ -720,12 +722,23 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         // Record arm "R" — only shown when enabled
         bool isArmed = trackState ? trackState->armed : false;
+        armBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
         if (enabled) {
             g.setColour(isArmed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(11.0f));
-            g.drawText("R", cx, y, 12, trackRowHeight, juce::Justification::centredLeft);
+            g.setFont(Theme::font(14.0f));
+            g.drawText("R", armBounds[i], juce::Justification::centred);
         }
-        cx += 12 + 4;
+        cx += 14 + 4;
+
+        // Input monitoring "I" — only for audio input tracks
+        inputMonitorBounds[i] = {};
+        if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
+            inputMonitorBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
+            g.setColour(trackState->inputMonitoring ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(14.0f));
+            g.drawText("I", inputMonitorBounds[i], juce::Justification::centred);
+            cx += 14 + 4;
+        }
 
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
@@ -1784,15 +1797,24 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 return;
             }
 
-            // Arm dot — only when track is enabled
-            if (trackState && trackState->audioEnabled) {
-                int gridTop = transportHeight + rulerHeight;
-                auto armArea = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + (trackRowHeight - 10) / 2, 10, 10);
-                if (armArea.expanded(4).contains(event.getPosition())) {
-                    state->setTrackArmed(tracks[idx].id, !trackState->armed);
-                    repaint();
-                    return;
-                }
+            // Arm "R" — only when track is enabled
+            if (trackState && trackState->audioEnabled
+                && idx < (int)armBounds.size()
+                && armBounds[idx].expanded(4).contains(event.getPosition())) {
+                state->setTrackArmed(tracks[idx].id, !trackState->armed);
+                repaint();
+                return;
+            }
+
+            // Input monitoring "I" — only for audio input tracks
+            if (trackState && trackState->audioEnabled
+                && trackState->sourceType == TrackSourceType::AudioInput
+                && idx < (int)inputMonitorBounds.size()
+                && !inputMonitorBounds[idx].isEmpty()
+                && inputMonitorBounds[idx].expanded(4).contains(event.getPosition())) {
+                state->setTrackInputMonitoring(tracks[idx].id, !trackState->inputMonitoring);
+                repaint();
+                return;
             }
 
             // Otherwise: track selection

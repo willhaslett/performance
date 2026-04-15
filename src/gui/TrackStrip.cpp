@@ -294,22 +294,22 @@ void TrackStrip::paint(juce::Graphics& g) {
     cx += 14 + 6;
 
     // Record arm "R" — only shown when track is enabled
-    armDotBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
+    armDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
     if (audioEnabled) {
         g.setColour(armed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(11.0f));
+        g.setFont(Theme::font(14.0f));
         g.drawText("R", armDotBounds, juce::Justification::centred);
     }
-    cx += 12 + 4;
+    cx += 14 + 4;
 
     // Input monitoring "I" — only for audio input tracks
     inputMonitorBounds = {};
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
-        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
+        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
         g.setColour(inputMonitoring ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(11.0f));
+        g.setFont(Theme::font(14.0f));
         g.drawText("I", inputMonitorBounds, juce::Justification::centred);
-        cx += 12 + 4;
+        cx += 14 + 4;
     }
 
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
