@@ -692,11 +692,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.setColour(headerCol);
         g.fillRect(row);
 
-        // Selection highlight — same subtle tint as grid area
+        // Selection highlight
         auto selIds = state->selectedTrackIds();
         bool isSelected = std::find(selIds.begin(), selIds.end(), t.id) != selIds.end();
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSurface).withAlpha(0.5f));
+            g.setColour(Theme::color(Theme::Color::bgSlot));
             g.fillRect(row);
         }
 
@@ -803,9 +803,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
         g.setColour(Theme::color(Theme::Color::bgSurface));
         g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
 
-        // Selection highlight on top
+        // Selection highlight — matches header
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSurfaceHover).withAlpha(0.4f));
+            g.setColour(Theme::color(Theme::Color::bgSlot));
             g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
         }
     }
@@ -889,9 +889,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 g.setColour(fillCol.withAlpha(baseAlpha));
                 g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
 
-                // Border — darker shade of region color (visible at overlaps)
+                // Border
                 g.setColour(selected ? Theme::color(Theme::Color::accent)
-                                      : fillCol.darker(0.4f));
+                                      : Theme::color(Theme::Color::border));
                 g.drawRoundedRectangle(regionBounds.toFloat(), 5.0f,
                                         selected ? 2.0f : 1.0f);
 

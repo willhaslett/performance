@@ -152,10 +152,14 @@ void FaderMeter::paint(juce::Graphics& g) {
     int handleCenterY = faderArea.getBottom() - (int)(faderArea.getHeight() * normalized);
     int handleY = handleCenterY - handleHeight / 2;
 
-    auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY,
-                                        faderWidth + 4, handleHeight);
+    auto handle = juce::Rectangle<int>(faderArea.getX() - 4, handleY,
+                                        faderWidth + 8, handleHeight);
     g.setColour(Theme::color(Theme::Color::controlHandle));
-    g.fillRoundedRectangle(handle.toFloat(), 3.0f);
+    g.fillRoundedRectangle(handle.toFloat(), 2.0f);
+    // Center groove line
+    g.setColour(Theme::color(Theme::Color::bgSurface));
+    g.drawLine((float)(handle.getX() + 3), (float)handleCenterY,
+               (float)(handle.getRight() - 3), (float)handleCenterY, 1.0f);
 
     // --- 3. Stereo meters (paint over grid) ---
     auto meterLeft = meterArea.removeFromLeft(meterBarWidth);

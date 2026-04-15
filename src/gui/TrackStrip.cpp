@@ -298,8 +298,8 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     if (sourceType == TrackSourceType::AudioInput) {
         g.setColour(Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(10.0f));
-        g.drawText("IN", headerBounds.getRight() - 34, headerBounds.getY(), 16, headerBounds.getHeight(),
+        g.setFont(Theme::font(Theme::fontSizeSm));
+        g.drawText("IN", headerBounds.getRight() - 36, headerBounds.getY(), 20, headerBounds.getHeight(),
                    juce::Justification::centredRight);
     }
 

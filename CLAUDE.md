@@ -317,6 +317,12 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
 - TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
 
+**Theme/GUI polish (in progress):**
+- Fader handle shape — currently a small rounded rect with center groove. Consider a more physical fader cap shape.
+- LCD interactivity — all LCD values should be interactive (drag to change, double-click to edit). Currently only BPM and time sig are editable. BAR/BEAT/DIV/TICK and time display are read-only.
+- Selected track vs region contrast — selection uses bgSlot, regions use bgSurfaceHover. Need to verify the three levels (unselected lane → selected lane → region) are clearly distinguishable.
+- Remove bgRecessed if unused (meter grooves now use bgSlot).
+
 **Feature backlog (longer-term):**
 - MIDI effects (transpose, channel filter, arpeggiator)
 - Fader/knob drag: value stops changing at screen edge
