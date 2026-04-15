@@ -300,7 +300,7 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.setFont(Theme::font(14.0f));
         g.drawText("R", armDotBounds, juce::Justification::centred);
     }
-    cx += 14 + 4;
+    cx += 14 + 2;
 
     // Input monitoring "I" — only for audio input tracks
     inputMonitorBounds = {};

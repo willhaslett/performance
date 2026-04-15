@@ -720,15 +720,19 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         paintPowerIcon(g, iconBounds, enabled);
         cx += 14 + 6;
 
-        // Record arm "R" — only shown when enabled
+        // Record arm "R" — only for instrument and audio input tracks
+        bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
         bool isArmed = trackState ? trackState->armed : false;
-        armBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
-        if (enabled) {
-            g.setColour(isArmed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(14.0f));
-            g.drawText("R", armBounds[i], juce::Justification::centred);
+        armBounds[i] = {};
+        if (!isActionTrack) {
+            armBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
+            if (enabled) {
+                g.setColour(isArmed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
+                g.setFont(Theme::font(14.0f));
+                g.drawText("R", armBounds[i], juce::Justification::centred);
+            }
+            cx += 14 + 2;
         }
-        cx += 14 + 4;
 
         // Input monitoring "I" — only for audio input tracks
         inputMonitorBounds[i] = {};
