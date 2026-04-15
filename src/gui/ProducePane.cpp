@@ -845,9 +845,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
             bool isAudioTrk = trkState && trkState->sourceType == TrackSourceType::AudioInput;
             bool trackEnabled = trkState ? trkState->audioEnabled : true;
-            uint32_t trackCol = (trkState && trkState->color != 0) ? trkState->color
-                              : isAudioTrk ? 0xff3a2e18
-                              : Theme::Color::bgPanel;
+            // Regions use neutral bgSurface (no per-track color)
 
             for (auto* r : regions) {
                 int rx = beatToX(r->startBeat);
@@ -875,12 +873,12 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 if (originalVisible)
                     regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region color (used by both original and ghosts)
-                auto fillCol = juce::Colour(trackCol);
+                // Region color
+                auto fillCol = Theme::color(Theme::Color::bgSurface);
                 bool selected = selectedRegionIds.count(r->id) > 0;
                 bool beingDragged = (draggingRegion && r->id == dragRegionId);
                 if (!trackEnabled || r->muted)
-                    fillCol = fillCol.interpolatedWith(juce::Colour(0xff181818), 0.65f);
+                    fillCol = fillCol.darker(0.5f);
                 if (originalVisible) {
                 float baseAlpha = beingDragged ? 0.45f : 0.82f;
                 g.setColour(fillCol.withAlpha(baseAlpha));
@@ -930,7 +928,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                             // Velocity → brightness: dim to bright, tinted by track color
                             float velNorm = note.velocity / 127.0f;
-                            auto noteCol = juce::Colour(trackCol).brighter(0.6f)
+                            auto noteCol = Theme::color(Theme::Color::textSecondary)
                                 .interpolatedWith(juce::Colours::white, velNorm * 0.35f)
                                 .withAlpha(0.4f + velNorm * 0.5f);
                             g.setColour(noteCol);
@@ -946,7 +944,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         auto inner = regionBounds.reduced(1, 3);
                         float centreY = inner.getCentreY();
                         float halfH = inner.getHeight() * 0.5f;
-                        auto waveCol = juce::Colour(trackCol).brighter(0.5f).withAlpha(0.7f);
+                        auto waveCol = Theme::color(Theme::Color::textSecondary).withAlpha(0.7f);
                         g.setColour(waveCol);
 
                         // Map peaks to pixels
@@ -1049,8 +1047,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             float sphereR = std::min(5.0f, (float)trackRowHeight * 0.25f);
 
             bool isAct = true;
-            uint32_t trackCol = (trkState->color != 0) ? trkState->color : 0xff2a2438;
-            auto sphereCol = juce::Colour(trackCol).brighter(0.5f);
+            auto sphereCol = Theme::color(Theme::Color::textSecondary);
 
             // Pre-compute duration in beats for each visible event
             struct ActionVis {
@@ -1142,13 +1139,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
                 auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
                 // Use target track's color for ghost
-                uint32_t ghostTrackCol = Theme::Color::bgPanel;
+                uint32_t ghostTrackCol = Theme::Color::bgSurface;
                 if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
-                    auto* ts = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
-                    if (ts && ts->color != 0)
-                        ghostTrackCol = ts->color;
-                    else if (ts && ts->sourceType == TrackSourceType::AudioInput)
-                        ghostTrackCol = 0xff3a2e18;
+                    // ghost uses bgSurface regardless of track
                 }
                 auto ghostCol = juce::Colour(ghostTrackCol);
                 g.setColour(ghostCol.withAlpha(0.35f));
