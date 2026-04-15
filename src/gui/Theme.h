@@ -134,6 +134,10 @@ namespace Theme {
     // Corners
     constexpr float cornerRadius    = 6.0f;
     constexpr float cornerRadiusSm  = 4.0f;
+    constexpr float cornerRadiusXs  = 3.0f;
+
+    // Activity indicator (small dot used in MappingPane rows, device tree, etc.)
+    constexpr float activityDotSize = 6.0f;
 
     // Chat
     constexpr float chatBubbleRadius = 12.0f;

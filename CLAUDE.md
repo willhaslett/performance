@@ -16,7 +16,7 @@ For each pane the work is: (1) finalize visual design — spacing, hierarchy, af
 
 - [x] **ProducePane** (`src/gui/ProducePane.cpp/.h`) — ✅ Done. Full token migration, paint fixes (gridline clip, right-border order, lane fill inset), pill hover, shared track-name block height with mixer, no hardcoded colors/fonts remaining.
 - [x] **MixerView** family — ✅ Done. Covers `MixerView`, `TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`. Token-clean, pill hover, plugin slot hover live, shared track-name styling with ProducePane.
-- [ ] **MappingPane** (`src/gui/MappingPane.cpp/.h`) — ⏭ Next. Some prior theme work landed during the Produce/Mixer sweep (hover rows moved to `bgControlHover`), but the pane needs a full design pass: Controllers tree + Song Mappings two-pane layout, drag-drop visuals, stub-binding affordances, inline editor consistency.
+- [ ] **MappingPane** (`src/gui/MappingPane.cpp/.h`) — 🔧 In progress. Token-clean pass done (no hardcoded colors/fonts, semantic fixes to hover row and resting row backgrounds, corner radii tokenized, `InlineEditor` text color corrected to `textPrimary`). *Still deferred:* hover states for `[+]` add-mapping buttons (`:439, :514`), Controllers-pane group field (`:367-377`), and device-row disclosure triangles (`:317-319`). These are standalone clickable widgets that currently rely on row-level hover — adding explicit hover states is a design enhancement to revisit on the follow-up pass.
 - [ ] **Sidebar** (`src/gui/Sidebar.*`) — tabs (Songs/Library/Actions/Devices), device tree, activity indicators, selection states.
 - [ ] **DebugPane** (`src/gui/DebugPane.cpp`) — MIDI event log with type colors, per-channel audio input meters. Currently has several hardcoded colors.
 - [ ] **LogPane** (`src/gui/LogPane.cpp`) — log tail with per-subsystem color scheme. Currently has a whole color table baked in.
@@ -31,8 +31,9 @@ For each pane the work is: (1) finalize visual design — spacing, hierarchy, af
 Design questions still open across multiple panes (address during each pane's sweep):
 
 - **Fader handle shape** — currently a small rounded rect with center groove. Considering a more physical cap shape. Lives in `FaderMeter` (mixer done) but the *design* question is still open.
-- **Selected track vs region contrast** — selection uses `bgSelection` (`0x2a2a2a`), regions use `bgSurfaceRaised` (`0x333333`). Verify the three levels (unselected lane → selected lane → region) are clearly distinguishable in practice.
+- **Selected track vs region contrast** — selection uses `bgSelection` (`0x262626`), regions use `bgSurfaceRaised` (`0x333333`). Verify the three levels (unselected lane → selected lane → region) are clearly distinguishable in practice.
 - **Remove `bgRecessed` if unused** — meter grooves now use `bgSlot`. Grep for remaining references; delete the token if none.
+- **Liveliness of empty/sparse panes** — ProducePane and Mixer feel structured because functional chrome (transport, ruler, track headers, strips, plugin slots) fills every zone. MappingPane, Sidebar, ChatView feel empty when sparse. **Tried and reverted:** lifting pane content to `bgSurface` with `bgApp` gutters — the surface level collided with mixer strip semantics (strips = `bgSurface`, plugin slots inside = `bgControl`; MappingPane sections at `bgSurface` with rows at `bgControl` created an ambiguous visual vocabulary where strips and pane sections looked identical). The right fix is probably structural chrome (functional bands, drop zones, persistent section headers) rather than surface elevation, but it's an open design question. Don't retry surface lifts without first resolving the vocabulary conflict.
 
 ## Backlog
 

@@ -266,7 +266,7 @@ void MappingPane::paint(juce::Graphics& g) {
 
         auto ghostBounds = juce::Rectangle<int>(dragCurrent.x - 60, dragCurrent.y - 10, 120, 20);
         g.setColour(Theme::color(Theme::Color::bgPanel).withAlpha(0.9f));
-        g.fillRoundedRectangle(ghostBounds.toFloat(), 4.0f);
+        g.fillRoundedRectangle(ghostBounds.toFloat(), Theme::cornerRadiusSm);
         g.setColour(Theme::color(Theme::Color::textPrimary));
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(ghostLabel, ghostBounds, juce::Justification::centred);
@@ -286,7 +286,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
     int learnW = isLearning ? 42 : 126;
     auto learnBounds = juce::Rectangle<int>(area.getRight() - learnW - 8, area.getY() + 10, learnW, 22);
     g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textSecondary));
-    g.drawRoundedRectangle(learnBounds.toFloat(), 3.0f, 1.0f);
+    g.drawRoundedRectangle(learnBounds.toFloat(), Theme::cornerRadiusXs, 1.0f);
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(isLearning ? "Stop" : "Learn new controls", learnBounds, juce::Justification::centred);
 
@@ -302,6 +302,15 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
     g.drawText("In Song", area.getRight() - 58, inSongHeaderY, 50, 16, juce::Justification::centredRight);
 
     int contentTop = area.getY() + leftHeaderHeight;
+
+    // Lift the whole content region (header-separator to panel bottom) to
+    // bgSurface. Extending the fill to the panel bottom — rather than stopping
+    // at the last row — avoids the "stacked box" look when the device list
+    // is sparse. The Controllers panel has no row-level background fills, so
+    // this doesn't collide with the mixer-strip visual vocabulary.
+    g.setColour(Theme::color(Theme::Color::bgSurface));
+    g.fillRect(area.getX(), contentTop, area.getWidth(), area.getBottom() - contentTop);
+
     int y = contentTop - leftScrollOffset;
     for (int i = 0; i < (int)leftEntries.size(); ++i) {
         if (y > area.getBottom()) break;
@@ -322,7 +331,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                 float dotY = (float)(y + rowHeight / 2 - 3);
                 g.setColour(entry.deviceConnected ? Theme::color(Theme::Color::activityOn)
                                                   : Theme::color(Theme::Color::textDim));
-                g.fillEllipse((float)(area.getX() + 20), dotY, 6.0f, 6.0f);
+                g.fillEllipse((float)(area.getX() + 20), dotY, Theme::activityDotSize, Theme::activityDotSize);
 
                 g.setColour(Theme::color(Theme::Color::textPrimary));
                 g.setFont(Theme::font(Theme::fontSizeLg));
@@ -341,7 +350,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                     g.setColour(flashCol);
                     g.fillRect(area.getX(), y, area.getWidth(), rowHeight);
                 } else if (hovered) {
-                    g.setColour(Theme::color(Theme::Color::bgApp).brighter(0.08f));
+                    g.setColour(Theme::color(Theme::Color::bgControlHover));
                     g.fillRect(area.getX(), y, area.getWidth(), rowHeight);
                 }
 
@@ -349,7 +358,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                 bool active = (entry.lastActivityMs > 0 && now - entry.lastActivityMs < 300);
                 g.setColour(active ? Theme::color(Theme::Color::activityOn)
                                    : Theme::color(Theme::Color::activityOff));
-                g.fillEllipse((float)(area.getX() + 32), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+                g.fillEllipse((float)(area.getX() + 32), (float)(y + rowHeight / 2 - 3), Theme::activityDotSize, Theme::activityDotSize);
 
                 int checkX = area.getRight() - 40;
                 int groupFieldW = 60;
@@ -359,19 +368,19 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
                 // Control name
                 g.setColour(entry.isBound ? Theme::color(Theme::Color::textDim)
                                           : Theme::color(Theme::Color::textPrimary));
-                g.setFont(Theme::font(Theme::fontSizeMd));
+                g.setFont(Theme::font(Theme::fontSizeLg));
                 g.drawText(juce::String(entry.controlName), nameX, y,
                            groupFieldX - nameX - 4, rowHeight, juce::Justification::centredLeft);
 
-                // Group field
+                // Group field — matches control name size, lower contrast
                 if (!entry.group.empty()) {
                     g.setColour(Theme::color(Theme::Color::textSecondary));
-                    g.setFont(Theme::font(Theme::fontSizeSm));
+                    g.setFont(Theme::font(Theme::fontSizeLg));
                     g.drawText(juce::String(entry.group), groupFieldX, y,
                                groupFieldW, rowHeight, juce::Justification::centredRight);
                 } else {
                     g.setColour(Theme::color(Theme::Color::textDim));
-                    g.setFont(Theme::font(Theme::fontSizeSm));
+                    g.setFont(Theme::font(Theme::fontSizeLg));
                     g.drawText("group", groupFieldX, y,
                                groupFieldW, rowHeight, juce::Justification::centredRight);
                 }
@@ -396,7 +405,7 @@ void MappingPane::paintLeftPanel(juce::Graphics& g) {
     g.drawText("Controllers", area.getX() + panelPadding, area.getY() + 10,
                160, 22, juce::Justification::centredLeft);
     g.setColour(isLearning ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textSecondary));
-    g.drawRoundedRectangle(learnBounds.toFloat(), 3.0f, 1.0f);
+    g.drawRoundedRectangle(learnBounds.toFloat(), Theme::cornerRadiusXs, 1.0f);
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(isLearning ? "Stop" : "Learn new controls", learnBounds, juce::Justification::centred);
     g.setColour(Theme::color(Theme::Color::border));
@@ -430,7 +439,7 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
     g.drawText("Atemporal", area.getX() + panelPadding, area.getY() + rightHeaderHeight + 4, 200, 18,
                juce::Justification::centredLeft);
     g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeSm));
+    g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText("Mappings active throughout the song", area.getX() + panelPadding,
                area.getY() + rightHeaderHeight + 20, 300, 14, juce::Justification::centredLeft);
 
@@ -443,7 +452,7 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
 
     if (mappingRows.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         g.drawText("Drag controls here or click +",
                    area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
     }
@@ -456,17 +465,17 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
         bool hovered = (i == hoveredMappingRow);
 
         g.setColour(hovered ? Theme::color(Theme::Color::bgControlHover)
-                            : Theme::color(Theme::Color::borderSubtle));
+                            : Theme::color(Theme::Color::bgControl));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
         bool active = (mr.lastActivityMs > 0 && now - mr.lastActivityMs < 300);
         g.setColour(active ? Theme::color(Theme::Color::activityOn)
                            : Theme::color(Theme::Color::activityOff));
-        g.fillEllipse((float)(area.getX() + 10), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+        g.fillEllipse((float)(area.getX() + 10), (float)(y + rowHeight / 2 - 3), Theme::activityDotSize, Theme::activityDotSize);
 
         // Source: "Device Group Control"
         g.setColour(Theme::color(Theme::Color::textPrimary));
-        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         int sourceWidth = std::min(200, (area.getWidth() - 40) / 2);
         g.drawText(juce::String(mr.controlName), area.getX() + 22, y, sourceWidth, rowHeight,
                    juce::Justification::centredLeft);
@@ -504,7 +513,7 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
     g.drawText("Score", area.getX() + panelPadding, area.getY() + 4, 200, 18,
                juce::Justification::centredLeft);
     g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeSm));
+    g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText("Ordered one-time actions performed during this song",
                area.getX() + panelPadding, area.getY() + 20, area.getWidth() - 40, 14,
                juce::Justification::centredLeft);
@@ -518,7 +527,7 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
 
     if (scoreRows.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         g.drawText("Drag mappings here or click +",
                    area.getX() + 20, y, area.getWidth() - 40, 40, juce::Justification::centred);
     }
@@ -530,13 +539,13 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
         bool hovered = (i == hoveredScoreRow);
 
         g.setColour(hovered ? Theme::color(Theme::Color::bgControlHover)
-                            : Theme::color(Theme::Color::borderSubtle));
+                            : Theme::color(Theme::Color::bgControl));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
         // Score position badge
         auto badge = juce::Rectangle<int>(area.getX() + 8, y + 4, 22, rowHeight - 8);
         g.setColour(Theme::color(Theme::Color::accent));
-        g.fillRoundedRectangle(badge.toFloat(), 4.0f);
+        g.fillRoundedRectangle(badge.toFloat(), Theme::cornerRadiusSm);
         g.setColour(Theme::color(Theme::Color::textOnColor));
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(juce::String(sr.scorePosition), badge, juce::Justification::centred);
@@ -545,11 +554,11 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
         bool active = (sr.lastActivityMs > 0 && now - sr.lastActivityMs < 300);
         g.setColour(active ? Theme::color(Theme::Color::activityOn)
                            : Theme::color(Theme::Color::activityOff));
-        g.fillEllipse((float)(area.getX() + 36), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
+        g.fillEllipse((float)(area.getX() + 36), (float)(y + rowHeight / 2 - 3), Theme::activityDotSize, Theme::activityDotSize);
 
         // Source
         g.setColour(Theme::color(Theme::Color::textPrimary));
-        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         int sourceWidth = std::min(200, (area.getWidth() - 60) / 2);
         g.drawText(juce::String(sr.controlName), area.getX() + 48, y, sourceWidth, rowHeight,
                    juce::Justification::centredLeft);
