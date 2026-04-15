@@ -718,19 +718,14 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         paintPowerIcon(g, iconBounds, enabled);
         cx += 14 + 6;
 
-        // Arm dot — only shown when enabled
+        // Record arm "R" — only shown when enabled
         bool isArmed = trackState ? trackState->armed : false;
         if (enabled) {
-            auto armRect = juce::Rectangle<float>((float)cx, (float)(cy_row - 5), 10.0f, 10.0f);
-            if (isArmed) {
-                g.setColour(juce::Colour(0xffee8822));
-                g.fillEllipse(armRect);
-            } else {
-                g.setColour(Theme::color(Theme::Color::textDim));
-                g.drawEllipse(armRect.reduced(1.0f), 1.5f);
-            }
+            g.setColour(isArmed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(11.0f));
+            g.drawText("R", cx, y, 12, trackRowHeight, juce::Justification::centredLeft);
         }
-        cx += 10 + 6;
+        cx += 12 + 4;
 
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)

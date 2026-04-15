@@ -293,24 +293,20 @@ void TrackStrip::paint(juce::Graphics& g) {
     }
     cx += 14 + 6;
 
-    // Record arm dot — only shown when track is enabled
+    // Record arm "R" — only shown when track is enabled
     armDotBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
     if (audioEnabled) {
-        if (armed) {
-            g.setColour(juce::Colour(0xffee8822));
-            g.fillEllipse(armDotBounds.toFloat());
-        } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.drawEllipse(armDotBounds.reduced(1).toFloat(), 1.5f);
-        }
+        g.setColour(armed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(11.0f));
+        g.drawText("R", armDotBounds, juce::Justification::centred);
     }
-    cx += 12 + 6;
+    cx += 12 + 4;
 
     // Input monitoring "I" — only for audio input tracks
     inputMonitorBounds = {};
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
         inputMonitorBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
-        g.setColour(inputMonitoring ? juce::Colour(0xff44aaee) : Theme::color(Theme::Color::textDim));
+        g.setColour(inputMonitoring ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(11.0f));
         g.drawText("I", inputMonitorBounds, juce::Justification::centred);
         cx += 12 + 4;
