@@ -700,8 +700,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             g.fillRect(row);
         }
 
-        // Row separator
+        // Row separators
         g.setColour(Theme::color(Theme::Color::border));
+        if (i == 0)
+            g.drawLine((float)area.getX(), (float)y,
+                       (float)area.getRight(), (float)y, 0.5f);
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
