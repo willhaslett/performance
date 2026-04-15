@@ -52,7 +52,7 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
         auto ppb = state->getConfig("zoom_pixels_per_beat");
         if (!ppb.empty()) pixelsPerBeat = std::stod(ppb);
         auto trh = state->getConfig("zoom_track_row_height");
-        if (!trh.empty()) trackRowHeight = std::stoi(trh);
+        if (!trh.empty()) trackRowHeight = std::max(64, std::stoi(trh));
 
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
