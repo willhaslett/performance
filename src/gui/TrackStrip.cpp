@@ -279,12 +279,13 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
-    // Layout: 8px | power(14) | 6px | arm(12) | 6px | track name | ... | menu
+    // Row 1: power icon + track name + menu dots
+    int row1Y = headerBounds.getY() + 4;
+    int row1H = 22;
     int cx = headerBounds.getX() + 8;
-    int cy = headerBounds.getCentreY();
+    int cy1 = row1Y + row1H / 2;
 
-    midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
-
+    midiDotBounds = juce::Rectangle<int>(cx, cy1 - 7, 14, 14);
     {
         auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
                                        : Theme::color(Theme::Color::textDim);
@@ -299,12 +300,23 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
-    cx += 14 + 6;
 
-    // Pill button helper — filled in both states
+    g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
+                              : Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(Theme::fontSize));
+    g.drawText(trackName, headerBounds.getX() + 28, row1Y, headerBounds.getWidth() - 48, row1H,
+               juce::Justification::centredLeft);
+
+    menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18, cy1 - 7, 14, 14);
+
+    // Row 2: pill buttons
+    int row2Y = row1Y + row1H + 2;
+    int cy2 = row2Y + Theme::pillSize / 2;
+    cx = headerBounds.getX() + 8;
+
     auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
                         bool active, uint32_t activeColor) {
-        bounds = juce::Rectangle<int>(cx, cy - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
+        bounds = juce::Rectangle<int>(cx, cy2 - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
         if (active) {
             g.setColour(Theme::color(activeColor));
             g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
@@ -321,38 +333,23 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     bool isActionTrack = (sourceType == TrackSourceType::Action);
 
-    // M S — all audio tracks (not action)
     muteBounds = {};
     soloBounds = {};
     if (!isActionTrack && audioEnabled) {
         drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
         drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
-        cx += Theme::pillGroupGap - Theme::pillGap;  // widen gap between groups
+        cx += Theme::pillGroupGap - Theme::pillGap;
     }
 
-    // R — instrument + audio input tracks (not action)
     armDotBounds = {};
     if (!isActionTrack && audioEnabled) {
         drawPill(armDotBounds, "R", armed, Theme::Color::pillArmActive);
     }
 
-    // I — audio input tracks only
     inputMonitorBounds = {};
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
         drawPill(inputMonitorBounds, "I", inputMonitoring, Theme::Color::pillInputActive);
     }
-
-    cx += Theme::pillNameGap - Theme::pillGap;  // space before name
-
-    g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
-                              : Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSize));
-    g.drawText(trackName, headerBounds.withTrimmedLeft(cx - headerBounds.getX()).withTrimmedRight(20),
-               juce::Justification::centredLeft);
-
-    // Vertical dots menu button
-    menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18,
-                                           headerBounds.getCentreY() - 7, 14, 14);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     auto dx = (float)menuDotsBounds.getCentreX();
     auto dy = (float)menuDotsBounds.getY() + 2.0f;

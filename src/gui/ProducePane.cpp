@@ -712,18 +712,27 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
-        // Layout: 8px | power(14) | 6px | arm(10) | 6px | track name
+        // Row 1: power icon + track name
+        int row1Y = y + 4;
+        int row1H = 20;
         int cx = area.getX() + 8;
-        int cy_row = y + trackRowHeight / 2;
+        int cy1 = row1Y + row1H / 2;
 
-        // Power icon
-        auto iconBounds = juce::Rectangle<int>(cx, cy_row - 7, 14, 14);
+        auto iconBounds = juce::Rectangle<int>(cx, cy1 - 7, 14, 14);
         powerIconBounds[i] = iconBounds;
         paintPowerIcon(g, iconBounds, enabled);
-        cx += 14 + 6;
 
-        // Record arm "R" — only for instrument and audio input tracks
-        // Pill button helper — filled in both states
+        g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
+                             : Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(Theme::fontSizeSm));
+        g.drawText(juce::String(t.name), area.getX() + 28, row1Y, area.getWidth() - 32, row1H,
+                   juce::Justification::centredLeft);
+
+        // Row 2: pill buttons
+        int row2Y = row1Y + row1H + 2;
+        int cy_row = row2Y + Theme::pillSize / 2;
+        cx = area.getX() + 8;
+
         auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
                             bool active, uint32_t activeColor) {
             bounds = juce::Rectangle<int>(cx, cy_row - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
@@ -743,7 +752,6 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
 
-        // M S — all audio tracks (not action)
         muteBounds[i] = {};
         soloBounds[i] = {};
         if (!isActionTrack && enabled) {
@@ -754,27 +762,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             cx += Theme::pillGroupGap - Theme::pillGap;
         }
 
-        // R — instrument + audio input (not action)
         armBounds[i] = {};
         if (!isActionTrack && enabled) {
             bool isArmed = trackState ? trackState->armed : false;
             drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArmActive);
         }
 
-        // I — audio input tracks only
         inputMonitorBounds[i] = {};
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
             drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInputActive);
         }
-
-        cx += Theme::pillNameGap - Theme::pillGap;
-
-        // Track name
-        g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
-                             : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), cx, y, area.getRight() - cx - 4,
-                   trackRowHeight, juce::Justification::centredLeft);
 
         y += trackRowHeight;
     }

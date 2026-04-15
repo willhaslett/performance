@@ -43,8 +43,8 @@ private:
 
     // Layout
     static constexpr int transportHeight = 60;
-    static constexpr int trackHeaderWidth = 180;
-    int trackRowHeight = 48;
+    static constexpr int trackHeaderWidth = 140;
+    int trackRowHeight = 52;
     static constexpr int rulerHeight = 28;
     int beatsPerBar() const;
 

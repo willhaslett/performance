@@ -58,25 +58,25 @@ namespace Theme {
         constexpr uint32_t chatInput   = 0xff252525;
 
         // Track header pill button colors
-        constexpr uint32_t pillMuteActive   = 0xffc8a832;  // amber-gold
-        constexpr uint32_t pillSoloActive   = 0xff3a88c8;  // steel blue
-        constexpr uint32_t pillArmActive    = 0xffc05040;  // warm brick red
-        constexpr uint32_t pillInputActive  = 0xffc05040;  // same warm red
+        constexpr uint32_t pillMuteActive   = 0xff8a7a3a;  // muted gold
+        constexpr uint32_t pillSoloActive   = 0xff3a6a8a;  // muted steel
+        constexpr uint32_t pillArmActive    = 0xff8a4040;  // muted red
+        constexpr uint32_t pillInputActive  = 0xff8a4040;  // muted red
         constexpr uint32_t pillInactive     = 0xff555555;  // dim outline
         constexpr uint32_t pillTextInactive = 0xff888888;  // dim but readable
-        constexpr uint32_t pillOffFill     = 0xff3a3a3a;  // dark filled background for inactive
+        constexpr uint32_t pillOffFill     = 0xff333333;  // dark filled background for inactive
     }
 
     // Dimensions
     constexpr float cornerRadius    = 6.0f;
     constexpr float cornerRadiusSm  = 4.0f;
     constexpr int   toolbarHeight   = 32;
-    constexpr int   trackStripWidth = 200;
+    constexpr int   trackStripWidth = 160;
     constexpr int   slotHeight      = 24;
     constexpr int   slotGap         = 4;
     constexpr int   slotPadding     = 4;
     constexpr int   trackPadding    = 12;
-    constexpr int   headerHeight    = 32;
+    constexpr int   headerHeight    = 52;
     constexpr float chatBubbleRadius = 12.0f;
     constexpr int   chatBubblePad   = 12;
     constexpr int   chatGap         = 8;
