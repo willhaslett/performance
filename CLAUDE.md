@@ -74,7 +74,9 @@ Key model features:
 - `PresetKind` enum (Instrument/Effect/Track)
 - `TempoEvent`/`TimeSignatureEvent` — per-song tempo and time sig changes at specific beat positions (data model ready, runtime evaluation deferred)
 - Regions are take folders: each `RegionState` contains `vector<TakeState>` with `activeTakeId`. Supports multi-take recording — each pass creates a new take, preserving previous ones. `MidiEventState` is the raw MIDI event (noteOn, noteOff, CC, aftertouch, etc.) — notes are derived via `buildNoteList()`, not stored.
-- `TrackState.color` (uint32, 0 = type default) — user-definable track color. Instrument tracks default to `bgHeader`, audio input to amber. Regions and track headers both use this color.
+- `TrackState.color` (uint32, 0 = default) — user-definable track color (currently unused — headers and regions use neutral theme colors).
+- `inputMonitoring` (bool, default true) — pass live audio input to output (audio input tracks). Toggle via "I" pill button.
+- `muted` / `soloed` (bool, runtime, not persisted) — mute silences via GainProcessor, solo mutes all non-soloed tracks.
 - Recording is explicit via `recordModeActive` — press 'r' or click record button to enter record mode. Armed tracks record only when record mode is active.
 - Selection state on SongState (observable, not persisted)
 - Action track: one per song (auto-created), stores `ActionEventData` directly on the track (no regions). Events have absolute beat positions, action ID, and JSON args. Scanned during playback and dispatched on message thread.
@@ -125,11 +127,11 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 
 - **MainLayout** — root container: toolbar + sidebar + flexible dual-pane area + mixer. Left pane (ProducePane by default, also Debug or Mappings) and right pane (Chat or Logs) switchable via sidebar.
 - **ProducePane** — DAW arrange view: Logic-style transport bar with LCD position display (BAR/BEAT/DIV/TICK + time + BPM + time sig), transport buttons (rewind/stop/play/record/cycle with active-state backgrounds), track headers with two-row layout (power+name on row 1, M/S/R/I pill buttons on row 2), timeline grid with regions. MIDI regions show mini piano roll; audio regions show waveform (sqrt-scaled peaks, live during recording). Action track shows spheres with duration tails, overlap-aware beehive layout. Regions use neutral bgSurface fill (no per-track color). LCD values should all be interactive: BPM and time sig are editable, BAR/BEAT/DIV/TICK + time should support drag-to-change and double-click-to-edit (TODO). Click grid to set position (snaps to division). Drag track headers to reorder. Multi-track selection: click=select, Cmd+click=toggle, Shift+click=range. Region management: multi-select with Cmd+click, delete/backspace removes all selected, drag to move (horizontal + cross-track with snap-to-grid), option+drag to duplicate, Cmd+D to duplicate inline, Cmd+T to split at playhead, right-click for context menu (mute/unmute, delete, quantize, join). Region trimming: drag left/right edges with resize cursor, non-destructive. Auto-scroll: Logic-style page jump when playhead nears right edge; `ensurePlayheadVisible()` on all manual position changes. Two-finger horizontal scroll. Keyboard: space=play/stop, r=record, return=rewind, h/l=step by division, Shift+H/L=step by measure, Cmd+h/l/j/k=zoom.
-- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges).
-- **TrackStrip** — instrument slot (or input selector for audio input tracks), effect slots, output target selector (Master/No Output/Bus), sends panel, fader+stereo meters with IEC-scale dB labels. Power icon toggles `audioEnabled`. Red arm dot toggles `armed` for recording. Track preset callbacks from coordinator.
+- **MixerView** — track/bus/output strips, 30Hz poll (state for structure, engine for stereo peak levels). Drag track headers to reorder (blue indicator line, snaps to strip edges). M/S pill buttons at bottom of each track strip.
+- **TrackStrip** — compact header (power icon + name + "IN" label for audio inputs + menu dots), instrument/input slot, effect slots, output target selector, sends panel, fader+stereo meters, M/S pills at bottom. Mute/Solo are mixer-only controls (no R/I in mixer).
 - **BusStrip** — effect slots, output target selector (Master/No Output/Bus), fader+stereo meters. Power icon toggles bus `audioEnabled`. Bus preset save/load via right-click menu.
 - **OutputStrip** — master effect slots, master fader+stereo meters. Power icon toggles master `audioEnabled`.
-- **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader handle center reaches full range (+6 to -60). Click-to-jump: clicking the fader track sets the fader to that position. Fader travel and meter bars share identical vertical bounds.
+- **FaderMeter** — fader + dual L/R meters on IEC-style non-linear dB scale (-60 to +6). Peak hold with exponential decay. Grid lines, color zones (green/amber/red at -12/0dB), dB tick labels. Fader handle (controlHandle white) center reaches full range (+6 to -60). Click-to-jump. Meter grooves use bgSlot, fader groove uses bgSlot.
 - **MusicalTyping** — on-screen keyboard (Cmd+Shift+K toggle). Computer keys mapped to MIDI notes (Logic layout). Octave shift (Z/X), velocity (C/V), sustain (Tab). Draggable floating panel. Injects MIDI via `audioEngine.injectMidi()`. Intercepts all keyboard input when active.
 - **MorphEditor** — slot-based editor for compound morph actions. Growing list of action slots with inline action picker per slot. Parallel/sequential mode toggle. OK/Cancel with proper window close handling.
 - **PluginSlot** — reusable pill with picker, context menu, auto-open on load. Uses StateAPI for plugin resolution, EngineAPI for editor/presets.
@@ -144,7 +146,15 @@ All GUI components take `StateAPI&` + `EngineAPI&` (no PerformanceAPI).
 - **DebugPane** — Dev-time diagnostic view: live MIDI event log (all devices, color-coded by type) + audio input level meters per channel.
 - **LogPane** — Live tail of `/tmp/performance.log` in a selectable/copyable TextEditor. Auto-scrolls.
 - **SettingsWindow** — popup window (Cmd+,) with tabbed interface. Audio tab: output/input device, buffer size, sample rate, computed latency. MIDI tab placeholder. Also accessible via Performance menu → Settings.
-- **InlineEditor**, **SaveAsDialog**, **Theme**, **PaneContainer**, **ChatView**, **ClaudeClient**
+- **InlineEditor**, **SaveAsDialog**, **PaneContainer**, **ChatView**, **ClaudeClient**
+- **Theme** (`src/gui/Theme.h`) — centralized design tokens. Minimalist dark theme with semantic naming:
+  - **Surface hierarchy**: bgApp/bgPanel (0xff161616, unified) → bgSurface (0xff1e1e1e, track lanes/strips) → bgSlot (0xff2a2a2a, interactive elements) → bgSurfaceHover (0xff333333). bgRecessed (0xff121212) for inset grooves.
+  - **Text**: textPrimary (0xffd8d8d8) → textSecondary (0xffaaaaaa) → textDim (0xff666666). textOnColor/controlHandle (white) for colored backgrounds and fader handles.
+  - **Semantic colors**: activityOn/Off (MIDI), transportPlay/Rec/Cycle, meterGreen/Amber/Red, statusError.
+  - **Pills**: pillMute (gold), pillSolo (steel), pillArm/pillInput (red), pillOff/pillTextOff (inactive).
+  - **Typography scale**: fontSizeTitle(16) → fontSizeLg(14) → fontSizeMd(13) → fontSizeSm(12). LCD sizes for transport.
+  - **Spacing scale**: spacingXs(2) → S(4) → M(8) → L(12) → Xl(16).
+  - **Design principles**: minimal color, maximum contrast hierarchy. No per-track colored headers — neutral throughout. Regions use bgSurfaceHover (neutral). Track type indicated by "IN" text label, not color. Pill buttons for track state (M/S/R/I) with subdued active colors. Two-row track headers: name on top, pills below.
 
 ### Audio Graph
 
@@ -296,6 +306,12 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - DB backup on every save (state.bak.db). Schema version tracking. Git tag v0.0.1.
 - Performance Map rewrite — two-pane Controllers + Song Mappings layout. Collapsible device tree, drag-and-drop between all areas (controllers → atemporal/score, atemporal → score, score → atemporal, score reorder with insertion line). Learn mode with port-aware device resolution, duplicate flash, IAC filtering. Inline name editing with up/down arrow navigation, group field with smart picker menu. Stub bindings (no action) persist. Score grows vertically, atemporal scrolls. `InlineEditor` re-entrancy guard (`isCommitting`) prevents double-commit on focusLost.
 - MIDI device auto-registration — `PerformanceCoordinator::refreshMidiDevices` registers connected devices on startup and hot-plug. No manual registration step. IAC Driver buses filtered.
+- Input monitoring — `inputMonitoring` flag on audio input tracks. Disconnects live audio input from track signal chain when off. "I" pill button in arrange view, toggle in mixer.
+- Solo and Mute — runtime flags on TrackState. Mute via `GainProcessor.setMuted()` (preserves user gain). Solo via `AudioEngine::updateMuteStates()` (mutes all non-soloed when any soloed). M/S pill buttons: mixer bottom row, arrange view row 2.
+- Theme redesign — semantic color tokens, unified surface hierarchy (bgApp → bgSurface → bgSlot), neutral track headers (no per-track color), two-row track headers with pill buttons, subdued pill colors, spacing/typography scales. All hardcoded colors migrated to Theme.h tokens.
+- Fail-loud assertions — `PERF_ASSERT` macro, asserting helpers `song()`/`track()`/`bus()`/`device()` in StateAPI, assertions in EngineSync and Arrangement. Silent failures replaced with crashes for programming errors.
+- Test suite expanded to 134 — UndoHistory, SongRuntime MIDI dispatch, Arrangement (looping/quantize/split), Persistence (stub bindings, region fields).
+- Audio region persistence — takes table now stores file_path, record_tempo, sample_rate, channel_count.
 
 **Feature backlog (high priority):**
 - Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
@@ -388,4 +404,4 @@ Clip triggering is DAW-specific (MCU can't do it). The interface should make it 
 
 ## LOC
 
-~24,500 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
+~25,400 lines of source code (headers + implementation + tests). See `find src tests -name "*.h" -o -name "*.cpp" -o -name "*.mm" | xargs wc -l`.
