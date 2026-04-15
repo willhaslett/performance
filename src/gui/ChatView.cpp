@@ -119,7 +119,7 @@ ChatView::Bubble* ChatView::addBubble(Bubble::Type type, const juce::String& tex
     editor->setReadOnly(true);
     editor->setScrollbarsShown(false);
     editor->setPopupMenuEnabled(true);  // right-click copy
-    editor->setFont(type == Bubble::Tool ? Theme::fontMono(Theme::fontSizeXs)
+    editor->setFont(type == Bubble::Tool ? Theme::fontMono(Theme::fontSizeSm)
                                           : Theme::font(Theme::fontSizeSm));
     editor->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     editor->setColour(juce::TextEditor::textColourId, textColor(type));

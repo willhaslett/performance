@@ -270,7 +270,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.fillRect(headerBounds);
 
     // Header: power icon + track name + type indicator + menu dots
-    int cx = headerBounds.getX() + 8;
+    int cx = headerBounds.getX() + Theme::spacingM;
     int cy = headerBounds.getCentreY();
 
     midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
@@ -289,7 +289,7 @@ void TrackStrip::paint(juce::Graphics& g) {
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
 
-    g.setColour(audioEnabled ? Theme::color(Theme::Color::textOnColor)
+    g.setColour(audioEnabled ? Theme::color(Theme::Color::textPrimary)
                               : Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSize));
     g.drawText(trackName, headerBounds.getX() + 28, headerBounds.getY(),

@@ -65,7 +65,7 @@ void TransportBar::paint(juce::Graphics& g) {
     loopBounds = area.removeFromLeft(20);
     bool looping = sequencer->isLoopEnabled();
     g.setColour(looping ? Theme::color(Theme::Color::accent) : Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeXs));
+    g.setFont(Theme::font(Theme::fontSizeSm));
     g.drawText("L", loopBounds, juce::Justification::centred);
 }
 

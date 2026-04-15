@@ -31,7 +31,7 @@ void MixerView::paint(juce::Graphics& g) {
 
     if (trackStrips.empty() && busStrips.empty()) {
         g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(14.0f));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         auto msgArea = getLocalBounds().withTrimmedRight(Theme::trackStripWidth);
         g.drawText("No tracks", msgArea, juce::Justification::centred);
     }

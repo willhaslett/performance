@@ -24,7 +24,7 @@ ProducePane::ProducePane() {
     addAndMakeVisible(metronomeSlider);
 
     metronomeLabel.setText("Met", juce::dontSendNotification);
-    metronomeLabel.setFont(Theme::font(9.0f));
+    metronomeLabel.setFont(Theme::font(Theme::fontSizeXs));
     metronomeLabel.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textDim));
     metronomeLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(metronomeLabel);
@@ -52,7 +52,7 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
         auto ppb = state->getConfig("zoom_pixels_per_beat");
         if (!ppb.empty()) pixelsPerBeat = std::stod(ppb);
         auto trh = state->getConfig("zoom_track_row_height");
-        if (!trh.empty()) trackRowHeight = std::max(64, std::stoi(trh));
+        if (!trh.empty()) trackRowHeight = std::max(72, std::stoi(trh));
 
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
@@ -221,7 +221,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
     // Show as a popup window with working close button
     struct MorphWindow : public juce::DocumentWindow {
         std::function<void()> onClose;
-        MorphWindow() : DocumentWindow("Morph", juce::Colour(0xff2a2a2a), closeButton) {}
+        MorphWindow() : DocumentWindow("Morph", Theme::color(Theme::Color::bgOverlay), closeButton) {}
         void closeButtonPressed() override { if (onClose) onClose(); }
     };
     auto* window = new MorphWindow();
@@ -327,7 +327,7 @@ void ProducePane::paint(juce::Graphics& g) {
 
         // Dim the source track row
         int srcY = gridTop + dragTrackIndex * trackRowHeight;
-        g.setColour(juce::Colour(0x40000000));
+        g.setColour(Theme::color(Theme::Color::overlayDim));
         g.fillRect(0, srcY, getWidth(), trackRowHeight);
     }
 
@@ -405,7 +405,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     playButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     {
         if (playing) {
-            g.setColour(juce::Colour(0xff2a6a2a));  // dark green bg
+            g.setColour(Theme::color(Theme::Color::transportPlay));
             g.fillRoundedRectangle(playButtonBounds.toFloat(), 4.0f);
             g.setColour(Theme::color(Theme::Color::textOnColor));
         } else {
@@ -423,11 +423,11 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     recordButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     {
         if (inRecordMode) {
-            g.setColour(juce::Colour(0xff6a2a2a));  // dark red bg
+            g.setColour(Theme::color(Theme::Color::transportRec));
             g.fillRoundedRectangle(recordButtonBounds.toFloat(), 4.0f);
             g.setColour(Theme::color(Theme::Color::textOnColor));
         } else {
-            g.setColour(juce::Colour(0xffcc4444));  // red circle
+            g.setColour(Theme::color(Theme::Color::transportRecDot));
         }
         auto rb = recordButtonBounds.reduced(7).toFloat();
         g.fillEllipse(rb);
@@ -629,7 +629,8 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
             int x2 = std::min(beatToX(loopEnd), getWidth());
             if (x2 > x1) {
                 bool active = sequencer->isLoopEnabled();
-                auto cycleCol = active ? juce::Colour(0xff8a8a40) : juce::Colour(0xff505050);
+                auto cycleCol = active ? Theme::color(Theme::Color::transportCycle)
+                                       : Theme::color(Theme::Color::transportCycleOff);
                 g.setColour(cycleCol.withAlpha(active ? 0.35f : 0.15f));
                 g.fillRect(x1, rulerArea.getY(), x2 - x1, rulerArea.getHeight());
                 g.setColour(cycleCol.withAlpha(0.6f));
@@ -708,9 +709,10 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
-        // Row 1: power icon + track name + type indicator
-        int row1Y = y + 6;
-        int row1H = 20;
+        // Row 1: power icon + track name
+        // Uses Theme::headerHeight so the name block matches mixer strip headers.
+        int row1Y = y + 4;
+        int row1H = Theme::headerHeight;
         int cx = area.getX() + 8;
         int cy1 = row1Y + row1H / 2;
 
@@ -725,8 +727,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawText(juce::String(t.name), area.getX() + 28, row1Y, nameRight - (area.getX() + 28), row1H,
                    juce::Justification::centredLeft);
 
-        // Row 2: pill buttons (M S R I)
-        int row2Y = row1Y + row1H + 6;
+        // Row 2: pill buttons (M S R I) — 10px gap below name row
+        int row2Y = row1Y + row1H + 10;
         int cy_row = row2Y + Theme::pillSize / 2;
         cx = area.getX() + 8;
 
@@ -900,7 +902,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                 // Region name
                 g.setColour(Theme::color(Theme::Color::textPrimary));
-                g.setFont(Theme::font(9.0f));
+                g.setFont(Theme::font(Theme::fontSizeXs));
                 g.drawText(juce::String(r->name), regionBounds.reduced(4, 0),
                            juce::Justification::centredLeft);
 
@@ -1159,8 +1161,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                 // "+" when option is held (duplicate mode)
                 if (dragIsOption) {
-                    g.setColour(juce::Colour(0x55ffffff));
-                    g.setFont(Theme::fontMono(22.0f));
+                    g.setColour(Theme::color(Theme::Color::textOnColor).withAlpha(0.33f));
+                    g.setFont(Theme::fontMono(Theme::fontSizeLcdMd));
                     g.drawText("+", ghostBounds, juce::Justification::centred);
                 }
             }
@@ -1172,7 +1174,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
         double loopStart = sequencer->getLoopStart();
         double loopEnd = sequencer->getLoopEnd();
         if (loopEnd > loopStart) {
-            auto lineCol = juce::Colour(0xff8a8a40);
+            auto lineCol = Theme::color(Theme::Color::transportCycle);
             int x1 = beatToX(loopStart);
             int x2 = beatToX(loopEnd);
             g.setColour(lineCol.withAlpha(0.5f));
@@ -1203,7 +1205,7 @@ void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
     int x = beatToX(beat);
     if (x < trackHeaderWidth || x > getWidth()) return;
 
-    g.setColour(juce::Colour(0xccffffff));
+    g.setColour(Theme::color(Theme::Color::playhead));
     g.drawLine((float)x, (float)area.getY(), (float)x, (float)area.getBottom(), 1.0f);
 
     // Small triangle at top

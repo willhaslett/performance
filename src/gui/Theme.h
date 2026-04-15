@@ -18,6 +18,7 @@ namespace Theme {
         constexpr uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
         constexpr uint32_t bgDisabled      = 0xff252525;  // disabled strip/header
         constexpr uint32_t bgRecessed      = 0xff121212;  // meter grooves, fader tracks
+        constexpr uint32_t overlayDim      = 0x40000000;  // semi-transparent dim (drag source, etc.)
 
         // Borders
         constexpr uint32_t border         = 0xff444444;  // standard divider lines
@@ -40,15 +41,18 @@ namespace Theme {
         constexpr uint32_t statusError    = 0xff994444;  // load failures
 
         // Transport
-        constexpr uint32_t transportPlay  = 0xff2a6a2a;  // play button active
-        constexpr uint32_t transportRec   = 0xff6a2a2a;  // record mode active
-        constexpr uint32_t transportRecDot= 0xffcc4444;  // record dot
-        constexpr uint32_t transportCycle = 0xff8a8a40;  // cycle active
+        constexpr uint32_t transportPlay      = 0xff2a6a2a;  // play button active
+        constexpr uint32_t transportRec       = 0xff6a2a2a;  // record mode active
+        constexpr uint32_t transportRecDot    = 0xffcc4444;  // record dot
+        constexpr uint32_t transportCycle     = 0xff8a8a40;  // cycle active
+        constexpr uint32_t transportCycleOff  = 0xff505050;  // cycle inactive
+        constexpr uint32_t playhead           = 0xccffffff;  // playhead vertical line
 
         // Meter
         constexpr uint32_t meterGreen     = 0xff44cc44;  // safe level
         constexpr uint32_t meterAmber     = 0xffccaa44;  // warning zone
         constexpr uint32_t meterRed       = 0xffcc4444;  // clipping zone
+        constexpr uint32_t sendPeak       = 0xff1a6e1a;  // send knob peak-activity glow (darker green)
 
         // Track pills
         constexpr uint32_t pillMute       = 0xff8a7a3a;  // M active — muted gold
@@ -91,6 +95,7 @@ namespace Theme {
     constexpr float fontSizeLg       = 14.0f;  // track names, primary content
     constexpr float fontSizeMd       = 13.0f;  // slot labels, secondary content
     constexpr float fontSizeSm       = 12.0f;  // badges, hints, type indicators
+    constexpr float fontSizeXs       = 9.0f;   // very small labels (metronome, region counters)
     constexpr float fontSizePill     = 13.0f;  // pill button labels
     constexpr float fontSizeMeter    = 10.0f;  // dB tick labels
 
@@ -101,7 +106,6 @@ namespace Theme {
 
     // Legacy aliases (to be removed as files migrate)
     constexpr float fontSize         = fontSizeLg;
-    constexpr float fontSizeXs       = fontSizeSm;
 
     // ── Spacing ───────────────────────────────────────────────
     constexpr int   spacingXs   = 2;
@@ -111,7 +115,7 @@ namespace Theme {
     constexpr int   spacingXl   = 16;
 
     // ── Component dimensions ──────────────────────────────────
-    constexpr int   headerHeight    = 32;
+    constexpr int   headerHeight    = 28;  // name block height: mixer strip headers, ProducePane track row 1
     constexpr int   toolbarHeight   = 32;
     constexpr int   slotHeight      = 24;
     constexpr int   slotGap         = 4;

@@ -68,8 +68,8 @@ juce::Rectangle<int> SendsPanel::getKnobBounds(int row) const {
 juce::Colour SendsPanel::vuColor(float peakLevel) {
     if (peakLevel < 0.0001f) return Theme::color(Theme::Color::textDim);
     float db = 20.0f * std::log10(peakLevel);
-    if (db > 0.0f)  return juce::Colour(0xffcc4444);
-    if (db > -6.0f) return juce::Colour(0xffccaa44);
+    if (db > 0.0f)  return Theme::color(Theme::Color::meterRed);
+    if (db > -6.0f) return Theme::color(Theme::Color::meterAmber);
     return Theme::color(Theme::Color::activityOn);
 }
 
@@ -90,7 +90,7 @@ void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
 
     if (peakLevel > 0.01f) {
         float innerRadius = arcRadius - 3.0f;
-        g.setColour(juce::Colour(0xff1a6e1a));
+        g.setColour(Theme::color(Theme::Color::sendPeak));
         g.fillEllipse(centre.x - innerRadius, centre.y - innerRadius,
                       innerRadius * 2.0f, innerRadius * 2.0f);
     }
@@ -123,7 +123,7 @@ void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
 }
 
 void SendsPanel::paint(juce::Graphics& g) {
-    g.setFont(Theme::font(Theme::fontSizeXs));
+    g.setFont(Theme::font(Theme::fontSizeSm));
 
     for (size_t i = 0; i < rows.size(); ++i) {
         auto pill = getPillBounds((int)i);

@@ -100,13 +100,13 @@ static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area,
     if (fillArea.getY() < warmY && fillArea.getBottom() > zeroY) {
         auto zone = fillArea.withTop(std::max(fillArea.getY(), zeroY))
                              .withBottom(std::min(fillArea.getBottom(), warmY));
-        g.setColour(juce::Colour(0xffccaa44));
+        g.setColour(Theme::color(Theme::Color::meterAmber));
         g.fillRect(zone);
     }
     // Red zone (above 0dB)
     if (fillArea.getY() < zeroY) {
         auto zone = fillArea.withBottom(std::min(fillArea.getBottom(), zeroY));
-        g.setColour(juce::Colour(0xffcc4444));
+        g.setColour(Theme::color(Theme::Color::meterRed));
         g.fillRect(zone);
     }
 }
