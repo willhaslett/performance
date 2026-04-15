@@ -293,23 +293,37 @@ void TrackStrip::paint(juce::Graphics& g) {
     }
     cx += 14 + 6;
 
-    // Record arm "R" — only shown when track is enabled
-    armDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
+    // Record arm "R" — pill toggle, only shown when track is enabled
+    armDotBounds = juce::Rectangle<int>(cx, cy - 8, 16, 16);
     if (audioEnabled) {
-        g.setColour(armed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(14.0f));
+        if (armed) {
+            g.setColour(juce::Colour(0xffee8822));
+            g.fillRoundedRectangle(armDotBounds.toFloat(), 3.0f);
+            g.setColour(Theme::color(Theme::Color::textWhite));
+        } else {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.drawRoundedRectangle(armDotBounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        }
+        g.setFont(Theme::font(11.0f));
         g.drawText("R", armDotBounds, juce::Justification::centred);
     }
-    cx += 14 + 2;
+    cx += 16 + 2;
 
-    // Input monitoring "I" — only for audio input tracks
+    // Input monitoring "I" — pill toggle, only for audio input tracks
     inputMonitorBounds = {};
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
-        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
-        g.setColour(inputMonitoring ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(14.0f));
+        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 8, 16, 16);
+        if (inputMonitoring) {
+            g.setColour(juce::Colour(0xffee8822));
+            g.fillRoundedRectangle(inputMonitorBounds.toFloat(), 3.0f);
+            g.setColour(Theme::color(Theme::Color::textWhite));
+        } else {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.drawRoundedRectangle(inputMonitorBounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        }
+        g.setFont(Theme::font(11.0f));
         g.drawText("I", inputMonitorBounds, juce::Justification::centred);
-        cx += 14 + 4;
+        cx += 16 + 2;
     }
 
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)

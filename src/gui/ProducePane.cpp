@@ -725,23 +725,37 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         bool isArmed = trackState ? trackState->armed : false;
         armBounds[i] = {};
         if (!isActionTrack) {
-            armBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
+            armBounds[i] = juce::Rectangle<int>(cx, cy_row - 8, 16, 16);
             if (enabled) {
-                g.setColour(isArmed ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-                g.setFont(Theme::font(14.0f));
+                if (isArmed) {
+                    g.setColour(juce::Colour(0xffee8822));
+                    g.fillRoundedRectangle(armBounds[i].toFloat(), 3.0f);
+                    g.setColour(Theme::color(Theme::Color::textWhite));
+                } else {
+                    g.setColour(Theme::color(Theme::Color::textDim));
+                    g.drawRoundedRectangle(armBounds[i].toFloat().reduced(0.5f), 3.0f, 1.0f);
+                }
+                g.setFont(Theme::font(11.0f));
                 g.drawText("R", armBounds[i], juce::Justification::centred);
             }
-            cx += 14 + 2;
+            cx += 16 + 2;
         }
 
-        // Input monitoring "I" — only for audio input tracks
+        // Input monitoring "I" — pill toggle, only for audio input tracks
         inputMonitorBounds[i] = {};
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
-            inputMonitorBounds[i] = juce::Rectangle<int>(cx, y, 14, trackRowHeight);
-            g.setColour(trackState->inputMonitoring ? juce::Colour(0xffee8822) : Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(14.0f));
+            inputMonitorBounds[i] = juce::Rectangle<int>(cx, cy_row - 8, 16, 16);
+            if (trackState->inputMonitoring) {
+                g.setColour(juce::Colour(0xffee8822));
+                g.fillRoundedRectangle(inputMonitorBounds[i].toFloat(), 3.0f);
+                g.setColour(Theme::color(Theme::Color::textWhite));
+            } else {
+                g.setColour(Theme::color(Theme::Color::textDim));
+                g.drawRoundedRectangle(inputMonitorBounds[i].toFloat().reduced(0.5f), 3.0f, 1.0f);
+            }
+            g.setFont(Theme::font(11.0f));
             g.drawText("I", inputMonitorBounds[i], juce::Justification::centred);
-            cx += 14 + 4;
+            cx += 16 + 2;
         }
 
         // Track name
