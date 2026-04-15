@@ -93,7 +93,7 @@ juce::Rectangle<int> Sidebar::getTabBounds(int tabIndex) const {
 }
 
 void Sidebar::paint(juce::Graphics& g) {
-    auto contentCol = juce::Colour(0xff2a2a2a);
+    auto contentCol = Theme::color(Theme::Color::bgApp);
     auto tabBarCol = Theme::color(Theme::Color::bgPanel);
 
     // Tab bar darker, content area lighter
