@@ -75,7 +75,7 @@ float FaderMeter::gainToNormalized(float gain) const {
 
 static void drawMeterBar(juce::Graphics& g, juce::Rectangle<int> area,
                           float level, float dbMin, float dbMax) {
-    g.setColour(Theme::color(Theme::Color::bgRecessed));
+    g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(area.toFloat(), 1.5f);
 
     if (level <= 0.0001f) return;
@@ -144,7 +144,7 @@ void FaderMeter::paint(juce::Graphics& g) {
 
     // --- 2. Fader groove + handle (paints over grid) ---
     auto groove = faderArea.withSizeKeepingCentre(2, faderArea.getHeight());
-    g.setColour(Theme::color(Theme::Color::bgRecessed));
+    g.setColour(Theme::color(Theme::Color::bgSlot));
     g.fillRoundedRectangle(groove.toFloat(), 1.0f);
 
     float normalized = gainToNormalized(gainValue);
