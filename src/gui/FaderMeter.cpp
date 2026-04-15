@@ -154,7 +154,7 @@ void FaderMeter::paint(juce::Graphics& g) {
 
     auto handle = juce::Rectangle<int>(faderArea.getX() - 2, handleY,
                                         faderWidth + 4, handleHeight);
-    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setColour(juce::Colour(0xffc1c1c1));
     g.fillRoundedRectangle(handle.toFloat(), 3.0f);
 
     // --- 3. Stereo meters (paint over grid) ---
