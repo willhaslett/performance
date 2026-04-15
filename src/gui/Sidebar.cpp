@@ -93,13 +93,10 @@ juce::Rectangle<int> Sidebar::getTabBounds(int tabIndex) const {
 }
 
 void Sidebar::paint(juce::Graphics& g) {
-    auto contentCol = Theme::color(Theme::Color::bgApp);
-    auto tabBarCol = Theme::color(Theme::Color::bgPanel);
-
-    // Tab bar darker, content area lighter
-    g.setColour(tabBarCol);
+    // Tab bar on darkest background, active tab matches content pane
+    g.setColour(Theme::color(Theme::Color::bgApp));
     g.fillRect(0, 0, getWidth(), tabBarHeight);
-    g.setColour(contentCol);
+    g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(0, tabBarHeight, getWidth(), getHeight() - tabBarHeight);
 
     static const char* tabLabels[] = { "Songs", "Library", "Actions", "Devices" };
@@ -109,7 +106,7 @@ void Sidebar::paint(juce::Graphics& g) {
         bool active = (i == (int)activeTab);
 
         if (active) {
-            g.setColour(contentCol);
+            g.setColour(Theme::color(Theme::Color::bgPanel));
             g.fillRect(bounds);
         }
 
