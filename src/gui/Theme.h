@@ -25,6 +25,7 @@ namespace Theme {
         constexpr uint32_t textSecondary  = 0xffaaaaaa;  // labels, descriptions (was 0xff999999)
         constexpr uint32_t textDim        = 0xff666666;  // disabled, placeholder
         constexpr uint32_t textOnColor    = 0xffffffff;  // text on colored backgrounds
+        constexpr uint32_t controlHandle  = 0xffffffff;  // fader handles, prominent grabbable controls
 
         // Accent
         constexpr uint32_t accent         = 0xff2a6aaa;  // selection, focus, links
