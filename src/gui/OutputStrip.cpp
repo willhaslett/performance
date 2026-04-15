@@ -97,10 +97,8 @@ void OutputStrip::paint(juce::Graphics& g) {
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    constexpr float disabledDarken = 0.35f;
-    auto headerCol = Theme::color(Theme::Color::bgHeaderOut);
-    if (!audioEnabled)
-        headerCol = headerCol.interpolatedWith(juce::Colours::black, 1.0f - disabledDarken);
+    auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgPanel)
+                                  : Theme::color(Theme::Color::bgHeaderOff);
     g.setColour(headerCol);
     g.fillRect(headerBounds);
 

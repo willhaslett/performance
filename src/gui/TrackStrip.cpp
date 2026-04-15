@@ -268,20 +268,14 @@ void TrackStrip::paint(juce::Graphics& g) {
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
 
-    bool isAudioInput = (sourceType == TrackSourceType::AudioInput);
-    constexpr uint32_t bgHeaderAudioInput = 0xff3a2e18;  // muted amber
-    constexpr float disabledDarken = 0.35f;  // blend toward black
-
-    auto headerColour = isAudioInput ? juce::Colour(bgHeaderAudioInput)
-                                      : Theme::color(Theme::Color::bgHeader);
-    if (!audioEnabled)
-        headerColour = headerColour.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
+    auto headerColour = audioEnabled ? Theme::color(Theme::Color::bgPanel)
+                                      : Theme::color(Theme::Color::bgHeaderOff);
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
-    // Row 1: power icon + track name + menu dots
-    int row1Y = headerBounds.getY() + 4;
-    int row1H = 22;
+    // Row 1: power icon + track name + type label + menu dots
+    int row1Y = headerBounds.getY() + 6;
+    int row1H = 20;
     int cx = headerBounds.getX() + 8;
     int cy1 = row1Y + row1H / 2;
 
@@ -307,10 +301,18 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.drawText(trackName, headerBounds.getX() + 28, row1Y, headerBounds.getWidth() - 48, row1H,
                juce::Justification::centredLeft);
 
+    // Type indicator — subtle, right-aligned
+    if (sourceType == TrackSourceType::AudioInput) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(10.0f));
+        g.drawText("IN", headerBounds.getRight() - 34, row1Y, 16, row1H,
+                   juce::Justification::centredRight);
+    }
+
     menuDotsBounds = juce::Rectangle<int>(headerBounds.getRight() - 18, cy1 - 7, 14, 14);
 
     // Row 2: pill buttons
-    int row2Y = row1Y + row1H + 2;
+    int row2Y = row1Y + row1H + 4;
     int cy2 = row2Y + Theme::pillSize / 2;
     cx = headerBounds.getX() + 8;
 

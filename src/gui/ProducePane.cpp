@@ -680,20 +680,13 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
 
-        // Track header background
+        // Track header background — neutral for all types
         bool enabled = trackState ? trackState->audioEnabled : true;
         bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
-        constexpr float disabledDarken = 0.35f;
 
-        auto headerCol = isAction ? juce::Colour(0xff2a2438)
-                       : isAudioInput ? juce::Colour(0xff3a2e18)
-                       : Theme::color(Theme::Color::bgHeader);
-        // User-defined color overrides default
-        if (trackState && trackState->color != 0)
-            headerCol = juce::Colour(trackState->color);
-        if (!enabled)
-            headerCol = headerCol.interpolatedWith(juce::Colour(0xff181818), 1.0f - disabledDarken);
+        auto headerCol = enabled ? Theme::color(Theme::Color::bgPanel)
+                                 : Theme::color(Theme::Color::bgHeaderOff);
 
         // Full row background
         g.setColour(headerCol);
@@ -712,8 +705,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
-        // Row 1: power icon + track name
-        int row1Y = y + 4;
+        // Row 1: power icon + track name + type indicator
+        int row1Y = y + 6;
         int row1H = 20;
         int cx = area.getX() + 8;
         int cy1 = row1Y + row1H / 2;
@@ -724,12 +717,22 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
                              : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(juce::String(t.name), area.getX() + 28, row1Y, area.getWidth() - 32, row1H,
+        g.setFont(Theme::font(Theme::fontSize));
+        int nameRight = area.getRight() - 4;
+        if (isAudioInput) nameRight -= 22;
+        g.drawText(juce::String(t.name), area.getX() + 28, row1Y, nameRight - (area.getX() + 28), row1H,
                    juce::Justification::centredLeft);
 
+        // Type indicator
+        if (isAudioInput) {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(10.0f));
+            g.drawText("IN", area.getRight() - 24, row1Y, 20, row1H,
+                       juce::Justification::centredRight);
+        }
+
         // Row 2: pill buttons
-        int row2Y = row1Y + row1H + 2;
+        int row2Y = row1Y + row1H + 4;
         int cy_row = row2Y + Theme::pillSize / 2;
         cx = area.getX() + 8;
 
