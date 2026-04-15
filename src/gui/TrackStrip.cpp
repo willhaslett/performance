@@ -381,18 +381,21 @@ void TrackStrip::resized() {
     auto bounds = getLocalBounds();
     constexpr int faderMeterWidth = 48;
 
-    // FaderMeter runs full height on the right
+    // Reserve space at bottom for M/S pill row
+    int bottomReserve = Theme::pillSize + 16;  // pills + padding above and below
+
+    // FaderMeter runs full height on the right (above M/S row)
     auto fmArea = bounds.withTrimmedTop(Theme::headerHeight + Theme::trackPadding)
-                        .withTrimmedBottom(Theme::trackPadding)
+                        .withTrimmedBottom(bottomReserve)
                         .removeFromRight(faderMeterWidth + Theme::trackPadding)
                         .withTrimmedRight(Theme::trackPadding);
     faderMeter.setBounds(fmArea);
 
-    // Content area (left of fader)
+    // Content area (left of fader, above M/S row)
     auto contentArea = bounds.withTrimmedTop(Theme::headerHeight)
                              .withTrimmedLeft(Theme::trackPadding)
                              .withTrimmedRight(faderMeterWidth + Theme::trackPadding * 2)
-                             .withTrimmedBottom(Theme::trackPadding);
+                             .withTrimmedBottom(bottomReserve);
 
     // Output target pinned to bottom
     outputTargetBounds = contentArea.removeFromBottom(18);
