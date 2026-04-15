@@ -216,9 +216,9 @@ All design tokens live here. This section is authoritative — read it before to
 
 | Token | Value | Use |
 |---|---|---|
-| `bgControl` | `0xff2a2a2a` | Resting state of any interactive control |
+| `bgControl` | `0xff2d2d2d` | Resting state of any interactive control |
 | `bgControlHover` | `0xff333333` | Hover state for any interactive control |
-| `bgSelection` | `0xff2a2a2a` | Selected track row highlight |
+| `bgSelection` | `0xff262626` | Selected track row highlight — sits between `bgSurface` and `bgControl` so pills on selected rows still contrast |
 | `bgOverlay` | `0xff2a2a2a` | Modal / popup backdrop |
 | `bgDisabled` | `0xff252525` | Disabled strip / header fill |
 
