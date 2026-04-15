@@ -151,6 +151,7 @@ struct TrackState {
     bool midiEnabled = true;   // receives MIDI notes (instrument tracks)
     bool audioEnabled = true;  // passes audio signal (all tracks)
     bool armed = false;        // record-armed (records MIDI when playing)
+    bool inputMonitoring = true; // pass live audio input to output (audio input tracks)
     int position = 0;
     LoadStatus instrumentLoadStatus = LoadStatus::None;
     std::string processorState;

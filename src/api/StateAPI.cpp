@@ -445,6 +445,17 @@ bool StateAPI::isTrackArmed(const std::string& id) const {
     return track(id).armed;
 }
 
+void StateAPI::setTrackInputMonitoring(const std::string& id, bool enabled) {
+    pushUndo();
+    track(id).inputMonitoring = enabled;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+}
+
+bool StateAPI::isTrackInputMonitoring(const std::string& id) const {
+    return track(id).inputMonitoring;
+}
+
 void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
                                const std::string& presetId) {
     pushUndo();

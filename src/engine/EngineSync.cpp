@@ -259,6 +259,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
         engine.setTrackAudioEnabled(id, t->audioEnabled);
+        engine.setTrackInputMonitoring(id, t->inputMonitoring);
         engine.setTrackOutputTarget(id, juce::String(t->outputTarget));
         engine.renameTrack(id, juce::String(t->name));
 

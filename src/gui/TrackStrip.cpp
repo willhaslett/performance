@@ -73,6 +73,13 @@ void TrackStrip::setArmed(bool a) {
     }
 }
 
+void TrackStrip::setInputMonitoring(bool enabled) {
+    if (inputMonitoring != enabled) {
+        inputMonitoring = enabled;
+        repaint();
+    }
+}
+
 void TrackStrip::setPeakLevel(float level) {
     faderMeter.setPeakLevel(level);
 }
@@ -299,6 +306,16 @@ void TrackStrip::paint(juce::Graphics& g) {
     }
     cx += 12 + 6;
 
+    // Input monitoring "I" — only for audio input tracks
+    inputMonitorBounds = {};
+    if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
+        inputMonitorBounds = juce::Rectangle<int>(cx, cy - 6, 12, 12);
+        g.setColour(inputMonitoring ? juce::Colour(0xff44aaee) : Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(11.0f));
+        g.drawText("I", inputMonitorBounds, juce::Justification::centred);
+        cx += 12 + 4;
+    }
+
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
                               : Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSize));
@@ -420,6 +437,14 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Right-click header also opens menu
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
         showTrackMenu(event.getScreenPosition());
+        return;
+    }
+
+    // Input monitoring toggle
+    if (!inputMonitorBounds.isEmpty() && inputMonitorBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+        inputMonitoring = !inputMonitoring;
+        state.setTrackInputMonitoring(trackId.toStdString(), inputMonitoring);
+        repaint();
         return;
     }
 

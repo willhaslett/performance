@@ -738,6 +738,16 @@ void AudioEngine::setTrackAudioEnabled(const juce::String& trackId, bool enabled
             enabled ? "enabled" : "disabled", trackId.toRawUTF8());
 }
 
+void AudioEngine::setTrackInputMonitoring(const juce::String& trackId, bool enabled) {
+    auto it = tracks.find(trackId);
+    if (it == tracks.end()) return;
+    if (it->second.inputMonitoring == enabled) return;
+    it->second.inputMonitoring = enabled;
+    rebuildConnections();
+    perfLog("[Engine] Input monitoring %s for track \"%s\"\n",
+            enabled ? "enabled" : "disabled", trackId.toRawUTF8());
+}
+
 void AudioEngine::setTrackInputChannels(const juce::String& trackId, int start, int count) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
@@ -930,8 +940,8 @@ void AudioEngine::rebuildConnections() {
             if (!track.effects.empty() && track.effects[0].node)
                 firstDestNodeId = track.effects[0].node->nodeID;
 
-            // Live audio input (only if channels are assigned)
-            if (track.inputChannelStart >= 0 && track.inputChannelCount > 0) {
+            // Live audio input (only if channels assigned and input monitoring on)
+            if (track.inputMonitoring && track.inputChannelStart >= 0 && track.inputChannelCount > 0) {
                 if (track.inputChannelCount == 1) {
                     graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 0 }});
                     graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { firstDestNodeId, 1 }});
