@@ -685,10 +685,10 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
 
-        auto headerCol = enabled ? Theme::color(Theme::Color::bgPanel)
+        auto headerCol = enabled ? Theme::color(Theme::Color::bgSurface)
                                  : Theme::color(Theme::Color::bgDisabled);
 
-        // Full row background
+        // Full row background — lifted from empty space
         g.setColour(headerCol);
         g.fillRect(row);
 
@@ -793,14 +793,19 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
-    // Selected track highlight in grid area
+    // Track lane backgrounds — lifted from empty space
     auto sel = state->selectedTrackIds();
     for (size_t i = 0; i < tracks.size(); ++i) {
         int rowY = area.getY() + (int)i * trackRowHeight;
-        auto* ts = state->findTrack(tracks[i].id);
         bool isSelected = std::find(sel.begin(), sel.end(), tracks[i].id) != sel.end();
+
+        // Base lane fill
+        g.setColour(Theme::color(Theme::Color::bgSurface));
+        g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
+
+        // Selection highlight on top
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSurface).withAlpha(0.5f));
+            g.setColour(Theme::color(Theme::Color::bgSurfaceHover).withAlpha(0.4f));
             g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
         }
     }
@@ -873,8 +878,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 if (originalVisible)
                     regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region color
-                auto fillCol = Theme::color(Theme::Color::bgSurface);
+                // Region color — one level above lane background
+                auto fillCol = Theme::color(Theme::Color::bgSurfaceHover);
                 bool selected = selectedRegionIds.count(r->id) > 0;
                 bool beingDragged = (draggingRegion && r->id == dragRegionId);
                 if (!trackEnabled || r->muted)

@@ -257,14 +257,14 @@ void TrackStrip::rebuildEffectSlots() {
 void TrackStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(Theme::color(Theme::Color::bgPanel));
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(bounds);
 
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
 
-    auto headerColour = audioEnabled ? Theme::color(Theme::Color::bgPanel)
+    auto headerColour = audioEnabled ? Theme::color(Theme::Color::bgSurface)
                                       : Theme::color(Theme::Color::bgDisabled);
     g.setColour(headerColour);
     g.fillRect(headerBounds);

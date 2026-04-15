@@ -85,13 +85,13 @@ void OutputStrip::rebuildEffectSlots() {
 void OutputStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(Theme::color(Theme::Color::bgPanel));
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(bounds);
 
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgPanel)
+    auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgSurface)
                                   : Theme::color(Theme::Color::bgDisabled);
     g.setColour(headerCol);
     g.fillRect(headerBounds);
