@@ -189,6 +189,10 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN quantize REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN looped INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN file_path TEXT DEFAULT ''", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN record_tempo REAL DEFAULT 120.0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN sample_rate INTEGER DEFAULT 48000", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN channel_count INTEGER DEFAULT 2", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
 
     // Action events table
@@ -221,7 +225,11 @@ void PersistenceLayer::createSchema() {
         CREATE TABLE IF NOT EXISTS takes (
             id TEXT PRIMARY KEY,
             region_id TEXT NOT NULL REFERENCES regions(id) ON DELETE CASCADE,
-            name TEXT DEFAULT ''
+            name TEXT DEFAULT '',
+            file_path TEXT DEFAULT '',
+            record_tempo REAL DEFAULT 120.0,
+            sample_rate INTEGER DEFAULT 48000,
+            channel_count INTEGER DEFAULT 2
         );
 
         CREATE TABLE IF NOT EXISTS take_events (
@@ -412,12 +420,16 @@ void PersistenceLayer::readSongs(AppState& out) {
                 r.loopEndBeat = sqlite3_column_double(rs, 9);
 
                 // Takes for this region
-                auto* tks = prepare("SELECT id, name FROM takes WHERE region_id = ?");
+                auto* tks = prepare("SELECT id, name, file_path, record_tempo, sample_rate, channel_count FROM takes WHERE region_id = ?");
                 sqlite3_bind_text(tks, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 while (sqlite3_step(tks) == SQLITE_ROW) {
                     TakeState take;
                     take.id = col_str(tks, 0);
                     take.name = col_str(tks, 1);
+                    take.filePath = col_str(tks, 2);
+                    take.recordTempo = sqlite3_column_double(tks, 3);
+                    take.sampleRate = sqlite3_column_int(tks, 4);
+                    take.channelCount = sqlite3_column_int(tks, 5);
 
                     // Events for this take
                     auto* es = prepare("SELECT beat_offset, status, channel, data1, data2 FROM take_events WHERE take_id = ? ORDER BY beat_offset");
@@ -832,10 +844,17 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
                 for (auto& take : r.takes) {
                     auto* ts2 = prepare(
-                        "INSERT INTO takes (id, region_id, name) VALUES (?, ?, ?)");
+                        "INSERT INTO takes (id, region_id, name, file_path, record_tempo, sample_rate, channel_count) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?)");
                     sqlite3_bind_text(ts2, 1, take.id.c_str(), -1, SQLITE_TRANSIENT);
                     sqlite3_bind_text(ts2, 2, r.id.c_str(), -1, SQLITE_TRANSIENT);
                     sqlite3_bind_text(ts2, 3, take.name.c_str(), -1, SQLITE_TRANSIENT);
+                    if (!take.filePath.empty())
+                        sqlite3_bind_text(ts2, 4, take.filePath.c_str(), -1, SQLITE_TRANSIENT);
+                    else sqlite3_bind_null(ts2, 4);
+                    sqlite3_bind_double(ts2, 5, take.recordTempo);
+                    sqlite3_bind_int(ts2, 6, take.sampleRate);
+                    sqlite3_bind_int(ts2, 7, take.channelCount);
                     sqlite3_step(ts2);
                     sqlite3_finalize(ts2);
 
