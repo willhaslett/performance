@@ -9,7 +9,7 @@ namespace Theme {
         // Surfaces — darkest to lightest
         constexpr uint32_t bgApp          = 0xff161616;  // app background
         constexpr uint32_t bgPanel        = 0xff161616;  // panels, sidebars, pane headers (same as bgApp)
-        constexpr uint32_t bgSurface      = 0xff2e2e2e;  // cards, slots, rows on bgApp
+        constexpr uint32_t bgSurface      = 0xff222222;  // track lanes, mixer strips, interactive elements
         constexpr uint32_t bgSurfaceHover = 0xff3a3a3a;  // hovered row/slot
         constexpr uint32_t bgOverlay      = 0xff2a2a2a;  // modal/overlay/popup backdrop
         constexpr uint32_t bgDisabled     = 0xff252525;  // disabled strip/header
