@@ -70,7 +70,7 @@ juce::Colour SendsPanel::vuColor(float peakLevel) {
     float db = 20.0f * std::log10(peakLevel);
     if (db > 0.0f)  return juce::Colour(0xffcc4444);
     if (db > -6.0f) return juce::Colour(0xffccaa44);
-    return Theme::color(Theme::Color::midiActive);
+    return Theme::color(Theme::Color::activityOn);
 }
 
 void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
@@ -85,7 +85,7 @@ void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
 
     float arcRadius = radius - 2.0f;
 
-    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillEllipse(bounds.toFloat().reduced(1.0f));
 
     if (peakLevel > 0.01f) {
@@ -117,7 +117,7 @@ void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
         juce::Path valueArc;
         valueArc.addCentredArc(centre.x, centre.y, arcRadius, arcRadius,
                                0.0f, minAngle, valueAngle, true);
-        g.setColour(Theme::color(Theme::Color::effect));
+        g.setColour(Theme::color(Theme::Color::slotEffect));
         g.strokePath(valueArc, juce::PathStrokeType(2.0f));
     }
 }
@@ -128,11 +128,11 @@ void SendsPanel::paint(juce::Graphics& g) {
     for (size_t i = 0; i < rows.size(); ++i) {
         auto pill = getPillBounds((int)i);
 
-        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.setColour(Theme::color(Theme::Color::bgSurface));
         g.fillRoundedRectangle(pill.toFloat(), Theme::cornerRadiusSm);
 
         if (rows[i].busName.isNotEmpty()) {
-            g.setColour(Theme::color(Theme::Color::effect));
+            g.setColour(Theme::color(Theme::Color::slotEffect));
             g.drawText(rows[i].busName, pill.reduced(6, 0),
                        juce::Justification::centredLeft, true);
             paintKnob(g, getKnobBounds((int)i), rows[i].gain, rows[i].peakLevel);

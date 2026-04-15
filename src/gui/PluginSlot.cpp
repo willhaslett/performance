@@ -43,7 +43,7 @@ void PluginSlot::timerCallback() {
 }
 
 void PluginSlot::paint(juce::Graphics& g) {
-    g.setColour(Theme::color(hovered ? Theme::Color::bgSlotHover : Theme::Color::bgSlot));
+    g.setColour(Theme::color(hovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSurface));
     g.fillRoundedRectangle(getLocalBounds().toFloat(), Theme::cornerRadiusSm);
 
     g.setFont(Theme::font(Theme::fontSizeSm));
@@ -52,8 +52,8 @@ void PluginSlot::paint(juce::Graphics& g) {
         g.drawText(slotType == Instrument ? "Instrument" : "Effect",
                    getLocalBounds().reduced(8, 0), juce::Justification::centredLeft);
     } else {
-        g.setColour(Theme::color(slotType == Instrument ? Theme::Color::instrument
-                                                         : Theme::Color::effect));
+        g.setColour(Theme::color(slotType == Instrument ? Theme::Color::slotInstrument
+                                                         : Theme::Color::slotEffect));
         g.drawText(pluginName, getLocalBounds().reduced(8, 0),
                    juce::Justification::centredLeft);
     }

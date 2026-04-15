@@ -90,7 +90,7 @@ void BusStrip::paint(juce::Graphics& g) {
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
     auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgPanel)
-                                  : Theme::color(Theme::Color::bgHeaderOff);
+                                  : Theme::color(Theme::Color::bgDisabled);
     g.setColour(headerCol);
     g.fillRect(headerBounds);
 
@@ -98,7 +98,7 @@ void BusStrip::paint(juce::Graphics& g) {
     powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                             headerBounds.getCentreY() - 7, 14, 14);
     {
-        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textOnColor)
                                        : Theme::color(Theme::Color::textDim);
         g.setColour(iconColor);
         juce::Path powerIcon;
@@ -112,14 +112,14 @@ void BusStrip::paint(juce::Graphics& g) {
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
 
-    g.setColour(Theme::color(Theme::Color::textWhite));
+    g.setColour(Theme::color(Theme::Color::textOnColor));
     g.setFont(Theme::font(Theme::fontSize));
     g.drawText(busName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
                juce::Justification::centredLeft);
 
     // Output target label
     if (outputTargetBounds.getHeight() > 0) {
-        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.setColour(Theme::color(Theme::Color::bgSurface));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.setColour(Theme::color(Theme::Color::textSecondary));

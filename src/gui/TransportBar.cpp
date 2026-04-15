@@ -26,7 +26,7 @@ void TransportBar::paint(juce::Graphics& g) {
     playBounds = area.removeFromLeft(28).reduced(4);
     if (playing) {
         // Stop icon (square)
-        g.setColour(Theme::color(Theme::Color::midiActive));
+        g.setColour(Theme::color(Theme::Color::activityOn));
         g.fillRect(playBounds.reduced(3));
     } else {
         // Play icon (triangle)
@@ -43,7 +43,7 @@ void TransportBar::paint(juce::Graphics& g) {
     positionBounds = area.removeFromLeft(70);
     int bar = (int)(beat / timeSigNum) + 1;
     int beatInBar = (int)std::fmod(beat, (double)timeSigNum) + 1;
-    g.setColour(Theme::color(Theme::Color::textWhite));
+    g.setColour(Theme::color(Theme::Color::textOnColor));
     g.setFont(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
     char posBuf[16];
     snprintf(posBuf, sizeof(posBuf), "%d . %d", bar, beatInBar);

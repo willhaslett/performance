@@ -62,7 +62,7 @@ void DebugPane::paint(juce::Graphics& g) {
     // --- Audio Input Meters (top section) ---
     auto audioArea = bounds.removeFromTop(audioPanelHeight);
     {
-        g.setColour(Theme::color(Theme::Color::textWhite));
+        g.setColour(Theme::color(Theme::Color::textOnColor));
         g.setFont(Theme::font(12.0f));
         g.drawText("Audio Inputs", audioArea.removeFromTop(headerHeight).reduced(8, 0),
                     juce::Justification::centredLeft);
@@ -87,7 +87,7 @@ void DebugPane::paint(juce::Graphics& g) {
                 g.drawText(label, labelArea, juce::Justification::centredLeft);
 
                 // Meter background
-                g.setColour(Theme::color(Theme::Color::bgSlot));
+                g.setColour(Theme::color(Theme::Color::bgSurface));
                 g.fillRoundedRectangle(meterArea.toFloat(), 2.0f);
 
                 // Meter fill
@@ -115,7 +115,7 @@ void DebugPane::paint(juce::Graphics& g) {
     auto midiArea = bounds;
     {
         auto headerArea = midiArea.removeFromTop(headerHeight);
-        g.setColour(Theme::color(Theme::Color::textWhite));
+        g.setColour(Theme::color(Theme::Color::textOnColor));
         g.setFont(Theme::font(12.0f));
         g.drawText("MIDI Events", headerArea.reduced(8, 0), juce::Justification::centredLeft);
 

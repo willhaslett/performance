@@ -277,7 +277,7 @@ void MainLayout::paint(juce::Graphics& g) {
 
     // Sidebar toggle
     auto toggleBounds = juce::Rectangle<int>(4, 4, 24, 24);
-    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRoundedRectangle(toggleBounds.toFloat(), Theme::cornerRadiusSm);
 
     bool sidebarOpen = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);

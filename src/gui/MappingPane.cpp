@@ -528,7 +528,7 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
         auto badge = juce::Rectangle<int>(area.getX() + 8, y + 4, 20, rowHeight - 8);
         g.setColour(Theme::color(Theme::Color::accent));
         g.fillRoundedRectangle(badge.toFloat(), 4.0f);
-        g.setColour(Theme::color(Theme::Color::textWhite));
+        g.setColour(Theme::color(Theme::Color::textOnColor));
         g.setFont(Theme::font(Theme::fontSizeXs));
         g.drawText(juce::String(sr.scorePosition), badge, juce::Justification::centred);
 

@@ -14,8 +14,8 @@ public:
 
     InlineEditor() {
         setFont(Theme::font(Theme::fontSize));
-        setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::bgSlot));
-        setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textWhite));
+        setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::bgSurface));
+        setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textOnColor));
         setColour(juce::TextEditor::outlineColourId, Theme::color(Theme::Color::accent));
         setColour(juce::TextEditor::focusedOutlineColourId, Theme::color(Theme::Color::accent));
         setJustification(juce::Justification::centredLeft);

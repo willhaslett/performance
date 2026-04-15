@@ -40,7 +40,7 @@ SettingsWindow::AudioPage::AudioPage(StateAPI& state, EngineAPI& engine)
     };
 
     auto setupCombo = [this](juce::ComboBox& box) {
-        box.setColour(juce::ComboBox::backgroundColourId, Theme::color(Theme::Color::bgSlot));
+        box.setColour(juce::ComboBox::backgroundColourId, Theme::color(Theme::Color::bgSurface));
         box.setColour(juce::ComboBox::textColourId, Theme::color(Theme::Color::textPrimary));
         box.setColour(juce::ComboBox::outlineColourId, Theme::color(Theme::Color::border));
         addAndMakeVisible(box);

@@ -3,17 +3,17 @@
 
 static juce::Colour bubbleColor(ChatView::Bubble::Type type) {
     switch (type) {
-        case ChatView::Bubble::User:      return Theme::color(Theme::Color::chatBgUser);
-        case ChatView::Bubble::Assistant:  return Theme::color(Theme::Color::chatBgAsst);
-        case ChatView::Bubble::Tool:      return Theme::color(Theme::Color::chatBgTool);
-        case ChatView::Bubble::Error:     return Theme::color(Theme::Color::chatBgError);
+        case ChatView::Bubble::User:      return Theme::color(Theme::Color::chatUser);
+        case ChatView::Bubble::Assistant:  return Theme::color(Theme::Color::chatAssistant);
+        case ChatView::Bubble::Tool:      return Theme::color(Theme::Color::chatTool);
+        case ChatView::Bubble::Error:     return Theme::color(Theme::Color::chatError);
     }
-    return Theme::color(Theme::Color::chatBgAsst);
+    return Theme::color(Theme::Color::chatAssistant);
 }
 
 static juce::Colour textColor(ChatView::Bubble::Type type) {
     switch (type) {
-        case ChatView::Bubble::User:      return Theme::color(Theme::Color::textWhite);
+        case ChatView::Bubble::User:      return Theme::color(Theme::Color::textOnColor);
         case ChatView::Bubble::Assistant:  return Theme::color(Theme::Color::textPrimary);
         case ChatView::Bubble::Tool:      return Theme::color(Theme::Color::textSecondary);
         case ChatView::Bubble::Error:     return juce::Colour(0xffcc8888);
@@ -29,7 +29,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     inputField.setReturnKeyStartsNewLine(false);
     inputField.setFont(Theme::font(Theme::fontSize));
     inputField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textWhite));
+    inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textOnColor));
     inputField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     inputField.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
     inputField.setTextToShowWhenEmpty("Message Claude...", Theme::color(Theme::Color::textDim));

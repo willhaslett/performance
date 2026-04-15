@@ -13,7 +13,7 @@ ProducePane::ProducePane() {
     metronomeSlider.setRange(0.0, 1.0, 0.01);
     metronomeSlider.setValue(0.5);
     metronomeSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
-    metronomeSlider.setColour(juce::Slider::trackColourId, Theme::color(Theme::Color::bgSlot));
+    metronomeSlider.setColour(juce::Slider::trackColourId, Theme::color(Theme::Color::bgSurface));
     metronomeSlider.setColour(juce::Slider::thumbColourId, Theme::color(Theme::Color::textSecondary));
     metronomeSlider.setColour(juce::Slider::backgroundColourId, Theme::color(Theme::Color::bgPanel));
     metronomeSlider.onValueChange = [this]() {
@@ -407,7 +407,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
         if (playing) {
             g.setColour(juce::Colour(0xff2a6a2a));  // dark green bg
             g.fillRoundedRectangle(playButtonBounds.toFloat(), 4.0f);
-            g.setColour(Theme::color(Theme::Color::textWhite));
+            g.setColour(Theme::color(Theme::Color::textOnColor));
         } else {
             g.setColour(Theme::color(Theme::Color::textSecondary));
         }
@@ -425,7 +425,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
         if (inRecordMode) {
             g.setColour(juce::Colour(0xff6a2a2a));  // dark red bg
             g.fillRoundedRectangle(recordButtonBounds.toFloat(), 4.0f);
-            g.setColour(Theme::color(Theme::Color::textWhite));
+            g.setColour(Theme::color(Theme::Color::textOnColor));
         } else {
             g.setColour(juce::Colour(0xffcc4444));  // red circle
         }
@@ -462,7 +462,7 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
 
     // LCD background — matches fader meter groove
-    auto lcdBg = Theme::color(Theme::Color::bgSlot);
+    auto lcdBg = Theme::color(Theme::Color::bgSurface);
     auto lcdBorder = Theme::color(Theme::Color::border);
     auto lcdDigit = Theme::color(Theme::Color::lcdDigit);
     g.setColour(lcdBg);
@@ -643,7 +643,7 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled) {
-    auto iconColor = enabled ? Theme::color(Theme::Color::textWhite)
+    auto iconColor = enabled ? Theme::color(Theme::Color::textOnColor)
                               : Theme::color(Theme::Color::textDim);
 
     g.setColour(iconColor);
@@ -686,7 +686,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
 
         auto headerCol = enabled ? Theme::color(Theme::Color::bgPanel)
-                                 : Theme::color(Theme::Color::bgHeaderOff);
+                                 : Theme::color(Theme::Color::bgDisabled);
 
         // Full row background
         g.setColour(headerCol);
@@ -742,11 +742,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             if (active) {
                 g.setColour(Theme::color(activeColor));
                 g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
-                g.setColour(Theme::color(Theme::Color::textWhite));
+                g.setColour(Theme::color(Theme::Color::textOnColor));
             } else {
-                g.setColour(Theme::color(Theme::Color::pillOffFill));
+                g.setColour(Theme::color(Theme::Color::pillOff));
                 g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
-                g.setColour(Theme::color(Theme::Color::pillTextInactive));
+                g.setColour(Theme::color(Theme::Color::pillTextOff));
             }
             g.setFont(Theme::font(Theme::fontSizePill));
             g.drawText(label, bounds, juce::Justification::centred);
@@ -760,20 +760,20 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         if (!isActionTrack && enabled) {
             bool isMuted = trackState ? trackState->muted : false;
             bool isSoloed = trackState ? trackState->soloed : false;
-            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMuteActive);
-            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSoloActive);
+            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMute);
+            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSolo);
             cx += Theme::pillGroupGap - Theme::pillGap;
         }
 
         armBounds[i] = {};
         if (!isActionTrack && enabled) {
             bool isArmed = trackState ? trackState->armed : false;
-            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArmActive);
+            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArm);
         }
 
         inputMonitorBounds[i] = {};
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
-            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInputActive);
+            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput);
         }
 
         y += trackRowHeight;
@@ -841,7 +841,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             bool trackEnabled = trkState ? trkState->audioEnabled : true;
             uint32_t trackCol = (trkState && trkState->color != 0) ? trkState->color
                               : isAudioTrk ? 0xff3a2e18
-                              : Theme::Color::bgHeader;
+                              : Theme::Color::bgPanel;
 
             for (auto* r : regions) {
                 int rx = beatToX(r->startBeat);
@@ -1136,7 +1136,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
                 auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
                 // Use target track's color for ghost
-                uint32_t ghostTrackCol = Theme::Color::bgHeader;
+                uint32_t ghostTrackCol = Theme::Color::bgPanel;
                 if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
                     auto* ts = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
                     if (ts && ts->color != 0)

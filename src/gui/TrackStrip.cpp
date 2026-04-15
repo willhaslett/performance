@@ -166,7 +166,7 @@ void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
 }
 
 void TrackStrip::paintInputSlot(juce::Graphics& g) {
-    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSlotHover : Theme::Color::bgSlot));
+    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSurface));
     g.fillRoundedRectangle(inputSlotBounds.toFloat(), Theme::cornerRadiusSm);
 
     g.setFont(Theme::font(Theme::fontSizeSm));
@@ -174,7 +174,7 @@ void TrackStrip::paintInputSlot(juce::Graphics& g) {
         g.setColour(Theme::color(Theme::Color::textDim));
         g.drawText("Select Input", inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
     } else {
-        g.setColour(Theme::color(Theme::Color::instrument));
+        g.setColour(Theme::color(Theme::Color::slotInstrument));
         g.drawText(inputDisplayName, inputSlotBounds.reduced(8, 0), juce::Justification::centredLeft);
     }
 }
@@ -269,7 +269,7 @@ void TrackStrip::paint(juce::Graphics& g) {
                                          bounds.getWidth(), Theme::headerHeight);
 
     auto headerColour = audioEnabled ? Theme::color(Theme::Color::bgPanel)
-                                      : Theme::color(Theme::Color::bgHeaderOff);
+                                      : Theme::color(Theme::Color::bgDisabled);
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
@@ -279,7 +279,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
     {
-        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textWhite)
+        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textOnColor)
                                        : Theme::color(Theme::Color::textDim);
         g.setColour(iconColor);
         juce::Path powerIcon;
@@ -293,7 +293,7 @@ void TrackStrip::paint(juce::Graphics& g) {
                    iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
     }
 
-    g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
+    g.setColour(audioEnabled ? Theme::color(Theme::Color::textOnColor)
                               : Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSize));
     g.drawText(trackName, headerBounds.getX() + 28, headerBounds.getY(),
@@ -326,7 +326,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     // Output target label
     if (outputTargetBounds.getHeight() > 0) {
-        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.setColour(Theme::color(Theme::Color::bgSurface));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.setColour(Theme::color(Theme::Color::textSecondary));
@@ -353,19 +353,19 @@ void TrackStrip::paint(juce::Graphics& g) {
             if (active) {
                 g.setColour(Theme::color(activeColor));
                 g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
-                g.setColour(Theme::color(Theme::Color::textWhite));
+                g.setColour(Theme::color(Theme::Color::textOnColor));
             } else {
-                g.setColour(Theme::color(Theme::Color::pillOffFill));
+                g.setColour(Theme::color(Theme::Color::pillOff));
                 g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
-                g.setColour(Theme::color(Theme::Color::pillTextInactive));
+                g.setColour(Theme::color(Theme::Color::pillTextOff));
             }
             g.setFont(Theme::font(Theme::fontSizePill));
             g.drawText(pillLabel, pillBounds, juce::Justification::centred);
             px += Theme::pillSize + Theme::pillGap;
         };
 
-        drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
-        drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
+        drawPill(muteBounds, "M", muted, Theme::Color::pillMute);
+        drawPill(soloBounds, "S", soloed, Theme::Color::pillSolo);
     }
 }
 

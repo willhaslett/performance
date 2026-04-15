@@ -66,7 +66,7 @@ private:
             g.setColour(isFront ? Theme::color(Theme::Color::bgApp)
                                  : Theme::color(Theme::Color::bgPanel));
             g.fillRect(area);
-            g.setColour(isFront ? Theme::color(Theme::Color::textWhite)
+            g.setColour(isFront ? Theme::color(Theme::Color::textOnColor)
                                  : Theme::color(Theme::Color::textPrimary));
             g.setFont(Theme::font(Theme::fontSize));
             g.drawText(button.getButtonText(), area, juce::Justification::centred);

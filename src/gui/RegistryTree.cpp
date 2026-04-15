@@ -81,10 +81,10 @@ void RegistryTree::paint(juce::Graphics& g) {
         bool isActive = !highlightedId.empty() && row.id == highlightedId;
 
         if (isActive) {
-            g.setColour(Theme::color(Theme::Color::bgHeaderOut));
+            g.setColour(Theme::color(Theme::Color::bgPanel));
             g.fillRect(0, y, getWidth(), rowHeight);
         } else if (i == hoveredRow) {
-            g.setColour(Theme::color(Theme::Color::bgSlot));
+            g.setColour(Theme::color(Theme::Color::bgSurface));
             g.fillRect(0, y, getWidth(), rowHeight);
         }
 
@@ -93,13 +93,13 @@ void RegistryTree::paint(juce::Graphics& g) {
             // Activity/active indicators: green dot
             if (row.active || row.type == "audio_output_active" || row.type == "audio_input_active"
                 || row.type == "map_device_active" || row.type == "map_unregistered_active") {
-                g.setColour(Theme::color(Theme::Color::midiActive));
+                g.setColour(Theme::color(Theme::Color::activityOn));
                 g.fillEllipse((float)(x + extraIndent + 4), (float)(y + rowHeight / 2 - 3), 6.0f, 6.0f);
             }
 
             bool disabled = (row.type == "pane_content_disabled");
             g.setColour(disabled ? Theme::color(Theme::Color::textDim)
-                        : isActive ? Theme::color(Theme::Color::textWhite)
+                        : isActive ? Theme::color(Theme::Color::textOnColor)
                                    : Theme::color(Theme::Color::textPrimary));
             g.drawText(juce::String(row.label),
                        x + extraIndent + 14, y, getWidth() - x - extraIndent - 20, rowHeight,
@@ -107,7 +107,7 @@ void RegistryTree::paint(juce::Graphics& g) {
         } else {
             // Audio device nodes: no arrow (always expanded), draw like a leaf
             if (row.type == "audio_device") {
-                g.setColour(isActive ? Theme::color(Theme::Color::textWhite)
+                g.setColour(isActive ? Theme::color(Theme::Color::textOnColor)
                                      : Theme::color(Theme::Color::textPrimary));
                 g.drawText(juce::String(row.label),
                            x + 14, y, getWidth() - x - 20, rowHeight,
@@ -116,7 +116,7 @@ void RegistryTree::paint(juce::Graphics& g) {
                 g.setColour(Theme::color(Theme::Color::textSecondary));
                 drawArrow(g, x, y, row.expanded);
 
-                g.setColour(Theme::color(Theme::Color::textWhite));
+                g.setColour(Theme::color(Theme::Color::textOnColor));
                 g.drawText(juce::String(row.label),
                            x + 14, y, getWidth() - x - 20, rowHeight,
                            juce::Justification::centredLeft);
