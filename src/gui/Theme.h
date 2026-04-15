@@ -64,13 +64,14 @@ namespace Theme {
         constexpr uint32_t pillInputActive  = 0xffc05040;  // same warm red
         constexpr uint32_t pillInactive     = 0xff555555;  // dim outline
         constexpr uint32_t pillTextInactive = 0xff888888;  // dim but readable
+        constexpr uint32_t pillOffFill     = 0xff3a3a3a;  // dark filled background for inactive
     }
 
     // Dimensions
     constexpr float cornerRadius    = 6.0f;
     constexpr float cornerRadiusSm  = 4.0f;
     constexpr int   toolbarHeight   = 32;
-    constexpr int   trackStripWidth = 180;
+    constexpr int   trackStripWidth = 200;
     constexpr int   slotHeight      = 24;
     constexpr int   slotGap         = 4;
     constexpr int   slotPadding     = 4;
@@ -82,9 +83,12 @@ namespace Theme {
     constexpr int   chatInputHeight = 40;
 
     // Pill button dimensions
-    constexpr int   pillSize        = 18;
+    constexpr int   pillSize        = 20;
     constexpr float pillRadius      = 4.0f;
-    constexpr float fontSizePill    = 12.0f;
+    constexpr float fontSizePill    = 13.0f;
+    constexpr int   pillGap         = 5;   // between pills in a group
+    constexpr int   pillGroupGap    = 8;   // between pill groups
+    constexpr int   pillNameGap     = 8;   // after last pill, before name
 
     // Font
     constexpr float fontSize        = 14.0f;

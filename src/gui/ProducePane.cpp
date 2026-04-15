@@ -723,7 +723,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         cx += 14 + 6;
 
         // Record arm "R" — only for instrument and audio input tracks
-        // Pill button helper
+        // Pill button helper — filled in both states
         auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
                             bool active, uint32_t activeColor) {
             bounds = juce::Rectangle<int>(cx, cy_row - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
@@ -732,13 +732,13 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
                 g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::textWhite));
             } else {
-                g.setColour(Theme::color(Theme::Color::pillInactive));
-                g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), Theme::pillRadius, 1.0f);
+                g.setColour(Theme::color(Theme::Color::pillOffFill));
+                g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::pillTextInactive));
             }
             g.setFont(Theme::font(Theme::fontSizePill));
             g.drawText(label, bounds, juce::Justification::centred);
-            cx += Theme::pillSize + 3;
+            cx += Theme::pillSize + Theme::pillGap;
         };
 
         bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
@@ -751,7 +751,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             bool isSoloed = trackState ? trackState->soloed : false;
             drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMuteActive);
             drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSoloActive);
-            cx += 2;  // extra gap before R/I group
+            cx += Theme::pillGroupGap - Theme::pillGap;
         }
 
         // R — instrument + audio input (not action)
@@ -766,6 +766,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
             drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInputActive);
         }
+
+        cx += Theme::pillNameGap - Theme::pillGap;
 
         // Track name
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)

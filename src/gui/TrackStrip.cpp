@@ -301,7 +301,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     }
     cx += 14 + 6;
 
-    // Pill button helper
+    // Pill button helper — filled in both states
     auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
                         bool active, uint32_t activeColor) {
         bounds = juce::Rectangle<int>(cx, cy - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
@@ -310,13 +310,13 @@ void TrackStrip::paint(juce::Graphics& g) {
             g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
             g.setColour(Theme::color(Theme::Color::textWhite));
         } else {
-            g.setColour(Theme::color(Theme::Color::pillInactive));
-            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), Theme::pillRadius, 1.0f);
+            g.setColour(Theme::color(Theme::Color::pillOffFill));
+            g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
             g.setColour(Theme::color(Theme::Color::pillTextInactive));
         }
         g.setFont(Theme::font(Theme::fontSizePill));
         g.drawText(label, bounds, juce::Justification::centred);
-        cx += Theme::pillSize + 3;
+        cx += Theme::pillSize + Theme::pillGap;
     };
 
     bool isActionTrack = (sourceType == TrackSourceType::Action);
@@ -327,7 +327,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     if (!isActionTrack && audioEnabled) {
         drawPill(muteBounds, "M", muted, Theme::Color::pillMuteActive);
         drawPill(soloBounds, "S", soloed, Theme::Color::pillSoloActive);
-        cx += 2;  // extra gap before R/I group
+        cx += Theme::pillGroupGap - Theme::pillGap;  // widen gap between groups
     }
 
     // R — instrument + audio input tracks (not action)
@@ -341,6 +341,8 @@ void TrackStrip::paint(juce::Graphics& g) {
     if (sourceType == TrackSourceType::AudioInput && audioEnabled) {
         drawPill(inputMonitorBounds, "I", inputMonitoring, Theme::Color::pillInputActive);
     }
+
+    cx += Theme::pillNameGap - Theme::pillGap;  // space before name
 
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textWhite)
                               : Theme::color(Theme::Color::textDim));
