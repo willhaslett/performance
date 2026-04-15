@@ -26,19 +26,15 @@ Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests 
 - Error handling — no tests for invalid inputs or error conditions
 - GUI — not worth unit testing custom paint code
 
-## Production Readiness
+## Production Readiness (completed)
 
-**Completed:**
 1. Beach ball → spinner overlay — semi-transparent overlay with message during save/load/song switch.
 2. Directory permission prompt — explicit AU plugin paths, no getDefaultLocationsToSearch.
 3. Audio buffer size / sample rate control — Settings window (Cmd+,) with Audio tab, also in sidebar, persisted.
 4. MIDI device hot-plug — 4Hz polling, auto add/remove callbacks.
 5. Error boundary — JUCE crash handler with emergency save.
 
-**Remaining:**
-6. Background plugin state capture: move getStateInformation calls off the message thread. Root cause of the beach ball. Hard — JUCE plugin APIs aren't thread-safe.
-7. Failed plugin load feedback: user sees nothing when a plugin fails to instantiate. Need status indicator on the slot.
-8. Settings window: MIDI tab placeholder exists, needs content (MIDI channel filtering, transpose, etc).
+(Remaining items moved to **Backlog** in `CLAUDE.md`.)
 
 ## Known Issues
 
@@ -54,22 +50,6 @@ Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests 
 **Embedded Claude:**
 - Bindings created via Claude/Lua may use wrong track names (case mismatch). GUI is more reliable.
 - Custom action creation via Claude fails despite API working via direct IPC. Needs investigation (string escaping through chat→tool→IPC pipeline).
-
-## Feature Backlog
-
-**High priority:**
-- Stuck note prevention at region boundaries: `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in Arrangement.cpp.
-- TempoMap + TimeSignatureMap — runtime evaluation of tempo/time-sig change events at specific beat positions. Currently one global value per song. Data model ready (vectors on SongState). No trapdoors.
-
-**Theme/GUI polish (in progress):**
-- Fader handle shape — currently a small rounded rect with center groove. Consider a more physical fader cap shape.
-- LCD interactivity — all LCD values should be interactive (drag to change, double-click to edit). Currently only BPM and time sig are editable. BAR/BEAT/DIV/TICK and time display are read-only.
-- Selected track vs region contrast — selection uses bgSlot, regions use bgSurfaceHover. Need to verify the three levels (unselected lane → selected lane → region) are clearly distinguishable.
-- Remove bgRecessed if unused (meter grooves now use bgSlot).
-
-**Longer-term:**
-- MIDI effects (transpose, channel filter, arpeggiator)
-- Fader/knob drag: value stops changing at screen edge
 
 ## Milestone v0.0.1 — Sequencer + production tools complete
 

@@ -43,7 +43,7 @@ void PluginSlot::timerCallback() {
 }
 
 void PluginSlot::paint(juce::Graphics& g) {
-    g.setColour(Theme::color(hovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSlot));
+    g.setColour(Theme::color(hovered ? Theme::Color::bgControlHover : Theme::Color::bgControl));
     g.fillRoundedRectangle(getLocalBounds().toFloat(), Theme::cornerRadiusSm);
 
     g.setFont(Theme::font(Theme::fontSizeSm));

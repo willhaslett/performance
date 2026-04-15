@@ -7,14 +7,17 @@ namespace Theme {
     namespace Color {
 
         // Surfaces — darkest to lightest
-        constexpr uint32_t bgApp          = 0xff161616;  // app background
-        constexpr uint32_t bgPanel        = 0xff161616;  // panels, sidebars, pane headers (same as bgApp)
-        constexpr uint32_t bgSurface      = 0xff1e1e1e;  // track lanes, mixer strips
-        constexpr uint32_t bgSlot         = 0xff2a2a2a;  // interactive slots, buttons, LCD — sits on bgSurface
-        constexpr uint32_t bgSurfaceHover = 0xff333333;  // hovered row/slot
-        constexpr uint32_t bgOverlay      = 0xff2a2a2a;  // modal/overlay/popup backdrop
-        constexpr uint32_t bgDisabled     = 0xff252525;  // disabled strip/header
-        constexpr uint32_t bgRecessed     = 0xff121212;  // meter grooves, fader tracks
+        constexpr uint32_t bgApp           = 0xff161616;  // app background
+        constexpr uint32_t bgPanel         = 0xff161616;  // panels, sidebars, pane headers (same as bgApp)
+        constexpr uint32_t bgSurface       = 0xff1e1e1e;  // track lanes, mixer strips
+        constexpr uint32_t bgSurfaceRaised = 0xff333333;  // region fills — one step brighter than bgSurface
+        constexpr uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces: meter grooves, fader/slider troughs
+        constexpr uint32_t bgControl       = 0xff2a2a2a;  // interactive control base: pills, plugin slots, LCD, pickers
+        constexpr uint32_t bgControlHover  = 0xff333333;  // interactive control hover state
+        constexpr uint32_t bgSelection     = 0xff2a2a2a;  // selected track row highlight
+        constexpr uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
+        constexpr uint32_t bgDisabled      = 0xff252525;  // disabled strip/header
+        constexpr uint32_t bgRecessed      = 0xff121212;  // meter grooves, fader tracks
 
         // Borders
         constexpr uint32_t border         = 0xff444444;  // standard divider lines
@@ -52,7 +55,6 @@ namespace Theme {
         constexpr uint32_t pillSolo       = 0xff3a6a8a;  // S active — muted steel
         constexpr uint32_t pillArm        = 0xff8a4040;  // R active — muted red
         constexpr uint32_t pillInput      = 0xff8a4040;  // I active — muted red
-        constexpr uint32_t pillOff        = 0xff333333;  // inactive fill
         constexpr uint32_t pillTextOff    = 0xff888888;  // inactive text
 
         // Slot type tints

@@ -56,6 +56,8 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
 
 private:
     StateAPI& state;
@@ -93,6 +95,10 @@ private:
     juce::Rectangle<int> inputMonitorBounds;
     juce::Rectangle<int> muteBounds;
     juce::Rectangle<int> soloBounds;
+
+    // Pill hover state (only applied to resting/off pills)
+    enum class HoveredPill { None, Mute, Solo };
+    HoveredPill hoveredPill = HoveredPill::None;
     juce::Rectangle<int> menuDotsBounds;
     juce::Rectangle<int> outputTargetBounds;
     juce::String outputTargetId;

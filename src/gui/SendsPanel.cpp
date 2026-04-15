@@ -85,7 +85,7 @@ void SendsPanel::paintKnob(juce::Graphics& g, juce::Rectangle<int> bounds,
 
     float arcRadius = radius - 2.0f;
 
-    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.setColour(Theme::color(Theme::Color::bgControl));
     g.fillEllipse(bounds.toFloat().reduced(1.0f));
 
     if (peakLevel > 0.01f) {
@@ -128,7 +128,7 @@ void SendsPanel::paint(juce::Graphics& g) {
     for (size_t i = 0; i < rows.size(); ++i) {
         auto pill = getPillBounds((int)i);
 
-        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.setColour(Theme::color(Theme::Color::bgControl));
         g.fillRoundedRectangle(pill.toFloat(), Theme::cornerRadiusSm);
 
         if (rows[i].busName.isNotEmpty()) {

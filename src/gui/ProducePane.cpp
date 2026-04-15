@@ -297,10 +297,6 @@ void ProducePane::ensurePlayheadVisible() {
 void ProducePane::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
-    // Right border
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
-
     auto area = getLocalBounds();
 
     // Transport bar at top
@@ -346,6 +342,10 @@ void ProducePane::paint(juce::Graphics& g) {
             .withTrimmedLeft(trackHeaderWidth);
         paintPlayhead(g, fullRulerGrid);
     }
+
+    // Right border — drawn last so track lane fills don't overdraw it
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
 }
 
 void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
@@ -461,8 +461,8 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     int lcdHeight = area.getHeight() - 16;
     auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
 
-    // LCD background — matches fader meter groove
-    auto lcdBg = Theme::color(Theme::Color::bgSlot);
+    // LCD background — interactive control base
+    auto lcdBg = Theme::color(Theme::Color::bgControl);
     auto lcdBorder = Theme::color(Theme::Color::border);
     auto lcdDigit = Theme::color(Theme::Color::lcdDigit);
     g.setColour(lcdBg);
@@ -696,7 +696,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto selIds = state->selectedTrackIds();
         bool isSelected = std::find(selIds.begin(), selIds.end(), t.id) != selIds.end();
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSlot));
+            g.setColour(Theme::color(Theme::Color::bgSelection));
             g.fillRect(row);
         }
 
@@ -722,17 +722,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
                              : Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSize));
         int nameRight = area.getRight() - 4;
-        if (isAudioInput) nameRight -= 22;
         g.drawText(juce::String(t.name), area.getX() + 28, row1Y, nameRight - (area.getX() + 28), row1H,
                    juce::Justification::centredLeft);
-
-        // Type indicator
-        if (isAudioInput) {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawText("IN", area.getRight() - 30, row1Y, 24, row1H,
-                       juce::Justification::centredRight);
-        }
 
         // Row 2: pill buttons (M S R I)
         int row2Y = row1Y + row1H + 6;
@@ -740,14 +731,15 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         cx = area.getX() + 8;
 
         auto drawPill = [&](juce::Rectangle<int>& bounds, const char* label,
-                            bool active, uint32_t activeColor) {
+                            bool active, uint32_t activeColor, bool hovered) {
             bounds = juce::Rectangle<int>(cx, cy_row - Theme::pillSize / 2, Theme::pillSize, Theme::pillSize);
             if (active) {
                 g.setColour(Theme::color(activeColor));
                 g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::textOnColor));
             } else {
-                g.setColour(Theme::color(Theme::Color::pillOff));
+                g.setColour(Theme::color(hovered ? Theme::Color::bgControlHover
+                                                 : Theme::Color::bgControl));
                 g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::pillTextOff));
             }
@@ -757,26 +749,31 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         };
 
         bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
+        bool isHoveredRow = ((int)i == hoveredPillTrackIdx);
 
         muteBounds[i] = {};
         soloBounds[i] = {};
         if (!isActionTrack && enabled) {
             bool isMuted = trackState ? trackState->muted : false;
             bool isSoloed = trackState ? trackState->soloed : false;
-            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMute);
-            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSolo);
+            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMute,
+                     isHoveredRow && hoveredPill == HoveredPill::Mute);
+            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSolo,
+                     isHoveredRow && hoveredPill == HoveredPill::Solo);
             cx += Theme::pillGroupGap - Theme::pillGap;
         }
 
         armBounds[i] = {};
         if (!isActionTrack && enabled) {
             bool isArmed = trackState ? trackState->armed : false;
-            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArm);
+            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArm,
+                     isHoveredRow && hoveredPill == HoveredPill::Arm);
         }
 
         inputMonitorBounds[i] = {};
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
-            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput);
+            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput,
+                     isHoveredRow && hoveredPill == HoveredPill::Input);
         }
 
         y += trackRowHeight;
@@ -793,7 +790,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
-    // Track lane backgrounds — lifted from empty space
+    // Track lane backgrounds — lifted from empty space.
+    // Inset the left edge by 1px so the fills don't overdraw the track-header
+    // column's right border (drawn earlier in paintTrackHeaders at x=area.getX()).
     auto sel = state->selectedTrackIds();
     for (size_t i = 0; i < tracks.size(); ++i) {
         int rowY = area.getY() + (int)i * trackRowHeight;
@@ -801,16 +800,20 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
         // Base lane fill
         g.setColour(Theme::color(Theme::Color::bgSurface));
-        g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
+        g.fillRect(area.getX() + 1, rowY, area.getWidth() - 1, trackRowHeight);
 
         // Selection highlight — matches header
         if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSlot));
-            g.fillRect(area.getX(), rowY, area.getWidth(), trackRowHeight);
+            g.setColour(Theme::color(Theme::Color::bgSelection));
+            g.fillRect(area.getX() + 1, rowY, area.getWidth() - 1, trackRowHeight);
         }
     }
 
-    // Grid lines — bar lines darker, beat lines lighter
+    // Grid lines — bar lines darker, beat lines lighter.
+    // Clip vertically to the track-content region so gridlines don't bleed
+    // into the empty area below the last track.
+    int gridLinesBottom = std::min(area.getBottom(),
+                                   area.getY() + (int)tracks.size() * trackRowHeight);
     int startBar = (int)(startBeat / beatsPerBar());
     int endBar = (int)(endBeat / beatsPerBar()) + 1;
 
@@ -822,7 +825,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
             g.setColour(b == 0 ? Theme::color(Theme::Color::border)
                                 : Theme::color(Theme::Color::borderSubtle));
-            g.drawLine((float)x, (float)area.getY(), (float)x, (float)area.getBottom(), 0.5f);
+            g.drawLine((float)x, (float)area.getY(), (float)x, (float)gridLinesBottom, 0.5f);
         }
     }
 
@@ -879,7 +882,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                     regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
                 // Region color — one level above lane background
-                auto fillCol = Theme::color(Theme::Color::bgSurfaceHover);
+                auto fillCol = Theme::color(Theme::Color::bgSurfaceRaised);
                 bool selected = selectedRegionIds.count(r->id) > 0;
                 bool beingDragged = (draggingRegion && r->id == dragRegionId);
                 if (!trackEnabled || r->muted)
@@ -2219,6 +2222,39 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
         }
     }
     setMouseCursor(juce::MouseCursor::NormalCursor);
+
+    // Track pill hover (only matters on resting/off pills; paint reads these)
+    int prevIdx = hoveredPillTrackIdx;
+    HoveredPill prevPill = hoveredPill;
+    hoveredPillTrackIdx = -1;
+    hoveredPill = HoveredPill::None;
+
+    auto pos = event.getPosition();
+    auto checkPill = [&](const std::vector<juce::Rectangle<int>>& bounds, HoveredPill kind) {
+        if (hoveredPill != HoveredPill::None) return;
+        for (size_t i = 0; i < bounds.size(); ++i) {
+            if (!bounds[i].isEmpty() && bounds[i].contains(pos)) {
+                hoveredPillTrackIdx = (int)i;
+                hoveredPill = kind;
+                return;
+            }
+        }
+    };
+    checkPill(muteBounds,         HoveredPill::Mute);
+    checkPill(soloBounds,         HoveredPill::Solo);
+    checkPill(armBounds,          HoveredPill::Arm);
+    checkPill(inputMonitorBounds, HoveredPill::Input);
+
+    if (prevIdx != hoveredPillTrackIdx || prevPill != hoveredPill)
+        repaint();
+}
+
+void ProducePane::mouseExit(const juce::MouseEvent& /*event*/) {
+    if (hoveredPillTrackIdx != -1 || hoveredPill != HoveredPill::None) {
+        hoveredPillTrackIdx = -1;
+        hoveredPill = HoveredPill::None;
+        repaint();
+    }
 }
 
 void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
@@ -2518,3 +2554,4 @@ double ProducePane::quantizeGridSize(int menuId) {
         default:  return 0.0;
     }
 }
+

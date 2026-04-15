@@ -30,6 +30,7 @@ public:
     void mouseDrag(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel) override;
     bool keyPressed(const juce::KeyPress& key) override;
 
@@ -88,6 +89,10 @@ private:
     std::vector<juce::Rectangle<int>> inputMonitorBounds;
     std::vector<juce::Rectangle<int>> muteBounds;
     std::vector<juce::Rectangle<int>> soloBounds;
+    // Pill hover tracking (only applied to resting/off pills)
+    enum class HoveredPill { None, Mute, Solo, Arm, Input };
+    int hoveredPillTrackIdx = -1;
+    HoveredPill hoveredPill = HoveredPill::None;
 
     // Track drag reordering
     int dragTrackIndex = -1;

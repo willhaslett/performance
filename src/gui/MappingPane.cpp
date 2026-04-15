@@ -455,7 +455,7 @@ void MappingPane::paintMappingPanel(juce::Graphics& g) {
         auto& mr = mappingRows[i];
         bool hovered = (i == hoveredMappingRow);
 
-        g.setColour(hovered ? Theme::color(Theme::Color::bgSurfaceHover)
+        g.setColour(hovered ? Theme::color(Theme::Color::bgControlHover)
                             : Theme::color(Theme::Color::borderSubtle));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 
@@ -529,7 +529,7 @@ void MappingPane::paintScorePanel(juce::Graphics& g) {
         auto& sr = scoreRows[i];
         bool hovered = (i == hoveredScoreRow);
 
-        g.setColour(hovered ? Theme::color(Theme::Color::bgSurfaceHover)
+        g.setColour(hovered ? Theme::color(Theme::Color::bgControlHover)
                             : Theme::color(Theme::Color::borderSubtle));
         g.fillRect(area.getX() + 4, y, area.getWidth() - 8, rowHeight - 1);
 

@@ -2,7 +2,32 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, known issues, and feature backlog live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. Authoritative history is `git log`.
+> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. Authoritative history is `git log`.
+
+## Active Work
+
+Current in-flight thread: **GUI theming polish.**
+
+- **Fader handle shape** — currently a small rounded rect with center groove. Considering a more physical fader cap shape. (Recent commits iterate on color: textSecondary → 0xffc1c1c1 → controlHandle white.)
+- **Selected track vs region contrast** — selection uses `bgSelection` (0x2a2a2a), regions use `bgSurfaceRaised` (0x333333). Verify the three levels (unselected lane → selected lane → region) are clearly distinguishable.
+- **Remove bgRecessed if unused** — meter grooves now use bgSlot; check for remaining references.
+
+## Backlog
+
+Deferred but tracked. Pull from here when picking up new work.
+
+**High priority:**
+- **LCD interactivity** — all LCD values should support drag-to-change and double-click-to-edit. Currently only BPM and time sig are editable; BAR/BEAT/DIV/TICK and time display are read-only.
+- **Stuck note prevention at region boundaries** — `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in `Arrangement.cpp`.
+- **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events at specific beat positions. Data model ready (vectors on `SongState`); currently one global value per song. No trapdoors.
+
+**Longer-term:**
+- **Refactor oversized GUI files** — `ProducePane.cpp` is 2520 lines (header painting, grid, regions, mouse, keyboard all in one). Check `MainLayout` and `Sidebar` too. *Defer until the theming sweep wraps* to avoid churn with in-flight visual changes.
+- MIDI effects (transpose, channel filter, arpeggiator).
+- Fader/knob drag: value stops changing at screen edge.
+- Background plugin state capture: move `getStateInformation` calls off the message thread (root cause of the beach ball; hard — JUCE plugin APIs aren't thread-safe).
+- Failed plugin load feedback: status indicator on the slot when instantiation fails.
+- Settings window MIDI tab content (channel filtering, transpose, etc).
 
 ## Core Concepts
 
@@ -145,10 +170,13 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 
 Centralized design tokens. Minimalist dark theme.
 
-- **Surfaces**: bgApp/bgPanel (0xff161616) → bgSurface (0xff1e1e1e) → bgSlot (0xff2a2a2a) → bgSurfaceHover (0xff333333). bgRecessed (0xff121212) for inset grooves.
+- **Surfaces**: `bgApp`/`bgPanel` (`0xff161616`) → `bgSurface` (`0xff1e1e1e`) → `bgSurfaceRaised` (`0xff333333`, region fills). `bgRecessed` (`0xff121212`) for deepest inset.
+- **Interactive controls**: `bgControl` (`0xff2a2a2a`) for resting state of pills, plugin slots, LCD, pickers, text fields; `bgControlHover` (`0xff333333`) for hover. `bgSelection` (`0xff2a2a2a`) for selected track rows.
+- **Passive inset surfaces**: `bgSlot` (`0xff2a2a2a`) for meter grooves, fader/slider troughs.
+- **Tokens with identical values but distinct semantics**: `bgSlot`/`bgControl`/`bgSelection` all `0x2a2a2a`; `bgSurfaceRaised`/`bgControlHover` both `0x333333`. Use the right name for the right role.
 - **Text**: textPrimary (0xffd8d8d8) → textSecondary (0xffaaaaaa) → textDim (0xff666666). textOnColor/controlHandle (white).
 - **Semantic**: activityOn/Off, transportPlay/Rec/Cycle, meterGreen/Amber/Red, statusError.
-- **Pills**: pillMute (gold), pillSolo (steel), pillArm/pillInput (red), pillOff/pillTextOff.
+- **Pills**: pillMute (gold), pillSolo (steel), pillArm/pillInput (red), pillTextOff (inactive text). Pill resting background uses `bgControl`.
 - **Type scale**: fontSizeTitle(16) → Lg(14) → Md(13) → Sm(12). LCD sizes for transport.
 - **Spacing scale**: Xs(2) → S(4) → M(8) → L(12) → Xl(16).
 - **Principles**: minimal color, maximum contrast hierarchy. Neutral track headers (no per-track color). Track type indicated by "IN" label, not color.

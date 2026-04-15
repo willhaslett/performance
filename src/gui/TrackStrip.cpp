@@ -166,7 +166,7 @@ void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
 }
 
 void TrackStrip::paintInputSlot(juce::Graphics& g) {
-    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgSurfaceHover : Theme::Color::bgSlot));
+    g.setColour(Theme::color(inputSlotHovered ? Theme::Color::bgControlHover : Theme::Color::bgControl));
     g.fillRoundedRectangle(inputSlotBounds.toFloat(), Theme::cornerRadiusSm);
 
     g.setFont(Theme::font(Theme::fontSizeSm));
@@ -322,7 +322,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     // Output target label
     if (outputTargetBounds.getHeight() > 0) {
-        g.setColour(Theme::color(Theme::Color::bgSlot));
+        g.setColour(Theme::color(Theme::Color::bgControl));
         g.fillRoundedRectangle(outputTargetBounds.toFloat(), Theme::cornerRadiusSm);
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.setColour(Theme::color(Theme::Color::textSecondary));
@@ -344,14 +344,15 @@ void TrackStrip::paint(juce::Graphics& g) {
         int bottomY = getHeight() - Theme::pillSize - 8;
 
         auto drawPill = [&](juce::Rectangle<int>& pillBounds, const char* pillLabel,
-                            bool active, uint32_t activeColor) {
+                            bool active, uint32_t activeColor, bool hovered) {
             pillBounds = juce::Rectangle<int>(px, bottomY, Theme::pillSize, Theme::pillSize);
             if (active) {
                 g.setColour(Theme::color(activeColor));
                 g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::textOnColor));
             } else {
-                g.setColour(Theme::color(Theme::Color::pillOff));
+                g.setColour(Theme::color(hovered ? Theme::Color::bgControlHover
+                                                 : Theme::Color::bgControl));
                 g.fillRoundedRectangle(pillBounds.toFloat(), Theme::pillRadius);
                 g.setColour(Theme::color(Theme::Color::pillTextOff));
             }
@@ -360,8 +361,8 @@ void TrackStrip::paint(juce::Graphics& g) {
             px += Theme::pillSize + Theme::pillGap;
         };
 
-        drawPill(muteBounds, "M", muted, Theme::Color::pillMute);
-        drawPill(soloBounds, "S", soloed, Theme::Color::pillSolo);
+        drawPill(muteBounds, "M", muted,  Theme::Color::pillMute, hoveredPill == HoveredPill::Mute);
+        drawPill(soloBounds, "S", soloed, Theme::Color::pillSolo, hoveredPill == HoveredPill::Solo);
     }
 
     // Left-edge border — drawn last so it's on top of header
@@ -577,5 +578,34 @@ void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {
             }
         };
         nameEditor.show(*this, headerBounds.withTrimmedLeft(26).reduced(4, 4), trackName);
+    }
+}
+
+void TrackStrip::mouseMove(const juce::MouseEvent& event) {
+    auto pos = event.getPosition();
+
+    // Input slot hover (audio input tracks only)
+    bool newInputSlotHovered = (sourceType == TrackSourceType::AudioInput
+                                 && inputSlotBounds.contains(pos));
+
+    // Pill hover
+    HoveredPill newHovered = HoveredPill::None;
+    if (!muteBounds.isEmpty() && muteBounds.contains(pos))
+        newHovered = HoveredPill::Mute;
+    else if (!soloBounds.isEmpty() && soloBounds.contains(pos))
+        newHovered = HoveredPill::Solo;
+
+    if (newInputSlotHovered != inputSlotHovered || newHovered != hoveredPill) {
+        inputSlotHovered = newInputSlotHovered;
+        hoveredPill = newHovered;
+        repaint();
+    }
+}
+
+void TrackStrip::mouseExit(const juce::MouseEvent& /*event*/) {
+    if (inputSlotHovered || hoveredPill != HoveredPill::None) {
+        inputSlotHovered = false;
+        hoveredPill = HoveredPill::None;
+        repaint();
     }
 }
