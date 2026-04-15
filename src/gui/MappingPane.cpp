@@ -225,7 +225,7 @@ void MappingPane::resized() {
 // --- Paint ---
 
 void MappingPane::paint(juce::Graphics& g) {
-    g.fillAll(Theme::color(Theme::Color::bgApp));
+    g.fillAll(Theme::color(Theme::Color::bgPanel));
 
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
@@ -275,12 +275,6 @@ void MappingPane::paint(juce::Graphics& g) {
 
 void MappingPane::paintLeftPanel(juce::Graphics& g) {
     auto area = leftPanelBounds;
-    g.setColour(Theme::color(Theme::Color::bgApp));
-    g.fillRect(area);
-
-    // Header background
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(area.getX(), area.getY(), area.getWidth(), leftHeaderHeight);
 
     // Title
     g.setColour(Theme::color(Theme::Color::textPrimary));
