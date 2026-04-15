@@ -10,7 +10,9 @@
 MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
     : state(state), engine(engine),
-      debugPane(coordinator, engine), mappingPane(state, engine, coordinator),
+      debugPane(coordinator, engine),
+      controllersPane(state, engine, coordinator),
+      songMappingsPane(state, engine, coordinator),
       chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
@@ -25,7 +27,8 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     // All components start hidden — setPaneContent will show the right ones
     sidebar.setVisible(false);
     producePane.setVisible(false);
-    mappingPane.setVisible(false);
+    controllersPane.setVisible(false);
+    songMappingsPane.setVisible(false);
     debugPane.setVisible(false);
     chatView.setVisible(false);
     logPane.setVisible(false);
@@ -33,7 +36,33 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     addChildComponent(sidebar);
     addChildComponent(producePane);
-    addChildComponent(mappingPane);
+    addChildComponent(controllersPane);
+    addChildComponent(songMappingsPane);
+
+    // Learn mode / control creation in Controllers needs SongMappings to refresh.
+    controllersPane.onBindingsChanged = [this]{ songMappingsPane.refresh(); };
+
+    // Single global MIDI monitor — coordinator.setGlobalMidiMonitor is a
+    // last-writer-wins slot, so we install it once here and dispatch to both
+    // panes. This keeps the Controllers activity dots alive alongside the
+    // SongMappings row pulses.
+    coordinator.setGlobalMidiMonitor(
+        [this](const std::string& deviceName, const std::string&,
+               const std::string& evType, int ch, int num, int) {
+            auto* dev = this->state.findDeviceByPortName(deviceName);
+            if (!dev) return;
+            auto devId = dev->id;
+            std::string ctrlType;
+            if (evType == "CC") ctrlType = "cc";
+            else if (evType == "NoteOn" || evType == "NoteOff") ctrlType = "note";
+            else if (evType == "Pitch") ctrlType = "pitchbend";
+            else if (evType == "Pressure") ctrlType = "pressure";
+            if (ctrlType.empty()) return;
+            juce::MessageManager::callAsync([this, ctrlType, ch, num, devId] {
+                controllersPane.handleMidiActivity(ctrlType, ch, num, devId);
+                songMappingsPane.handleMidiActivity(ctrlType, ch, num, devId);
+            });
+        });
     addChildComponent(debugPane);
     addChildComponent(chatView);
     addChildComponent(logPane);
@@ -123,7 +152,8 @@ juce::Component* MainLayout::componentForContent(PaneContent content) {
     switch (content) {
         case PaneContent::SidebarTree: return &sidebar;
         case PaneContent::Produce:     return &producePane;
-        case PaneContent::Mappings:    return &mappingPane;
+        case PaneContent::Controllers: return &controllersPane;
+        case PaneContent::SongMappings:return &songMappingsPane;
         case PaneContent::Debug:       return &debugPane;
         case PaneContent::Chat:        return &chatView;
         case PaneContent::Logs:        return &logPane;
@@ -137,7 +167,8 @@ std::string MainLayout::contentToString(PaneContent content) {
         case PaneContent::Hidden:      return "hidden";
         case PaneContent::SidebarTree: return "sidebar_tree";
         case PaneContent::Produce:     return "produce";
-        case PaneContent::Mappings:    return "mappings";
+        case PaneContent::Controllers: return "controllers";
+        case PaneContent::SongMappings:return "song_mappings";
         case PaneContent::Debug:       return "debug";
         case PaneContent::Chat:        return "chat";
         case PaneContent::Logs:        return "logs";
@@ -149,7 +180,10 @@ std::string MainLayout::contentToString(PaneContent content) {
 PaneContent MainLayout::stringToContent(const std::string& s) {
     if (s == "sidebar_tree") return PaneContent::SidebarTree;
     if (s == "produce")      return PaneContent::Produce;
-    if (s == "mappings")     return PaneContent::Mappings;
+    if (s == "controllers")  return PaneContent::Controllers;
+    if (s == "song_mappings")return PaneContent::SongMappings;
+    // Migration: old "mappings" maps to the right-side panel.
+    if (s == "mappings")     return PaneContent::SongMappings;
     if (s == "debug")        return PaneContent::Debug;
     if (s == "chat")         return PaneContent::Chat;
     if (s == "logs")         return PaneContent::Logs;
@@ -162,7 +196,8 @@ const char* MainLayout::contentLabel(PaneContent content) {
         case PaneContent::Hidden:      return "Hide";
         case PaneContent::SidebarTree: return "Sidebar";
         case PaneContent::Produce:     return "Produce";
-        case PaneContent::Mappings:    return "Mappings";
+        case PaneContent::Controllers: return "Controllers";
+        case PaneContent::SongMappings:return "Song Mappings";
         case PaneContent::Debug:       return "Debug";
         case PaneContent::Chat:        return "Chat";
         case PaneContent::Logs:        return "Logs";
@@ -210,11 +245,24 @@ PaneContent MainLayout::getPaneContent(PaneSlot slot) const {
 static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
     switch (slot) {
         case PaneSlot::Sidebar: return { PaneContent::Hidden, PaneContent::SidebarTree };
-        case PaneSlot::Left:    return { PaneContent::Hidden, PaneContent::Produce, PaneContent::Mappings, PaneContent::Debug };
-        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs };
+        case PaneSlot::Left:    return { PaneContent::Hidden, PaneContent::Produce, PaneContent::Controllers, PaneContent::SongMappings, PaneContent::Debug };
+        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs, PaneContent::Controllers, PaneContent::SongMappings };
         case PaneSlot::Bottom:  return { PaneContent::Hidden, PaneContent::Mixer };
     }
     return { PaneContent::Hidden };
+}
+
+// Preferred proportion of the Left/Right row for each content type when it
+// occupies the Left slot and has a Right sibling. Right slot gets (1 - left).
+// Used to snap the split to a sensible width whenever content is swapped.
+static float preferredLeftProportion(PaneContent content) {
+    switch (content) {
+        case PaneContent::Produce:     return 0.65f;  // wide timeline
+        case PaneContent::Controllers: return 0.28f;
+        case PaneContent::SongMappings:return 0.55f;
+        case PaneContent::Debug:       return 0.50f;
+        default:                       return 0.50f;
+    }
 }
 
 juce::PopupMenu MainLayout::buildPaneMenu(PaneSlot slot) {
@@ -331,7 +379,10 @@ void MainLayout::resized() {
     if (hasLeft && hasRight) {
         auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
         auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
-        int leftWidth = (int)(area.getWidth() * 0.6f);
+        float prop = preferredLeftProportion(paneAssignments[PaneSlot::Left]);
+        int leftWidth = std::max(minPaneSize,
+                                  std::min(area.getWidth() - minPaneSize,
+                                           (int)(area.getWidth() * prop)));
         if (leftComp) leftComp->setBounds(area.removeFromLeft(leftWidth));
         if (rightComp) rightComp->setBounds(area);
     } else if (hasLeft) {
@@ -420,9 +471,21 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         return true;
     }
     if (matches("view.mappings", key)) {
-        auto current = getPaneContent(PaneSlot::Left);
-        setPaneContent(PaneSlot::Left,
-                       current == PaneContent::Mappings ? PaneContent::Hidden : PaneContent::Mappings);
+        // Performer view toggle: opens Controllers on Left + SongMappings on Right
+        // as a pair. If either is currently visible, hide both.
+        auto left = getPaneContent(PaneSlot::Left);
+        auto right = getPaneContent(PaneSlot::Right);
+        bool visible = (left == PaneContent::Controllers || left == PaneContent::SongMappings
+                      || right == PaneContent::Controllers || right == PaneContent::SongMappings);
+        if (visible) {
+            if (left == PaneContent::Controllers || left == PaneContent::SongMappings)
+                setPaneContent(PaneSlot::Left, PaneContent::Hidden);
+            if (right == PaneContent::Controllers || right == PaneContent::SongMappings)
+                setPaneContent(PaneSlot::Right, PaneContent::Hidden);
+        } else {
+            setPaneContent(PaneSlot::Left, PaneContent::Controllers);
+            setPaneContent(PaneSlot::Right, PaneContent::SongMappings);
+        }
         return true;
     }
     if (matches("view.chat", key)) {

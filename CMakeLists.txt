@@ -65,7 +65,8 @@ target_sources(Performance PRIVATE
     src/gui/KeyBindingEditor.cpp
     src/daw/InternalSequencer.cpp
     src/daw/Arrangement.cpp
-    src/gui/MappingPane.cpp
+    src/gui/ControllersPane.cpp
+    src/gui/SongMappingsPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
     src/api/ClaudeClient.cpp

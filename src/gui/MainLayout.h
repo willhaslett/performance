@@ -5,7 +5,8 @@
 #include "gui/ChatView.h"
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
-#include "gui/MappingPane.h"
+#include "gui/ControllersPane.h"
+#include "gui/SongMappingsPane.h"
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
 #include "gui/Divider.h"
@@ -27,14 +28,15 @@ enum class PaneContent {
     Hidden,
     SidebarTree,
     Produce,
-    Mappings,
+    Controllers,
+    SongMappings,
     Debug,
     Chat,
     Logs,
     Mixer
 };
 
-class MainLayout : public juce::Component {
+class MainLayout : public juce::Component, public juce::DragAndDropContainer {
 public:
     MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                PerformanceCoordinator& coordinator);
@@ -73,7 +75,8 @@ public:
 
     // Expose panes for wiring
     DebugPane debugPane;
-    MappingPane mappingPane;
+    ControllersPane controllersPane;
+    SongMappingsPane songMappingsPane;
     ProducePane producePane;
     ChatView chatView;
     LogPane logPane;
