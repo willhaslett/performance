@@ -73,12 +73,12 @@ void EngineSync::clearEngine() {
 }
 
 void EngineSync::loadSong(const std::string& songId) {
-    if (songId.empty()) return;
+    PERF_ASSERT(!songId.empty(), "loadSong called with empty songId");
     activeSongId = songId;
     clearEngine();
 
     auto* song = stateAPI.findSong(songId);
-    if (!song) return;
+    PERF_ASSERT(song, "loadSong: song not found");
 
     perfLog("[EngineSync] loadSong: %s (%d tracks, %d busses)\n",
             songId.c_str(), (int)song->tracks.size(), (int)song->busses.size());
@@ -102,14 +102,14 @@ void EngineSync::loadSong(const std::string& songId) {
 
 void EngineSync::onBusCreated(const std::string& busId) {
     auto* bus = stateAPI.findBus(busId);
-    if (!bus) return;
+    PERF_ASSERT(bus, "onBusCreated: bus not found");
     engine.createBusWithId(juce::String(bus->id), juce::String(bus->name));
     engine.setBusGain(juce::String(bus->id), bus->outputGain);
 }
 
 void EngineSync::onTrackCreated(const std::string& trackId) {
     auto* track = stateAPI.findTrack(trackId);
-    if (!track) return;
+    PERF_ASSERT(track, "onTrackCreated: track not found");
 
     // Action tracks have no audio engine representation
     if (track->sourceType == TrackSourceType::Action) return;
@@ -153,11 +153,14 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     }
 
     auto* plugin = stateAPI.findPluginById(fx->pluginId);
-    if (!plugin) return;
+    if (!plugin) {
+        perfLog("[EngineSync] onEffectCreated: plugin '%s' not found (uninstalled?)\n", fx->pluginId.c_str());
+        return;
+    }
 
     // Determine engine parent ID (songId → "Output")
     auto* song = stateAPI.findSong(activeSongId);
-    if (!song) return;
+    PERF_ASSERT(song, "onEffectCreated: active song not found");
 
     juce::String engineParentId;
     std::string stateParentId;  // for preset restore
@@ -235,7 +238,7 @@ void EngineSync::restorePresetState(const std::string& parentId, const std::stri
 
 void EngineSync::onSendCreated(const std::string& sendId) {
     auto* song = stateAPI.findSong(activeSongId);
-    if (!song) return;
+    PERF_ASSERT(song, "onSendCreated: active song not found");
 
     for (auto& track : song->tracks) {
         for (auto& send : track.sends) {
@@ -252,7 +255,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
 
     if (entityType == "track") {
         auto* t = stateAPI.findTrack(entityId);
-        if (!t) return;
+        PERF_ASSERT(t, "onEntityUpdated: track not found");
         if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
         engine.setTrackAudioEnabled(id, t->audioEnabled);
@@ -289,7 +292,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     }
     else if (entityType == "bus") {
         auto* b = stateAPI.findBus(entityId);
-        if (!b) return;
+        PERF_ASSERT(b, "onEntityUpdated: bus not found");
         engine.setBusGain(id, b->outputGain);
         engine.setBusAudioEnabled(id, b->audioEnabled);
         engine.setBusOutputTarget(id, juce::String(b->outputTarget));
@@ -297,7 +300,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     }
     else if (entityType == "send") {
         auto* song = stateAPI.findSong(activeSongId);
-        if (!song) return;
+        PERF_ASSERT(song, "onEntityUpdated(send): active song not found");
         for (auto& t : song->tracks)
             for (auto& s : t.sends)
                 if (s.id == entityId) {
@@ -308,10 +311,9 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     else if (entityType == "song") {
         if (entityId == activeSongId) {
             auto* song = stateAPI.findSong(activeSongId);
-            if (song) {
-                engine.setMasterGain(song->masterGain);
-                engine.setMasterAudioEnabled(song->masterAudioEnabled);
-            }
+            PERF_ASSERT(song, "onEntityUpdated(song): active song not found");
+            engine.setMasterGain(song->masterGain);
+            engine.setMasterAudioEnabled(song->masterAudioEnabled);
         }
     }
 }
@@ -324,13 +326,12 @@ void EngineSync::onEntityDeleted(const std::string& entityType, const std::strin
         engine.removeBus(id);
     else if (entityType == "effect") {
         // Try all parents including master output
-        engine.removeEffect(juce::String("Output"), id);
         auto* song = stateAPI.findSong(activeSongId);
-        if (song) {
-            for (auto& t : song->tracks)
-                engine.removeEffect(juce::String(t.id), id);
-            for (auto& b : song->busses)
-                engine.removeEffect(juce::String(b.id), id);
-        }
+        PERF_ASSERT(song, "onEntityDeleted(effect): active song not found");
+        engine.removeEffect(juce::String("Output"), id);
+        for (auto& t : song->tracks)
+            engine.removeEffect(juce::String(t.id), id);
+        for (auto& b : song->busses)
+            engine.removeEffect(juce::String(b.id), id);
     }
 }

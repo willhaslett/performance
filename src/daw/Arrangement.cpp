@@ -1,4 +1,5 @@
 #include "daw/Arrangement.h"
+#include "engine/Log.h"
 #include <juce_core/juce_core.h>
 #include <map>
 
@@ -8,7 +9,7 @@ std::string Arrangement::generateId() {
 
 RegionState* Arrangement::addMidiRegion(const std::string& trackId,
                                          double startBeat, double lengthBeats) {
-    if (!songTracks) return nullptr;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {
         if (t.id == trackId) {
             RegionState region;
@@ -32,7 +33,7 @@ RegionState* Arrangement::addMidiRegion(const std::string& trackId,
 }
 
 void Arrangement::removeRegion(const std::string& regionId) {
-    if (!songTracks) return;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {
         t.regions.erase(
             std::remove_if(t.regions.begin(), t.regions.end(),
@@ -43,7 +44,7 @@ void Arrangement::removeRegion(const std::string& regionId) {
 
 void Arrangement::moveRegion(const std::string& regionId,
                               const std::string& newTrackId, double newStartBeat) {
-    if (!songTracks) return;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
 
     // Find the region and its current track
     RegionState found;
@@ -76,7 +77,7 @@ void Arrangement::moveRegion(const std::string& regionId,
 RegionState* Arrangement::duplicateRegion(const std::string& regionId,
                                            const std::string& targetTrackId,
                                            double startBeat) {
-    if (!songTracks) return nullptr;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
 
     // Find source region
     const RegionState* source = nullptr;
@@ -124,7 +125,7 @@ RegionState* Arrangement::duplicateRegion(const std::string& regionId,
 }
 
 RegionState* Arrangement::splitRegion(const std::string& regionId, double splitBeat, bool splitNotes) {
-    if (!songTracks) return nullptr;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
 
     for (auto& t : *songTracks) {
         for (size_t ri = 0; ri < t.regions.size(); ++ri) {
@@ -249,7 +250,7 @@ RegionState* Arrangement::splitRegion(const std::string& regionId, double splitB
 
 std::vector<RegionState*> Arrangement::allRegions() const {
     std::vector<RegionState*> result;
-    if (!songTracks) return result;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks)
         for (auto& r : t.regions)
             result.push_back(const_cast<RegionState*>(&r));
@@ -258,7 +259,7 @@ std::vector<RegionState*> Arrangement::allRegions() const {
 
 std::vector<RegionState*> Arrangement::regionsForTrack(const std::string& trackId) const {
     std::vector<RegionState*> result;
-    if (!songTracks) return result;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {
         if (t.id == trackId) {
             for (auto& r : t.regions)
@@ -270,7 +271,7 @@ std::vector<RegionState*> Arrangement::regionsForTrack(const std::string& trackI
 }
 
 RegionState* Arrangement::findRegion(const std::string& regionId) const {
-    if (!songTracks) return nullptr;
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks)
         for (auto& r : t.regions)
             if (r.id == regionId) return const_cast<RegionState*>(&r);
