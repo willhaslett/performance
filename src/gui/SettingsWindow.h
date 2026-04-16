@@ -68,7 +68,7 @@ private:
             g.fillRect(area);
             g.setColour(isFront ? Theme::color(Theme::Color::textOnColor)
                                  : Theme::color(Theme::Color::textPrimary));
-            g.setFont(Theme::font(Theme::fontSize));
+            g.setFont(Theme::font(Theme::fontSizeLg));
             g.drawText(button.getButtonText(), area, juce::Justification::centred);
         }
         void drawTabAreaBehindFrontButton(juce::TabbedButtonBar&, juce::Graphics&, int, int) override {

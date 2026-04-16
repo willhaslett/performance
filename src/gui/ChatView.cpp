@@ -27,7 +27,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     // Input field — rounded, chat-style
     inputField.setMultiLine(false);
     inputField.setReturnKeyStartsNewLine(false);
-    inputField.setFont(Theme::font(Theme::fontSize));
+    inputField.setFont(Theme::font(Theme::fontSizeLg));
     inputField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textOnColor));
     inputField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);

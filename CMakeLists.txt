@@ -45,6 +45,7 @@ target_sources(Performance PRIVATE
     src/api/EngineAPI.cpp
     src/api/PerformanceCoordinator.cpp
     src/persistence/PersistenceLayer.cpp
+    src/gui/Theme.cpp
     src/gui/MainLayout.cpp
     src/gui/MixerView.cpp
     src/gui/TrackStrip.cpp
@@ -125,6 +126,7 @@ target_sources(PerformanceTests PRIVATE
     src/song/SongRuntime.cpp
     src/daw/InternalSequencer.cpp
     src/daw/Arrangement.cpp
+    src/gui/Theme.cpp
 )
 
 target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)

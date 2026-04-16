@@ -9,6 +9,7 @@
 #include "engine/Log.h"
 #include "song/SongRuntime.h"
 #include "daw/InternalSequencer.h"
+#include "gui/Theme.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <set>
@@ -53,6 +54,17 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     if (auto* song = stateAPI->currentSong()) {
         arrangementImpl.setTracks(&song->tracks);
            }
+
+    // Load theme (from ~/.config/performance/themes/<name>.json).
+    // Writes minimal_dark.json on first launch from the compile-time defaults.
+    {
+        Theme::ensureDefaultThemeFile();
+        auto activeThemeName = stateAPI->getConfig("active_theme");
+        if (activeThemeName.empty()) activeThemeName = "minimal_dark";
+        auto themesDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+            .getChildFile(".config/performance/themes");
+        Theme::loadTheme(themesDir.getChildFile(juce::String(activeThemeName) + ".json"));
+    }
 
     // Restore saved audio devices (must be after loadInto so config is available)
     {

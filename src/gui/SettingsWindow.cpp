@@ -33,7 +33,7 @@ SettingsWindow::AudioPage::AudioPage(StateAPI& state, EngineAPI& engine)
 
     auto setupLabel = [this](juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
-        label.setFont(Theme::font(Theme::fontSize));
+        label.setFont(Theme::font(Theme::fontSizeLg));
         label.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textSecondary));
         label.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(label);
@@ -52,7 +52,7 @@ SettingsWindow::AudioPage::AudioPage(StateAPI& state, EngineAPI& engine)
     setupLabel(sampleRateLabel, "Sample Rate:");
     setupLabel(latencyLabel, "Resulting Latency:");
 
-    latencyValue.setFont(Theme::font(Theme::fontSize));
+    latencyValue.setFont(Theme::font(Theme::fontSizeLg));
     latencyValue.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textPrimary));
     addAndMakeVisible(latencyValue);
 

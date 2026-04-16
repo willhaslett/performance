@@ -291,7 +291,7 @@ void TrackStrip::paint(juce::Graphics& g) {
 
     g.setColour(audioEnabled ? Theme::color(Theme::Color::textPrimary)
                               : Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSize));
+    g.setFont(Theme::font(Theme::fontSizeLg));
     g.drawText(trackName, headerBounds.getX() + 28, headerBounds.getY(),
                headerBounds.getWidth() - 48, headerBounds.getHeight(),
                juce::Justification::centredLeft);

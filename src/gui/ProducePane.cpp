@@ -722,7 +722,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
                              : Theme::color(Theme::Color::textDim));
-        g.setFont(Theme::font(Theme::fontSize));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         int nameRight = area.getRight() - 4;
         g.drawText(juce::String(t.name), area.getX() + 28, row1Y, nameRight - (area.getX() + 28), row1H,
                    juce::Justification::centredLeft);

@@ -109,7 +109,7 @@ void BusStrip::paint(juce::Graphics& g) {
     }
 
     g.setColour(Theme::color(Theme::Color::textOnColor));
-    g.setFont(Theme::font(Theme::fontSize));
+    g.setFont(Theme::font(Theme::fontSizeLg));
     g.drawText(busName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
                juce::Justification::centredLeft);
 

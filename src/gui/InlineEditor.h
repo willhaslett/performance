@@ -13,7 +13,7 @@ public:
     std::function<void(const juce::String& newText)> onCommitPrev;  // up arrow
 
     InlineEditor() {
-        setFont(Theme::font(Theme::fontSize));
+        setFont(Theme::font(Theme::fontSizeLg));
         setColour(juce::TextEditor::backgroundColourId, Theme::color(Theme::Color::bgControl));
         setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textPrimary));
         setColour(juce::TextEditor::outlineColourId, Theme::color(Theme::Color::accent));

@@ -1,158 +1,166 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <array>
 
 namespace Theme {
 
     // ── Colors ────────────────────────────────────────────────
+    // NOTE: All values below are runtime-mutable (inline non-const) so a
+    // theme loader can override them at startup. Call sites read them as
+    // plain values; behavior is identical to the old constexpr layout.
     namespace Color {
 
         // Surfaces — darkest to lightest
-        constexpr uint32_t bgApp           = 0xff161616;  // app background
-        constexpr uint32_t bgPanel         = 0xff161616;  // panels, sidebars, pane headers (same as bgApp)
-        constexpr uint32_t bgSurface       = 0xff1e1e1e;  // track lanes, mixer strips
-        constexpr uint32_t bgSurfaceRaised = 0xff333333;  // region fills — one step brighter than bgSurface
-        constexpr uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces: meter grooves, fader/slider troughs
-        constexpr uint32_t bgControl       = 0xff2d2d2d;  // interactive control base: pills, plugin slots, LCD, pickers
-        constexpr uint32_t bgControlHover  = 0xff333333;  // interactive control hover state
-        constexpr uint32_t bgSelection     = 0xff262626;  // selected track row highlight — between bgSurface and bgControl so pill backgrounds contrast
-        constexpr uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
-        constexpr uint32_t bgDisabled      = 0xff252525;  // disabled strip/header
-        constexpr uint32_t bgRecessed      = 0xff121212;  // meter grooves, fader tracks
-        constexpr uint32_t overlayDim      = 0x40000000;  // semi-transparent dim (drag source, etc.)
+        inline uint32_t bgApp           = 0xff161616;  // app background
+        inline uint32_t bgPanel         = 0xff161616;  // panels, sidebars, pane headers
+        inline uint32_t bgSurface       = 0xff1e1e1e;  // track lanes, mixer strips
+        inline uint32_t bgSurfaceRaised = 0xff333333;  // region fills
+        inline uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces
+        inline uint32_t bgControl       = 0xff2d2d2d;  // interactive control base
+        inline uint32_t bgControlHover  = 0xff333333;  // interactive control hover
+        inline uint32_t bgSelection     = 0xff262626;  // selected track row highlight
+        inline uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
+        inline uint32_t bgDisabled      = 0xff252525;  // disabled strip/header
+        inline uint32_t bgRecessed      = 0xff121212;  // meter grooves, fader tracks
+        inline uint32_t overlayDim      = 0x40000000;  // semi-transparent dim
 
         // Borders
-        constexpr uint32_t border         = 0xff444444;  // standard divider lines
-        constexpr uint32_t borderSubtle   = 0xff333333;  // lighter separators within panels
+        inline uint32_t border          = 0xff444444;
+        inline uint32_t borderSubtle    = 0xff333333;
 
         // Text
-        constexpr uint32_t textPrimary    = 0xffd8d8d8;  // main readable text
-        constexpr uint32_t textSecondary  = 0xffaaaaaa;  // labels, descriptions (was 0xff999999)
-        constexpr uint32_t textDim        = 0xff666666;  // disabled, placeholder
-        constexpr uint32_t textOnColor    = 0xffffffff;  // text on colored backgrounds
-        constexpr uint32_t controlHandle  = 0xffffffff;  // fader handles, prominent grabbable controls
+        inline uint32_t textPrimary     = 0xffd8d8d8;
+        inline uint32_t textSecondary   = 0xffaaaaaa;
+        inline uint32_t textDim         = 0xff666666;
+        inline uint32_t textOnColor     = 0xffffffff;
+        inline uint32_t controlHandle   = 0xffffffff;
 
         // Accent
-        constexpr uint32_t accent         = 0xff2a6aaa;  // selection, focus, links
-        constexpr uint32_t accentDim      = 0xff1a4a6a;  // subtle accent
+        inline uint32_t accent          = 0xff2a6aaa;
+        inline uint32_t accentDim       = 0xff1a4a6a;
 
         // Semantic / status
-        constexpr uint32_t activityOn     = 0xff44cc44;  // MIDI activity, connected
-        constexpr uint32_t activityOff    = 0xff1a3a1a;  // no signal
-        constexpr uint32_t statusError    = 0xff994444;  // load failures
+        inline uint32_t activityOn      = 0xff44cc44;
+        inline uint32_t activityOff     = 0xff1a3a1a;
+        inline uint32_t statusError     = 0xff994444;
 
         // Transport
-        constexpr uint32_t transportPlay      = 0xff2a6a2a;  // play button active
-        constexpr uint32_t transportRec       = 0xff6a2a2a;  // record mode active
-        constexpr uint32_t transportRecDot    = 0xffcc4444;  // record dot
-        constexpr uint32_t transportCycle     = 0xff8a8a40;  // cycle active
-        constexpr uint32_t transportCycleOff  = 0xff505050;  // cycle inactive
-        constexpr uint32_t playhead           = 0xccffffff;  // playhead vertical line
+        inline uint32_t transportPlay      = 0xff2a6a2a;
+        inline uint32_t transportRec       = 0xff6a2a2a;
+        inline uint32_t transportRecDot    = 0xffcc4444;
+        inline uint32_t transportCycle     = 0xff8a8a40;
+        inline uint32_t transportCycleOff  = 0xff505050;
+        inline uint32_t playhead           = 0xccffffff;
 
         // Meter
-        constexpr uint32_t meterGreen     = 0xff44cc44;  // safe level
-        constexpr uint32_t meterAmber     = 0xffccaa44;  // warning zone
-        constexpr uint32_t meterRed       = 0xffcc4444;  // clipping zone
-        constexpr uint32_t sendPeak       = 0xff1a6e1a;  // send knob peak-activity glow (darker green)
+        inline uint32_t meterGreen      = 0xff44cc44;
+        inline uint32_t meterAmber      = 0xffccaa44;
+        inline uint32_t meterRed        = 0xffcc4444;
+        inline uint32_t sendPeak        = 0xff1a6e1a;
 
         // Track pills
-        constexpr uint32_t pillMute       = 0xff8a7a3a;  // M active — muted gold
-        constexpr uint32_t pillSolo       = 0xff3a6a8a;  // S active — muted steel
-        constexpr uint32_t pillArm        = 0xff8a4040;  // R active — muted red
-        constexpr uint32_t pillInput      = 0xff8a4040;  // I active — muted red
-        constexpr uint32_t pillTextOff    = 0xff888888;  // inactive text
+        inline uint32_t pillMute        = 0xff8a7a3a;
+        inline uint32_t pillSolo        = 0xff3a6a8a;
+        inline uint32_t pillArm         = 0xff8a4040;
+        inline uint32_t pillInput       = 0xff8a4040;
+        inline uint32_t pillTextOff     = 0xff888888;
 
         // Slot type tints
-        constexpr uint32_t slotInstrument = 0xffddaa44;  // instrument name
-        constexpr uint32_t slotEffect     = 0xff88aacc;  // effect name
+        inline uint32_t slotInstrument  = 0xffddaa44;
+        inline uint32_t slotEffect      = 0xff88aacc;
 
         // LCD
-        constexpr uint32_t lcdDigit       = 0xffd0d0d0;
+        inline uint32_t lcdDigit        = 0xffd0d0d0;
 
         // Track color palette
-        constexpr uint32_t trackColors[] = {
+        inline std::array<uint32_t, 8> trackColors = {
             0xff2a5a3a, 0xff3a3a5a, 0xff4a3a2a, 0xff2a4a5a,
             0xff5a2a3a, 0xff3a5a2a, 0xff4a2a5a, 0xff5a4a2a,
         };
-        constexpr int trackColorCount = 8;
+        inline int trackColorCount = 8;
 
         // Device color palette
-        constexpr uint32_t deviceColors[] = {
+        inline std::array<uint32_t, 8> deviceColors = {
             0xff2a4a6a, 0xff4a3a5a, 0xff3a5a4a, 0xff5a3a3a,
             0xff3a4a3a, 0xff5a4a3a, 0xff3a3a5a, 0xff4a5a3a,
         };
-        constexpr int deviceColorCount = 8;
+        inline int deviceColorCount = 8;
 
         // Chat
-        constexpr uint32_t chatUser       = 0xff2a4a6a;
-        constexpr uint32_t chatAssistant  = 0xff2a2a2a;
-        constexpr uint32_t chatTool       = 0xff1a2a1a;
-        constexpr uint32_t chatError      = 0xff3a1a1a;
-        constexpr uint32_t chatInput      = 0xff252525;
+        inline uint32_t chatUser        = 0xff2a4a6a;
+        inline uint32_t chatAssistant   = 0xff2a2a2a;
+        inline uint32_t chatTool        = 0xff1a2a1a;
+        inline uint32_t chatError       = 0xff3a1a1a;
+        inline uint32_t chatInput       = 0xff252525;
     }
 
     // ── Typography ────────────────────────────────────────────
-    constexpr float fontSizeTitle    = 16.0f;  // pane headers, section titles
-    constexpr float fontSizeLg       = 14.0f;  // track names, primary content
-    constexpr float fontSizeMd       = 13.0f;  // slot labels, secondary content
-    constexpr float fontSizeSm       = 12.0f;  // badges, hints, type indicators
-    constexpr float fontSizeXs       = 9.0f;   // very small labels (metronome, region counters)
-    constexpr float fontSizePill     = 13.0f;  // pill button labels
-    constexpr float fontSizeMeter    = 10.0f;  // dB tick labels
+    inline float fontSizeTitle    = 16.0f;
+    inline float fontSizeLg       = 14.0f;
+    inline float fontSizeMd       = 13.0f;
+    inline float fontSizeSm       = 12.0f;
+    inline float fontSizeXs       = 9.0f;
+    inline float fontSizePill     = 13.0f;
+    inline float fontSizeMeter    = 10.0f;
 
     // LCD display (ProducePane transport)
-    constexpr float fontSizeLcdLg    = 29.0f;
-    constexpr float fontSizeLcdMd    = 23.0f;
-    constexpr float fontSizeLcdLabel = 8.0f;
-
-    // Legacy aliases (to be removed as files migrate)
-    constexpr float fontSize         = fontSizeLg;
+    inline float fontSizeLcdLg    = 29.0f;
+    inline float fontSizeLcdMd    = 23.0f;
+    inline float fontSizeLcdLabel = 8.0f;
 
     // ── Spacing ───────────────────────────────────────────────
-    constexpr int   spacingXs   = 2;
-    constexpr int   spacingS    = 4;
-    constexpr int   spacingM    = 8;
-    constexpr int   spacingL    = 12;
-    constexpr int   spacingXl   = 16;
+    inline int   spacingXs   = 2;
+    inline int   spacingS    = 4;
+    inline int   spacingM    = 8;
+    inline int   spacingL    = 12;
+    inline int   spacingXl   = 16;
 
     // ── Component dimensions ──────────────────────────────────
-    constexpr int   headerHeight    = 28;  // name block height: mixer strip headers, ProducePane track row 1
-    constexpr int   toolbarHeight   = 32;
-    constexpr int   slotHeight      = 24;
-    constexpr int   slotGap         = 4;
-    constexpr int   slotPadding     = 4;
-    constexpr int   trackPadding    = 12;
-    constexpr int   trackStripWidth = 160;
-    constexpr int   iconSize        = 14;
+    inline int   headerHeight    = 28;
+    inline int   toolbarHeight   = 32;
+    inline int   slotHeight      = 24;
+    inline int   slotGap         = 4;
+    inline int   slotPadding     = 4;
+    inline int   trackPadding    = 12;
+    inline int   trackStripWidth = 160;
+    inline int   iconSize        = 14;
 
     // Pill buttons
-    constexpr int   pillSize        = 20;
-    constexpr float pillRadius      = 4.0f;
-    constexpr int   pillGap         = 5;
-    constexpr int   pillGroupGap    = 8;
-    constexpr int   pillNameGap     = 8;
+    inline int   pillSize        = 20;
+    inline float pillRadius      = 4.0f;
+    inline int   pillGap         = 5;
+    inline int   pillGroupGap    = 8;
+    inline int   pillNameGap     = 8;
 
     // Corners
-    constexpr float cornerRadius    = 6.0f;
-    constexpr float cornerRadiusSm  = 4.0f;
-    constexpr float cornerRadiusXs  = 3.0f;
+    inline float cornerRadius    = 6.0f;
+    inline float cornerRadiusSm  = 4.0f;
+    inline float cornerRadiusXs  = 3.0f;
 
-    // Activity indicator (small dot used in MappingPane rows, device tree, etc.)
-    constexpr float activityDotSize = 6.0f;
+    // Activity indicator
+    inline float activityDotSize = 6.0f;
 
     // Chat
-    constexpr float chatBubbleRadius = 12.0f;
-    constexpr int   chatBubblePad   = 12;
-    constexpr int   chatGap         = 8;
-    constexpr int   chatInputHeight = 40;
+    inline float chatBubbleRadius = 12.0f;
+    inline int   chatBubblePad   = 12;
+    inline int   chatGap         = 8;
+    inline int   chatInputHeight = 40;
 
     // ── Helpers ───────────────────────────────────────────────
     inline juce::Colour color(uint32_t c) { return juce::Colour(c); }
 
-    inline juce::Font font(float size = fontSizeLg) {
+    inline juce::Font font(float size = 14.0f) {
         return juce::Font(juce::FontOptions(size));
     }
 
-    inline juce::Font fontMono(float size = fontSizeLg) {
+    inline juce::Font fontMono(float size = 14.0f) {
         return juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), size, 0));
     }
+
+    // ── Theme loading / saving ────────────────────────────────
+    bool loadTheme(const juce::File& file);
+    bool saveTheme(const juce::File& file, const juce::String& name, const juce::String& description);
+    void loadDefaultTheme();  // restores compile-time defaults
+    juce::String currentThemeName();
+    void ensureDefaultThemeFile();  // writes minimal_dark.json on first run if missing
 }
