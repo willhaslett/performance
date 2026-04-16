@@ -433,6 +433,24 @@ public:
 
         perfLog("[App] Starting Performance\n");
 
+        // Beta expiry — update the date each release cycle.
+        // Prevents stale builds from circulating indefinitely.
+        {
+            auto expiry = juce::Time(2026, 9, 16, 0, 0);  // October 16, 2026 (month is 0-based)
+            if (juce::Time::getCurrentTime() > expiry) {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Beta Expired",
+                    "This beta build has expired. Please contact Will for an updated version.",
+                    "OK",
+                    nullptr,
+                    juce::ModalCallbackFunction::create([](int) {
+                        juce::JUCEApplication::getInstance()->systemRequestedQuit();
+                    }));
+                return;
+            }
+        }
+
         // New system: in-memory state + persistence
         coordinator = std::make_unique<PerformanceCoordinator>();
         coordinator->initialise();
