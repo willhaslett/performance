@@ -127,6 +127,11 @@ private:
     double lastSequencerBeat = 0.0;
     double lastActionScanBeat = 0.0;
 
+    // Debounced autosave — tracks the time of the most recent state mutation.
+    // timerCallback saves when (now - lastStateChangeMs) > 3 seconds AND dirty.
+    double lastStateChangeMs = 0.0;
+    int autosaveSubscriptionId = -1;
+
     // Recording state
     bool recordModeActive = false;  // user explicitly requested recording
     bool isRecording = false;

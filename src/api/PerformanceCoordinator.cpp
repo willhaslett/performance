@@ -159,8 +159,13 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         onStateEvent(event);
     });
 
-    // Auto-save every 30 seconds if dirty
-    startTimer(16);  // ~60Hz — drives sequencer clock smoothly, auto-save gated at 30s
+    // Debounced autosave: update the "last change" timestamp on every state
+    // mutation. timerCallback flushes when 3 seconds of quiet have passed.
+    autosaveSubscriptionId = stateAPI->events().subscribe([this](const StateEvent&) {
+        lastStateChangeMs = juce::Time::getMillisecondCounterHiRes();
+    });
+
+    startTimer(16);  // ~60Hz — drives sequencer clock and autosave check
 }
 
 void PerformanceCoordinator::timerCallback() {
@@ -230,13 +235,14 @@ void PerformanceCoordinator::timerCallback() {
         lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
     }
 
-    // Auto-save (every ~30 seconds, not every tick)
-    static int saveCounter = 0;
-    if (++saveCounter >= 1800) {  // ~1800 ticks at 60Hz = 30s
-        saveCounter = 0;
-        if (stateAPI && persistence && stateAPI->isDirty()) {
+    // Debounced autosave — saves 3 seconds after the last state change.
+    // lastStateChangeMs is updated by the event subscription on every mutation.
+    if (stateAPI && persistence && stateAPI->isDirty() && lastStateChangeMs > 0.0) {
+        double now = juce::Time::getMillisecondCounterHiRes();
+        if (now - lastStateChangeMs >= 3000.0) {
             persistence->saveFrom(*stateAPI);
             stateAPI->clearDirty();
+            lastStateChangeMs = 0.0;
             perfLog("[Coordinator] Auto-saved\n");
         }
     }
