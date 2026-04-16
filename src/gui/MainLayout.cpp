@@ -344,21 +344,62 @@ void MainLayout::loadPaneConfig() {
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
-    // Toolbar — minimal: just build info, right-aligned, low contrast
+    // Toolbar
     auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(toolbar);
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
 
+    // Navigation buttons
+    g.setFont(Theme::font(Theme::fontSizeMd));
+    for (int i = 0; i < (int)navButtons.size(); ++i) {
+        auto& btn = navButtons[i];
+        bool active = isNavActive(i);
+        bool hovered = (i == hoveredNavButton);
+
+        if (active) {
+            g.setColour(Theme::color(Theme::Color::textPrimary));
+        } else if (hovered) {
+            g.setColour(Theme::color(Theme::Color::textSecondary));
+        } else {
+            g.setColour(Theme::color(Theme::Color::textDim));
+        }
+        g.drawText(btn.label, btn.bounds, juce::Justification::centred);
+
+        if (active) {
+            g.setColour(Theme::color(Theme::Color::accent));
+            g.fillRect(btn.bounds.getX(), btn.bounds.getBottom() - 2,
+                       btn.bounds.getWidth(), 2);
+        }
+    }
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-
-    // Build info label in the toolbar
     auto toolbarArea = area.removeFromTop(toolbarHeight);
-    buildInfoField.setBounds(toolbarArea.reduced(Theme::spacingM, 0));
+
+    // Nav buttons — left-aligned in toolbar
+    navButtons = {
+        { "Sidebar",   {} },
+        { "Producer",  {} },
+        { "Performer", {} },
+        { "Mixer",     {} },
+    };
+    int btnX = Theme::spacingM;
+    auto f = Theme::font(Theme::fontSizeMd);
+    for (auto& btn : navButtons) {
+        juce::GlyphArrangement ga;
+        ga.addLineOfText(f, btn.label, 0, 0);
+        int w = (int)ga.getBoundingBox(0, -1, false).getWidth() + Theme::spacingXl;
+        btn.bounds = juce::Rectangle<int>(btnX, toolbarArea.getY(), w, toolbarArea.getHeight());
+        btnX += w + Theme::spacingS;
+    }
+
+    // Build info — right-aligned, shares toolbar space with nav buttons
+    int infoLeft = btnX + Theme::spacingXl;
+    auto infoArea = toolbarArea.withLeft(infoLeft).reduced(Theme::spacingM, 0);
+    buildInfoField.setBounds(infoArea);
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);
@@ -406,8 +447,74 @@ void MainLayout::resized() {
     }
 }
 
-void MainLayout::mouseUp(const juce::MouseEvent& /*event*/) {
-    // Toolbar click handling removed — sidebar toggle now via ⌘P only.
+void MainLayout::mouseUp(const juce::MouseEvent& event) {
+    for (int i = 0; i < (int)navButtons.size(); ++i) {
+        if (navButtons[i].bounds.contains(event.getPosition())) {
+            handleNavClick(i);
+            return;
+        }
+    }
+}
+
+void MainLayout::mouseMove(const juce::MouseEvent& event) {
+    int prev = hoveredNavButton;
+    hoveredNavButton = -1;
+    for (int i = 0; i < (int)navButtons.size(); ++i) {
+        if (navButtons[i].bounds.contains(event.getPosition())) {
+            hoveredNavButton = i;
+            break;
+        }
+    }
+    if (prev != hoveredNavButton) repaint();
+}
+
+bool MainLayout::isNavActive(int index) const {
+    switch (index) {
+        case 0: return getPaneContent(PaneSlot::Sidebar) != PaneContent::Hidden;
+        case 1: return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
+        case 2: return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                     || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+        case 3: return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
+        default: return false;
+    }
+}
+
+void MainLayout::handleNavClick(int index) {
+    switch (index) {
+        case 0: { // Sidebar
+            auto cur = getPaneContent(PaneSlot::Sidebar);
+            setPaneContent(PaneSlot::Sidebar,
+                           cur == PaneContent::Hidden ? PaneContent::SidebarTree
+                                                      : PaneContent::Hidden);
+            break;
+        }
+        case 1: { // Producer
+            auto cur = getPaneContent(PaneSlot::Left);
+            setPaneContent(PaneSlot::Left,
+                           cur == PaneContent::Produce ? PaneContent::Hidden
+                                                       : PaneContent::Produce);
+            break;
+        }
+        case 2: { // Performer — toggles the Controllers + SongMappings pair
+            bool active = getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                       || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+            if (active) {
+                setPaneContent(PaneSlot::Left, PaneContent::Hidden);
+                setPaneContent(PaneSlot::Right, PaneContent::Hidden);
+            } else {
+                setPaneContent(PaneSlot::Left, PaneContent::Controllers);
+                setPaneContent(PaneSlot::Right, PaneContent::SongMappings);
+            }
+            break;
+        }
+        case 3: { // Mixer
+            auto cur = getPaneContent(PaneSlot::Bottom);
+            setPaneContent(PaneSlot::Bottom,
+                           cur == PaneContent::Mixer ? PaneContent::Hidden
+                                                     : PaneContent::Mixer);
+            break;
+        }
+    }
 }
 
 void MainLayout::toggleMusicalTyping() {

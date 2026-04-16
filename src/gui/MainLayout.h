@@ -44,6 +44,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
 
     bool handleGlobalKey(const juce::KeyPress& key);
     bool handleGlobalKeyUp(const juce::KeyPress& key);
@@ -104,6 +105,13 @@ private:
 
     Divider sidebarDivider { Divider::Vertical };
     juce::TextEditor buildInfoField;
+
+    // Toolbar navigation buttons
+    struct NavButton { juce::String label; juce::Rectangle<int> bounds; };
+    std::vector<NavButton> navButtons;
+    int hoveredNavButton = -1;
+    void handleNavClick(int index);
+    bool isNavActive(int index) const;
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;
