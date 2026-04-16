@@ -129,30 +129,33 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     setWantsKeyboardFocus(true);
 
-    // Wire sidebar pane selection to the new system
-    // Legacy callbacks (still used by some sidebar paths)
-    sidebar.onProduceSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Produce); };
-    sidebar.onDebugSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Debug); };
-    sidebar.onChatSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Chat); };
-    sidebar.onLogsSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Logs); };
-
-    // New pane system callbacks
-    sidebar.onPaneSelected = [this](const std::string& slot, const std::string& content) {
-        PaneSlot s = PaneSlot::Left;
-        if (slot == "sidebar") s = PaneSlot::Sidebar;
-        else if (slot == "left") s = PaneSlot::Left;
-        else if (slot == "right") s = PaneSlot::Right;
-        else if (slot == "bottom") s = PaneSlot::Bottom;
-        setPaneContent(s, stringToContent(content));
+    // Sidebar navigation — view toggles and active state queries
+    sidebar.onToggleView = [this](const std::string& viewName) {
+        if (viewName == "produce") {
+            auto cur = getPaneContent(PaneSlot::Left);
+            setPaneContent(PaneSlot::Left,
+                           cur == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
+        } else if (viewName == "performer") {
+            handleNavClick(2);  // reuse the Performer pair-toggle from toolbar
+        } else if (viewName == "mixer") {
+            auto cur = getPaneContent(PaneSlot::Bottom);
+            setPaneContent(PaneSlot::Bottom,
+                           cur == PaneContent::Mixer ? PaneContent::Hidden : PaneContent::Mixer);
+        } else if (viewName == "chat") {
+            auto cur = getPaneContent(PaneSlot::Right);
+            setPaneContent(PaneSlot::Right,
+                           cur == PaneContent::Chat ? PaneContent::Hidden : PaneContent::Chat);
+        }
     };
-    sidebar.getPaneContent = [this](const std::string& slot) -> std::string {
-        PaneSlot s = PaneSlot::Left;
-        if (slot == "sidebar") s = PaneSlot::Sidebar;
-        else if (slot == "left") s = PaneSlot::Left;
-        else if (slot == "right") s = PaneSlot::Right;
-        else if (slot == "bottom") s = PaneSlot::Bottom;
-        return contentToString(getPaneContent(s));
+    sidebar.isViewActive = [this](const std::string& viewName) -> bool {
+        if (viewName == "produce")   return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
+        if (viewName == "performer") return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                                         || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+        if (viewName == "mixer")     return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
+        if (viewName == "chat")      return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
+        return false;
     };
+    // sidebar.onNewSong is wired by main.mm after layout construction.
 
     // Load system prompt for Claude
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
@@ -343,63 +346,14 @@ void MainLayout::loadPaneConfig() {
 
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
-
-    // Toolbar
-    auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(toolbar);
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
-
-    // Navigation buttons
-    g.setFont(Theme::font(Theme::fontSizeMd));
-    for (int i = 0; i < (int)navButtons.size(); ++i) {
-        auto& btn = navButtons[i];
-        bool active = isNavActive(i);
-        bool hovered = (i == hoveredNavButton);
-
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::textPrimary));
-        } else if (hovered) {
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-        } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-        }
-        g.drawText(btn.label, btn.bounds, juce::Justification::centred);
-
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::accent));
-            g.fillRect(btn.bounds.getX(), btn.bounds.getBottom() - 2,
-                       btn.bounds.getWidth(), 2);
-        }
-    }
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-    auto toolbarArea = area.removeFromTop(toolbarHeight);
 
-    // Nav buttons — left-aligned in toolbar
-    navButtons = {
-        { "Sidebar",   {} },
-        { "Producer",  {} },
-        { "Performer", {} },
-        { "Mixer",     {} },
-    };
-    int btnX = Theme::spacingM;
-    auto f = Theme::font(Theme::fontSizeMd);
-    for (auto& btn : navButtons) {
-        juce::GlyphArrangement ga;
-        ga.addLineOfText(f, btn.label, 0, 0);
-        int w = (int)ga.getBoundingBox(0, -1, false).getWidth() + Theme::spacingXl;
-        btn.bounds = juce::Rectangle<int>(btnX, toolbarArea.getY(), w, toolbarArea.getHeight());
-        btnX += w + Theme::spacingS;
-    }
-
-    // Build info — right-aligned, shares toolbar space with nav buttons
-    int infoLeft = btnX + Theme::spacingXl;
-    auto infoArea = toolbarArea.withLeft(infoLeft).reduced(Theme::spacingM, 0);
-    buildInfoField.setBounds(infoArea);
+    // Build info — small, bottom-right corner of the window
+    buildInfoField.setBounds(area.getRight() - 160, area.getBottom() - 20, 150, 18);
+    buildInfoField.toFront(false);
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);

@@ -1,12 +1,17 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_audio_devices/juce_audio_devices.h>
-#include "gui/RegistryTree.h"
 #include "gui/Theme.h"
+#include <string>
+#include <vector>
+#include <functional>
 
 class StateAPI;
 class EngineAPI;
 class PerformanceCoordinator;
+
+// Sidebar — categorized list of navigation items and content.
+// Always expanded, one level deep: section headers with clickable items below.
+// Replaces the old tabbed tree view.
 
 class Sidebar : public juce::Component, private juce::Timer {
 public:
@@ -23,42 +28,39 @@ public:
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
-    // Legacy pane callbacks (still used by some paths)
-    std::function<void()> onProduceSelected;
-    std::function<void()> onDebugSelected;
-    std::function<void()> onLogsSelected;
-    std::function<void()> onChatSelected;
-    std::function<void(const std::string& slot, const std::string& content)> onPaneSelected;
-    std::function<std::string(const std::string& slot)> getPaneContent;
+    // Navigation callbacks — MainLayout sets these
+    std::function<void(const std::string& viewName)> onToggleView;
+    std::function<bool(const std::string& viewName)> isViewActive;
+    std::function<void()> onNewSong;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;
+    void mouseMove(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
 
 private:
-    enum Tab { Songs = 0, Library, Actions, Devices, TabCount };
-    Tab activeTab = Songs;
-
-    void timerCallback() override;
-    void refreshTree();
-    void refreshSongsTab();
-    void refreshLibraryTab();
-    void refreshActionsTab();
-    void refreshDevicesTab();
-
     StateAPI* state = nullptr;
     EngineAPI* engineAPI = nullptr;
     PerformanceCoordinator* coordinator = nullptr;
-    RegistryTree tree;
     int subscriptionId = -1;
-    bool needsRefresh = false;
-    std::string lastHighlightedId;
-    std::string selectedDeviceId;
-    int lastMidiDeviceCount = -1;
-    juce::String lastAudioOutputName;
-    juce::String lastAudioInputName;
 
-    static constexpr int tabBarHeight = 34;
-    static constexpr int tabCount = 4;
-    juce::Rectangle<int> getTabBounds(int tabIndex) const;
+    // Item model — rebuilt on refresh
+    struct Item {
+        enum Kind { SectionHeader, ViewToggle, SongEntry, ActionButton };
+        Kind kind;
+        juce::String label;
+        std::string id;        // view name or song id
+        juce::Rectangle<int> bounds;
+    };
+    std::vector<Item> items;
+    int hoveredIndex = -1;
+
+    void rebuild();
+    void timerCallback() override;
+
+    static constexpr int sectionHeight = 32;
+    static constexpr int itemHeight = 30;
+    static constexpr int sectionGap = 16;
+    static constexpr int leftPad = 14;
 };
