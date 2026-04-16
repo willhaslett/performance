@@ -81,6 +81,7 @@ target_sources(Performance PRIVATE
     src/gui/SongMappingsPane.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
+    src/gui/PerformanceLookAndFeel.cpp
     src/api/ClaudeClient.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp

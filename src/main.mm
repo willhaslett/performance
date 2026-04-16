@@ -6,6 +6,7 @@
 #include "gui/KeyBindings.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
+#include "gui/PerformanceLookAndFeel.h"
 #include "gui/SettingsWindow.h"
 #include "gui/KeyBindingManager.h"
 #include "gui/KeyBindingEditor.h"
@@ -435,6 +436,11 @@ public:
         // New system: in-memory state + persistence
         coordinator = std::make_unique<PerformanceCoordinator>();
         coordinator->initialise();
+
+        // Set app-wide LookAndFeel AFTER theme loads (coordinator->initialise
+        // loads the active theme) so popup menus, combo boxes, etc. match.
+        static PerformanceLookAndFeel performanceLaf;
+        juce::LookAndFeel::setDefaultLookAndFeel(&performanceLaf);
 
         luaEngine = std::make_unique<LuaEngine>(
             coordinator->state(), coordinator->engine(), *coordinator);
