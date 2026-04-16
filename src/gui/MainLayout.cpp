@@ -129,14 +129,27 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     setWantsKeyboardFocus(true);
 
-    // Sidebar navigation — view toggles and active state queries
+    // Sidebar navigation — toggle individual panels within the current mode.
+    // Changes are saved to the current mode's layout automatically.
     sidebar.onToggleView = [this](const std::string& viewName) {
-        if (viewName == "produce") {
+        if (viewName == "sidebar") {
+            auto cur = getPaneContent(PaneSlot::Sidebar);
+            setPaneContent(PaneSlot::Sidebar,
+                           cur == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
+        } else if (viewName == "produce") {
             auto cur = getPaneContent(PaneSlot::Left);
             setPaneContent(PaneSlot::Left,
                            cur == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
-        } else if (viewName == "performer") {
-            handleNavClick(2);  // reuse the Performer pair-toggle from toolbar
+        } else if (viewName == "perform") {
+            bool active = getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                       || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+            if (active) {
+                setPaneContent(PaneSlot::Left, PaneContent::Hidden);
+                setPaneContent(PaneSlot::Right, PaneContent::Hidden);
+            } else {
+                setPaneContent(PaneSlot::Left, PaneContent::Controllers);
+                setPaneContent(PaneSlot::Right, PaneContent::SongMappings);
+            }
         } else if (viewName == "mixer") {
             auto cur = getPaneContent(PaneSlot::Bottom);
             setPaneContent(PaneSlot::Bottom,
@@ -146,13 +159,15 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
             setPaneContent(PaneSlot::Right,
                            cur == PaneContent::Chat ? PaneContent::Hidden : PaneContent::Chat);
         }
+        savePaneConfig();
     };
     sidebar.isViewActive = [this](const std::string& viewName) -> bool {
-        if (viewName == "produce")   return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
-        if (viewName == "performer") return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
-                                         || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
-        if (viewName == "mixer")     return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
-        if (viewName == "chat")      return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
+        if (viewName == "sidebar")  return getPaneContent(PaneSlot::Sidebar) != PaneContent::Hidden;
+        if (viewName == "produce")  return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
+        if (viewName == "perform")  return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                                        || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+        if (viewName == "mixer")    return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
+        if (viewName == "chat")     return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
         return false;
     };
     // sidebar.onNewSong is wired by main.mm after layout construction.
@@ -346,13 +361,21 @@ void MainLayout::loadPaneConfig() {
 
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
+
+    // Toolbar — just build info
+    auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
+    g.setColour(Theme::color(Theme::Color::bgPanel));
+    g.fillRect(toolbar);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
+    auto toolbarArea = area.removeFromTop(toolbarHeight);
 
-    // Build info — small, bottom-right corner of the window
-    buildInfoField.setBounds(area.getRight() - 160, area.getBottom() - 20, 150, 18);
+    // Build info — right-aligned in toolbar
+    buildInfoField.setBounds(toolbarArea.getRight() - 160, toolbarArea.getY(), 150, toolbarArea.getHeight());
     buildInfoField.toFront(false);
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
@@ -401,74 +424,10 @@ void MainLayout::resized() {
     }
 }
 
-void MainLayout::mouseUp(const juce::MouseEvent& event) {
-    for (int i = 0; i < (int)navButtons.size(); ++i) {
-        if (navButtons[i].bounds.contains(event.getPosition())) {
-            handleNavClick(i);
-            return;
-        }
-    }
+void MainLayout::mouseUp(const juce::MouseEvent& /*event*/) {
 }
 
-void MainLayout::mouseMove(const juce::MouseEvent& event) {
-    int prev = hoveredNavButton;
-    hoveredNavButton = -1;
-    for (int i = 0; i < (int)navButtons.size(); ++i) {
-        if (navButtons[i].bounds.contains(event.getPosition())) {
-            hoveredNavButton = i;
-            break;
-        }
-    }
-    if (prev != hoveredNavButton) repaint();
-}
-
-bool MainLayout::isNavActive(int index) const {
-    switch (index) {
-        case 0: return getPaneContent(PaneSlot::Sidebar) != PaneContent::Hidden;
-        case 1: return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
-        case 2: return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
-                     || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
-        case 3: return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
-        default: return false;
-    }
-}
-
-void MainLayout::handleNavClick(int index) {
-    switch (index) {
-        case 0: { // Sidebar
-            auto cur = getPaneContent(PaneSlot::Sidebar);
-            setPaneContent(PaneSlot::Sidebar,
-                           cur == PaneContent::Hidden ? PaneContent::SidebarTree
-                                                      : PaneContent::Hidden);
-            break;
-        }
-        case 1: { // Producer
-            auto cur = getPaneContent(PaneSlot::Left);
-            setPaneContent(PaneSlot::Left,
-                           cur == PaneContent::Produce ? PaneContent::Hidden
-                                                       : PaneContent::Produce);
-            break;
-        }
-        case 2: { // Performer — toggles the Controllers + SongMappings pair
-            bool active = getPaneContent(PaneSlot::Left) == PaneContent::Controllers
-                       || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
-            if (active) {
-                setPaneContent(PaneSlot::Left, PaneContent::Hidden);
-                setPaneContent(PaneSlot::Right, PaneContent::Hidden);
-            } else {
-                setPaneContent(PaneSlot::Left, PaneContent::Controllers);
-                setPaneContent(PaneSlot::Right, PaneContent::SongMappings);
-            }
-            break;
-        }
-        case 3: { // Mixer
-            auto cur = getPaneContent(PaneSlot::Bottom);
-            setPaneContent(PaneSlot::Bottom,
-                           cur == PaneContent::Mixer ? PaneContent::Hidden
-                                                     : PaneContent::Mixer);
-            break;
-        }
-    }
+void MainLayout::mouseMove(const juce::MouseEvent& /*event*/) {
 }
 
 void MainLayout::toggleMusicalTyping() {
@@ -656,4 +615,158 @@ void MainLayout::showOverlay(const juce::String& message) {
 
 void MainLayout::hideOverlay() {
     removeChildComponent(&overlay);
+}
+
+// --- Startup Chooser ---
+
+void MainLayout::StartupChooser::setSongs(
+        const std::vector<std::pair<std::string, std::string>>& songList) {
+    songs.clear();
+    for (auto& [id, name] : songList)
+        songs.push_back({ id, juce::String(name), {} });
+    resized();
+    repaint();
+}
+
+void MainLayout::StartupChooser::resized() {
+    int cardW = 400;
+    int titleH = 50;
+    int listPad = 16;
+    int itemH = 32;
+    int minListRows = 5;
+    int listRows = std::max(minListRows, (int)songs.size());
+    int listH = listRows * itemH;
+    int buttonH = 38;
+    int sectionGap = 16;
+    int cardPad = 20;
+
+    int cardX = (getWidth() - cardW) / 2;
+    int cardY = getHeight() / 5;
+
+    // Song rows inside the list container
+    int listX = cardX + cardPad;
+    int listY = cardY + titleH + listPad;
+    int listW = cardW - cardPad * 2;
+
+    for (int i = 0; i < (int)songs.size(); ++i)
+        songs[i].bounds = { listX + 4, listY + i * itemH, listW - 8, itemH };
+
+    // New Song button below the list
+    int btnY = cardY + titleH + listPad * 2 + listH + sectionGap;
+    newSongBounds = { cardX + cardPad, btnY, cardW - cardPad * 2, buttonH };
+}
+
+void MainLayout::StartupChooser::paint(juce::Graphics& g) {
+    // Gentle dim — enough to accent the popup without crushing the background
+    g.fillAll(juce::Colour(0x60000000));
+
+    // Card layout constants
+    int cardW = 400;
+    int titleH = 50;
+    int listPad = 16;
+    int itemH = 32;
+    int minListRows = 5;
+    int listRows = std::max(minListRows, (int)songs.size());
+    int listH = listRows * itemH;
+    int buttonH = 38;
+    int sectionGap = 16;
+    int cardPad = 20;
+    int cardH = titleH + listPad * 2 + listH + sectionGap + buttonH + cardPad;
+
+    int cardX = (getWidth() - cardW) / 2;
+    int cardY = getHeight() / 5;
+    auto cardBounds = juce::Rectangle<int>(cardX, cardY, cardW, cardH);
+
+    // Shadow
+    g.setColour(juce::Colour(0x18000000));
+    g.fillRoundedRectangle(cardBounds.expanded(6).toFloat(), Theme::cornerRadius + 2);
+
+    // Card fill
+    g.setColour(Theme::color(Theme::Color::bgPanel));
+    g.fillRoundedRectangle(cardBounds.toFloat(), Theme::cornerRadius);
+    g.setColour(Theme::color(Theme::Color::border));
+    g.drawRoundedRectangle(cardBounds.toFloat(), Theme::cornerRadius, 1.0f);
+
+    // Title
+    g.setColour(Theme::color(Theme::Color::textPrimary));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
+    g.drawText("Choose a Song", cardBounds.getX(), cardBounds.getY(),
+               cardBounds.getWidth(), titleH, juce::Justification::centred);
+
+    // Song list container — Finder-like inset pane
+    int listX = cardX + cardPad;
+    int listY = cardY + titleH;
+    int listW = cardW - cardPad * 2;
+    auto listBounds = juce::Rectangle<int>(listX, listY, listW, listH + listPad * 2);
+
+    g.setColour(Theme::color(Theme::Color::bgSlot));
+    g.fillRoundedRectangle(listBounds.toFloat(), Theme::cornerRadiusSm);
+
+    // Song rows — each row gets a visible background so it reads as a
+    // discrete item even when there's only one. The empty space below
+    // stays as the container color, providing the "this is a list" cue.
+    for (int i = 0; i < (int)songs.size(); ++i) {
+        auto& s = songs[i];
+        bool hovered = (hoveredIndex == i);
+
+        if (hovered) {
+            g.setColour(Theme::color(Theme::Color::accent));
+            g.fillRoundedRectangle(s.bounds.toFloat(), Theme::cornerRadiusXs);
+            g.setColour(Theme::color(Theme::Color::textOnColor));
+        } else {
+            // Alternating row tones for visual rhythm
+            g.setColour(Theme::color((i % 2 == 0) ? Theme::Color::bgControl
+                                                   : Theme::Color::bgStripe));
+            g.fillRoundedRectangle(s.bounds.toFloat(), Theme::cornerRadiusXs);
+            g.setColour(Theme::color(Theme::Color::textPrimary));
+        }
+        g.setFont(Theme::font(Theme::fontSizeLg));
+        g.drawText(s.name, s.bounds.reduced(Theme::spacingL, 0),
+                   juce::Justification::centredLeft);
+    }
+
+    if (songs.empty()) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.drawText("No songs yet", listBounds, juce::Justification::centred);
+    }
+
+    // "Create New Song" button — visually distinct from the list
+    bool newHovered = (hoveredIndex == -2);
+    if (newHovered) {
+        g.setColour(Theme::color(Theme::Color::accent));
+        g.fillRoundedRectangle(newSongBounds.toFloat(), Theme::cornerRadiusSm);
+        g.setColour(Theme::color(Theme::Color::textOnColor));
+    } else {
+        g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.7f));
+        g.drawRoundedRectangle(newSongBounds.toFloat().reduced(0.5f), Theme::cornerRadiusSm, 1.5f);
+        g.setColour(Theme::color(Theme::Color::accent));
+    }
+    g.setFont(Theme::font(Theme::fontSizeLg));
+    g.drawText("Create New Song", newSongBounds, juce::Justification::centred);
+}
+
+void MainLayout::StartupChooser::mouseUp(const juce::MouseEvent& event) {
+    auto pos = event.getPosition();
+    for (int i = 0; i < (int)songs.size(); ++i) {
+        if (songs[i].bounds.contains(pos) && onLoadSong) {
+            onLoadSong(songs[i].id);
+            return;
+        }
+    }
+    if (newSongBounds.contains(pos) && onNewSong) {
+        onNewSong();
+    }
+}
+
+void MainLayout::StartupChooser::mouseMove(const juce::MouseEvent& event) {
+    int prev = hoveredIndex;
+    hoveredIndex = -1;
+    auto pos = event.getPosition();
+    for (int i = 0; i < (int)songs.size(); ++i) {
+        if (songs[i].bounds.contains(pos)) { hoveredIndex = i; break; }
+    }
+    if (hoveredIndex == -1 && newSongBounds.contains(pos))
+        hoveredIndex = -2;
+    if (prev != hoveredIndex) repaint();
 }

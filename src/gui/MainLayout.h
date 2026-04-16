@@ -99,36 +99,49 @@ private:
     static PaneContent stringToContent(const std::string& s);
     static const char* contentLabel(PaneContent content);
 
-    // Save/restore pane config
+    // Save/restore pane config (delegates to mode layouts)
     void savePaneConfig();
     void loadPaneConfig();
 
     Divider sidebarDivider { Divider::Vertical };
     juce::TextEditor buildInfoField;
 
-    // Toolbar navigation buttons
-    struct NavButton { juce::String label; juce::Rectangle<int> bounds; };
-    std::vector<NavButton> navButtons;
-    int hoveredNavButton = -1;
-    void handleNavClick(int index);
-    bool isNavActive(int index) const;
-
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;
-    static constexpr int toolbarHeight = 32;
+    static constexpr int toolbarHeight = 36;
     static constexpr int minPaneSize = 100;
 
-    // Overlay
+    // Loading overlay
     struct Overlay : public juce::Component {
         juce::String message;
         void paint(juce::Graphics& g) override {
-            g.fillAll(juce::Colour(0xaa000000));
-            g.setColour(juce::Colour(0xffcccccc));
-            g.setFont(juce::FontOptions(18.0f));
+            g.fillAll(Theme::color(Theme::Color::overlayDim));
+            g.setColour(Theme::color(Theme::Color::textPrimary));
+            g.setFont(Theme::font(Theme::fontSizeTitle));
             g.drawText(message, getLocalBounds(), juce::Justification::centred);
         }
     };
     Overlay overlay;
+
+    // Startup song chooser — shown when 1+ songs exist and no song is loaded
+    struct StartupChooser : public juce::Component {
+        struct SongItem { std::string id; juce::String name; juce::Rectangle<int> bounds; };
+        std::vector<SongItem> songs;
+        juce::Rectangle<int> newSongBounds;
+        int hoveredIndex = -1;  // -1 = none, -2 = new song button, 0+ = song index
+
+        std::function<void(const std::string& songId)> onLoadSong;
+        std::function<void()> onNewSong;
+
+        void setSongs(const std::vector<std::pair<std::string, std::string>>& songList);
+        void paint(juce::Graphics& g) override;
+        void mouseUp(const juce::MouseEvent& event) override;
+        void mouseMove(const juce::MouseEvent& event) override;
+        void resized() override;
+    };
+public:
+    StartupChooser startupChooser;
+private:
 
     KeyBindingManager* keyBindingMgr = nullptr;
 

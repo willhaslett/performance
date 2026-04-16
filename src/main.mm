@@ -663,40 +663,29 @@ private:
     }
 
     void showStartupSongChooser(MainLayout* layout) {
-        juce::PopupMenu menu;
-        menu.addItem(1, "New Song");
-        menu.addSeparator();
+        // Build song list
+        std::vector<std::pair<std::string, std::string>> songList;
+        for (auto& s : coordinator->state().allSongs())
+            songList.push_back({ s.id, s.name });
 
-        auto& songs = coordinator->state().allSongs();
-        for (int i = 0; i < (int)songs.size(); ++i)
-            menu.addItem(100 + i, juce::String(songs[i].name));
+        auto& chooser = layout->startupChooser;
+        chooser.setSongs(songList);
+        chooser.setBounds(layout->getLocalBounds());
+        layout->addAndMakeVisible(chooser);
+        chooser.toFront(false);
 
-        // Show centered in the window
-        auto centre = layout->getScreenBounds().getCentre();
-        menu.showMenuAsync(
-            juce::PopupMenu::Options()
-                .withTargetScreenArea(juce::Rectangle<int>(centre.x, centre.y, 1, 1)),
-            [this, layout, &songs](int result) {
-                if (result == 1) {
-                    coordinator->createDefaultSong("Untitled");
-                } else if (result >= 100) {
-                    int idx = result - 100;
-                    auto& allSongs = coordinator->state().allSongs();
-                    if (idx < (int)allSongs.size()) {
-                        layout->showOverlay("Loading song...");
-                        auto songId = allSongs[idx].id;
-                        juce::MessageManager::callAsync([this, layout, songId] {
-                            coordinator->loadSong(songId);
-                            layout->hideOverlay();
-                        });
-                    }
-                } else {
-                    // User dismissed menu — load the first song as fallback
-                    auto& allSongs = coordinator->state().allSongs();
-                    if (!allSongs.empty())
-                        coordinator->loadSong(allSongs[0].id);
-                }
+        chooser.onLoadSong = [this, layout](const std::string& songId) {
+            layout->removeChildComponent(&layout->startupChooser);
+            layout->showOverlay("Loading song...");
+            juce::MessageManager::callAsync([this, layout, songId] {
+                coordinator->loadSong(songId);
+                layout->hideOverlay();
             });
+        };
+        chooser.onNewSong = [this, layout]() {
+            layout->removeChildComponent(&layout->startupChooser);
+            coordinator->createDefaultSong("Untitled");
+        };
     }
 
     void setupKeyBindings() {

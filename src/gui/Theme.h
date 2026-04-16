@@ -19,6 +19,7 @@ namespace Theme {
         inline uint32_t bgControl       = 0xff2d2d2d;  // interactive control base
         inline uint32_t bgControlHover  = 0xff333333;  // interactive control hover
         inline uint32_t bgSelection     = 0xff262626;  // selected track row highlight
+        inline uint32_t bgStripe        = 0xff343434;  // alternate-row zebra stripe in list panes
         inline uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
         inline uint32_t bgDisabled      = 0xff252525;  // disabled strip/header
         inline uint32_t bgRecessed      = 0xff121212;  // meter grooves, fader tracks

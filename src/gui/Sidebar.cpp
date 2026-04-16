@@ -35,18 +35,21 @@ void Sidebar::rebuild() {
     items.clear();
     int y = Theme::spacingM;
 
-    // --- VIEWS ---
-    items.push_back({ Item::SectionHeader, "VIEWS", "", {} });
+    // --- PANES ---
+    items.push_back({ Item::SectionHeader, "PANES", "", {} });
     items.back().bounds = { 0, y, getWidth(), sectionHeight };
     y += sectionHeight;
 
-    for (auto& v : std::vector<std::pair<std::string, juce::String>>{
-        {"produce",   "Producer"},
-        {"performer", "Performer"},
-        {"mixer",     "Mixer"},
-        {"chat",      "Chat"},
+    juce::String cmd = juce::String::fromUTF8("\xe2\x8c\x98");
+    for (auto& v : std::vector<std::tuple<std::string, juce::String, juce::String>>{
+        {"sidebar",  "Sidebar",  cmd + "P"},
+        {"produce",  "Produce",  cmd + "Y"},
+        {"perform",  "Perform",  cmd + "U"},
+        {"mixer",    "Mixer",    cmd + "B"},
+        {"chat",     "Chat",     cmd + "I"},
     }) {
-        items.push_back({ Item::ViewToggle, v.second, v.first, {} });
+        auto& [id, label, shortcut] = v;
+        items.push_back({ Item::ViewToggle, label, id, {}, shortcut });
         items.back().bounds = { 0, y, getWidth(), itemHeight };
         y += itemHeight;
     }
@@ -130,8 +133,16 @@ void Sidebar::paint(juce::Graphics& g) {
                                 : Theme::color(Theme::Color::textSecondary));
         }
         g.setFont(Theme::font(Theme::fontSizeLg));
-        g.drawText(item.label, bounds.withLeft(leftPad + (active ? 6 : 0)),
+        g.drawText(item.label, bounds.withLeft(leftPad + (active ? 6 : 0)).withTrimmedRight(50),
                    juce::Justification::centredLeft);
+
+        // Keybinding hint — right-aligned, dim
+        if (item.shortcut.isNotEmpty()) {
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(Theme::fontSizeSm));
+            g.drawText(item.shortcut, bounds.withTrimmedRight(leftPad),
+                       juce::Justification::centredRight);
+        }
     }
 }
 

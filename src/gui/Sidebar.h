@@ -52,6 +52,7 @@ private:
         juce::String label;
         std::string id;        // view name or song id
         juce::Rectangle<int> bounds;
+        juce::String shortcut; // keybinding hint (e.g., "⌘P")
     };
     std::vector<Item> items;
     int hoveredIndex = -1;

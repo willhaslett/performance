@@ -36,6 +36,7 @@ namespace {
             {"bgControl",       &Color::bgControl},
             {"bgControlHover",  &Color::bgControlHover},
             {"bgSelection",     &Color::bgSelection},
+            {"bgStripe",        &Color::bgStripe},
             {"bgOverlay",       &Color::bgOverlay},
             {"bgDisabled",      &Color::bgDisabled},
             {"bgRecessed",      &Color::bgRecessed},
@@ -315,6 +316,7 @@ void loadDefaultTheme() {
     Color::bgControl       = 0xff2d2d2d;
     Color::bgControlHover  = 0xff333333;
     Color::bgSelection     = 0xff262626;
+    Color::bgStripe        = 0xff343434;
     Color::bgOverlay       = 0xff2a2a2a;
     Color::bgDisabled      = 0xff252525;
     Color::bgRecessed      = 0xff121212;
