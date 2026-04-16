@@ -346,63 +346,14 @@ void MainLayout::loadPaneConfig() {
 
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
-
-    // Toolbar
-    auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(toolbar);
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
-
-    // Navigation buttons
-    g.setFont(Theme::font(Theme::fontSizeMd));
-    for (int i = 0; i < (int)navButtons.size(); ++i) {
-        auto& btn = navButtons[i];
-        bool active = isNavActive(i);
-        bool hovered = (i == hoveredNavButton);
-
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::textPrimary));
-        } else if (hovered) {
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-        } else {
-            g.setColour(Theme::color(Theme::Color::textDim));
-        }
-        g.drawText(btn.label, btn.bounds, juce::Justification::centred);
-
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::accent));
-            g.fillRect(btn.bounds.getX(), btn.bounds.getBottom() - 2,
-                       btn.bounds.getWidth(), 2);
-        }
-    }
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-    auto toolbarArea = area.removeFromTop(toolbarHeight);
 
-    // Nav buttons — left-aligned in toolbar
-    navButtons = {
-        { "Sidebar",   {} },
-        { "Producer",  {} },
-        { "Performer", {} },
-        { "Mixer",     {} },
-    };
-    int btnX = Theme::spacingM;
-    auto f = Theme::font(Theme::fontSizeMd);
-    for (auto& btn : navButtons) {
-        juce::GlyphArrangement ga;
-        ga.addLineOfText(f, btn.label, 0, 0);
-        int w = (int)ga.getBoundingBox(0, -1, false).getWidth() + Theme::spacingXl;
-        btn.bounds = juce::Rectangle<int>(btnX, toolbarArea.getY(), w, toolbarArea.getHeight());
-        btnX += w + Theme::spacingS;
-    }
-
-    // Build info — right-aligned, shares toolbar space with nav buttons
-    int infoLeft = btnX + Theme::spacingXl;
-    auto infoArea = toolbarArea.withLeft(infoLeft).reduced(Theme::spacingM, 0);
-    buildInfoField.setBounds(infoArea);
+    // Build info — small, bottom-right corner of the window
+    buildInfoField.setBounds(area.getRight() - 160, area.getBottom() - 20, 150, 18);
+    buildInfoField.toFront(false);
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);

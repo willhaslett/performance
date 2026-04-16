@@ -92,7 +92,7 @@ void Sidebar::paint(juce::Graphics& g) {
 
         if (item.kind == Item::SectionHeader) {
             g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSizeXs));
+            g.setFont(Theme::font(Theme::fontSizeSm));
             g.drawText(item.label, bounds.withLeft(leftPad), juce::Justification::centredLeft);
             continue;
         }
@@ -129,7 +129,7 @@ void Sidebar::paint(juce::Graphics& g) {
             g.setColour(hovered ? Theme::color(Theme::Color::textPrimary)
                                 : Theme::color(Theme::Color::textSecondary));
         }
-        g.setFont(Theme::font(Theme::fontSizeMd));
+        g.setFont(Theme::font(Theme::fontSizeLg));
         g.drawText(item.label, bounds.withLeft(leftPad + (active ? 6 : 0)),
                    juce::Justification::centredLeft);
     }

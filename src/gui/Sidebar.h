@@ -59,8 +59,8 @@ private:
     void rebuild();
     void timerCallback() override;
 
-    static constexpr int sectionHeight = 28;
-    static constexpr int itemHeight = 26;
-    static constexpr int sectionGap = 12;
-    static constexpr int leftPad = 12;
+    static constexpr int sectionHeight = 32;
+    static constexpr int itemHeight = 30;
+    static constexpr int sectionGap = 16;
+    static constexpr int leftPad = 14;
 };
