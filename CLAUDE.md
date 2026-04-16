@@ -8,114 +8,133 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Current version: `0.0.1`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.1)`. `0.1.0` will be the first beta.
 
-**Build pipeline:** `scripts/build-release.sh [version]` — one command for Release build → code sign → DMG → notarize → staple. Version defaults to the CMake version. Output: `dist/Performance-<version>.dmg`. Requires Apple Developer ID certificate + keychain-stored notarization credentials (setup documented in the script).
+**Build pipeline:** `scripts/build-release.sh [version]` — one command for Release build → code sign → DMG → notarize → staple. Version defaults to the CMake version. Output: `dist/Performance-<version>.dmg`. Requires Apple Developer ID certificate (William Haslett, H25TK2U8FA) + keychain-stored notarization credentials (`AC_PASSWORD` profile). First successful end-to-end run completed.
 
-**Beta expiry:** compiled-in date check in `main.mm` — currently October 16, 2026 (6 months). Shows dialog and quits if expired. Update the `juce::Time` constructor for each release cycle.
+**Beta expiry:** compiled-in date check in `main.mm` — currently October 16, 2026 (6 months from April 2026). Shows dialog and quits if expired. Update the `juce::Time` constructor for each release cycle.
 
-**Binary:** Universal (arm64 + x86_64), deployment target macOS 11.0 (Big Sur). Covers every Mac still receiving security updates.
+**Binary:** Universal (arm64 + x86_64), deployment target macOS 11.0 (Big Sur).
 
-**Toolbar build info:** commit hash shown right-aligned in the toolbar (`textDim`, `fontSizeSm`, selectable/copyable TextEditor). When the commit is tagged (e.g., `git tag v0.0.1`), the tag appears alongside the hash. Reconfigure CMake (`cmake -S . -B build`) to pick up new git state.
+**Toolbar:** minimal — just build info (commit hash, selectable/copyable TextEditor, `textDim`/`fontSizeSm`) right-aligned. When the commit is tagged, the tag appears alongside. Reconfigure CMake to pick up new git state.
 
-**Theme system:** see Theme section below. Factory themes (`minimal_dark`, `minimal_light`) baked into binary via `juce_add_binary_data` from `runtime/themes/*.json`. User themes in `~/.config/performance/themes/` override factory on id collision. Active theme: `config["active_theme"]`, defaults to `"minimal_dark"`.
+**Reset script:** `bin/reset` — scorched-earth reset preserving `keys/` (notarization) and `plugin-cache.xml` (AU scan cache). Simulates first-ever launch.
 
-**Context menus:** `PerformanceLookAndFeel` (`src/gui/PerformanceLookAndFeel.h/.cpp`) set as app-wide default at startup. Styles all JUCE-drawn popup menus, combo box dropdowns, scroll bars, and document window chrome using Theme tokens. Native macOS menu bar is unaffected (drawn by OS).
+### Bundled plugins (mda-plugins-juce, MIT license)
+
+15 AU plugins built from the `lib/mda-plugins-juce` submodule via CMake macros. Installed to `~/Library/Audio/Plug-Ins/Components/` on build (`COPY_PLUGIN_AFTER_BUILD`). Discovered automatically by the app's AU scanner.
+
+**Instruments:** mda Piano, EPiano, DX10 (FM synth), JX10 (analog poly), SubSynth.
+**Effects:** Ambience (reverb), Delay, Detune (chorus), Dynamics (compressor), Limiter, Overdrive, Degrade (lo-fi), RezFilter, RingMod, Stereo.
+
+First-time users get a usable set of instruments and effects without installing third-party plugins.
 
 ### Pre-beta checklist (for first-friend distribution)
 
 - [x] Code signing + notarization pipeline
 - [x] Beta expiry check
 - [x] Universal binary (arm64 + x86_64)
-- [x] Build info in toolbar (commit hash + tagged version)
+- [x] Build info in toolbar
 - [x] Themed context menus via LookAndFeel
+- [x] Startup song chooser (themed modal card)
+- [x] Default song template (DLS Electric Piano + Audio In)
+- [x] Plugin scan overlay ("Scanning plugins..." shown while AU scan runs)
+- [x] Debounced autosave (3-second quiet period after last state change)
+- [x] Bundled mda plugins (15 instruments + effects, MIT)
+- [x] File → Open Song submenu
 - [ ] First-run audio device auto-selection (currently requires manual Settings → Output Device)
-- [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails (currently silent)
-- [ ] Getting started doc — keyboard shortcuts cheat sheet, audio setup, basic workflow
-- [ ] "Show Log File" menu item — so testers can find `/tmp/performance.log` to report crashes
-- [ ] Feedback channel — email, form, or built-in "Report Issue" link
+- [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails
+- [ ] Getting started doc — keyboard shortcuts, audio setup, basic workflow
+- [ ] "Show Log File" menu item for crash reporting
+- [ ] Feedback channel for testers
+- [ ] Ship plugin cache in the DMG (avoids cold AU scan on first launch — scan can hang on bad plugins)
 
 ## Active Work
 
-### GUI architecture — current state
+### First-user-testing push
 
-The Performer view is now split into **two independent pane content types**: `ControllersPane` (device tree, learn mode, MIDI control rows) and `SongMappingsPane` (Atemporal + Score sections). Both can be placed in any Left/Right slot. `⌘U` toggles the pair together (Left=Controllers, Right=SongMappings). Cross-pane drag uses JUCE's `DragAndDropContainer` (rooted at `MainLayout`) / `DragAndDropTarget` pattern. MainLayout also installs a single global MIDI monitor and dispatches to both panes for activity dots.
+The immediate goal is getting the app in the hands of 4 musician friends. Focus is on UX that makes the app self-explanatory for a non-developer musician who records real instruments.
 
-**Per-content preferred widths** are in: swapping a content type into the Left slot snaps the divider to that content's preferred proportion (`Controllers = 0.28`, `SongMappings = 0.55`, `Produce = 0.65`, etc.). No user-drag divider yet.
+### Startup flow
 
-**File → Open Song ▸** cascading submenu with live menu invalidation. macOS menu cache refreshes via `menuItemsChanged()` on Song/Config state events.
+**Zero songs (first-ever launch):** auto-creates "Untitled" with DLS Electric Piano (Track 1, MIDI program 4) + Audio In (Track 2, disarmed, input monitoring off). User presses a key, hears sound.
+
+**1+ songs (subsequent launches):** themed startup chooser card — "Choose a Song" title, inset list pane with song rows (`bgControl`/`bgStripe` alternating, accent-blue hover), "Create New Song" button (accent outline, accent fill on hover). No way to dismiss without choosing — must-act modal.
+
+**Deleting all songs:** auto-creates a new "Untitled" default song. Never leaves zero songs.
+
+**Plugin scan:** deferred to after the window is visible. Shows "Scanning plugins..." overlay. 100ms timer delay ensures the overlay paints before the blocking scan starts. Only triggers when `plugin-cache.xml` is missing.
+
+### Save model
+
+**Fully automatic.** No manual save needed. Debounced: StateEvent subscription stamps `lastStateChangeMs` on every mutation; 60Hz timer flushes to SQLite after 3 seconds of quiet. Explicit `save()` still exists for quit, song-switch, and File → Save (force flush). The concept of "unsaved changes" does not exist — undo is the safety net.
+
+### Sidebar
+
+Rewritten as a **flat categorized list** (no tabs, no tree). Two sections:
+
+**PANES** — one entry per pane with keybinding hint (e.g., "Produce ⌘Y"). Click to toggle show/hide. "Perform" (⌘U) toggles ControllersPane + SongMappingsPane as a pair. Active panes show accent bar + `bgSelection` highlight.
+
+**SONGS** — list of all songs (click to load) + "Create New Song" action button.
+
+Themed: `bgSurface` container, `fontSizeSm` section headers, `fontSizeLg` items, `bgControlHover` on hover.
+
+### Navigation model
+
+Every pane is a simple show/hide toggle — no modes, no workspace concept. The Perform/Produce distinction is just "which main pane is showing." A mode-switcher experiment (toolbar pill with per-mode layout state) was tried and reverted — the complexity wasn't justified for what's really just one pane swapping.
+
+**Pane slots:** Sidebar (left column), Left (main area), Right (secondary), Bottom (mixer). Each slot holds one content type. Some content types pair together (Perform = Controllers in Left + SongMappings in Right).
+
+**Per-content preferred widths:** swapping content into the Left slot snaps the divider to the new content's preferred proportion. `Controllers = 0.28`, `SongMappings = 0.55`, `Produce = 0.65`.
 
 ### Theme system
 
-Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, radii — 80+ values) is `inline` non-const and loadable from JSON at startup. Call sites are unchanged: `Theme::color(Theme::Color::bgApp)`, `Theme::headerHeight`, etc.
+Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, radii — 80+ values) is `inline` non-const and loadable from JSON at startup. Call sites unchanged.
 
-**Multi-source:**
-- **Factory themes** compiled into the binary via `juce_add_binary_data` from `runtime/themes/*.json`. The JSON files are first-class files in the repo — edit one, rebuild, it's baked in. Adding a factory theme = drop a `.json` + one line in `CMakeLists.txt`.
-- **User themes** scanned from `~/.config/performance/themes/*.json`. User overrides factory on id collision (copy a factory theme to the user dir and customize).
-- `Theme::availableThemes()` returns the merged list; `Theme::loadThemeById(id)` resolves across both sources (user first, then factory).
-- `config["active_theme"]` stores the active theme id. Defaults to `"minimal_dark"`.
-- Two factory themes exist: `minimal_dark` (the default) and `minimal_light` (first-pass light mode, functional, ready for iteration).
+**Multi-source:** factory themes (compiled into binary via `juce_add_binary_data` from `runtime/themes/*.json`) + user themes (`~/.config/performance/themes/*.json`, override factory on id collision). `Theme::loadThemeById(id)` resolves across both. `config["active_theme"]` defaults to `"minimal_dark"`. Two factory themes: `minimal_dark`, `minimal_light`.
 
-**Theme file format:** See `runtime/themes/minimal_dark.json` for the full schema — every token is there. Colors use `#RRGGBB` (opaque) or `#AARRGGBB` (with alpha). Partial overrides allowed — missing keys stay at current values.
+**LookAndFeel:** `PerformanceLookAndFeel` set as app-wide default at startup. Styles popup menus, combo boxes, scroll bars, document window chrome.
 
-**Rules for GUI code** (unchanged from theming sweep): no raw hex colors, no raw font sizes, no magic spacing — everything through `Theme.h` tokens. Details in the Theme section below.
-
-### Architectural direction (decided, not fully implemented)
-
-The authoring model: **chat with Claude is the primary creation surface; every other pane is a result surface.** No pane is always open, including chat. The app serves **Performance** and **Production** — two modes of creation. Full rationale in the `project_authoring_model` memory.
-
-**What's done:**
-- [x] MappingPane split into `ControllersPane` + `SongMappingsPane` with JUCE drag-and-drop.
-- [x] Per-content preferred widths.
-- [x] File → Open Song submenu.
-- [x] Runtime-mutable theme system with factory + user themes.
-
-**What's next (roughly ordered):**
-- **⌘O Songs palette** — modal overlay, type-to-filter, Enter to load, Esc to dismiss. Performance-time song switching that doesn't require the sidebar.
-- **Sidebar-as-slot refactor** — dissolve tabs, make sidebar a flexible pane slot like Left/Right/Mixer. Now less urgent since Controllers is already its own pane. Still a cleanup win.
-- **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready; just needs the UI.
-- **Layout presets** (named configurations toggled by shortcut) — deferred until underlying capabilities are in place.
+**Rules:** no raw hex colors, no raw font sizes, no magic spacing — everything through `Theme.h` tokens.
 
 ### Theming sweep status
 
-**Done (token-clean, no hardcoded colors/fonts):**
-- [x] `ProducePane` — paint fixes, pill hover, shared track-name height.
-- [x] `MixerView` family (`TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`).
-- [x] `ControllersPane` — `bgSurface` container lift, activity dots tokenized.
-- [x] `SongMappingsPane` — font sizes at Lg for Performer-as-first-class, semantic row backgrounds.
+**Done:** ProducePane, MixerView family, ControllersPane, SongMappingsPane.
+**Not swept:** Sidebar (rewritten but not audited for theme tokens), DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay.
 
-**Not yet swept (hardcoded color/font literals remain):**
-- `Sidebar`, `DebugPane`, `LogPane`, `ChatView`, `SettingsWindow`, `MusicalTyping`, `MorphEditor`, `KeyBindingEditor`, `SaveAsDialog`, `MainLayout` overlay.
-- These panes still function correctly under theme switching — they just won't fully respond to color/font changes in the theme file until swept. Sweep them as a cleanup pass when focus returns to visual polish.
+### Design document
+
+`docs/GUI_DESIGN.md` — clean-sheet UX thinking. User journeys (first sound, building, performance setup, performing, refinement), UX principles (two modes/one app, Claude as universal shortcut, progressive disclosure), the performance dashboard question, navigation model options. WIP conversation artifact, not a spec.
 
 ### Smaller design questions still open
 
-- **Fader handle shape** — currently a rounded rect with center groove; considering a more physical cap.
-- **Selected track vs region contrast** — `bgSelection` (`0x262626`) vs `bgSurfaceRaised` (`0x333333`). Verify distinguishability.
-- **Remove `bgRecessed` if unused** — meter grooves now use `bgSlot`. Grep and delete if nothing references it.
-- **SongMappingsPane hover affordances** — `[+]` add buttons, group field, disclosure triangles lack explicit hover states.
-- **Liveliness of sparse panes** — Controllers lift to `bgSurface` works (no `bgControl` rows inside). For Atemporal/Score the vocabulary conflict with mixer strips is unresolved. Don't retry surface-only lifts without addressing the collision first.
+- Fader handle shape
+- Selected track vs region contrast (`bgSelection` vs `bgSurfaceRaised`)
+- Remove `bgRecessed` if unused
+- SongMappingsPane hover affordances (`[+]` buttons, group field, disclosure triangles)
+- Liveliness of sparse panes
 
 ## Backlog
 
-Deferred but tracked. Pull from here when picking up new work.
-
 **High priority:**
-- **LCD interactivity** — all LCD values should support drag-to-change and double-click-to-edit. Currently only BPM and time sig are editable; BAR/BEAT/DIV/TICK and time display are read-only.
-- **Stuck note prevention at region boundaries** — `scanMidiEvents` should fire synthetic noteOffs at region end for unclosed notes. TODO marked in `Arrangement.cpp`.
-- **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events at specific beat positions. Data model ready (vectors on `SongState`); currently one global value per song. No trapdoors.
+- **First-run audio device auto-selection** — auto-select system default output on first launch.
+- **Failed plugin load feedback** — show plugin name in error color when load fails.
+- **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
+- **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
+- **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
+- **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
+- **Ship plugin cache in DMG** — avoid cold AU scan on first launch for distributed builds.
 
 **Longer-term:**
-- **Refactor oversized GUI files** — `ProducePane.cpp` is 2520 lines (header painting, grid, regions, mouse, keyboard all in one). Check `MainLayout` and `Sidebar` too. *Defer until the theming sweep wraps* to avoid churn with in-flight visual changes.
+- Refactor oversized GUI files (ProducePane ~2520 lines).
 - MIDI effects (transpose, channel filter, arpeggiator).
-- Fader/knob drag: value stops changing at screen edge.
-- Background plugin state capture: move `getStateInformation` calls off the message thread (root cause of the beach ball; hard — JUCE plugin APIs aren't thread-safe).
-- Failed plugin load feedback: status indicator on the slot when instantiation fails.
-- Settings window MIDI tab content (channel filtering, transpose, etc).
+- Fader/knob drag stops at screen edge.
+- Background plugin state capture (getStateInformation off message thread).
+- Settings window MIDI tab content.
+- ⌘O Songs palette (type-to-filter overlay for performance-time song switching).
 
 ## Core Concepts
 
-- **The app is an environment** — launches and restores its previous state from SQLite into the in-memory state store. Saves on quit and on explicit save.
-- **Sandbox** — the permanent scratchpad session. Always exists, undeletable, top of the sidebar.
-- **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from state.
+- **The app is an environment** — launches and restores state from SQLite. **Fully autosaved** — debounced 3 seconds after last change. No manual save needed; undo is the safety net. File → Save forces an immediate flush but is never required.
+- **Song** — a named session with its own tracks, busses, sends, bindings. Switching songs clears the engine and rebuilds from state. No "Sandbox" — every song is a regular song. First launch creates "Untitled" with a default template (DLS Electric Piano + Audio In). Deleting all songs auto-creates a new default.
 - **Bindings** — MIDI controls bind to named actions with entity ID arguments. Two scopes: global (always active) and song-scoped. *In practice, all current bindings are song-scoped.*
 - **Score** — an ordered list of action references per song. Used for development ("go to step N" replays from initial state) and as documentation of performance transitions.
 - **Automation** — `interpolate(from, to, duration, callback, easing)` and `delay(seconds, callback)` with actions: `fadeOut`, `fadeIn`, `crossfade`, `morphToPreset`, `morphChain`, `morph` (compound bundling parallel/sequential sub-actions).
