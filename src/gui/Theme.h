@@ -157,10 +157,22 @@ namespace Theme {
         return juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(), size, 0));
     }
 
-    // ── Theme loading / saving ────────────────────────────────
-    bool loadTheme(const juce::File& file);
+    // ── Theme source / registry ─────────────────────────────────
+    struct ThemeEntry {
+        juce::String id;           // stable identifier ("minimal_dark")
+        juce::String name;         // display name ("Minimal Dark")
+        juce::String description;
+        enum class Source { Factory, User } source = Source::Factory;
+        juce::File path;           // populated for User themes, empty for Factory
+    };
+
+    std::vector<ThemeEntry> availableThemes();       // factory + user, user wins on id
+    bool loadThemeById(const juce::String& id);      // resolves id → factory or user file
+
+    // Lower-level APIs
+    bool loadTheme(const juce::File& file);          // loads a specific JSON file
     bool saveTheme(const juce::File& file, const juce::String& name, const juce::String& description);
-    void loadDefaultTheme();  // restores compile-time defaults
+    void loadDefaultTheme();                          // restores compile-time defaults
     juce::String currentThemeName();
-    void ensureDefaultThemeFile();  // writes minimal_dark.json on first run if missing
+    void ensureDefaultThemeFile();                    // creates user themes dir if missing
 }

@@ -1,0 +1,123 @@
+{
+  "name": "Minimal Light",
+  "description": "Light mode spike — first pass, iterate freely",
+  "version": 1,
+
+  "colors": {
+    "bgApp": "#ebebeb",
+    "bgPanel": "#ebebeb",
+    "bgSurface": "#fafafa",
+    "bgSurfaceRaised": "#f0f0f0",
+    "bgSlot": "#e4e4e4",
+    "bgControl": "#dedede",
+    "bgControlHover": "#d2d2d2",
+    "bgSelection": "#e8e8e8",
+    "bgOverlay": "#f5f5f5",
+    "bgDisabled": "#e0e0e0",
+    "bgRecessed": "#d0d0d0",
+    "overlayDim": "#40ffffff",
+
+    "border": "#b8b8b8",
+    "borderSubtle": "#d0d0d0",
+
+    "textPrimary": "#202020",
+    "textSecondary": "#555555",
+    "textDim": "#888888",
+    "textOnColor": "#ffffff",
+    "controlHandle": "#404040",
+
+    "accent": "#1a5a9a",
+    "accentDim": "#4a80b8",
+
+    "activityOn": "#2a9a2a",
+    "activityOff": "#b8b8b8",
+    "statusError": "#aa4040",
+
+    "transportPlay": "#2a8a2a",
+    "transportRec": "#b03a3a",
+    "transportRecDot": "#cc4444",
+    "transportCycle": "#aa9020",
+    "transportCycleOff": "#888888",
+    "playhead": "#cc000000",
+
+    "meterGreen": "#2a9a2a",
+    "meterAmber": "#cc8a20",
+    "meterRed": "#cc4040",
+    "sendPeak": "#2a7a2a",
+
+    "pillMute": "#cca040",
+    "pillSolo": "#4a80b8",
+    "pillArm": "#cc5858",
+    "pillInput": "#cc5858",
+    "pillTextOff": "#555555",
+
+    "slotInstrument": "#cc8020",
+    "slotEffect": "#3a6090",
+
+    "lcdDigit": "#202020",
+
+    "chatUser": "#d4e2f0",
+    "chatAssistant": "#f2f2f2",
+    "chatTool": "#e0edde",
+    "chatError": "#f2d4d4",
+    "chatInput": "#f8f8f8"
+  },
+
+  "trackColors": [
+    "#b8d4c2", "#c2c2da", "#d8c4a8", "#a8c8d8",
+    "#d8a8b8", "#b8d8a8", "#c8a8d8", "#d8c8a8"
+  ],
+
+  "deviceColors": [
+    "#a8c0d8", "#c8a8c8", "#a8c8c0", "#d8b0b0",
+    "#b8c8b0", "#d8c0a8", "#b8b8d0", "#c8d0a8"
+  ],
+
+  "fonts": {
+    "Title": 16,
+    "Lg": 14,
+    "Md": 13,
+    "Sm": 12,
+    "Xs": 9,
+    "Pill": 13,
+    "Meter": 10,
+    "LcdLg": 29,
+    "LcdMd": 23,
+    "LcdLabel": 8
+  },
+
+  "spacing": {
+    "Xs": 2,
+    "S": 4,
+    "M": 8,
+    "L": 12,
+    "Xl": 16
+  },
+
+  "dimensions": {
+    "headerHeight": 28,
+    "toolbarHeight": 32,
+    "slotHeight": 24,
+    "slotGap": 4,
+    "slotPadding": 4,
+    "trackPadding": 12,
+    "trackStripWidth": 160,
+    "iconSize": 14,
+    "pillSize": 20,
+    "pillGap": 5,
+    "pillGroupGap": 8,
+    "pillNameGap": 8,
+    "chatBubblePad": 12,
+    "chatGap": 8,
+    "chatInputHeight": 40
+  },
+
+  "radii": {
+    "cornerRadius": 6,
+    "cornerRadiusSm": 4,
+    "cornerRadiusXs": 3,
+    "pillRadius": 4,
+    "activityDotSize": 6,
+    "chatBubbleRadius": 12
+  }
+}

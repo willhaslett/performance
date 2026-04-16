@@ -28,6 +28,17 @@ FetchContent_Declare(sol2
 )
 FetchContent_MakeAvailable(sol2)
 
+# --- Factory theme resources ---
+# Bundles runtime/themes/*.json into a C++ static library that exposes the
+# files via BinaryData::minimal_dark_json, BinaryData::minimal_light_json,
+# etc. The .json files stay as first-class editable files in the repo —
+# editing one triggers a rebuild and the new content is baked in.
+juce_add_binary_data(PerformanceResources
+    SOURCES
+        runtime/themes/minimal_dark.json
+        runtime/themes/minimal_light.json
+)
+
 # --- Application ---
 juce_add_gui_app(Performance
     PRODUCT_NAME "Performance"
@@ -102,6 +113,7 @@ target_link_libraries(Performance PRIVATE
     juce::juce_gui_basics
     juce::juce_gui_extra
     juce::juce_cryptography
+    PerformanceResources
     lua_static
     sol2
     sqlite3
@@ -150,6 +162,7 @@ target_link_libraries(PerformanceTests PRIVATE
     juce::juce_gui_basics
     juce::juce_gui_extra
     juce::juce_cryptography
+    PerformanceResources
     lua_static
     sol2
     sqlite3

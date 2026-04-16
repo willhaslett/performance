@@ -55,15 +55,15 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         arrangementImpl.setTracks(&song->tracks);
            }
 
-    // Load theme (from ~/.config/performance/themes/<name>.json).
-    // Writes minimal_dark.json on first launch from the compile-time defaults.
+    // Load theme by id. Factory themes are baked into the binary via
+    // BinaryData; user themes in ~/.config/performance/themes/ override
+    // factory themes on id collision.
     {
         Theme::ensureDefaultThemeFile();
-        auto activeThemeName = stateAPI->getConfig("active_theme");
-        if (activeThemeName.empty()) activeThemeName = "minimal_dark";
-        auto themesDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
-            .getChildFile(".config/performance/themes");
-        Theme::loadTheme(themesDir.getChildFile(juce::String(activeThemeName) + ".json"));
+        auto activeThemeId = stateAPI->getConfig("active_theme");
+        if (activeThemeId.empty()) activeThemeId = "minimal_dark";
+        if (!Theme::loadThemeById(juce::String(activeThemeId)))
+            Theme::loadThemeById("minimal_dark");
     }
 
     // Restore saved audio devices (must be after loadInto so config is available)

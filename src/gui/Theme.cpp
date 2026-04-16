@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "BinaryData.h"
 #include <juce_core/juce_core.h>
 #include <unordered_map>
 #include <string>
@@ -8,6 +9,18 @@ namespace Theme {
 
 namespace {
     juce::String currentTheme = "Minimal Dark";
+
+    // --- Factory theme registry -----------------------------------------------
+    struct FactoryTheme {
+        const char* id;
+        const char* binaryResourceName;  // matches BinaryData key (e.g. "minimal_dark_json")
+    };
+
+    const FactoryTheme kFactoryThemes[] = {
+        { "minimal_dark",  "minimal_dark_json"  },
+        { "minimal_light", "minimal_light_json" },
+    };
+    constexpr int kFactoryThemeCount = 2;
 
     using ColorTable = std::unordered_map<std::string, uint32_t*>;
     using FloatTable = std::unordered_map<std::string, float*>;
@@ -188,16 +201,10 @@ namespace {
     }
 } // namespace
 
-bool loadTheme(const juce::File& file) {
-    if (! file.existsAsFile()) {
-        juce::Logger::writeToLog("[Theme] Theme file not found: " + file.getFullPathName());
-        return false;
-    }
-    auto parsed = juce::JSON::parse(file);
-    if (! parsed.isObject()) {
-        juce::Logger::writeToLog("[Theme] Failed to parse JSON: " + file.getFullPathName());
-        return false;
-    }
+// Apply a parsed JSON theme object to the in-memory token values.
+// Called by both loadTheme(File) and loadThemeById().
+static bool loadThemeFromVar(const juce::var& parsed) {
+    if (! parsed.isObject()) return false;
 
     if (parsed.hasProperty("name"))
         currentTheme = parsed["name"].toString();
@@ -210,13 +217,22 @@ bool loadTheme(const juce::File& file) {
     applyScalarObject<int>  (parsed["spacing"],    intTable());
     applyScalarObject<int>  (parsed["dimensions"], intTable());
     applyScalarObject<float>(parsed["radii"],      floatTable());
-
-    // Dimensions section can also contain float-ish keys (none currently) —
-    // try both tables so int keys in "radii" or float keys in "dimensions"
-    // would still match. Harmless since tables have disjoint key sets.
     applyScalarObject<float>(parsed["dimensions"], floatTable());
     applyScalarObject<int>  (parsed["radii"],      intTable());
 
+    return true;
+}
+
+bool loadTheme(const juce::File& file) {
+    if (! file.existsAsFile()) {
+        juce::Logger::writeToLog("[Theme] Theme file not found: " + file.getFullPathName());
+        return false;
+    }
+    auto parsed = juce::JSON::parse(file);
+    if (! loadThemeFromVar(parsed)) {
+        juce::Logger::writeToLog("[Theme] Failed to parse JSON: " + file.getFullPathName());
+        return false;
+    }
     juce::Logger::writeToLog("[Theme] Loaded theme '" + currentTheme + "' from " + file.getFullPathName());
     return true;
 }
@@ -387,15 +403,87 @@ void loadDefaultTheme() {
 
 juce::String currentThemeName() { return currentTheme; }
 
-void ensureDefaultThemeFile() {
-    auto themesDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+// --- Theme source: factory (BinaryData) + user (~/.config/performance/themes) ---
+
+static juce::File userThemesDir() {
+    return juce::File::getSpecialLocation(juce::File::userHomeDirectory)
         .getChildFile(".config/performance/themes");
-    if (! themesDir.exists()) themesDir.createDirectory();
-    auto file = themesDir.getChildFile("minimal_dark.json");
-    if (! file.existsAsFile()) {
-        saveTheme(file, "Minimal Dark", "The default minimal grayscale dark theme");
-        juce::Logger::writeToLog("[Theme] Wrote default theme to " + file.getFullPathName());
+}
+
+std::vector<ThemeEntry> availableThemes() {
+    std::map<juce::String, ThemeEntry> byId;
+
+    // Factory themes
+    for (int i = 0; i < kFactoryThemeCount; ++i) {
+        int dataSize = 0;
+        auto* data = BinaryData::getNamedResource(kFactoryThemes[i].binaryResourceName, dataSize);
+        if (!data || dataSize <= 0) continue;
+        auto parsed = juce::JSON::parse(juce::String::fromUTF8(data, dataSize));
+        ThemeEntry e;
+        e.id = kFactoryThemes[i].id;
+        e.name = parsed.hasProperty("name") ? parsed["name"].toString() : e.id;
+        e.description = parsed.hasProperty("description") ? parsed["description"].toString() : "";
+        e.source = ThemeEntry::Source::Factory;
+        byId[e.id] = std::move(e);
     }
+
+    // User themes — scan directory; user overrides factory on id collision
+    auto dir = userThemesDir();
+    if (dir.exists()) {
+        for (auto& f : dir.findChildFiles(juce::File::findFiles, false, "*.json")) {
+            auto id = f.getFileNameWithoutExtension();
+            auto parsed = juce::JSON::parse(f);
+            ThemeEntry e;
+            e.id = id;
+            e.name = parsed.hasProperty("name") ? parsed["name"].toString() : id;
+            e.description = parsed.hasProperty("description") ? parsed["description"].toString() : "";
+            e.source = ThemeEntry::Source::User;
+            e.path = f;
+            byId[e.id] = std::move(e);
+        }
+    }
+
+    std::vector<ThemeEntry> result;
+    result.reserve(byId.size());
+    for (auto& [_, entry] : byId)
+        result.push_back(std::move(entry));
+    return result;
+}
+
+bool loadThemeById(const juce::String& id) {
+    // User themes dir first (user overrides factory)
+    auto dir = userThemesDir();
+    auto userFile = dir.getChildFile(id + ".json");
+    if (userFile.existsAsFile()) {
+        auto parsed = juce::JSON::parse(userFile);
+        if (loadThemeFromVar(parsed)) {
+            juce::Logger::writeToLog("[Theme] Loaded user theme '" + currentTheme
+                                     + "' from " + userFile.getFullPathName());
+            return true;
+        }
+    }
+
+    // Factory themes
+    for (int i = 0; i < kFactoryThemeCount; ++i) {
+        if (id != juce::String(kFactoryThemes[i].id)) continue;
+        int dataSize = 0;
+        auto* data = BinaryData::getNamedResource(kFactoryThemes[i].binaryResourceName, dataSize);
+        if (!data || dataSize <= 0) continue;
+        auto parsed = juce::JSON::parse(juce::String::fromUTF8(data, dataSize));
+        if (loadThemeFromVar(parsed)) {
+            juce::Logger::writeToLog("[Theme] Loaded factory theme '" + currentTheme + "'");
+            return true;
+        }
+    }
+
+    juce::Logger::writeToLog("[Theme] Theme not found: " + id);
+    return false;
+}
+
+void ensureDefaultThemeFile() {
+    // Optionally write the factory themes to the user dir as starter files.
+    auto dir = userThemesDir();
+    if (! dir.exists()) dir.createDirectory();
 }
 
 } // namespace Theme
