@@ -36,8 +36,7 @@ void AudioEngine::initialise() {
     deviceManager.addChangeListener(this);
     deviceManager.addAudioCallback(&inputMeter);
 
-    if (!loadPluginCache())
-        scanForPlugins();
+    pluginScanNeeded = !loadPluginCache();
 }
 
 void AudioEngine::shutdown() {

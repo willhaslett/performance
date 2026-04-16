@@ -582,40 +582,63 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
 }
 
+std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
+    auto songId = stateAPI->createSong(name);
+    stateAPI->setCurrentSong(songId);
+    stateAPI->createActionTrack("Actions");
+
+    // Track 1: DLS Electric Piano (program 4)
+    auto trackId = stateAPI->createTrack("Electric Piano");
+    // Find DLS plugin in catalog
+    for (auto& p : stateAPI->allPlugins()) {
+        if (p.name == "DLSMusicDevice" && p.isInstrument) {
+            stateAPI->setTrackPlugin(trackId, p.id, p.name);
+            break;
+        }
+    }
+
+    // Track 2: Audio input (disarmed, monitoring off)
+    stateAPI->createAudioInputTrack("Audio In", -1, 0);
+    auto tracks = stateAPI->listTracks();
+    for (auto& t : tracks) {
+        auto* ts = stateAPI->findTrack(t.id);
+        if (ts && ts->sourceType == TrackSourceType::AudioInput) {
+            stateAPI->setTrackArmed(t.id, false);
+            stateAPI->setTrackInputMonitoring(t.id, false);
+            break;
+        }
+    }
+
+    if (auto* s = stateAPI->currentSong())
+        arrangementImpl.setTracks(&s->tracks);
+
+    perfLog("[Coordinator] Created default song '%s' with DLS Electric Piano + Audio In\n",
+            name.c_str());
+    return songId;
+}
+
 bool PerformanceCoordinator::restoreSession() {
     auto& songs = stateAPI->allSongs();
 
     if (songs.empty()) {
-        auto songId = stateAPI->createSong("Sandbox");
-        stateAPI->setCurrentSong(songId);
-        stateAPI->createActionTrack("Actions");
-        if (auto* s = stateAPI->currentSong())
-            arrangementImpl.setTracks(&s->tracks);
-        perfLog("[Coordinator] Created default session\n");
+        createDefaultSong("Untitled");
         return true;
     }
 
-    // Restore the last active song
-    auto lastSongId = stateAPI->getMasterOutputId();
-    if (lastSongId.empty() || !stateAPI->findSong(lastSongId))
-        lastSongId = songs[0].id;
-
-    stateAPI->setCurrentSong(lastSongId);
-    restoreBindings();
-
-    // Point arrangement at restored song's tracks
-    if (auto* s = stateAPI->currentSong())
-        arrangementImpl.setTracks(&s->tracks);
-
-    // Load audio files and sync tempo
-    loadAudioFilesIntoEngine();
-    syncTempoFromState();
-
-    auto* song = stateAPI->currentSong();
-    perfLog("[Coordinator] Session restored: %s (%d tracks)\n",
-            song ? song->name.c_str() : "?",
-            (int)stateAPI->listTracks().size());
+    // 1+ songs exist. Don't auto-load — the GUI will show a startup chooser.
+    // Mark that we need it so MainLayout can check.
+    startupChooserNeeded = true;
+    perfLog("[Coordinator] %d song(s) found — startup chooser will be shown\n",
+            (int)songs.size());
     return true;
+}
+
+bool PerformanceCoordinator::needsStartupSongChooser() const {
+    return startupChooserNeeded;
+}
+
+void PerformanceCoordinator::syncPluginCatalog() {
+    populatePluginCatalog();
 }
 
 void PerformanceCoordinator::unloadSong() {

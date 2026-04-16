@@ -6,6 +6,7 @@
 #include "gui/KeyBindings.h"
 #include "scripting/LuaEngine.h"
 #include "ipc/IPCServer.h"
+#include "engine/AudioEngine.h"
 #include "gui/PerformanceLookAndFeel.h"
 #include "gui/SettingsWindow.h"
 #include "gui/KeyBindingManager.h"
@@ -285,8 +286,7 @@ public:
         switch (menuItemID) {
         // File
         case CommandIDs::newSong: {
-            auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
-            coord.createSong(name);
+            coord.createDefaultSong("Untitled");
             break;
         }
         case CommandIDs::saveSong: coord.save(); break;
@@ -497,8 +497,7 @@ public:
 
         // Wire save
         layout->onNewSong = [this]() {
-            auto name = "Untitled " + juce::String(juce::Time::currentTimeMillis() % 10000);
-            coordinator->createSong(name);
+            coordinator->createDefaultSong("Untitled");
         };
         layout->onNewInstrumentTrack = [this]() {
             auto tracks = coordinator->state().listTracks();
@@ -543,15 +542,21 @@ public:
         };
 
         layout->getSidebar().onDeleteSong = [this, layout](const std::string& songId) {
-            // Switch to Sandbox first if deleting the current song
+            // If deleting the current song, switch to another song first.
+            // If this is the last song, create a new default song.
             auto currentId = coordinator->state().getMasterOutputId();
             if (songId == currentId) {
                 auto& songs = coordinator->state().allSongs();
+                bool switched = false;
                 for (auto& s : songs) {
-                    if (s.name == "Sandbox" && s.id != songId) {
+                    if (s.id != songId) {
                         coordinator->loadSong(s.id);
+                        switched = true;
                         break;
                     }
+                }
+                if (!switched) {
+                    coordinator->createDefaultSong("Untitled");
                 }
             }
             coordinator->state().deleteSong(songId);
@@ -598,13 +603,29 @@ public:
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
-        // Restore session — deferred so the window paints first
+        // Deferred startup — ensures the window is visible before any blocking work.
         juce::MessageManager::callAsync([this, layout] {
-            layout->showOverlay("Loading session...");
-            juce::MessageManager::callAsync([this, layout] {
-                coordinator->restoreSession();
-                layout->hideOverlay();
-            });
+            auto& audioEngine = coordinator->engine().getAudioEngine();
+
+            // Plugin scan (only if no cache exists — first install or cache deleted).
+            // Runs after the window is visible so the user sees "Scanning plugins..."
+            // instead of a frozen/invisible app.
+            if (audioEngine.needsPluginScan()) {
+                layout->showOverlay("Scanning plugins...");
+                layout->repaint();
+                // Timer delay lets the overlay paint before the blocking scan starts.
+                juce::Timer::callAfterDelay(100, [this, layout, &audioEngine] {
+                    audioEngine.scanForPlugins();
+                    coordinator->syncPluginCatalog();
+                    layout->hideOverlay();
+                    continueStartup(layout);
+                });
+            } else {
+                layout->showOverlay("Loading...");
+                juce::MessageManager::callAsync([this, layout] {
+                    continueStartup(layout);
+                });
+            }
         });
     }
 
@@ -632,6 +653,50 @@ private:
     std::unique_ptr<juce::PopupMenu> appMenuItems;
     std::unique_ptr<SettingsWindow> settingsWindow;
     KeyBindingManager keyBindings;
+
+    void continueStartup(MainLayout* layout) {
+        coordinator->restoreSession();
+        layout->hideOverlay();
+        if (coordinator->needsStartupSongChooser())
+            showStartupSongChooser(layout);
+    }
+
+    void showStartupSongChooser(MainLayout* layout) {
+        juce::PopupMenu menu;
+        menu.addItem(1, "New Song");
+        menu.addSeparator();
+
+        auto& songs = coordinator->state().allSongs();
+        for (int i = 0; i < (int)songs.size(); ++i)
+            menu.addItem(100 + i, juce::String(songs[i].name));
+
+        // Show centered in the window
+        auto centre = layout->getScreenBounds().getCentre();
+        menu.showMenuAsync(
+            juce::PopupMenu::Options()
+                .withTargetScreenArea(juce::Rectangle<int>(centre.x, centre.y, 1, 1)),
+            [this, layout, &songs](int result) {
+                if (result == 1) {
+                    coordinator->createDefaultSong("Untitled");
+                } else if (result >= 100) {
+                    int idx = result - 100;
+                    auto& allSongs = coordinator->state().allSongs();
+                    if (idx < (int)allSongs.size()) {
+                        layout->showOverlay("Loading song...");
+                        auto songId = allSongs[idx].id;
+                        juce::MessageManager::callAsync([this, layout, songId] {
+                            coordinator->loadSong(songId);
+                            layout->hideOverlay();
+                        });
+                    }
+                } else {
+                    // User dismissed menu — load the first song as fallback
+                    auto& allSongs = coordinator->state().allSongs();
+                    if (!allSongs.empty())
+                        coordinator->loadSong(allSongs[0].id);
+                }
+            });
+    }
 
     void setupKeyBindings() {
         namespace KB = KeyBindings;

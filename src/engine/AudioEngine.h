@@ -27,6 +27,7 @@ public:
     void shutdown();
 
     // Plugin scanning + cache
+    bool needsPluginScan() const { return pluginScanNeeded; }
     void scanForPlugins();
     void scanComponentDirectory(const juce::File& directory);
     bool registerComponent(const juce::String& pluginName);
@@ -148,6 +149,7 @@ private:
     juce::AudioDeviceManager deviceManager;
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
+    bool pluginScanNeeded = false;
 
     std::unique_ptr<juce::AudioProcessorGraph> graph;
     std::unique_ptr<GraphWrapper> graphWrapper;

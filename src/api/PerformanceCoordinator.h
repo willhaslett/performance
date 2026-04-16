@@ -42,6 +42,9 @@ public:
 
     // --- Song lifecycle ---
     std::string createSong(const juce::String& name);
+    std::string createDefaultSong(const std::string& name);  // DLS Electric Piano + Audio In template
+    bool needsStartupSongChooser() const;
+    void syncPluginCatalog();  // rebuild state plugin catalog from engine after a fresh scan
     void loadSong(const std::string& songId);
     bool restoreSession();
     void unloadSong();
@@ -131,6 +134,7 @@ private:
     // timerCallback saves when (now - lastStateChangeMs) > 3 seconds AND dirty.
     double lastStateChangeMs = 0.0;
     int autosaveSubscriptionId = -1;
+    bool startupChooserNeeded = false;
 
     // Recording state
     bool recordModeActive = false;  // user explicitly requested recording

@@ -11,7 +11,7 @@ Sidebar::Sidebar() {
     startTimerHz(4);
 
     tree.setOnNodeRightClick([this](const std::string& type, const std::string& id, const std::string& label) {
-        if (type == "song" && label != "Sandbox") {
+        if (type == "song") {
             juce::PopupMenu menu;
             menu.addItem(1, "Delete Song");
             auto songId = id;
@@ -184,21 +184,7 @@ void Sidebar::refreshSongsTab() {
     if (!state) return;
     std::vector<TreeNode> roots;
 
-    // Sandbox first
     for (auto& song : state->allSongs()) {
-        if (song.name == "Sandbox") {
-            TreeNode n;
-            n.label = "Sandbox";
-            n.id = song.id;
-            n.type = "song";
-            n.isLeaf = true;
-            roots.push_back(n);
-            break;
-        }
-    }
-    // User songs
-    for (auto& song : state->allSongs()) {
-        if (song.name == "Sandbox") continue;
         TreeNode n;
         n.label = song.name;
         n.id = song.id;

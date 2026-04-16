@@ -1,37 +1,38 @@
 #!/bin/bash
-# Reset all user-mutable state from the Performance database.
-# Keeps: plugins (cache), actions (built-in)
-# Deletes: everything else including device mappings
-# Also removes preset files from disk.
+# Full reset — simulates a first-ever launch.
+# Removes ALL user state, caches, recordings, presets, and databases.
+# Preserves only ~/.config/performance/keys/ (notarization credentials).
+#
+# The app recreates everything it needs on next launch:
+# - state.db (fresh schema)
+# - plugin-cache.xml (re-scans AU plugins, takes a few seconds)
+# - themes/ (factory themes baked into binary)
+# - Default "Untitled" song with DLS Electric Piano + Audio In
 
-STATE_DB="$HOME/.config/performance/state.db"
+set -euo pipefail
 
-if [ ! -f "$STATE_DB" ]; then
-    echo "No database found at $STATE_DB"
+CONFIG_DIR="$HOME/.config/performance"
+
+if [ ! -d "$CONFIG_DIR" ]; then
+    echo "Nothing to reset — $CONFIG_DIR doesn't exist."
     exit 0
 fi
 
-echo "Resetting $STATE_DB..."
+echo "Resetting $CONFIG_DIR (preserving keys/)..."
 
-sqlite3 "$STATE_DB" <<'SQL'
-DELETE FROM bindings;
-DELETE FROM sends;
-DELETE FROM effects;
-DELETE FROM tracks;
-DELETE FROM busses;
-DELETE FROM presets;
-DELETE FROM song_devices;
-DELETE FROM songs;
-DELETE FROM config;
--- Device mappings (comment out to preserve across resets)
-DELETE FROM device_controls;
-DELETE FROM devices;
--- Remove custom actions but keep built-ins (no lua_code)
-DELETE FROM actions WHERE lua_code IS NOT NULL AND lua_code != '';
-SQL
+# Preserve keys/ (notarization credentials) and plugin-cache.xml
+# (AU scan results — re-scanning from scratch can hang on bad plugins).
+PRESERVE_TMP=$(mktemp -d)
+[ -d "$CONFIG_DIR/keys" ] && cp -r "$CONFIG_DIR/keys" "$PRESERVE_TMP/"
+[ -f "$CONFIG_DIR/plugin-cache.xml" ] && cp "$CONFIG_DIR/plugin-cache.xml" "$PRESERVE_TMP/"
 
-# Remove preset files from disk
-rm -rf "$HOME/.config/performance/snapshots/"*
-rm -rf "$HOME/.config/performance/track_presets/"*
+# Nuke everything
+rm -rf "$CONFIG_DIR"
 
-echo "Done. Restart the app to get a fresh Sandbox."
+# Restore preserved items
+mkdir -p "$CONFIG_DIR"
+[ -d "$PRESERVE_TMP/keys" ] && mv "$PRESERVE_TMP/keys" "$CONFIG_DIR/"
+[ -f "$PRESERVE_TMP/plugin-cache.xml" ] && mv "$PRESERVE_TMP/plugin-cache.xml" "$CONFIG_DIR/"
+rm -rf "$PRESERVE_TMP"
+
+echo "Done. Restart the app for a fresh first-launch experience."
