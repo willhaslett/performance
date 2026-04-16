@@ -181,7 +181,20 @@ enum CommandIDs {
 class AppMenuBar : public juce::MenuBarModel {
 public:
     AppMenuBar(PerformanceCoordinator& coord, LuaEngine& lua, MainLayout& layout)
-        : coord(coord), lua(lua), layout(layout) {}
+        : coord(coord), lua(lua), layout(layout) {
+        // macOS caches the native menu bar's submenu contents. When the songs
+        // list or the current song changes, we have to call menuItemsChanged()
+        // to invalidate the cache so File → Open Song reflects the new state.
+        stateSubId = coord.state().events().subscribe([this](const StateEvent& ev) {
+            if (ev.entity == StateEvent::Song || ev.entity == StateEvent::Config) {
+                juce::MessageManager::callAsync([this] { menuItemsChanged(); });
+            }
+        });
+    }
+
+    ~AppMenuBar() override {
+        if (stateSubId >= 0) coord.state().events().unsubscribe(stateSubId);
+    }
 
     void setKeyBindingManager(KeyBindingManager* mgr) { kb = mgr; }
 
@@ -203,14 +216,21 @@ public:
 
         if (index == 0) {  // File
             menu.addItem(shortcut(CommandIDs::newSong, "New Song", "file.newSong"));
+
+            // Open Song submenu — lists all songs, ticks the current one
+            juce::PopupMenu openSubmenu;
+            auto& songs = coord.state().allSongs();
+            std::string currentSongId;
+            if (auto* cur = coord.state().currentSong())
+                currentSongId = cur->id;
+            for (int i = 0; i < (int)songs.size(); ++i) {
+                bool isCurrent = (songs[i].id == currentSongId);
+                openSubmenu.addItem(100 + i, juce::String(songs[i].name), true, isCurrent);
+            }
+            menu.addSubMenu("Open Song", openSubmenu, !songs.empty());
+
             menu.addItem(shortcut(CommandIDs::saveSong, "Save", "file.save"));
             menu.addSeparator();
-            auto& songs = coord.state().allSongs();
-            for (int i = 0; i < (int)songs.size(); ++i) {
-                auto isCurrent = songs[i].id == coord.state().getMasterOutputId();
-                menu.addItem(100 + i, juce::String(songs[i].name), true, isCurrent);
-            }
-            if (!songs.empty()) menu.addSeparator();
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Edit
@@ -380,6 +400,7 @@ private:
     LuaEngine& lua;
     MainLayout& layout;
     KeyBindingManager* kb = nullptr;
+    int stateSubId = -1;
 };
 
 // --- App ---
