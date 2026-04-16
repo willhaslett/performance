@@ -499,6 +499,7 @@ public:
         layout->onNewSong = [this]() {
             coordinator->createDefaultSong("Untitled");
         };
+        layout->getSidebar().onNewSong = layout->onNewSong;
         layout->onNewInstrumentTrack = [this]() {
             auto tracks = coordinator->state().listTracks();
             coordinator->state().createTrack(("Track " + juce::String((int)tracks.size() + 1)).toStdString());

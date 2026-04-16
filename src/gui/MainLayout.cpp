@@ -129,30 +129,33 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     setWantsKeyboardFocus(true);
 
-    // Wire sidebar pane selection to the new system
-    // Legacy callbacks (still used by some sidebar paths)
-    sidebar.onProduceSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Produce); };
-    sidebar.onDebugSelected = [this]() { setPaneContent(PaneSlot::Left, PaneContent::Debug); };
-    sidebar.onChatSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Chat); };
-    sidebar.onLogsSelected = [this]() { setPaneContent(PaneSlot::Right, PaneContent::Logs); };
-
-    // New pane system callbacks
-    sidebar.onPaneSelected = [this](const std::string& slot, const std::string& content) {
-        PaneSlot s = PaneSlot::Left;
-        if (slot == "sidebar") s = PaneSlot::Sidebar;
-        else if (slot == "left") s = PaneSlot::Left;
-        else if (slot == "right") s = PaneSlot::Right;
-        else if (slot == "bottom") s = PaneSlot::Bottom;
-        setPaneContent(s, stringToContent(content));
+    // Sidebar navigation — view toggles and active state queries
+    sidebar.onToggleView = [this](const std::string& viewName) {
+        if (viewName == "produce") {
+            auto cur = getPaneContent(PaneSlot::Left);
+            setPaneContent(PaneSlot::Left,
+                           cur == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
+        } else if (viewName == "performer") {
+            handleNavClick(2);  // reuse the Performer pair-toggle from toolbar
+        } else if (viewName == "mixer") {
+            auto cur = getPaneContent(PaneSlot::Bottom);
+            setPaneContent(PaneSlot::Bottom,
+                           cur == PaneContent::Mixer ? PaneContent::Hidden : PaneContent::Mixer);
+        } else if (viewName == "chat") {
+            auto cur = getPaneContent(PaneSlot::Right);
+            setPaneContent(PaneSlot::Right,
+                           cur == PaneContent::Chat ? PaneContent::Hidden : PaneContent::Chat);
+        }
     };
-    sidebar.getPaneContent = [this](const std::string& slot) -> std::string {
-        PaneSlot s = PaneSlot::Left;
-        if (slot == "sidebar") s = PaneSlot::Sidebar;
-        else if (slot == "left") s = PaneSlot::Left;
-        else if (slot == "right") s = PaneSlot::Right;
-        else if (slot == "bottom") s = PaneSlot::Bottom;
-        return contentToString(getPaneContent(s));
+    sidebar.isViewActive = [this](const std::string& viewName) -> bool {
+        if (viewName == "produce")   return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
+        if (viewName == "performer") return getPaneContent(PaneSlot::Left) == PaneContent::Controllers
+                                         || getPaneContent(PaneSlot::Right) == PaneContent::SongMappings;
+        if (viewName == "mixer")     return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
+        if (viewName == "chat")      return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
+        return false;
     };
+    // sidebar.onNewSong is wired by main.mm after layout construction.
 
     // Load system prompt for Claude
     auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
