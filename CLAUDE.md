@@ -6,39 +6,64 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 ## Active Work
 
-**Sidebar-slot refactor and the ⌘O Songs palette.**
+### GUI architecture — current state
 
-The theming sweep is paused mid-way — not because it's done, but because a broader architectural direction emerged that changes which panes even exist. The authoring model is now explicit: **chat with Claude is the primary creation surface, every other pane is a result surface**. Full rationale and usage rules live in the `project_authoring_model` memory. Vocabulary note: the app serves **Performance** (`Performer` view) and **Production** (`Producer` view) — two modes of creation. There is no "dev mode." Both are first-class.
+The Performer view is now split into **two independent pane content types**: `ControllersPane` (device tree, learn mode, MIDI control rows) and `SongMappingsPane` (Atemporal + Score sections). Both can be placed in any Left/Right slot. `⌘U` toggles the pair together (Left=Controllers, Right=SongMappings). Cross-pane drag uses JUCE's `DragAndDropContainer` (rooted at `MainLayout`) / `DragAndDropTarget` pattern. MainLayout also installs a single global MIDI monitor and dispatches to both panes for activity dots.
 
-### Architectural moves ahead (decided, ordered by dependency)
+**Per-content preferred widths** are in: swapping a content type into the Left slot snaps the divider to that content's preferred proportion (`Controllers = 0.28`, `SongMappings = 0.55`, `Produce = 0.65`, etc.). No user-drag divider yet.
 
-1. **⌘O Songs palette** — modal overlay, type-to-filter, Enter to load, Esc to dismiss. Self-contained; doesn't depend on anything else. First concrete capability on the new vision. *This is the next thing to build.*
-2. **MappingPane drag rewrite** — convert the current custom state-based drag system (`isDragging`, `dragSourceLeftRow`, paint-based ghost) to JUCE's `DragAndDropContainer` / `DragAndDropTarget` rooted at `MainLayout`. Required for cross-slot drag. Standard refactor, ~1 day.
-3. **Split Controllers out of MappingPane** into its own pane content (likely `Devices`). MappingPane narrows to just Song Mappings (Atemporal + Score). Requires the drag rewrite to be done first.
-4. **Sidebar becomes a flexible pane slot** like Left/Right/Mixer. Tabs go away. Content is chosen by the user. New pane content types: `Songs`, `Devices`, `Library`, `Actions` (inspect/delete only — creation happens via chat). Default content: `Songs` for production layouts, `Devices` for performance layouts.
-5. **Layout presets** (named Production / Performance configurations, toggled with one shortcut) — **deferred** until the underlying capabilities are in place. The slot system already persists last-used assignments per slot, which covers 90% of what presets would do.
+**File → Open Song ▸** cascading submenu with live menu invalidation. macOS menu cache refreshes via `menuItemsChanged()` on Song/Config state events.
 
-### Theming sweep — paused but not abandoned
+### Theme system
 
-What's done:
+Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, radii — 80+ values) is `inline` non-const and loadable from JSON at startup. Call sites are unchanged: `Theme::color(Theme::Color::bgApp)`, `Theme::headerHeight`, etc.
 
-- [x] **ProducePane** — full token migration, paint fixes, pill hover, shared track-name block height with mixer.
-- [x] **MixerView** family (`MixerView`, `TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`) — token-clean, pill hover, plugin slot hover live.
-- [x] **MappingPane** — token-clean pass done: semantic fixes (left-panel hover, mapping/score row backgrounds, `InlineEditor` text color), font sizes bumped to match Performer's first-class status, new tokens (`cornerRadiusXs`, `activityDotSize`), Controllers panel lifted to `bgSurface` (fills to panel bottom to avoid stacked-box look). *Structural changes still ahead:* Controllers is going to move out entirely (see #3 above).
+**Multi-source:**
+- **Factory themes** compiled into the binary via `juce_add_binary_data` from `runtime/themes/*.json`. The JSON files are first-class files in the repo — edit one, rebuild, it's baked in. Adding a factory theme = drop a `.json` + one line in `CMakeLists.txt`.
+- **User themes** scanned from `~/.config/performance/themes/*.json`. User overrides factory on id collision (copy a factory theme to the user dir and customize).
+- `Theme::availableThemes()` returns the merged list; `Theme::loadThemeById(id)` resolves across both sources (user first, then factory).
+- `config["active_theme"]` stores the active theme id. Defaults to `"minimal_dark"`.
+- Two factory themes exist: `minimal_dark` (the default) and `minimal_light` (first-pass light mode, functional, ready for iteration).
 
-What's deferred — these panes are going to move or transform as part of the sidebar-slot refactor, so theming them first would be wasted work:
+**Theme file format:** See `runtime/themes/minimal_dark.json` for the full schema — every token is there. Colors use `#RRGGBB` (opaque) or `#AARRGGBB` (with alpha). Partial overrides allowed — missing keys stay at current values.
 
-- **Sidebar** — being dissolved into the slot model. Don't theme in its current form.
-- **ChatView** — staying, but may get layout changes as it becomes a persistent companion. Hardcoded colors noted.
-- **DebugPane**, **LogPane**, **SettingsWindow**, **MusicalTyping**, **MorphEditor**, **KeyBindingEditor**, **SaveAsDialog**, **MainLayout** overlay — hardcoded color / font literals noted, will sweep after the structural work settles.
+**Rules for GUI code** (unchanged from theming sweep): no raw hex colors, no raw font sizes, no magic spacing — everything through `Theme.h` tokens. Details in the Theme section below.
+
+### Architectural direction (decided, not fully implemented)
+
+The authoring model: **chat with Claude is the primary creation surface; every other pane is a result surface.** No pane is always open, including chat. The app serves **Performance** and **Production** — two modes of creation. Full rationale in the `project_authoring_model` memory.
+
+**What's done:**
+- [x] MappingPane split into `ControllersPane` + `SongMappingsPane` with JUCE drag-and-drop.
+- [x] Per-content preferred widths.
+- [x] File → Open Song submenu.
+- [x] Runtime-mutable theme system with factory + user themes.
+
+**What's next (roughly ordered):**
+- **⌘O Songs palette** — modal overlay, type-to-filter, Enter to load, Esc to dismiss. Performance-time song switching that doesn't require the sidebar.
+- **Sidebar-as-slot refactor** — dissolve tabs, make sidebar a flexible pane slot like Left/Right/Mixer. Now less urgent since Controllers is already its own pane. Still a cleanup win.
+- **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready; just needs the UI.
+- **Layout presets** (named configurations toggled by shortcut) — deferred until underlying capabilities are in place.
+
+### Theming sweep status
+
+**Done (token-clean, no hardcoded colors/fonts):**
+- [x] `ProducePane` — paint fixes, pill hover, shared track-name height.
+- [x] `MixerView` family (`TrackStrip`, `BusStrip`, `OutputStrip`, `FaderMeter`, `SendsPanel`, `PluginSlot`).
+- [x] `ControllersPane` — `bgSurface` container lift, activity dots tokenized.
+- [x] `SongMappingsPane` — font sizes at Lg for Performer-as-first-class, semantic row backgrounds.
+
+**Not yet swept (hardcoded color/font literals remain):**
+- `Sidebar`, `DebugPane`, `LogPane`, `ChatView`, `SettingsWindow`, `MusicalTyping`, `MorphEditor`, `KeyBindingEditor`, `SaveAsDialog`, `MainLayout` overlay.
+- These panes still function correctly under theme switching — they just won't fully respond to color/font changes in the theme file until swept. Sweep them as a cleanup pass when focus returns to visual polish.
 
 ### Smaller design questions still open
 
 - **Fader handle shape** — currently a rounded rect with center groove; considering a more physical cap.
-- **Selected track vs region contrast** — selection uses `bgSelection` (`0x262626`), regions use `bgSurfaceRaised` (`0x333333`). Verify distinguishability.
+- **Selected track vs region contrast** — `bgSelection` (`0x262626`) vs `bgSurfaceRaised` (`0x333333`). Verify distinguishability.
 - **Remove `bgRecessed` if unused** — meter grooves now use `bgSlot`. Grep and delete if nothing references it.
-- **MappingPane hover affordances** — `[+]` add buttons, group field, disclosure triangles lack explicit hover states. Revisit after the drag rewrite.
-- **Liveliness of sparse panes** — tried lifting whole MappingPane sections to `bgSurface` with gutters; reverted because it collided with mixer strip vocabulary. Current Controllers lift works because Controllers has no `bgControl` rows inside. For Atemporal/Score the problem is still open. Don't retry surface-only lifts without resolving the vocabulary conflict first.
+- **SongMappingsPane hover affordances** — `[+]` add buttons, group field, disclosure triangles lack explicit hover states.
+- **Liveliness of sparse panes** — Controllers lift to `bgSurface` works (no `bgControl` rows inside). For Atemporal/Score the vocabulary conflict with mixer strips is unresolved. Don't retry surface-only lifts without addressing the collision first.
 
 ## Backlog
 
