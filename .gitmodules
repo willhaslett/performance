@@ -1,3 +1,6 @@
 [submodule "lib/JUCE"]
 	path = lib/JUCE
 	url = https://github.com/juce-framework/JUCE.git
+[submodule "lib/mda-plugins-juce"]
+	path = lib/mda-plugins-juce
+	url = https://github.com/hollance/mda-plugins-juce.git
