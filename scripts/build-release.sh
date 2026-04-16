@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────
-# Version: pass as first argument or defaults to 0.2.0-beta1
-VERSION="${1:-0.2.0-beta1}"
+# Version: read from CMakeLists.txt (SSOT). Override with first argument.
+CMAKE_VERSION=$(grep -m1 'project(Performance VERSION' CMakeLists.txt | sed 's/.*VERSION \([0-9.]*\).*/\1/')
+VERSION="${1:-$CMAKE_VERSION}"
 
 # Code signing identity (from: security find-identity -v -p codesigning)
 IDENTITY="Developer ID Application: William Haslett (H25TK2U8FA)"

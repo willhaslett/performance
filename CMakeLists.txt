@@ -1,8 +1,32 @@
 cmake_minimum_required(VERSION 3.24)
-project(Performance VERSION 0.1.0)
+project(Performance VERSION 0.0.1)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+
+# Git build info — captured at configure time. Re-run cmake to refresh.
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+execute_process(
+    COMMAND git describe --tags --exact-match HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE GIT_TAG
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if(NOT GIT_COMMIT)
+    set(GIT_COMMIT "unknown")
+endif()
+if(NOT GIT_TAG)
+    set(GIT_TAG "")
+endif()
 
 add_subdirectory(lib/JUCE)
 
@@ -101,6 +125,9 @@ target_compile_definitions(Performance PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=0
+    BUILD_GIT_COMMIT="${GIT_COMMIT}"
+    BUILD_GIT_TAG="${GIT_TAG}"
+    BUILD_VERSION="${PROJECT_VERSION}"
 )
 
 target_link_libraries(Performance PRIVATE

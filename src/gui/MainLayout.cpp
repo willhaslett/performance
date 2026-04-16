@@ -72,6 +72,34 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     musicalTyping.setAudioEngine(&engine.getAudioEngine());
     addChildComponent(musicalTyping);
 
+    // Build info — read-only TextEditor so text is selectable/copyable (⌘C)
+    {
+        juce::String info;
+#ifdef BUILD_GIT_TAG
+        juce::String tag(BUILD_GIT_TAG);
+        if (tag.isNotEmpty()) info = "v" + tag + "  ";
+#endif
+#ifdef BUILD_GIT_COMMIT
+        info += juce::String(BUILD_GIT_COMMIT);
+#endif
+        buildInfoField.setReadOnly(true);
+        buildInfoField.setCaretVisible(false);
+        buildInfoField.setScrollbarsShown(false);
+        buildInfoField.setFont(Theme::font(Theme::fontSizeSm));
+        buildInfoField.setJustification(juce::Justification::centredRight);
+        buildInfoField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+        buildInfoField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        buildInfoField.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+        buildInfoField.setColour(juce::TextEditor::textColourId,
+                                 Theme::color(Theme::Color::textDim));
+        buildInfoField.setColour(juce::TextEditor::highlightColourId,
+                                 Theme::color(Theme::Color::accent));
+        buildInfoField.setColour(juce::TextEditor::highlightedTextColourId,
+                                 Theme::color(Theme::Color::textOnColor));
+        buildInfoField.setText(info, false);
+        addAndMakeVisible(buildInfoField);
+    }
+
     // Sidebar divider
     addAndMakeVisible(sidebarDivider);
     sidebarDivider.onDragStart = [this]() { dragStartSidebarWidth = sidebarWidth; };
@@ -316,37 +344,21 @@ void MainLayout::loadPaneConfig() {
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
 
-    // Toolbar
+    // Toolbar — minimal: just build info, right-aligned, low contrast
     auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(toolbar);
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
 
-    // Sidebar toggle
-    auto toggleBounds = juce::Rectangle<int>(4, 4, 24, 24);
-    g.setColour(Theme::color(Theme::Color::bgSurface));
-    g.fillRoundedRectangle(toggleBounds.toFloat(), Theme::cornerRadiusSm);
-
-    bool sidebarOpen = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
-    juce::Path arrow;
-    auto a = toggleBounds.reduced(7).toFloat();
-    if (sidebarOpen) {
-        arrow.addTriangle(a.getRight(), a.getY(),
-                          a.getRight(), a.getBottom(),
-                          a.getX(), a.getCentreY());
-    } else {
-        arrow.addTriangle(a.getX(), a.getY(),
-                          a.getX(), a.getBottom(),
-                          a.getRight(), a.getCentreY());
-    }
-    g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.fillPath(arrow);
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-    area.removeFromTop(toolbarHeight);
+
+    // Build info label in the toolbar
+    auto toolbarArea = area.removeFromTop(toolbarHeight);
+    buildInfoField.setBounds(toolbarArea.reduced(Theme::spacingM, 0));
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);
@@ -394,13 +406,8 @@ void MainLayout::resized() {
     }
 }
 
-void MainLayout::mouseUp(const juce::MouseEvent& event) {
-    auto toggleBounds = juce::Rectangle<int>(4, 4, 24, 24);
-    if (toggleBounds.contains(event.getPosition())) {
-        auto current = getPaneContent(PaneSlot::Sidebar);
-        setPaneContent(PaneSlot::Sidebar,
-                       current == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
-    }
+void MainLayout::mouseUp(const juce::MouseEvent& /*event*/) {
+    // Toolbar click handling removed — sidebar toggle now via ⌘P only.
 }
 
 void MainLayout::toggleMusicalTyping() {

@@ -103,6 +103,7 @@ private:
     void loadPaneConfig();
 
     Divider sidebarDivider { Divider::Vertical };
+    juce::TextEditor buildInfoField;
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;

@@ -4,6 +4,35 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 > Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. Authoritative history is `git log`.
 
+## Version & Distribution
+
+**Current version: `0.0.1`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.1)`. `0.1.0` will be the first beta.
+
+**Build pipeline:** `scripts/build-release.sh [version]` — one command for Release build → code sign → DMG → notarize → staple. Version defaults to the CMake version. Output: `dist/Performance-<version>.dmg`. Requires Apple Developer ID certificate + keychain-stored notarization credentials (setup documented in the script).
+
+**Beta expiry:** compiled-in date check in `main.mm` — currently October 16, 2026 (6 months). Shows dialog and quits if expired. Update the `juce::Time` constructor for each release cycle.
+
+**Binary:** Universal (arm64 + x86_64), deployment target macOS 11.0 (Big Sur). Covers every Mac still receiving security updates.
+
+**Toolbar build info:** commit hash shown right-aligned in the toolbar (`textDim`, `fontSizeSm`, selectable/copyable TextEditor). When the commit is tagged (e.g., `git tag v0.0.1`), the tag appears alongside the hash. Reconfigure CMake (`cmake -S . -B build`) to pick up new git state.
+
+**Theme system:** see Theme section below. Factory themes (`minimal_dark`, `minimal_light`) baked into binary via `juce_add_binary_data` from `runtime/themes/*.json`. User themes in `~/.config/performance/themes/` override factory on id collision. Active theme: `config["active_theme"]`, defaults to `"minimal_dark"`.
+
+**Context menus:** `PerformanceLookAndFeel` (`src/gui/PerformanceLookAndFeel.h/.cpp`) set as app-wide default at startup. Styles all JUCE-drawn popup menus, combo box dropdowns, scroll bars, and document window chrome using Theme tokens. Native macOS menu bar is unaffected (drawn by OS).
+
+### Pre-beta checklist (for first-friend distribution)
+
+- [x] Code signing + notarization pipeline
+- [x] Beta expiry check
+- [x] Universal binary (arm64 + x86_64)
+- [x] Build info in toolbar (commit hash + tagged version)
+- [x] Themed context menus via LookAndFeel
+- [ ] First-run audio device auto-selection (currently requires manual Settings → Output Device)
+- [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails (currently silent)
+- [ ] Getting started doc — keyboard shortcuts cheat sheet, audio setup, basic workflow
+- [ ] "Show Log File" menu item — so testers can find `/tmp/performance.log` to report crashes
+- [ ] Feedback channel — email, form, or built-in "Report Issue" link
+
 ## Active Work
 
 ### GUI architecture — current state
