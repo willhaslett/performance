@@ -18,15 +18,6 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Reset script:** `bin/reset` — scorched-earth reset preserving `keys/` (notarization) and `plugin-cache.xml` (AU scan cache). Simulates first-ever launch.
 
-### Bundled plugins (mda-plugins-juce, MIT license)
-
-15 AU plugins built from the `lib/mda-plugins-juce` submodule via CMake macros. Installed to `~/Library/Audio/Plug-Ins/Components/` on build (`COPY_PLUGIN_AFTER_BUILD`). Discovered automatically by the app's AU scanner.
-
-**Instruments:** mda Piano, EPiano, DX10 (FM synth), JX10 (analog poly), SubSynth.
-**Effects:** Ambience (reverb), Delay, Detune (chorus), Dynamics (compressor), Limiter, Overdrive, Degrade (lo-fi), RezFilter, RingMod, Stereo.
-
-First-time users get a usable set of instruments and effects without installing third-party plugins.
-
 ### Pre-beta checklist (for first-friend distribution)
 
 - [x] Code signing + notarization pipeline
@@ -38,7 +29,6 @@ First-time users get a usable set of instruments and effects without installing 
 - [x] Default song template (DLS Electric Piano + Audio In)
 - [x] Plugin scan overlay ("Scanning plugins..." shown while AU scan runs)
 - [x] Debounced autosave (3-second quiet period after last state change)
-- [x] Bundled mda plugins (15 instruments + effects, MIT)
 - [x] File → Open Song submenu
 - [ ] First-run audio device auto-selection (currently requires manual Settings → Output Device)
 - [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails

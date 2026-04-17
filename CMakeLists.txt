@@ -52,66 +52,6 @@ FetchContent_Declare(sol2
 )
 FetchContent_MakeAvailable(sol2)
 
-# --- Bundled mda plugins (MIT license) ---
-# Built as AU plugins from the mda-plugins-juce submodule. Each is a single
-# .cpp file. COPY_PLUGIN_AFTER_BUILD installs them to ~/Library/Audio/
-# Plug-Ins/Components/ for development; for release DMGs they'd be copied
-# into the app bundle.
-set(MDA_DIR "${CMAKE_SOURCE_DIR}/lib/mda-plugins-juce")
-set(MDA_JUCE_MODULES "${CMAKE_SOURCE_DIR}/lib/JUCE/modules")
-
-# Helper macro — one call per plugin
-macro(mda_plugin TARGET_NAME FOLDER PRODUCT_NAME PLUGIN_CODE IS_SYNTH WANTS_MIDI)
-    juce_add_plugin(${TARGET_NAME}
-        PLUGIN_MANUFACTURER_CODE Dvbl
-        PLUGIN_CODE ${PLUGIN_CODE}
-        FORMATS AU
-        PRODUCT_NAME "${PRODUCT_NAME}"
-        IS_SYNTH ${IS_SYNTH}
-        NEEDS_MIDI_INPUT ${WANTS_MIDI}
-        COPY_PLUGIN_AFTER_BUILD TRUE
-    )
-    target_sources(${TARGET_NAME} PRIVATE "${MDA_DIR}/${FOLDER}/Source/PluginProcessor.cpp")
-    target_include_directories(${TARGET_NAME} PRIVATE "${MDA_DIR}/${FOLDER}/Source")
-    target_compile_definitions(${TARGET_NAME} PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-    )
-    juce_generate_juce_header(${TARGET_NAME})
-    target_link_libraries(${TARGET_NAME} PRIVATE
-        juce::juce_audio_basics
-        juce::juce_audio_devices
-        juce::juce_audio_formats
-        juce::juce_audio_processors
-        juce::juce_audio_utils
-        juce::juce_core
-        juce::juce_events
-        juce::juce_gui_basics
-        juce::juce_gui_extra
-    )
-endmacro()
-
-# Instruments (synths)
-mda_plugin(mdaPiano    Piano    "mda Piano"    mdPi TRUE  TRUE)
-mda_plugin(mdaEPiano   EPiano   "mda EPiano"   mdEP TRUE  TRUE)
-mda_plugin(mdaDX10     DX10     "mda DX10"     mdDX TRUE  TRUE)
-mda_plugin(mdaJX10     JX10     "mda JX10"     mdJX TRUE  TRUE)
-mda_plugin(mdaSubSynth SubSynth "mda SubSynth" mdSS FALSE FALSE)
-
-# Effects
-mda_plugin(mdaAmbience  Ambience  "mda Ambience"  mdAm FALSE FALSE)
-mda_plugin(mdaDelay     Delay     "mda Delay"     mdDl FALSE FALSE)
-mda_plugin(mdaDetune    Detune    "mda Detune"    mdDt FALSE FALSE)
-mda_plugin(mdaDynamics  Dynamics  "mda Dynamics"  mdDy FALSE FALSE)
-mda_plugin(mdaLimiter   Limiter   "mda Limiter"   mdLi FALSE FALSE)
-mda_plugin(mdaOverdrive Overdrive "mda Overdrive" mdOv FALSE FALSE)
-mda_plugin(mdaDegrade   Degrade   "mda Degrade"   mdDg FALSE FALSE)
-mda_plugin(mdaRezFilter RezFilter "mda RezFilter" mdRF FALSE FALSE)
-mda_plugin(mdaRingMod   RingMod   "mda RingMod"   mdRM FALSE FALSE)
-mda_plugin(mdaStereo    Stereo    "mda Stereo"    mdSt FALSE FALSE)
-
 # --- Factory theme resources ---
 # Bundles runtime/themes/*.json into a C++ static library that exposes the
 # files via BinaryData::minimal_dark_json, BinaryData::minimal_light_json,
