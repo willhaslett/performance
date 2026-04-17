@@ -35,7 +35,6 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - [ ] Getting started doc — keyboard shortcuts, audio setup, basic workflow
 - [ ] "Show Log File" menu item for crash reporting
 - [ ] Feedback channel for testers
-- [ ] Ship plugin cache in the DMG (avoids cold AU scan on first launch — scan can hang on bad plugins)
 
 ## Active Work
 
@@ -111,7 +110,6 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
 - **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
-- **Ship plugin cache in DMG** — avoid cold AU scan on first launch for distributed builds.
 
 **Longer-term:**
 - Refactor oversized GUI files (ProducePane ~2520 lines).
