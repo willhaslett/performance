@@ -132,99 +132,47 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 
 ## Architecture
 
-### Data Flow
+Detailed diagrams (data flow, state-model tree, audio graph) live in
+`docs/ARCHITECTURE.md`. This section captures the rules and constraints
+that shape new code.
 
-```
-All mutations (GUI, Claude/Lua, IPC, MIDI bindings)
-    ↓
-StateAPI (in-memory state store — the runtime SSOT)
-    ↓ emits StateEvent
-EngineSync (subscribes to state events, applies to engine)
-    ↓
-AudioEngine (audio graph — a pure view of state)
+### Data flow (summary)
 
-PersistenceLayer (SQLite)
-    loadInto: SQL → AppState struct → state.replaceState() → one event
-    saveFrom: state.appState() → SQL
-```
+Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **EngineSync** applies it to the **AudioEngine**. **PersistenceLayer** loads/saves `AppState` atomically via `replaceState()`. The audio engine is a pure view of state; nothing writes to it except EngineSync.
 
 ### Three APIs
 
-- **StateAPI** (`src/api/StateAPI.h/.cpp`) — all state reads/writes. In-memory C++ structs (`src/state/StateModel.h`), observable via `StateEventBus` (`src/state/StateEvents.h`). No JUCE dependency, no SQLite. Every consumer defaults to this.
-- **EngineAPI** (`src/api/EngineAPI.h/.cpp`) — engine-only concerns: peak levels, processor access (for presets/params), plugin editor windows, plugin discovery. Use only when the state store can't provide it.
+- **StateAPI** (`src/api/StateAPI.h/.cpp`) — all state reads/writes. In-memory C++ structs (`src/state/StateModel.h`), observable via `StateEventBus`. No JUCE dependency, no SQLite. Default consumer.
+- **EngineAPI** (`src/api/EngineAPI.h/.cpp`) — engine-only concerns: peak levels, processor access (for presets/params), plugin editor windows, plugin discovery. Use only when state can't provide it.
 - **PerformanceCoordinator** (`src/api/PerformanceCoordinator.h/.cpp`) — lifecycle and orchestration: init/shutdown, song management, track presets, automation, action dispatch. Owns all subsystems, exposes `state()` and `engine()`.
-
-### State Model (`src/state/StateModel.h`)
-
-```
-AppState
-├── currentSongId
-├── songs: vector<SongState>
-│   ├── tracks: vector<TrackState>
-│   │   ├── effects, sends
-│   │   └── regions: vector<RegionState>
-│   │       └── takes: vector<TakeState>  (MIDI events or audio file ref)
-│   │           └── events: vector<MidiEventState>  (raw MIDI — SOT for notes)
-│   ├── busses: vector<BusState>  (with effects)
-│   ├── masterEffects
-│   ├── bindings (song-scoped)
-│   ├── score: vector<ScoreStep>
-│   ├── tempoEvents, timeSigEvents  (data model only; runtime evaluation deferred)
-│   └── selectedTrackIds, selectedBusIds (runtime)
-├── globalBindings
-├── plugins, presets, actions  (catalogs)
-└── config: map<string, string>
-```
-
-Key model facts:
-- Track source types: `Instrument` (MIDI→plugin→audio), `AudioInput` (physical input→fx→output, mono→stereo upmix), `Action` (beat-triggered, no audio, hidden from mixer).
-- `midiEnabled` and `audioEnabled` are distinct; both required for MIDI routing. The power icon controls `audioEnabled` and re-enables `midiEnabled` on power-on.
-- `armed`, `muted`, `soloed`, `recordModeActive` — runtime, not persisted. Recording is explicit: armed tracks record only when record mode is active.
-- Regions are take folders. `MidiEventState` is raw events; notes derived via `buildNoteList()`.
-- `RegionState.quantize` — non-destructive, applied at playback/display.
-- Action track: one per song (auto-created), no regions — events stored directly with absolute beat positions.
-- Multi-region and multi-track selection with Cmd/Shift modifiers.
-
-### Identity
-
-UUID everywhere. Every track, bus, effect, send has a UUID at creation. Names are display-only. All APIs, engine, GUI, and internal references use UUIDs. Names resolve to UUIDs once at Lua/Claude entry.
 
 ### Rules for new code
 
-- All state reads/writes go through StateAPI. Never call audioEngine for state.
+- All state reads/writes go through StateAPI. Never call AudioEngine for state.
 - EngineAPI is for peak levels, processors, plugin UI, and plugin discovery only.
 - EngineSync is the only code that calls AudioEngine write methods.
-- NEVER use names as keys or identity. Use UUIDs.
+- NEVER use names as keys or identity. UUIDs everywhere — every track, bus, effect, send gets one at creation; names are display-only. Names resolve to UUIDs once at Lua/Claude entry.
 - When adding a new settable value: add to StateModel, add StateAPI method, handle in EngineSync.
 - Fail loud: use `PERF_ASSERT` and the asserting helpers `song()`/`track()`/`bus()`/`device()` in StateAPI. Don't paper over programming errors.
 
+### Key state-model facts
+
+- **Track source types:** `Instrument` (MIDI→plugin→audio), `AudioInput` (physical input→fx→output, mono→stereo upmix), `Action` (beat-triggered, no audio, hidden from mixer).
+- `midiEnabled` + `audioEnabled` are distinct; **both** required for MIDI routing. The power icon controls `audioEnabled` and re-enables `midiEnabled` on power-on.
+- `armed`, `muted`, `soloed`, `recordModeActive` — runtime, not persisted. Recording is explicit: armed tracks record only when record mode is active.
+- Regions are take folders. `MidiEventState` is raw events; notes derived via `buildNoteList()`.
+- Action track: one per song (auto-created), no regions — events stored directly with absolute beat positions.
+
 ### Persistence
 
-`src/persistence/PersistenceLayer.h/.cpp`. SQLite normalized schema at `~/.config/performance/state.db` (with `state.bak.db` backup on each save). `loadInto()` builds a plain `AppState` then calls `state.replaceState()` (atomic swap, one event). Schema version tracked. *No migration shims at this stage — schema is volatile.*
+`src/persistence/PersistenceLayer.h/.cpp`. SQLite normalized schema at `~/.config/performance/state.db` (with `state.bak.db` backup on each save). `loadInto()` builds a plain `AppState` then calls `state.replaceState()` (atomic swap, one event). Schema version tracked. **No migration shims at this stage — schema is volatile.**
 
-### Audio Graph
+### Audio engine notes
 
-```
-Per instrument track:
-  midiInput ──────┐
-  midiSourceNode ─┤→ instrument → [fx…] ┬─ outputGain → masterGain
-                                         ├─ sendGain1  → Bus1
-                                         └─ sendGain2  → Bus2
+Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. Key constraints:
 
-Per audio input track:
-  audioInput[ch] ─┐
-  audioFileNode ──┤→ [fx…] → outputGain/sends → masterGain
-  (mono inputs duplicated to stereo; input optional for playback-only tracks)
-
-Per bus:    (summed sends) → [busFx…] → busOutputGain → masterGain
-Master out: masterGain → [masterFx…] → audioOutput
-```
-
-`GraphWrapper` wraps the graph. In `processBlock` it: advances a sample-accurate beat clock; scans `Arrangement` for MIDI events in this buffer's beat range; routes to per-track `MidiSourceNode`s with sample offsets; captures live MIDI to `RecordFIFO` when recording; flushes notes (CC 123/120) on stop/seek/loop via per-channel bitset; then delegates to `graph.processBlock()`.
-
-**MIDI gating:** disabled tracks (`audioEnabled=false` OR `midiEnabled=false`) receive no MIDI — both flags required in `rebuildConnections`. Actions like `setActiveTrack` set both together so the UI reflects action-driven changes.
-
-**Audio device switching:** `AudioEngine` listens to `AudioDeviceManager`. On change, `rebuildGraph()` tears down IO nodes, reconfigures, recreates and rewires. Output and input devices are independent (CoreAudio); selection persists in `config["audio_output_device"]` / `["audio_input_device"]`.
+- **MIDI gating:** disabled tracks receive no MIDI — `rebuildConnections` requires `audioEnabled=true` AND `midiEnabled=true`. Actions like `setActiveTrack` set both together so the UI reflects action-driven changes.
+- **Audio device switching:** `AudioEngine` listens to `AudioDeviceManager`. On change, `rebuildGraph()` tears down IO nodes, reconfigures, recreates, rewires. Output and input devices are independent (CoreAudio); selection persists in `config["audio_output_device"]` / `["audio_input_device"]`.
 
 ### Subsystems (one-line index)
 
@@ -257,9 +205,9 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 - **DebugPane**, **LogPane**, **SettingsWindow** (Cmd+, — Audio / MIDI / About tabs, About shows install ID + diagnostics toggle), **ChatView**, **ClaudeClient**.
 - **KeyBindingManager** — 36 commands across File/Edit/Transport/View/Region/Track. User overrides in config. `KeyBindingEditor` modal for rebinding. Pane toggles: ⌘Y Produce, ⌘U Mappings, ⌘I Chat, ⌘⇧L Logs, ⌘O Mixer, ⌘P Sidebar.
 
-### Theme (`src/gui/Theme.h`)
+### Theme
 
-All design tokens live here. This section is authoritative — read it before touching any GUI file.
+Tokens live in `src/gui/Theme.h` (authoritative values). Full reference — all color tables, typography, spacing, dimensions, design principles — is in `docs/THEME.md`. Read that before touching tokens or adding new ones.
 
 #### Rules
 
@@ -268,152 +216,28 @@ All design tokens live here. This section is authoritative — read it before to
 3. **Never** use magic padding/spacing numbers where a token fits. Use `Theme::spacingXs/S/M/L/Xl`, `Theme::headerHeight`, `Theme::pillSize`, etc. (Layout math tied to local geometry — centering icons inside their own bounds, arc radii inside a knob — is fine; those aren't themeable.)
 4. **`.withAlpha(x)` is allowed** on a theme token (e.g. `Theme::color(Theme::Color::accent).withAlpha(0.5f)`). Prefer this over a raw semi-transparent hex. If a semi-transparent color has a clear semantic role (drag-dim overlay, playhead line), add a dedicated token in Theme.h.
 5. **Semantic naming over value reuse.** Several tokens share the same hex value (`bgSlot`, `bgControl`, `bgSelection` are all `0x2a2a2a`) — they're kept distinct so a future theme can vary them independently without grep-and-replace.
-6. **When adding a new token**: add it to `Theme.h` in the appropriate category with a comment describing its use. Grep for similar call sites first — you may be duplicating an existing token.
+6. **When adding a new token**: add it to `Theme.h` in the appropriate category with a comment describing its use. Grep for similar call sites first — you may be duplicating an existing token. Also update `docs/THEME.md` and the factory JSON themes in `runtime/themes/`.
 
-#### Color tokens
+#### Token categories (see `docs/THEME.md` for values)
 
-**Surfaces (darkest → lightest):**
+- **Surfaces** — `bgApp`/`bgPanel`, `bgSurface`, `bgSurfaceRaised`, `bgRecessed`
+- **Interactive controls** — `bgControl`, `bgControlHover`, `bgSelection` (content panes), `bgListActive` (list views), `bgOverlay`, `bgDisabled`
+- **Passive inset** — `bgSlot`, `overlayDim`
+- **Text** — `textPrimary`, `textSecondary`, `textDim`, `textKeyHint`, `textOnColor`, `controlHandle`
+- **Borders** — `border`, `borderSubtle`
+- **Accent** — `accent`, `accentDim`
+- **Transport** — `transportPlay`/`Rec`/`RecDot`/`Cycle`/`CycleOff`, `playhead`
+- **Meter / activity** — `meterGreen`/`Amber`/`Red`, `sendPeak`, `activityOn`/`Off`, `statusError`
+- **Track pills** — `pillMute`/`Solo`/`Arm`/`Input`/`TextOff`
+- **Channel type accents** — `typeInstrument`/`typeAudio`/`typeBus`/`typeOutput` (mixer top stripe / ProducePane left stripe)
 
-| Token | Value | Use |
-|---|---|---|
-| `bgApp` / `bgPanel` | `0xff161616` | App background, sidebar, pane headers |
-| `bgSurface` | `0xff1e1e1e` | Track lanes, mixer strips, track headers |
-| `bgSurfaceRaised` | `0xff333333` | Regions in the timeline — one step above the lane |
-| `bgRecessed` | `0xff121212` | Deepest inset (candidate for removal; see Active Work) |
+#### Design principles (brief)
 
-**Interactive controls** (pills, plugin slots, LCD, pickers, text fields):
+- Minimal color, maximum contrast hierarchy. Color is reserved for meaning (transport, meter, status, type identity).
+- Hover is an interaction signal, not decoration — only interactive controls, only when resting.
+- Semantic tokens over value reuse (duplicated hex across tokens is a feature).
 
-| Token | Value | Use |
-|---|---|---|
-| `bgControl` | `0xff2d2d2d` | Resting state of any interactive control |
-| `bgControlHover` | `0xff333333` | Hover state for any interactive control |
-| `bgSelection` | `0xff262626` | Selected track row highlight in content panes — sits between `bgSurface` and `bgControl` so pills on selected rows still contrast |
-| `bgListActive` | `0xff333333` | Active/selected entry in a list view (sidebar, palettes) — brighter than `bgSelection` because list contexts have no embedded controls to contrast with |
-| `bgOverlay` | `0xff2a2a2a` | Modal / popup backdrop |
-| `bgDisabled` | `0xff252525` | Disabled strip / header fill |
-
-**Passive inset surfaces** (not clickable):
-
-| Token | Value | Use |
-|---|---|---|
-| `bgSlot` | `0xff2a2a2a` | Meter grooves, fader/slider troughs |
-| `overlayDim` | `0x40000000` | Semi-transparent dim over content (drag source, etc.) |
-
-**Text:**
-
-| Token | Value | Use |
-|---|---|---|
-| `textPrimary` | `0xffd8d8d8` | Main body text, track names |
-| `textSecondary` | `0xffaaaaaa` | Labels, descriptions |
-| `textDim` | `0xff666666` | Disabled, placeholder, type indicators |
-| `textKeyHint` | `0xff909090` | Keybinding hints — between `textDim` and `textSecondary`, intentionally readable but not loud |
-| `textOnColor` | `0xffffffff` | Text on colored backgrounds only (active pills, transport buttons) |
-| `controlHandle` | `0xffffffff` | Fader handles, grabbable controls |
-
-**Borders:**
-
-| Token | Value | Use |
-|---|---|---|
-| `border` | `0xff444444` | Standard divider lines |
-| `borderSubtle` | `0xff333333` | Lighter separators within panels |
-
-**Accent:**
-
-| Token | Value | Use |
-|---|---|---|
-| `accent` | `0xff2a6aaa` | Selection indicator, focus, drag-target line |
-| `accentDim` | `0xff1a4a6a` | Subtle accent |
-
-**Transport:**
-
-| Token | Value | Use |
-|---|---|---|
-| `transportPlay` | `0xff2a6a2a` | Play button active bg |
-| `transportRec` | `0xff6a2a2a` | Record mode active bg |
-| `transportRecDot` | `0xffcc4444` | Record dot when idle |
-| `transportCycle` | `0xff8a8a40` | Cycle active + cycle guide lines |
-| `transportCycleOff` | `0xff505050` | Cycle button inactive |
-| `playhead` | `0xccffffff` | Playhead vertical line (semi-transparent white) |
-
-**Meter / activity:**
-
-| Token | Value | Use |
-|---|---|---|
-| `meterGreen` | `0xff44cc44` | Safe level |
-| `meterAmber` | `0xffccaa44` | Warning zone |
-| `meterRed` | `0xffcc4444` | Clipping zone |
-| `sendPeak` | `0xff1a6e1a` | Send knob peak-activity glow (darker green) |
-| `activityOn` / `activityOff` | `0xff44cc44` / `0xff1a3a1a` | MIDI activity indicator |
-| `statusError` | `0xff994444` | Load failures |
-
-**Track pills** (M/S/R/I active colors):
-
-| Token | Value | Use |
-|---|---|---|
-| `pillMute` | `0xff8a7a3a` | M active — muted gold |
-| `pillSolo` | `0xff3a6a8a` | S active — muted steel |
-| `pillArm` | `0xff8a4040` | R active — muted red |
-| `pillInput` | `0xff8a4040` | I active — muted red |
-| `pillTextOff` | `0xff888888` | Inactive pill text color |
-
-**Channel type accents** (2px top stripe in mixer, 3px left-edge stripe in ProducePane headers):
-
-| Token | Value | Use |
-|---|---|---|
-| `typeInstrument` | `0xffaa8838` | Amber — virtual instrument tracks |
-| `typeAudio` | `0xff5080a0` | Teal — audio input tracks |
-| `typeBus` | `0xffa86078` | Rose — busses (deliberately warm to remain distinguishable from teal under red-green CVD) |
-| `typeOutput` | `0xff161616` | Matches `bgApp` — Output strip paints no stripe; absence of color is the signal |
-
-Pill *resting* backgrounds use `bgControl`, *hover* uses `bgControlHover`. Pill text when active uses `textOnColor`. Pill hover only applies to resting (off) pills — active colored pills do not change on hover.
-
-**Slot type tints, chat bubbles, track/device color palettes** — see `Theme.h` for the full list. These are category-specific and referenced only from their respective GUI files.
-
-#### Typography
-
-| Token | Value | Use |
-|---|---|---|
-| `fontSizeTitle` | `16.0f` | Pane headers, section titles |
-| `fontSizeKeyHint` | `15.0f` | Keybinding hints (monospaced) |
-| `fontSizeLg` | `14.0f` | Track names, primary content (alias: `fontSize`) |
-| `fontSizeMd` | `13.0f` | Slot labels, secondary content |
-| `fontSizeSm` | `12.0f` | Badges, hints, type indicators |
-| `fontSizeXs` | `9.0f` | Very small labels (metronome, region counters) |
-| `fontSizePill` | `13.0f` | Pill button labels |
-| `fontSizeMeter` | `10.0f` | dB tick labels |
-| `fontSizeLcdLg` / `LcdMd` / `LcdLabel` | `29 / 23 / 8` | Transport LCD digits + tiny labels |
-
-Use `Theme::font(Theme::fontSizeXx)` for sans and `Theme::fontMono(Theme::fontSizeXx)` for monospace (LCD).
-
-#### Spacing
-
-| Token | Value |
-|---|---|
-| `spacingXs` | `2` |
-| `spacingS` | `4` |
-| `spacingM` | `8` |
-| `spacingL` | `12` |
-| `spacingXl` | `16` |
-
-#### Component dimensions
-
-- `headerHeight = 28` — shared height of mixer strip headers and ProducePane track name row. **Single source of truth for vertical name-block rhythm.**
-- `slotHeight = 24`, `slotGap = 4`, `slotPadding = 4`
-- `trackPadding = 12`, `trackStripWidth = 160`, `iconSize = 14`
-- `pillSize = 20`, `pillRadius = 4.0f`, `pillGap = 5`, `pillGroupGap = 8`, `pillNameGap = 8`
-- `cornerRadius = 6.0f`, `cornerRadiusSm = 4.0f`
-
-#### Design principles
-
-- **Minimal color, maximum contrast hierarchy.** The surface stack (`bgApp → bgSurface → bgControl/bgSlot/bgSelection → bgSurfaceRaised/bgControlHover`) carries most of the visual hierarchy. Color is reserved for meaning (transport, meter, status, pill states).
-- **Subtle type accents.** Channels carry a small type-colored marker — top stripe in the mixer, left-edge stripe in ProducePane — so `typeInstrument` (amber), `typeAudio` (teal), `typeBus` (rose), and Output (no stripe) are scannable at a glance. Color is minimal-saturation and reserved for type identity; track/channel bodies stay neutral.
-- **Two-row track headers in ProducePane:** name on top (`headerHeight = 28`), M/S/R/I pills below with a 10px gap, `trackRowHeight = 72` default.
-- **Hover is an interaction signal, not decoration.** Only interactive controls get hover states, and only when resting (off/unselected). Active colored pills don't change on hover.
-- **Semantic tokens over value reuse.** Duplicating a hex value across multiple semantic tokens is a feature — future themes can split them.
-
-#### Adding a new theme
-
-In principle: copy `Theme.h` to a new file, change color values, switch the included header. In practice, there's no runtime theme switching yet — and the non-pane files (several modals, dialogs, overlays) still contain hardcoded colors. Full themeability requires finishing the pane sweep in Active Work.
+Full articulation of principles in `docs/THEME.md`.
 
 ### Bindings & Actions
 
