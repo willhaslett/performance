@@ -2,7 +2,7 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. Authoritative history is `git log`.
+> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
 
 ## Version & Distribution
 
@@ -16,7 +16,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Toolbar:** minimal — just build info (commit hash, selectable/copyable TextEditor, `textDim`/`fontSizeSm`) right-aligned. When the commit is tagged, the tag appears alongside. Commit hash is regenerated on every build via `cmake/GenerateBuildVersion.cmake` → `build/generated/BuildVersion.h`, and auto-appends `-dirty` when there are uncommitted changes. No reconfigure needed to refresh it. Every log file also records `[App] Build version=... commit=... tag=... dirty=...` on startup.
 
-**Reset script:** `bin/reset` — scorched-earth reset preserving `keys/` (notarization) and `plugin-cache.xml` (AU scan cache). Simulates first-ever launch.
+**Reset script:** `bin/reset` — scorched-earth reset of `~/.config/performance/` preserving `keys/` (notarization + telemetry config) and `plugin-cache.xml` (AU scan cache). Does not touch `~/Library/Application Support/com.performance.app/install.json`, so a reset keeps the same installation identity. Simulates "reset song library," not "fresh install."
 
 ### Pre-beta checklist (for first-friend distribution)
 
@@ -58,21 +58,23 @@ The immediate goal is getting the app in the hands of 4 musician friends. Focus 
 
 ### Sidebar
 
-Rewritten as a **flat categorized list** (no tabs, no tree). Two sections:
+Flat categorized list (no tabs, no tree). Two sections with title-case headers at `fontSizeLg`:
 
-**PANES** — one entry per pane with keybinding hint (e.g., "Produce ⌘Y"). Click to toggle show/hide. "Perform" (⌘U) toggles ControllersPane + SongMappingsPane as a pair. Active panes show accent bar + `bgSelection` highlight.
+**View** — one row per pane with a monospaced keybinding hint right of a fixed-width label column. Rows: Produce ⌘Y · Perform ⌘U · Chat ⌘I · Mixer ⌘O. Sidebar itself is not a row — toggle via ⌘P or the View menu. Active panes are indicated by text color only (no accent bar, no row highlight — pane visibility is self-evident).
 
-**SONGS** — list of all songs (click to load) + "Create New Song" action button.
+**Songs** — list of all songs (click to load) + "+ New Song" action button. Current song stays highlighted with `bgListActive` (brighter than `bgSelection` — a separate token because the list-selection context doesn't have embedded pills to contrast against).
 
-Themed: `bgSurface` container, `fontSizeSm` section headers, `fontSizeLg` items, `bgControlHover` on hover.
+Themed: `bgSurface` container, `fontSizeLg` headers + items, `fontMono(fontSizeKeyHint)` key hints in `textKeyHint`, `bgControlHover` on hover.
 
 ### Navigation model
 
-Every pane is a simple show/hide toggle — no modes, no workspace concept. The Perform/Produce distinction is just "which main pane is showing." A mode-switcher experiment (toolbar pill with per-mode layout state) was tried and reverted — the complexity wasn't justified for what's really just one pane swapping.
+Every pane is a simple show/hide toggle — no modes, no workspace concept. A mode-switcher experiment (toolbar pill with per-mode layout state) was tried and reverted — the complexity wasn't justified for what's really just one pane swapping.
 
-**Pane slots:** Sidebar (left column), Left (main area), Right (secondary), Bottom (mixer). Each slot holds one content type. Some content types pair together (Perform = Controllers in Left + SongMappings in Right).
+**Pane slots:** Sidebar (left column), Left (main area), Right (secondary), Bottom (mixer). Each slot holds one content type. No slot-pairing games — every content type fits in exactly one slot.
 
-**Per-content preferred widths:** swapping content into the Left slot snaps the divider to the new content's preferred proportion. `Controllers = 0.28`, `SongMappings = 0.55`, `Produce = 0.65`.
+**PerformPane** composes `ControllersPane` + `SongMappingsPane` side-by-side with an internal draggable divider, and lives in the Left slot as a single `PaneContent::Perform`. This avoided an orphaning bug where the old dual-slot Controllers/SongMappings arrangement left one half visible if anything else took the Right slot. The two inner panes remain independent classes; `PerformPane` is a thin composer, so pulling them apart later stays cheap.
+
+**Per-content preferred widths (for Left/Right split):** `Produce = 0.65`, `Perform = 0.75`, `Debug = 0.50`.
 
 ### Theme system
 
@@ -86,8 +88,8 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 
 ### Theming sweep status
 
-**Done:** ProducePane, MixerView family, ControllersPane, SongMappingsPane.
-**Not swept:** Sidebar (rewritten but not audited for theme tokens), DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay.
+**Done:** ProducePane, MixerView family, ControllersPane, SongMappingsPane, PerformPane, Sidebar.
+**Not swept:** DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay.
 
 ### Design document
 
@@ -250,9 +252,9 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 - **MusicalTyping** — Cmd+Shift+K. Logic-style keyboard layout, octave/velocity, sustain. Injects via `audioEngine.injectMidi()`.
 - **MorphEditor** — slot-based compound morph editor.
 - **PluginSlot**, **SendsPanel** — reusable controls.
-- **Sidebar** — Songs/Library/Actions/Devices tabs. MIDI device entries informational only; audio devices clickable for I/O.
-- **MappingPane** — Controllers (left) + Song Mappings (right, Atemporal + Score). Drag-and-drop between all areas. Learn mode is port-aware single-shot. Stub bindings (no action) persist.
-- **DebugPane**, **LogPane**, **SettingsWindow** (Cmd+,), **ChatView**, **ClaudeClient**.
+- **Sidebar** — flat View + Songs list (see Active Work § Sidebar for details).
+- **PerformPane** — thin composer wrapping **ControllersPane** (MIDI device tree, learn mode) + **SongMappingsPane** (Atemporal + Score bindings) with an internal draggable divider. Drag-and-drop between all areas. Learn mode is port-aware single-shot. Stub bindings (no action) persist.
+- **DebugPane**, **LogPane**, **SettingsWindow** (Cmd+, — Audio / MIDI / About tabs, About shows install ID + diagnostics toggle), **ChatView**, **ClaudeClient**.
 - **KeyBindingManager** — 36 commands across File/Edit/Transport/View/Region/Track. User overrides in config. `KeyBindingEditor` modal for rebinding. Pane toggles: ⌘Y Produce, ⌘U Mappings, ⌘I Chat, ⌘⇧L Logs, ⌘O Mixer, ⌘P Sidebar.
 
 ### Theme (`src/gui/Theme.h`)
@@ -285,7 +287,8 @@ All design tokens live here. This section is authoritative — read it before to
 |---|---|---|
 | `bgControl` | `0xff2d2d2d` | Resting state of any interactive control |
 | `bgControlHover` | `0xff333333` | Hover state for any interactive control |
-| `bgSelection` | `0xff262626` | Selected track row highlight — sits between `bgSurface` and `bgControl` so pills on selected rows still contrast |
+| `bgSelection` | `0xff262626` | Selected track row highlight in content panes — sits between `bgSurface` and `bgControl` so pills on selected rows still contrast |
+| `bgListActive` | `0xff333333` | Active/selected entry in a list view (sidebar, palettes) — brighter than `bgSelection` because list contexts have no embedded controls to contrast with |
 | `bgOverlay` | `0xff2a2a2a` | Modal / popup backdrop |
 | `bgDisabled` | `0xff252525` | Disabled strip / header fill |
 
@@ -303,6 +306,7 @@ All design tokens live here. This section is authoritative — read it before to
 | `textPrimary` | `0xffd8d8d8` | Main body text, track names |
 | `textSecondary` | `0xffaaaaaa` | Labels, descriptions |
 | `textDim` | `0xff666666` | Disabled, placeholder, type indicators |
+| `textKeyHint` | `0xff909090` | Keybinding hints — between `textDim` and `textSecondary`, intentionally readable but not loud |
 | `textOnColor` | `0xffffffff` | Text on colored backgrounds only (active pills, transport buttons) |
 | `controlHandle` | `0xffffffff` | Fader handles, grabbable controls |
 
@@ -352,6 +356,15 @@ All design tokens live here. This section is authoritative — read it before to
 | `pillInput` | `0xff8a4040` | I active — muted red |
 | `pillTextOff` | `0xff888888` | Inactive pill text color |
 
+**Channel type accents** (2px top stripe in mixer, 3px left-edge stripe in ProducePane headers):
+
+| Token | Value | Use |
+|---|---|---|
+| `typeInstrument` | `0xffaa8838` | Amber — virtual instrument tracks |
+| `typeAudio` | `0xff5080a0` | Teal — audio input tracks |
+| `typeBus` | `0xffa86078` | Rose — busses (deliberately warm to remain distinguishable from teal under red-green CVD) |
+| `typeOutput` | `0xff161616` | Matches `bgApp` — Output strip paints no stripe; absence of color is the signal |
+
 Pill *resting* backgrounds use `bgControl`, *hover* uses `bgControlHover`. Pill text when active uses `textOnColor`. Pill hover only applies to resting (off) pills — active colored pills do not change on hover.
 
 **Slot type tints, chat bubbles, track/device color palettes** — see `Theme.h` for the full list. These are category-specific and referenced only from their respective GUI files.
@@ -361,6 +374,7 @@ Pill *resting* backgrounds use `bgControl`, *hover* uses `bgControlHover`. Pill 
 | Token | Value | Use |
 |---|---|---|
 | `fontSizeTitle` | `16.0f` | Pane headers, section titles |
+| `fontSizeKeyHint` | `15.0f` | Keybinding hints (monospaced) |
 | `fontSizeLg` | `14.0f` | Track names, primary content (alias: `fontSize`) |
 | `fontSizeMd` | `13.0f` | Slot labels, secondary content |
 | `fontSizeSm` | `12.0f` | Badges, hints, type indicators |
@@ -417,7 +431,25 @@ Index `.component` Info.plist metadata at startup, on-demand `AudioComponentRegi
 
 ### Logging
 
-`perfLog()` → stderr + `/tmp/performance.log` (unbuffered, ISO 8601 UTC). Subsystem prefixes: `[Engine]`, `[EngineSync]`, `[Coordinator]`, `[MIDI]`, `[Persistence]`, `[Sidebar]`, `[IPC]`. Tail with `tail -f /tmp/performance.log`. In-app LogPane provides selectable view.
+`perfLog()` → stderr + `/tmp/performance.log` (unbuffered, ISO 8601 UTC). Subsystem prefixes: `[Engine]`, `[EngineSync]`, `[Coordinator]`, `[MIDI]`, `[Persistence]`, `[Sidebar]`, `[IPC]`, `[Telemetry]`. Tail with `tail -f /tmp/performance.log`. In-app LogPane provides selectable view.
+
+On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/performance.log.<epoch>.prev` (so crashes/force-quits are retained), then opens a fresh log. The startup block emits `[App] Build version=... commit=... tag=... dirty=...` and `[App] Install id=... firstSeen=...` so every log file is self-identifying.
+
+### Install identity & telemetry
+
+**`InstallId`** (`src/telemetry/InstallId.h`/.cpp) — UUID generated on first launch and persisted at `~/Library/Application Support/com.performance.app/install.json` (survives state resets and version upgrades; new ID only on new machine / new account / manual wipe). Surfaced in Settings > About with a copy button.
+
+**`TelemetryShipper`** (`src/telemetry/TelemetryShipper.h`/.cpp) — on startup, enumerates `/tmp/performance.log.*.prev` and POSTs each to the ingest endpoint on a background thread via `juce::Thread::launch` (fire-and-forget, non-blocking). On success deletes the file; on failure leaves it for the next startup to retry — so crashes ship naturally. Respects the "Send Diagnostics" toggle in Settings > About (persisted in `state.db` under `telemetry_enabled`, default on).
+
+**Build-time configuration** — `cmake/GenerateBuildVersion.cmake` writes `build/generated/BuildVersion.h` with git commit/tag/dirty state on every build (idempotent — only rewrites the file if content changed). `cmake/GenerateBuildConfig.cmake` writes `build/generated/BuildConfig.h` with `TELEMETRY_URL` + `TELEMETRY_TOKEN` read from `keys/telemetry.json` (gitignored). Populate the keys file via `scripts/fetch-telemetry-config.sh` (pulls from AWS CloudFormation outputs + SSM). Missing keys file = empty values = shipper is a silent no-op, so fresh checkouts still build.
+
+**AWS infra** (`infra/`) — CDK v2 TypeScript stack `PerformanceTelemetry`:
+- S3 bucket `performance-session-logs-<account>` for gzipped logs (1-year lifecycle, `RETAIN` on stack destroy).
+- DynamoDB `performance-installations` (pay-per-request) tracking firstSeen, lastSeen, lastCommit, lastVersion, totalBytes, totalLogs per install.
+- Node.js 20 Lambda with function URL; validates `Authorization: Bearer <token>`, writes to S3 at `<installId>/<iso>-<commit>.log.gz`, upserts DDB row.
+- Bearer token generated on first deploy and stored at SSM `/performance/telemetry/bearer-token`. Rotate by deleting the param and redeploying.
+- $5/month budget alarm with email notification at 80%.
+- Deploy: `cd infra && npx cdk deploy`. See `infra/README.md` for one-time bootstrap + rotation steps.
 
 ### IPC
 
