@@ -394,7 +394,7 @@ Use `Theme::font(Theme::fontSizeXx)` for sans and `Theme::fontMono(Theme::fontSi
 #### Design principles
 
 - **Minimal color, maximum contrast hierarchy.** The surface stack (`bgApp → bgSurface → bgControl/bgSlot/bgSelection → bgSurfaceRaised/bgControlHover`) carries most of the visual hierarchy. Color is reserved for meaning (transport, meter, status, pill states).
-- **Neutral track headers.** No per-track color. Track type is indicated by affordances (audio inputs lack the instrument slot; action tracks hide the mixer), not color coding.
+- **Subtle type accents.** Channels carry a small type-colored marker — top stripe in the mixer, left-edge stripe in ProducePane — so `typeInstrument` (amber), `typeAudio` (teal), `typeBus` (rose), and Output (no stripe) are scannable at a glance. Color is minimal-saturation and reserved for type identity; track/channel bodies stay neutral.
 - **Two-row track headers in ProducePane:** name on top (`headerHeight = 28`), M/S/R/I pills below with a 10px gap, `trackRowHeight = 72` default.
 - **Hover is an interaction signal, not decoration.** Only interactive controls get hover states, and only when resting (off/unselected). Active colored pills don't change on hover.
 - **Semantic tokens over value reuse.** Duplicating a hex value across multiple semantic tokens is a feature — future themes can split them.

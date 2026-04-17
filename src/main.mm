@@ -14,6 +14,21 @@
 #include "engine/Log.h"
 #import <AppKit/AppKit.h>
 
+static juce::String uniqueSongName(StateAPI& state) {
+    const juce::String base = "New Song";
+    auto taken = [&](const juce::String& name) {
+        for (auto& s : state.allSongs())
+            if (juce::String(s.name) == name) return true;
+        return false;
+    };
+    if (!taken(base)) return base;
+    for (int i = 2; i < 1000; ++i) {
+        auto candidate = base + " " + juce::String::formatted("%02d", i);
+        if (!taken(candidate)) return candidate;
+    }
+    return base;  // unreachable under normal use
+}
+
 class MainWindow : public juce::DocumentWindow {
 public:
     MainWindow(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
@@ -286,7 +301,7 @@ public:
         switch (menuItemID) {
         // File
         case CommandIDs::newSong: {
-            coord.createDefaultSong("Untitled");
+            coord.createDefaultSong(uniqueSongName(coord.state()).toStdString());
             break;
         }
         case CommandIDs::saveSong: coord.save(); break;
@@ -497,7 +512,7 @@ public:
 
         // Wire save
         layout->onNewSong = [this]() {
-            coordinator->createDefaultSong("Untitled");
+            coordinator->createDefaultSong(uniqueSongName(coordinator->state()).toStdString());
         };
         layout->getSidebar().onNewSong = layout->onNewSong;
         layout->onNewInstrumentTrack = [this]() {
@@ -684,7 +699,7 @@ private:
         };
         chooser.onNewSong = [this, layout]() {
             layout->removeChildComponent(&layout->startupChooser);
-            coordinator->createDefaultSong("Untitled");
+            coordinator->createDefaultSong(uniqueSongName(coordinator->state()).toStdString());
         };
     }
 

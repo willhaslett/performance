@@ -35,6 +35,7 @@ namespace {
             {"bgSlot",          &Color::bgSlot},
             {"bgControl",       &Color::bgControl},
             {"bgControlHover",  &Color::bgControlHover},
+            {"bgListActive",    &Color::bgListActive},
             {"bgSelection",     &Color::bgSelection},
             {"bgStripe",        &Color::bgStripe},
             {"bgOverlay",       &Color::bgOverlay},
@@ -46,6 +47,7 @@ namespace {
             {"textPrimary",     &Color::textPrimary},
             {"textSecondary",   &Color::textSecondary},
             {"textDim",         &Color::textDim},
+            {"textKeyHint",     &Color::textKeyHint},
             {"textOnColor",     &Color::textOnColor},
             {"controlHandle",   &Color::controlHandle},
             {"accent",          &Color::accent},
@@ -63,6 +65,10 @@ namespace {
             {"meterAmber",      &Color::meterAmber},
             {"meterRed",        &Color::meterRed},
             {"sendPeak",        &Color::sendPeak},
+            {"typeInstrument",  &Color::typeInstrument},
+            {"typeAudio",       &Color::typeAudio},
+            {"typeBus",         &Color::typeBus},
+            {"typeOutput",      &Color::typeOutput},
             {"pillMute",        &Color::pillMute},
             {"pillSolo",        &Color::pillSolo},
             {"pillArm",         &Color::pillArm},
@@ -84,6 +90,7 @@ namespace {
         static FloatTable t = {
             // fonts
             {"Title",    &fontSizeTitle},
+            {"KeyHint",  &fontSizeKeyHint},
             {"Lg",       &fontSizeLg},
             {"Md",       &fontSizeMd},
             {"Sm",       &fontSizeSm},
@@ -315,6 +322,7 @@ void loadDefaultTheme() {
     Color::bgSlot          = 0xff2a2a2a;
     Color::bgControl       = 0xff2d2d2d;
     Color::bgControlHover  = 0xff333333;
+    Color::bgListActive    = 0xff333333;
     Color::bgSelection     = 0xff262626;
     Color::bgStripe        = 0xff343434;
     Color::bgOverlay       = 0xff2a2a2a;
@@ -326,6 +334,7 @@ void loadDefaultTheme() {
     Color::textPrimary     = 0xffd8d8d8;
     Color::textSecondary   = 0xffaaaaaa;
     Color::textDim         = 0xff666666;
+    Color::textKeyHint     = 0xff909090;
     Color::textOnColor     = 0xffffffff;
     Color::controlHandle   = 0xffffffff;
     Color::accent          = 0xff2a6aaa;
@@ -343,6 +352,10 @@ void loadDefaultTheme() {
     Color::meterAmber      = 0xffccaa44;
     Color::meterRed        = 0xffcc4444;
     Color::sendPeak        = 0xff1a6e1a;
+    Color::typeInstrument  = 0xffaa8838;
+    Color::typeAudio       = 0xff5080a0;
+    Color::typeBus         = 0xffa86078;
+    Color::typeOutput      = 0xff161616;
     Color::pillMute        = 0xff8a7a3a;
     Color::pillSolo        = 0xff3a6a8a;
     Color::pillArm         = 0xff8a4040;
@@ -366,6 +379,7 @@ void loadDefaultTheme() {
     Color::chatInput       = 0xff252525;
 
     fontSizeTitle    = 16.0f;
+    fontSizeKeyHint  = 15.0f;
     fontSizeLg       = 14.0f;
     fontSizeMd       = 13.0f;
     fontSizeSm       = 12.0f;

@@ -269,6 +269,14 @@ void TrackStrip::paint(juce::Graphics& g) {
     g.setColour(headerColour);
     g.fillRect(headerBounds);
 
+    // Type accent — 2px top stripe. Action tracks get no stripe (they don't show in the mixer anyway).
+    if (sourceType == TrackSourceType::Instrument || sourceType == TrackSourceType::AudioInput) {
+        g.setColour(Theme::color(sourceType == TrackSourceType::Instrument
+                                 ? Theme::Color::typeInstrument
+                                 : Theme::Color::typeAudio));
+        g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
+    }
+
     // Header: power icon + track name + type indicator + menu dots
     int cx = headerBounds.getX() + Theme::spacingM;
     int cy = headerBounds.getCentreY();

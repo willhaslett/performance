@@ -693,6 +693,13 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.setColour(headerCol);
         g.fillRect(row);
 
+        // Type accent — 3px left-edge stripe. Action tracks get no stripe.
+        if (!isAction) {
+            auto accentColor = isAudioInput ? Theme::Color::typeAudio : Theme::Color::typeInstrument;
+            g.setColour(Theme::color(accentColor));
+            g.fillRect(row.getX(), row.getY(), 3, row.getHeight());
+        }
+
         // Selection highlight
         auto selIds = state->selectedTrackIds();
         bool isSelected = std::find(selIds.begin(), selIds.end(), t.id) != selIds.end();

@@ -82,13 +82,17 @@ void BusStrip::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(bounds);
 
-    // Header — purple tint for busses
+    // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
     auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgSurface)
                                   : Theme::color(Theme::Color::bgDisabled);
     g.setColour(headerCol);
     g.fillRect(headerBounds);
+
+    // Type accent — 2px top stripe (bus).
+    g.setColour(Theme::color(Theme::Color::typeBus));
+    g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
 
     // Power icon
     powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,

@@ -18,6 +18,7 @@ namespace Theme {
         inline uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces
         inline uint32_t bgControl       = 0xff2d2d2d;  // interactive control base
         inline uint32_t bgControlHover  = 0xff333333;  // interactive control hover
+        inline uint32_t bgListActive    = 0xff333333;  // active/selected entry in a list view (sidebar, palettes)
         inline uint32_t bgSelection     = 0xff262626;  // selected track row highlight
         inline uint32_t bgStripe        = 0xff343434;  // alternate-row zebra stripe in list panes
         inline uint32_t bgOverlay       = 0xff2a2a2a;  // modal/overlay/popup backdrop
@@ -33,6 +34,7 @@ namespace Theme {
         inline uint32_t textPrimary     = 0xffd8d8d8;
         inline uint32_t textSecondary   = 0xffaaaaaa;
         inline uint32_t textDim         = 0xff666666;
+        inline uint32_t textKeyHint     = 0xff909090;  // keybinding hints — between dim and secondary
         inline uint32_t textOnColor     = 0xffffffff;
         inline uint32_t controlHandle   = 0xffffffff;
 
@@ -58,6 +60,13 @@ namespace Theme {
         inline uint32_t meterAmber      = 0xffccaa44;
         inline uint32_t meterRed        = 0xffcc4444;
         inline uint32_t sendPeak        = 0xff1a6e1a;
+
+        // Track / channel type accents — subtle hue to distinguish entity kinds
+        // at a glance in the mixer (top stripe) and ProducePane (left edge).
+        inline uint32_t typeInstrument  = 0xffaa8838;  // muted amber
+        inline uint32_t typeAudio       = 0xff5080a0;  // muted teal
+        inline uint32_t typeBus         = 0xffa86078;  // muted rose — deliberately warm to separate from typeAudio under CVD
+        inline uint32_t typeOutput      = 0xff161616;  // matches bgApp — renders invisibly; absence of color is the signal
 
         // Track pills
         inline uint32_t pillMute        = 0xff8a7a3a;
@@ -97,6 +106,7 @@ namespace Theme {
 
     // ── Typography ────────────────────────────────────────────
     inline float fontSizeTitle    = 16.0f;
+    inline float fontSizeKeyHint  = 15.0f;  // keybinding hints — slightly above body
     inline float fontSizeLg       = 14.0f;
     inline float fontSizeMd       = 13.0f;
     inline float fontSizeSm       = 12.0f;

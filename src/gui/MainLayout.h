@@ -5,8 +5,7 @@
 #include "gui/ChatView.h"
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
-#include "gui/ControllersPane.h"
-#include "gui/SongMappingsPane.h"
+#include "gui/PerformPane.h"
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
 #include "gui/Divider.h"
@@ -28,8 +27,7 @@ enum class PaneContent {
     Hidden,
     SidebarTree,
     Produce,
-    Controllers,
-    SongMappings,
+    Perform,
     Debug,
     Chat,
     Logs,
@@ -76,8 +74,7 @@ public:
 
     // Expose panes for wiring
     DebugPane debugPane;
-    ControllersPane controllersPane;
-    SongMappingsPane songMappingsPane;
+    PerformPane performPane;
     ProducePane producePane;
     ChatView chatView;
     LogPane logPane;

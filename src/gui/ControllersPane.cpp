@@ -235,10 +235,6 @@ void ControllersPane::paint(juce::Graphics& g) {
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine((float)area.getX(), (float)(area.getY() + leftHeaderHeight),
                (float)area.getRight(), (float)(area.getY() + leftHeaderHeight), 1.0f);
-
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)area.getRight() - 1, (float)area.getY(),
-               (float)area.getRight() - 1, (float)area.getBottom(), 1.0f);
 }
 
 void ControllersPane::mouseDown(const juce::MouseEvent& event) {

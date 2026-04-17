@@ -64,4 +64,5 @@ private:
     static constexpr int itemHeight = 30;
     static constexpr int sectionGap = 16;
     static constexpr int leftPad = 14;
+    static constexpr int labelWidth = 80;   // fixed-width label column — keybinding hints left-align against its right edge
 };

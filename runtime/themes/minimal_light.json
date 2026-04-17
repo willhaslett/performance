@@ -11,6 +11,7 @@
     "bgSlot": "#e4e4e4",
     "bgControl": "#dedede",
     "bgControlHover": "#d2d2d2",
+    "bgListActive": "#d2d2d2",
     "bgSelection": "#e8e8e8",
     "bgOverlay": "#f5f5f5",
     "bgDisabled": "#e0e0e0",
@@ -23,6 +24,7 @@
     "textPrimary": "#202020",
     "textSecondary": "#555555",
     "textDim": "#888888",
+    "textKeyHint": "#707070",
     "textOnColor": "#ffffff",
     "controlHandle": "#404040",
 
@@ -46,6 +48,10 @@
     "sendPeak": "#2a7a2a",
 
     "pillMute": "#cca040",
+    "typeInstrument": "#aa7820",
+    "typeAudio": "#305068",
+    "typeBus": "#8a3050",
+    "typeOutput": "#ebebeb",
     "pillSolo": "#4a80b8",
     "pillArm": "#cc5858",
     "pillInput": "#cc5858",
@@ -75,6 +81,7 @@
 
   "fonts": {
     "Title": 16,
+    "KeyHint": 15,
     "Lg": 14,
     "Md": 13,
     "Sm": 12,

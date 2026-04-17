@@ -35,18 +35,17 @@ void Sidebar::rebuild() {
     items.clear();
     int y = Theme::spacingM;
 
-    // --- PANES ---
-    items.push_back({ Item::SectionHeader, "PANES", "", {} });
+    // --- View ---
+    items.push_back({ Item::SectionHeader, "View", "", {} });
     items.back().bounds = { 0, y, getWidth(), sectionHeight };
     y += sectionHeight;
 
     juce::String cmd = juce::String::fromUTF8("\xe2\x8c\x98");
     for (auto& v : std::vector<std::tuple<std::string, juce::String, juce::String>>{
-        {"sidebar",  "Sidebar",  cmd + "P"},
         {"produce",  "Produce",  cmd + "Y"},
         {"perform",  "Perform",  cmd + "U"},
-        {"mixer",    "Mixer",    cmd + "B"},
         {"chat",     "Chat",     cmd + "I"},
+        {"mixer",    "Mixer",    cmd + "O"},
     }) {
         auto& [id, label, shortcut] = v;
         items.push_back({ Item::ViewToggle, label, id, {}, shortcut });
@@ -56,8 +55,8 @@ void Sidebar::rebuild() {
 
     y += sectionGap;
 
-    // --- SONGS ---
-    items.push_back({ Item::SectionHeader, "SONGS", "", {} });
+    // --- Songs ---
+    items.push_back({ Item::SectionHeader, "Songs", "", {} });
     items.back().bounds = { 0, y, getWidth(), sectionHeight };
     y += sectionHeight;
 
@@ -95,7 +94,7 @@ void Sidebar::paint(juce::Graphics& g) {
 
         if (item.kind == Item::SectionHeader) {
             g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSizeSm));
+            g.setFont(Theme::font(Theme::fontSizeLg));
             g.drawText(item.label, bounds.withLeft(leftPad), juce::Justification::centredLeft);
             continue;
         }
@@ -108,19 +107,14 @@ void Sidebar::paint(juce::Graphics& g) {
         else if (item.kind == Item::SongEntry)
             active = (item.id == currentSongId);
 
-        // Row background
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::bgSelection));
+        // Row background: current song stays highlighted (meaningful indicator);
+        // view toggles only show hover since the displayed pane is self-evident.
+        if (active && item.kind == Item::SongEntry) {
+            g.setColour(Theme::color(Theme::Color::bgListActive));
             g.fillRect(bounds);
         } else if (hovered) {
             g.setColour(Theme::color(Theme::Color::bgControlHover));
             g.fillRect(bounds);
-        }
-
-        // Active indicator — accent bar on the left edge
-        if (active) {
-            g.setColour(Theme::color(Theme::Color::accent));
-            g.fillRect(bounds.getX(), bounds.getY() + 4, 3, bounds.getHeight() - 8);
         }
 
         // Label
@@ -133,15 +127,15 @@ void Sidebar::paint(juce::Graphics& g) {
                                 : Theme::color(Theme::Color::textSecondary));
         }
         g.setFont(Theme::font(Theme::fontSizeLg));
-        g.drawText(item.label, bounds.withLeft(leftPad + (active ? 6 : 0)).withTrimmedRight(50),
+        g.drawText(item.label, bounds.withLeft(leftPad).withWidth(labelWidth),
                    juce::Justification::centredLeft);
 
-        // Keybinding hint — right-aligned, dim
+        // Keybinding hint — left-aligned right after the label column, monospaced so glyphs line up.
         if (item.shortcut.isNotEmpty()) {
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(Theme::font(Theme::fontSizeSm));
-            g.drawText(item.shortcut, bounds.withTrimmedRight(leftPad),
-                       juce::Justification::centredRight);
+            g.setColour(Theme::color(Theme::Color::textKeyHint));
+            g.setFont(Theme::fontMono(Theme::fontSizeKeyHint));
+            g.drawText(item.shortcut, bounds.withLeft(leftPad + labelWidth).withTrimmedRight(leftPad),
+                       juce::Justification::centredLeft);
         }
     }
 }
