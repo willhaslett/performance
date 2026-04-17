@@ -30,7 +30,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - [x] Plugin scan overlay ("Scanning plugins..." shown while AU scan runs)
 - [x] Debounced autosave (3-second quiet period after last state change)
 - [x] File → Open Song submenu
-- [ ] First-run audio device auto-selection (currently requires manual Settings → Output Device)
+- [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
 - [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails
 - [ ] Getting started doc — keyboard shortcuts, audio setup, basic workflow
 - [ ] "Show Log File" menu item for crash reporting
