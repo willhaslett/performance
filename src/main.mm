@@ -13,6 +13,7 @@
 #include "gui/KeyBindingEditor.h"
 #include "engine/Log.h"
 #include "telemetry/InstallId.h"
+#include "telemetry/TelemetryShipper.h"
 #include "BuildVersion.h"
 #import <AppKit/AppKit.h>
 
@@ -477,6 +478,9 @@ public:
         // New system: in-memory state + persistence
         coordinator = std::make_unique<PerformanceCoordinator>();
         coordinator->initialise();
+
+        // Ship any rescued prior-session logs (crashes, force-quits). Async.
+        Telemetry::shipPrevLogs(coordinator->state());
 
         // Set app-wide LookAndFeel AFTER theme loads (coordinator->initialise
         // loads the active theme) so popup menus, combo boxes, etc. match.

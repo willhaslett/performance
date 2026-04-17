@@ -4,7 +4,11 @@
 namespace {
 
 juce::File installFile() {
+    // juce::File::userApplicationDataDirectory on macOS is ~/Library, not
+    // ~/Library/Application Support — JUCE expects you to append the
+    // conventional subpath.
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("Application Support")
                .getChildFile("com.performance.app")
                .getChildFile("install.json");
 }

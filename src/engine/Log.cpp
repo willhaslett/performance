@@ -1,5 +1,7 @@
 #include "engine/Log.h"
 #include <ctime>
+#include <sys/stat.h>
+#include <cstdio>
 
 static FILE* gLogFile = nullptr;
 
@@ -13,7 +15,18 @@ static void writeTimestamp(FILE* f) {
 }
 
 void initLog() {
-    gLogFile = fopen("/tmp/performance.log", "w");
+    // Rescue any non-empty prior-session log before truncating, so the
+    // telemetry shipper can pick it up. Uses a unique .prev suffix per
+    // rescue so multiple unshipped sessions don't clobber each other.
+    const char* current = "/tmp/performance.log";
+    struct stat st;
+    if (stat(current, &st) == 0 && st.st_size > 0) {
+        char prev[128];
+        snprintf(prev, sizeof(prev), "/tmp/performance.log.%ld.prev",
+                 (long)time(nullptr));
+        rename(current, prev);
+    }
+    gLogFile = fopen(current, "w");
     if (gLogFile)
         setvbuf(gLogFile, nullptr, _IONBF, 0);
 }

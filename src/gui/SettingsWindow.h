@@ -57,16 +57,18 @@ private:
     };
     MidiPage midiPage;
 
-    // About page — version, commit, install identity
+    // About page — version, commit, install identity, diagnostics toggle
     class AboutPage : public juce::Component {
     public:
-        AboutPage();
+        explicit AboutPage(StateAPI& state);
         void paint(juce::Graphics& g) override;
         void resized() override;
     private:
-        juce::Label versionLabel, commitLabel, installIdLabel, firstSeenLabel;
+        StateAPI& state;
+        juce::Label versionLabel, commitLabel, installIdLabel, firstSeenLabel, diagnosticsLabel;
         juce::TextEditor versionValue, commitValue, installIdValue, firstSeenValue;
         juce::TextButton copyIdButton { "Copy" };
+        juce::ToggleButton diagnosticsToggle;
     };
     AboutPage aboutPage;
 

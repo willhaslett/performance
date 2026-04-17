@@ -90,6 +90,7 @@ target_sources(Performance PRIVATE
     src/gui/SongMappingsPane.cpp
     src/gui/PerformPane.cpp
     src/telemetry/InstallId.cpp
+    src/telemetry/TelemetryShipper.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
     src/gui/PerformanceLookAndFeel.cpp
@@ -128,6 +129,20 @@ add_custom_target(generate_build_version ALL
 )
 add_dependencies(Performance generate_build_version)
 target_include_directories(Performance PRIVATE ${CMAKE_BINARY_DIR}/generated)
+
+# Telemetry endpoint + token baked from keys/telemetry.json (absent on
+# fresh checkouts — run scripts/fetch-telemetry-config.sh to populate).
+set(BUILD_CONFIG_HEADER ${CMAKE_BINARY_DIR}/generated/BuildConfig.h)
+add_custom_target(generate_build_config ALL
+    BYPRODUCTS ${BUILD_CONFIG_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -DOUTPUT=${BUILD_CONFIG_HEADER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -P ${CMAKE_SOURCE_DIR}/cmake/GenerateBuildConfig.cmake
+    COMMENT "Generating BuildConfig.h"
+    VERBATIM
+)
+add_dependencies(Performance generate_build_config)
 
 target_link_libraries(Performance PRIVATE
     juce::juce_audio_basics

@@ -3,6 +3,7 @@
 #include "api/EngineAPI.h"
 #include "engine/Log.h"
 #include "telemetry/InstallId.h"
+#include "telemetry/TelemetryShipper.h"
 #include "BuildVersion.h"
 
 // --- SettingsWindow ---
@@ -10,7 +11,8 @@
 SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
     : DocumentWindow("Settings", Theme::color(Theme::Color::bgPanel),
                       DocumentWindow::closeButton),
-      audioPage(state, engine) {
+      audioPage(state, engine),
+      aboutPage(state) {
 
     tabs.setLookAndFeel(&tabLF);
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
@@ -207,7 +209,7 @@ void SettingsWindow::AudioPage::resized() {
 
 // --- AboutPage ---
 
-SettingsWindow::AboutPage::AboutPage() {
+SettingsWindow::AboutPage::AboutPage(StateAPI& s) : state(s) {
     auto setupLabel = [this](juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
         label.setFont(Theme::font(Theme::fontSizeLg));
@@ -230,10 +232,11 @@ SettingsWindow::AboutPage::AboutPage() {
         addAndMakeVisible(field);
     };
 
-    setupLabel(versionLabel,   "Version:");
-    setupLabel(commitLabel,    "Commit:");
-    setupLabel(installIdLabel, "Install ID:");
-    setupLabel(firstSeenLabel, "First Seen:");
+    setupLabel(versionLabel,    "Version:");
+    setupLabel(commitLabel,     "Commit:");
+    setupLabel(installIdLabel,  "Install ID:");
+    setupLabel(firstSeenLabel,  "First Seen:");
+    setupLabel(diagnosticsLabel,"Send Diagnostics:");
 
     juce::String versionText = BUILD_VERSION;
     if (BUILD_GIT_TAG[0]) versionText += juce::String("  (") + BUILD_GIT_TAG + ")";
@@ -249,6 +252,15 @@ SettingsWindow::AboutPage::AboutPage() {
         juce::Timer::callAfterDelay(1200, [this] { copyIdButton.setButtonText("Copy"); });
     };
     addAndMakeVisible(copyIdButton);
+
+    diagnosticsToggle.setToggleState(Telemetry::isEnabled(state), juce::dontSendNotification);
+    diagnosticsToggle.setColour(juce::ToggleButton::textColourId,
+                                 Theme::color(Theme::Color::textSecondary));
+    diagnosticsToggle.setButtonText("Send anonymous session logs for troubleshooting");
+    diagnosticsToggle.onClick = [this] {
+        Telemetry::setEnabled(state, diagnosticsToggle.getToggleState());
+    };
+    addAndMakeVisible(diagnosticsToggle);
 }
 
 void SettingsWindow::AboutPage::paint(juce::Graphics& g) {
@@ -283,4 +295,8 @@ void SettingsWindow::AboutPage::resized() {
     y += rowHeight;
 
     layoutRow(firstSeenLabel, firstSeenValue, valueWidth);
+
+    // Diagnostics toggle — label + toggle stretched along row
+    diagnosticsLabel.setBounds(x, y, labelWidth, rowHeight);
+    diagnosticsToggle.setBounds(x + labelWidth + 8, y, valueWidth, rowHeight);
 }
