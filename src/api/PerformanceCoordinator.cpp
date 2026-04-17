@@ -66,11 +66,16 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             Theme::loadThemeById("minimal_dark");
     }
 
-    // Restore saved audio devices (must be after loadInto so config is available)
+    // Restore or auto-select audio devices. On first launch the config
+    // is empty; fall back to the macOS system-default output explicitly
+    // (not just whatever `initialiseWithDefaultDevices` picked) and
+    // persist the choice so future launches are deterministic even if
+    // the system default changes.
     {
         auto& dm = audioEngine->getDeviceManager();
         auto setup = dm.getAudioDeviceSetup();
         bool changed = false;
+        bool persistAfter = false;
 
         auto savedOutput = stateAPI->getConfig("audio_output_device");
         auto savedInput = stateAPI->getConfig("audio_input_device");
@@ -82,6 +87,23 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         if (!savedOutput.empty() && setup.outputDeviceName != juce::String(savedOutput)) {
             setup.outputDeviceName = juce::String(savedOutput);
             changed = true;
+        } else if (savedOutput.empty()) {
+            // First-launch (or post-reset) path. Ensure an output device is selected
+            // by explicitly querying CoreAudio's default. `initialiseWithDefaultDevices`
+            // usually handles this, but on some configurations (aggregate devices,
+            // mic-permission denials) it can leave the setup without a usable selection.
+            auto* type = dm.getCurrentDeviceTypeObject();
+            if (type && (setup.outputDeviceName.isEmpty() || !dm.getCurrentAudioDevice())) {
+                auto names = type->getDeviceNames(false);
+                int defaultIdx = type->getDefaultDeviceIndex(false);
+                if (defaultIdx >= 0 && defaultIdx < names.size()) {
+                    setup.outputDeviceName = names[defaultIdx];
+                    changed = true;
+                    perfLog("[Coordinator] First-launch: auto-selected system default output '%s'\n",
+                            setup.outputDeviceName.toRawUTF8());
+                }
+            }
+            persistAfter = true;
         }
         if (!savedInput.empty() && setup.inputDeviceName != juce::String(savedInput)) {
             setup.inputDeviceName = juce::String(savedInput);
@@ -100,10 +122,20 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         if (changed) {
             auto err = dm.setAudioDeviceSetup(setup, true);
             if (err.isEmpty())
-                perfLog("[Coordinator] Restored audio devices: out='%s', in='%s'\n",
+                perfLog("[Coordinator] Applied audio devices: out='%s', in='%s'\n",
                         setup.outputDeviceName.toRawUTF8(), setup.inputDeviceName.toRawUTF8());
             else
-                perfLog("[Coordinator] Failed to restore audio devices: %s\n", err.toRawUTF8());
+                perfLog("[Coordinator] Failed to apply audio devices: %s\n", err.toRawUTF8());
+        }
+
+        // Persist the effective selection on first launch so subsequent launches
+        // are deterministic (not dependent on macOS default changing).
+        if (persistAfter) {
+            auto effective = dm.getAudioDeviceSetup();
+            if (effective.outputDeviceName.isNotEmpty())
+                stateAPI->setConfig("audio_output_device", effective.outputDeviceName.toStdString());
+            if (effective.inputDeviceName.isNotEmpty() && savedInput.empty())
+                stateAPI->setConfig("audio_input_device", effective.inputDeviceName.toStdString());
         }
     }
 
