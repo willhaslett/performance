@@ -14,7 +14,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Binary:** Universal (arm64 + x86_64), deployment target macOS 11.0 (Big Sur).
 
-**Toolbar:** minimal — just build info (commit hash, selectable/copyable TextEditor, `textDim`/`fontSizeSm`) right-aligned. When the commit is tagged, the tag appears alongside. Reconfigure CMake to pick up new git state.
+**Toolbar:** minimal — just build info (commit hash, selectable/copyable TextEditor, `textDim`/`fontSizeSm`) right-aligned. When the commit is tagged, the tag appears alongside. Commit hash is regenerated on every build via `cmake/GenerateBuildVersion.cmake` → `build/generated/BuildVersion.h`, and auto-appends `-dirty` when there are uncommitted changes. No reconfigure needed to refresh it. Every log file also records `[App] Build version=... commit=... tag=... dirty=...` on startup.
 
 **Reset script:** `bin/reset` — scorched-earth reset preserving `keys/` (notarization) and `plugin-cache.xml` (AU scan cache). Simulates first-ever launch.
 

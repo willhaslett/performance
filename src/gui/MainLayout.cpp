@@ -1,6 +1,7 @@
 #include "gui/MainLayout.h"
 #include "gui/KeyBindings.h"
 #include "gui/Theme.h"
+#include "BuildVersion.h"
 #include <set>
 #include "engine/Log.h"
 #include "api/StateAPI.h"
@@ -69,13 +70,9 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     // Build info — read-only TextEditor so text is selectable/copyable (⌘C)
     {
         juce::String info;
-#ifdef BUILD_GIT_TAG
         juce::String tag(BUILD_GIT_TAG);
         if (tag.isNotEmpty()) info = "v" + tag + "  ";
-#endif
-#ifdef BUILD_GIT_COMMIT
         info += juce::String(BUILD_GIT_COMMIT);
-#endif
         buildInfoField.setReadOnly(true);
         buildInfoField.setCaretVisible(false);
         buildInfoField.setScrollbarsShown(false);

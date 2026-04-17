@@ -6,27 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
 
-# Git build info — captured at configure time. Re-run cmake to refresh.
-execute_process(
-    COMMAND git rev-parse --short HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_COMMIT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-execute_process(
-    COMMAND git describe --tags --exact-match HEAD
-    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-    OUTPUT_VARIABLE GIT_TAG
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    ERROR_QUIET
-)
-if(NOT GIT_COMMIT)
-    set(GIT_COMMIT "unknown")
-endif()
-if(NOT GIT_TAG)
-    set(GIT_TAG "")
-endif()
+# Git build info — captured at BUILD time via generate_build_version
+# target (see cmake/GenerateBuildVersion.cmake). Produces
+# ${CMAKE_BINARY_DIR}/generated/BuildVersion.h with #defines for
+# BUILD_GIT_COMMIT (includes -dirty suffix), BUILD_GIT_TAG,
+# BUILD_GIT_DIRTY, BUILD_VERSION. Consumers #include "BuildVersion.h".
+set(BUILD_VERSION_HEADER ${CMAKE_BINARY_DIR}/generated/BuildVersion.h)
 
 add_subdirectory(lib/JUCE)
 
@@ -126,10 +111,22 @@ target_compile_definitions(Performance PRIVATE
     JUCE_DISPLAY_SPLASH_SCREEN=0
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=0
-    BUILD_GIT_COMMIT="${GIT_COMMIT}"
-    BUILD_GIT_TAG="${GIT_TAG}"
-    BUILD_VERSION="${PROJECT_VERSION}"
 )
+
+# Regenerate BuildVersion.h on every build — idempotent write means
+# consumers only recompile when git state actually changed.
+add_custom_target(generate_build_version ALL
+    BYPRODUCTS ${BUILD_VERSION_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -DOUTPUT=${BUILD_VERSION_HEADER}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DPROJECT_VERSION=${PROJECT_VERSION}
+        -P ${CMAKE_SOURCE_DIR}/cmake/GenerateBuildVersion.cmake
+    COMMENT "Generating BuildVersion.h"
+    VERBATIM
+)
+add_dependencies(Performance generate_build_version)
+target_include_directories(Performance PRIVATE ${CMAKE_BINARY_DIR}/generated)
 
 target_link_libraries(Performance PRIVATE
     juce::juce_audio_basics

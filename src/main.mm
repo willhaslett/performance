@@ -12,6 +12,7 @@
 #include "gui/KeyBindingManager.h"
 #include "gui/KeyBindingEditor.h"
 #include "engine/Log.h"
+#include "BuildVersion.h"
 #import <AppKit/AppKit.h>
 
 static juce::String uniqueSongName(StateAPI& state) {
@@ -447,6 +448,10 @@ public:
         });
 
         perfLog("[App] Starting Performance\n");
+        perfLog("[App] Build version=%s commit=%s tag=%s dirty=%s\n",
+                BUILD_VERSION, BUILD_GIT_COMMIT,
+                BUILD_GIT_TAG[0] ? BUILD_GIT_TAG : "(none)",
+                BUILD_GIT_DIRTY ? "true" : "false");
 
         // Beta expiry — update the date each release cycle.
         // Prevents stale builds from circulating indefinitely.
