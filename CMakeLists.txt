@@ -147,6 +147,21 @@ target_link_libraries(Performance PRIVATE
     sqlite3
 )
 
+# Sign with Developer ID so TCC (macOS privacy) identifies the app the
+# same way across rebuilds. Ad-hoc linker-signing changes the CDHash on
+# every build, which invalidates stored TCC grants and causes re-prompts
+# for Documents / Desktop / Microphone on every launch. With a stable
+# Developer ID signature, TCC recognizes dev and release builds as the
+# same app. Release re-signs with --options runtime for notarization.
+if(APPLE)
+    add_custom_command(TARGET Performance POST_BUILD
+        COMMAND codesign --force --sign
+            "Developer ID Application: William Haslett (H25TK2U8FA)"
+            "$<TARGET_BUNDLE_DIR:Performance>"
+        VERBATIM
+    )
+endif()
+
 # --- Tests ---
 juce_add_console_app(PerformanceTests PRODUCT_NAME "PerformanceTests")
 
