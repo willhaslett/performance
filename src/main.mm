@@ -12,6 +12,7 @@
 #include "gui/KeyBindingManager.h"
 #include "gui/KeyBindingEditor.h"
 #include "engine/Log.h"
+#include "telemetry/InstallId.h"
 #include "BuildVersion.h"
 #import <AppKit/AppKit.h>
 
@@ -452,6 +453,8 @@ public:
                 BUILD_VERSION, BUILD_GIT_COMMIT,
                 BUILD_GIT_TAG[0] ? BUILD_GIT_TAG : "(none)",
                 BUILD_GIT_DIRTY ? "true" : "false");
+        perfLog("[App] Install id=%s firstSeen=%s\n",
+                InstallId::id().toRawUTF8(), InstallId::firstSeen().toRawUTF8());
 
         // Beta expiry — update the date each release cycle.
         // Prevents stale builds from circulating indefinitely.

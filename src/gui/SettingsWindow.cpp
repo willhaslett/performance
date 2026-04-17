@@ -2,6 +2,8 @@
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "engine/Log.h"
+#include "telemetry/InstallId.h"
+#include "BuildVersion.h"
 
 // --- SettingsWindow ---
 
@@ -13,6 +15,7 @@ SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
     tabs.setLookAndFeel(&tabLF);
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
     tabs.addTab("MIDI", Theme::color(Theme::Color::bgApp), &midiPage, false);
+    tabs.addTab("About", Theme::color(Theme::Color::bgApp), &aboutPage, false);
     tabs.setTabBarDepth(36);
     tabs.setColour(juce::TabbedComponent::backgroundColourId, Theme::color(Theme::Color::bgPanel));
     tabs.setColour(juce::TabbedComponent::outlineColourId, juce::Colours::transparentBlack);
@@ -200,4 +203,84 @@ void SettingsWindow::AudioPage::resized() {
     layoutRow(sampleRateLabel, sampleRateBox);
     latencyLabel.setBounds(x, y, labelWidth, rowHeight);
     latencyValue.setBounds(x + labelWidth + 8, y, comboWidth, rowHeight);
+}
+
+// --- AboutPage ---
+
+SettingsWindow::AboutPage::AboutPage() {
+    auto setupLabel = [this](juce::Label& label, const juce::String& text) {
+        label.setText(text, juce::dontSendNotification);
+        label.setFont(Theme::font(Theme::fontSizeLg));
+        label.setColour(juce::Label::textColourId, Theme::color(Theme::Color::textSecondary));
+        label.setJustificationType(juce::Justification::centredRight);
+        addAndMakeVisible(label);
+    };
+
+    // Values are read-only TextEditors so testers can select + copy.
+    auto setupValue = [this](juce::TextEditor& field, const juce::String& text) {
+        field.setText(text, false);
+        field.setReadOnly(true);
+        field.setCaretVisible(false);
+        field.setFont(juce::Font(juce::Font::getDefaultMonospacedFontName(),
+                                  Theme::fontSizeLg, juce::Font::plain));
+        field.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textPrimary));
+        field.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+        field.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        field.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible(field);
+    };
+
+    setupLabel(versionLabel,   "Version:");
+    setupLabel(commitLabel,    "Commit:");
+    setupLabel(installIdLabel, "Install ID:");
+    setupLabel(firstSeenLabel, "First Seen:");
+
+    juce::String versionText = BUILD_VERSION;
+    if (BUILD_GIT_TAG[0]) versionText += juce::String("  (") + BUILD_GIT_TAG + ")";
+
+    setupValue(versionValue,   versionText);
+    setupValue(commitValue,    BUILD_GIT_COMMIT);
+    setupValue(installIdValue, InstallId::id());
+    setupValue(firstSeenValue, InstallId::firstSeen());
+
+    copyIdButton.onClick = [this] {
+        juce::SystemClipboard::copyTextToClipboard(InstallId::id());
+        copyIdButton.setButtonText("Copied!");
+        juce::Timer::callAfterDelay(1200, [this] { copyIdButton.setButtonText("Copy"); });
+    };
+    addAndMakeVisible(copyIdButton);
+}
+
+void SettingsWindow::AboutPage::paint(juce::Graphics& g) {
+    g.fillAll(Theme::color(Theme::Color::bgApp));
+}
+
+void SettingsWindow::AboutPage::resized() {
+    constexpr int padding = AudioPage::padding;
+    constexpr int rowHeight = AudioPage::rowHeight;
+    constexpr int labelWidth = AudioPage::labelWidth;
+    constexpr int valueWidth = AudioPage::comboWidth;
+
+    int y = padding;
+    int x = padding;
+
+    auto layoutRow = [&](juce::Label& label, juce::Component& value, int valueW) {
+        label.setBounds(x, y, labelWidth, rowHeight);
+        value.setBounds(x + labelWidth + 8, y + (rowHeight - 24) / 2, valueW, 24);
+        y += rowHeight;
+    };
+
+    layoutRow(versionLabel,   versionValue,   valueWidth);
+    layoutRow(commitLabel,    commitValue,    valueWidth);
+
+    // Install ID row — shorter value field to make room for Copy button.
+    installIdLabel.setBounds(x, y, labelWidth, rowHeight);
+    int copyBtnW = 60;
+    installIdValue.setBounds(x + labelWidth + 8, y + (rowHeight - 24) / 2,
+                              valueWidth - copyBtnW - 8, 24);
+    copyIdButton.setBounds(x + labelWidth + 8 + valueWidth - copyBtnW,
+                            y + (rowHeight - 24) / 2, copyBtnW, 24);
+    y += rowHeight;
+
+    layoutRow(firstSeenLabel, firstSeenValue, valueWidth);
 }

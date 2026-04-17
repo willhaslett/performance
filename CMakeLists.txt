@@ -89,6 +89,7 @@ target_sources(Performance PRIVATE
     src/gui/ControllersPane.cpp
     src/gui/SongMappingsPane.cpp
     src/gui/PerformPane.cpp
+    src/telemetry/InstallId.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
     src/gui/PerformanceLookAndFeel.cpp

@@ -57,6 +57,19 @@ private:
     };
     MidiPage midiPage;
 
+    // About page — version, commit, install identity
+    class AboutPage : public juce::Component {
+    public:
+        AboutPage();
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+    private:
+        juce::Label versionLabel, commitLabel, installIdLabel, firstSeenLabel;
+        juce::TextEditor versionValue, commitValue, installIdValue, firstSeenValue;
+        juce::TextButton copyIdButton { "Copy" };
+    };
+    AboutPage aboutPage;
+
     // Custom LookAndFeel to remove tab borders
     struct TabLookAndFeel : public juce::LookAndFeel_V4 {
         void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
