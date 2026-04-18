@@ -2874,6 +2874,40 @@ public:
                 expectEquals((int)s->tracks.size(), 1);
         }
 
+        beginTest("createDefaultSong → save → relaunch preserves tracks (FK regression)");
+        {
+            TempDB db;
+
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                // DLS must be in the catalog for createDefaultSong to set up
+                // the Electric Piano track. In production the audio engine
+                // registers it during scan; here we do it by hand.
+                coord.state().registerPlugin("DLSMusicDevice", "Apple", "AudioUnit", true);
+                auto songId = coord.createDefaultSong("Untitled");
+                expect(!songId.empty());
+                coord.save();
+                // coord dtor runs shutdown() which saves again. Both paths
+                // used to silently fail on FK because createDefaultSong was
+                // passing the plugin NAME as the preset UUID, which
+                // referenced no preset row → FK constraint violation.
+            }
+
+            // Reopen and verify the song + its tracks actually made it
+            // through the round-trip.
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* song = loaded.currentSong();
+            expect(song != nullptr);
+            if (song) {
+                expectEquals(song->name, std::string("Untitled"));
+                // Action + Electric Piano + Audio In = at least 3 tracks
+                expect((int)song->tracks.size() >= 2);
+            }
+        }
+
         beginTest("Save failure rolls back, returns false, preserves prior state");
         {
             TempDB db;

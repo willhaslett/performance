@@ -64,8 +64,13 @@ bool PersistenceLayer::stepWrite(sqlite3_stmt* stmt, const char* context) {
     int rc = sqlite3_step(stmt);
     bool ok = (rc == SQLITE_DONE || rc == SQLITE_ROW);
     if (!ok) {
-        perfLog("[Persistence] step failed (%s, rc=%d): %s\n",
-                context, rc, sqlite3_errmsg(db));
+        // Log the expanded SQL (with bound values inlined) so we can see
+        // exactly which row and which column violated a constraint.
+        char* expanded = sqlite3_expanded_sql(stmt);
+        perfLog("[Persistence] step failed (%s, rc=%d, ext=%d): %s\n  sql: %s\n",
+                context, rc, sqlite3_extended_errcode(db),
+                sqlite3_errmsg(db), expanded ? expanded : "(unavailable)");
+        if (expanded) sqlite3_free(expanded);
         saveHadError = true;
     }
     sqlite3_finalize(stmt);

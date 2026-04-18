@@ -629,7 +629,11 @@ std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
     // Find DLS plugin in catalog
     for (auto& p : stateAPI->allPlugins()) {
         if (p.name == "DLSMusicDevice" && p.isInstrument) {
-            stateAPI->setTrackPlugin(trackId, p.id, p.name);
+            // 3rd arg is presetId (a preset UUID), not the plugin name.
+            // Leave empty — the plugin will load with its default state
+            // and Coordinator::captureProcessorState will create a real
+            // "Default" preset once the instance is live.
+            stateAPI->setTrackPlugin(trackId, p.id);
             break;
         }
     }
