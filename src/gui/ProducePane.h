@@ -105,22 +105,22 @@ private:
     void paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled);
 
     // Track selection (anchor for shift-range)
-    std::string selectionAnchorTrackId;
+    TrackId selectionAnchorTrackId;
     void handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& event);
 
     // Region interaction
-    std::set<std::string> selectedRegionIds;
+    std::set<RegionId> selectedRegionIds;
     struct RegionHitInfo {
-        std::string regionId;
-        std::string trackId;
+        RegionId regionId;
+        TrackId trackId;
         juce::Rectangle<int> bounds;
     };
     std::vector<RegionHitInfo> regionHitRects;  // rebuilt each paint
 
     struct ActionHitInfo {
         std::string eventId;
-        std::string regionId;
-        std::string trackId;
+        RegionId regionId;
+        TrackId trackId;
         juce::Rectangle<int> bounds;
     };
     std::vector<ActionHitInfo> actionHitRects;  // rebuilt each paint
@@ -128,7 +128,7 @@ private:
     // Region drag state
     bool draggingRegion = false;
     bool dragIsOption = false;  // option+drag = duplicate
-    std::string dragRegionId;   // the region being dragged (for multi-select)
+    RegionId dragRegionId;      // the region being dragged (for multi-select)
     double dragStartBeat = 0.0;
     int dragStartTrackIdx = -1;
     double dragCurrentBeat = 0.0;
@@ -136,18 +136,18 @@ private:
 
     // Loop ghost right edges (for resize cursor + drag)
     struct GhostEdgeInfo {
-        std::string regionId;
+        RegionId regionId;
         int rightX;
         int y, height;
     };
     std::vector<GhostEdgeInfo> ghostEdgeRects;  // rebuilt each paint
     bool draggingLoopEnd = false;
-    std::string loopEndRegionId;
+    RegionId loopEndRegionId;
 
     // Region trim state
     enum class TrimEdge { None, Left, Right };
     TrimEdge trimEdge = TrimEdge::None;
-    std::string trimRegionId;
+    RegionId trimRegionId;
     double trimOrigStartBeat = 0.0;
     double trimOrigLengthBeats = 0.0;
     static constexpr int trimHandleWidth = 6;
@@ -163,7 +163,7 @@ private:
 
     // Action event drag
     std::string dragActionEventId;
-    std::string dragActionTrackId;
+    TrackId dragActionTrackId;
     bool draggingActionEvent = false;
 
     // Quantize

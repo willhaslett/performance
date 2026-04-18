@@ -437,12 +437,12 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(rs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(rs) == SQLITE_ROW) {
                 RegionState r;
-                r.id = col_str(rs, 0);
+                r.id = RegionId{col_str(rs, 0)};
                 r.type = col_str(rs, 1);
                 r.name = col_str(rs, 2);
                 r.startBeat = sqlite3_column_double(rs, 3);
                 r.lengthBeats = sqlite3_column_double(rs, 4);
-                r.activeTakeId = col_str(rs, 5);
+                r.activeTakeId = TakeId{col_str(rs, 5)};
                 r.muted = sqlite3_column_int(rs, 6) != 0;
                 r.quantize = sqlite3_column_double(rs, 7);
                 r.looped = sqlite3_column_int(rs, 8) != 0;
@@ -453,7 +453,7 @@ void PersistenceLayer::readSongs(AppState& out) {
                 sqlite3_bind_text(tks, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 while (sqlite3_step(tks) == SQLITE_ROW) {
                     TakeState take;
-                    take.id = col_str(tks, 0);
+                    take.id = TakeId{col_str(tks, 0)};
                     take.name = col_str(tks, 1);
                     take.filePath = col_str(tks, 2);
                     take.recordTempo = sqlite3_column_double(tks, 3);

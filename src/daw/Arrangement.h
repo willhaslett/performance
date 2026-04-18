@@ -26,23 +26,23 @@ public:
     // Action events are scanned from Action track regions (no separate pointer needed)
 
     // --- Region management ---
-    RegionState* addMidiRegion(const std::string& trackId, double startBeat, double lengthBeats);
-    void removeRegion(const std::string& regionId);
-    void moveRegion(const std::string& regionId, const std::string& newTrackId, double newStartBeat);
-    RegionState* duplicateRegion(const std::string& regionId, const std::string& targetTrackId, double startBeat);
+    RegionState* addMidiRegion(const TrackId& trackId, double startBeat, double lengthBeats);
+    void removeRegion(const RegionId& regionId);
+    void moveRegion(const RegionId& regionId, const TrackId& newTrackId, double newStartBeat);
+    RegionState* duplicateRegion(const RegionId& regionId, const TrackId& targetTrackId, double startBeat);
 
     // Split a region at a beat position. Returns the new right-side region (or nullptr).
     // splitNotes: if true, notes crossing the split get noteOff in left + noteOn in right.
     //             if false, crossing notes are trimmed (noteOff at split, absent from right).
-    RegionState* splitRegion(const std::string& regionId, double splitBeat, bool splitNotes);
+    RegionState* splitRegion(const RegionId& regionId, double splitBeat, bool splitNotes);
 
     // --- Queries ---
     std::vector<RegionState*> allRegions() const;
-    std::vector<RegionState*> regionsForTrack(const std::string& trackId) const;
-    RegionState* findRegion(const std::string& regionId) const;
+    std::vector<RegionState*> regionsForTrack(const TrackId& trackId) const;
+    RegionState* findRegion(const RegionId& regionId) const;
 
     // --- Playback scanning (reads from active take) ---
-    using EventCallback = std::function<void(const std::string& trackId,
+    using EventCallback = std::function<void(const TrackId& trackId,
                                               const MidiEventState& event,
                                               double absoluteBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, EventCallback callback) const;
@@ -52,7 +52,7 @@ public:
     void scanActionEvents(double prevBeat, double currentBeat, ActionCallback callback) const;
 
     // --- Recording (creates/appends to a take in the recording region) ---
-    RegionState* startRecording(const std::string& trackId, double startBeat);
+    RegionState* startRecording(const TrackId& trackId, double startBeat);
     void addRecordedEvent(const MidiEventState& event);
     void stopRecording();
     bool isRecording() const { return !recordingTakes.empty(); }

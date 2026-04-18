@@ -336,7 +336,7 @@ void PerformanceCoordinator::startRecording() {
 
     // Start MIDI recording regions
     for (auto& trackId : recordingTrackIds) {
-        auto* region = arrangementImpl.startRecording(trackId.str(), recordStartBeat);
+        auto* region = arrangementImpl.startRecording(trackId, recordStartBeat);
         perfLog("[Coordinator] Started MIDI recording on track %s\n", trackId.c_str());
     }
 
@@ -348,7 +348,7 @@ void PerformanceCoordinator::startRecording() {
             auto* ts = stateAPI->findTrack(t.id);
             if (!ts || !ts->armed || ts->sourceType != TrackSourceType::AudioInput) continue;
 
-            auto* region = arrangementImpl.addMidiRegion(t.id.str(), recordStartBeat, 0.0);
+            auto* region = arrangementImpl.addMidiRegion(t.id, recordStartBeat, 0.0);
             if (!region) continue;
             region->type = "audio";
             auto* take = region->activeTake();
@@ -362,7 +362,7 @@ void PerformanceCoordinator::startRecording() {
             auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                                 .getChildFile(".config/performance/audio");
             audioDir.createDirectory();
-            auto wavFile = audioDir.getChildFile(juce::String(take->id) + ".wav");
+            auto wavFile = audioDir.getChildFile(juce::String(take->id.str()) + ".wav");
             take->filePath = wavFile.getFullPathName().toStdString();
 
             auto session = AudioRecordSession();
@@ -513,7 +513,7 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
             if (!take || take->filePath.empty()) continue;
 
             audioEngine->loadAudioFileForTrack(juce::String(track.id.str()),
-                juce::String(region.id), juce::String(take->filePath),
+                juce::String(region.id.str()), juce::String(take->filePath),
                 take->recordTempo, take->sampleRate);
 
             if (take->peakData.peaks.empty())

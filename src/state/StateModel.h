@@ -99,7 +99,7 @@ struct MidiEventState {
 
 // A take within a region. MIDI takes have events, audio takes have a file path.
 struct TakeState {
-    std::string id;
+    TakeId id;
     std::string name;
     std::vector<MidiEventState> events;   // MIDI takes
     std::string filePath;                  // audio takes — WAV path
@@ -117,12 +117,12 @@ struct TakeState {
 
 // A region is a time-positioned container of takes on a track.
 struct RegionState {
-    std::string id;
+    RegionId id;
     std::string type = "midi";  // "midi" or "audio"
     std::string name;
     double startBeat = 0.0;
     double lengthBeats = 4.0;
-    std::string activeTakeId;   // which take plays back
+    TakeId activeTakeId;   // which take plays back
     bool muted = false;         // region-level mute (skipped during playback)
     bool looped = false;       // region loops until next region or loopEndBeat
     double loopEndBeat = 0.0;  // 0 = auto (extend to next region), >0 = explicit end

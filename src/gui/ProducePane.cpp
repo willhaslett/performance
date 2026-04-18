@@ -853,7 +853,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     ghostEdgeRects.clear();
     if (arrangement) {
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
-            auto regions = arrangement->regionsForTrack(tracks[ti].id.str());
+            auto regions = arrangement->regionsForTrack(tracks[ti].id);
             std::sort(regions.begin(), regions.end(),
                       [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
             int rowY = area.getY() + (int)ti * trackRowHeight;
@@ -888,7 +888,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                 bool originalVisible = regionBounds.getRight() >= area.getX() && regionBounds.getX() <= area.getRight();
                 if (originalVisible)
-                    regionHitRects.push_back({ r->id, tracks[ti].id.str(), regionBounds });
+                    regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
                 // Region color — one level above lane background
                 auto fillCol = Theme::color(Theme::Color::bgSurfaceRaised);
@@ -1133,7 +1133,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
                 // Hit rect
                 int hitSize = (int)(sphereR * 2 + 4);
-                actionHitRects.push_back({ v.ae->id, "", tracks[ti].id.str(),
+                actionHitRects.push_back({ v.ae->id, RegionId{}, tracks[ti].id,
                     juce::Rectangle<int>((int)(cx - hitSize/2), (int)(cy - hitSize/2), hitSize, hitSize) });
 
                 // Sphere
@@ -1280,7 +1280,7 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             int trkIdx = getTrackIndexAtY(event.getPosition().getY());
             auto allTracks = state ? state->listTracks() : std::vector<StateAPI::TrackInfo>{};
             if (trkIdx >= 0 && trkIdx < (int)allTracks.size()) {
-                auto trackRegions = arrangement->regionsForTrack(allTracks[trkIdx].id.str());
+                auto trackRegions = arrangement->regionsForTrack(allTracks[trkIdx].id);
                 for (auto* r : trackRegions) {
                     if (!r->looped || r->type != "midi") continue;
                     double regionEnd = r->startBeat + r->lengthBeats;
@@ -1310,12 +1310,12 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
                                     r->loopEndBeat = clickBeat;
                                 } else if (result == 2) {
                                     // Convert: find track, duplicate
-                                    std::string trackId;
+                                    TrackId trackId;
                                     if (state) {
                                         for (auto& ti : state->listTracks()) {
-                                            auto regs = arrangement->regionsForTrack(ti.id.str());
+                                            auto regs = arrangement->regionsForTrack(ti.id);
                                             for (auto* rr : regs)
-                                                if (rr->id == regionId) { trackId = ti.id.str(); break; }
+                                                if (rr->id == regionId) { trackId = ti.id; break; }
                                             if (!trackId.empty()) break;
                                         }
                                     }
@@ -1715,7 +1715,7 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
         // Shift+click: range select from anchor to here
         int anchorIdx = -1;
         for (int i = 0; i < (int)tracks.size(); ++i) {
-            if (tracks[i].id.str() == selectionAnchorTrackId) { anchorIdx = i; break; }
+            if (tracks[i].id == selectionAnchorTrackId) { anchorIdx = i; break; }
         }
         if (anchorIdx >= 0) {
             int lo = std::min(anchorIdx, trackIdx);
@@ -1730,7 +1730,7 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
     } else {
         // Plain click: select only this track
         state->selectTrack(trackId, false);
-        selectionAnchorTrackId = trackId.str();
+        selectionAnchorTrackId = trackId;
     }
 
     // Also select all regions on selected tracks
@@ -1738,7 +1738,7 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
     if (arrangement) {
         auto sel = state->selectedTrackIds();
         for (auto& sid : sel) {
-            auto regs = arrangement->regionsForTrack(sid.str());
+            auto regs = arrangement->regionsForTrack(sid);
             for (auto* r : regs)
                 selectedRegionIds.insert(r->id);
         }
@@ -1777,7 +1777,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     // Complete loop end drag
     if (draggingLoopEnd) {
         draggingLoopEnd = false;
-        loopEndRegionId.clear();
+        loopEndRegionId = {};
         repaint();
         return;
     }
@@ -1785,7 +1785,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     // Complete action event drag
     if (!dragActionEventId.empty()) {
         dragActionEventId.clear();
-        dragActionTrackId.clear();
+        dragActionTrackId = {};
         draggingActionEvent = false;
         repaint();
         return;
@@ -1794,7 +1794,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
     // Complete trim
     if (trimEdge != TrimEdge::None) {
         trimEdge = TrimEdge::None;
-        trimRegionId.clear();
+        trimRegionId = {};
         if (onRegionsChanged) onRegionsChanged();
         repaint();
         return;
@@ -1897,23 +1897,23 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
             auto targetTrackId = tracks[dragCurrentTrackIdx].id;
             if (dragIsOption) {
-                auto* newRegion = arrangement->duplicateRegion(dragRegionId, targetTrackId.str(), dragCurrentBeat);
+                auto* newRegion = arrangement->duplicateRegion(dragRegionId, targetTrackId, dragCurrentBeat);
                 if (newRegion) {
                     selectedRegionIds.clear();
                     selectedRegionIds.insert(newRegion->id);
                 }
             } else {
-                arrangement->moveRegion(dragRegionId, targetTrackId.str(), dragCurrentBeat);
+                arrangement->moveRegion(dragRegionId, targetTrackId, dragCurrentBeat);
             }
             if (onRegionsChanged) onRegionsChanged();
         }
         draggingRegion = false;
-        dragRegionId.clear();
+        dragRegionId = {};
         repaint();
         return;
     }
     draggingRegion = false;
-    dragRegionId.clear();
+    dragRegionId = {};
 
     // Right-click on region — context menu
     if (event.mods.isPopupMenu() && !selectedRegionIds.empty() && arrangement) {
@@ -2007,12 +2007,12 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                                 auto* r = arrangement->findRegion(rid);
                                 if (!r || !r->looped) continue;
                                 // Find owning track
-                                std::string trackId;
+                                TrackId trackId;
                                 if (state) {
                                     for (auto& ti : state->listTracks()) {
-                                        auto regs = arrangement->regionsForTrack(ti.id.str());
+                                        auto regs = arrangement->regionsForTrack(ti.id);
                                         for (auto* rr : regs)
-                                            if (rr->id == rid) { trackId = ti.id.str(); break; }
+                                            if (rr->id == rid) { trackId = ti.id; break; }
                                         if (!trackId.empty()) break;
                                     }
                                 }
@@ -2314,18 +2314,18 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
     // Cmd+D: duplicate selected regions (place after originals)
     if (key.getTextCharacter() == 'd' && key.getModifiers().isCommandDown()
         && !selectedRegionIds.empty() && arrangement) {
-        std::set<std::string> newSelection;
+        std::set<RegionId> newSelection;
         for (auto& rid : selectedRegionIds) {
             auto* region = arrangement->findRegion(rid);
             if (!region) continue;
             // Find owning track
-            std::string ownerTrackId;
+            TrackId ownerTrackId;
             if (state) {
                 auto tracks = state->listTracks();
                 for (auto& t : tracks) {
-                    auto regs = arrangement->regionsForTrack(t.id.str());
+                    auto regs = arrangement->regionsForTrack(t.id);
                     for (auto* r : regs) {
-                        if (r->id == rid) { ownerTrackId = t.id.str(); break; }
+                        if (r->id == rid) { ownerTrackId = t.id; break; }
                     }
                     if (!ownerTrackId.empty()) break;
                 }
@@ -2453,7 +2453,7 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
     if (key.getTextCharacter() == 't' && key.getModifiers().isCommandDown()
         && !selectedRegionIds.empty() && arrangement && sequencer) {
         double splitBeat = sequencer->getBeatPosition();
-        std::set<std::string> newSelection;
+        std::set<RegionId> newSelection;
         for (auto& rid : selectedRegionIds) {
             auto* region = arrangement->findRegion(rid);
             if (!region) continue;
@@ -2485,7 +2485,7 @@ void ProducePane::joinSelectedRegions() {
     for (auto& t : tracks) {
         // Collect selected regions on this track, sorted by start beat
         std::vector<RegionState*> trackRegs;
-        for (auto* r : arrangement->regionsForTrack(t.id.str())) {
+        for (auto* r : arrangement->regionsForTrack(t.id)) {
             if (selectedRegionIds.count(r->id))
                 trackRegs.push_back(r);
         }
@@ -2508,7 +2508,7 @@ void ProducePane::joinSelectedRegions() {
             maxEnd = std::max(maxEnd, r->startBeat + r->lengthBeats);
 
         // Create the merged region as a copy of the first
-        auto* merged = arrangement->addMidiRegion(t.id.str(), minStart, maxEnd - minStart);
+        auto* merged = arrangement->addMidiRegion(t.id, minStart, maxEnd - minStart);
         if (!merged) continue;
         merged->type = type;
         merged->name = trackRegs[0]->name;

@@ -161,7 +161,7 @@ private:
     std::vector<TrackId> recordingTrackIds;              // MIDI tracks being recorded into
     struct AudioRecordSession {
         TrackId trackId;
-        std::string regionId;
+        RegionId regionId;
         std::unique_ptr<AudioRecordFIFO> fifo;
         std::unique_ptr<AudioWriterThread> writer;
     };

@@ -2055,7 +2055,7 @@ public:
         beginTest("Add and find MIDI region");
         {
             TestContext ctx({"track1"});
-            auto* r = ctx.arr.addMidiRegion("track1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"track1"}, 0.0, 4.0);
             expect(r != nullptr);
             expectWithinAbsoluteError(r->startBeat, 0.0, 0.01);
             expectWithinAbsoluteError(r->lengthBeats, 4.0, 0.01);
@@ -2067,20 +2067,20 @@ public:
         beginTest("Regions for track filters correctly");
         {
             TestContext ctx({"t1", "t2"});
-            ctx.arr.addMidiRegion("t1", 0.0, 4.0);
-            ctx.arr.addMidiRegion("t2", 0.0, 4.0);
-            ctx.arr.addMidiRegion("t1", 4.0, 4.0);
+            ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
+            ctx.arr.addMidiRegion(TrackId{"t2"}, 0.0, 4.0);
+            ctx.arr.addMidiRegion(TrackId{"t1"}, 4.0, 4.0);
 
-            auto t1Regions = ctx.arr.regionsForTrack("t1");
+            auto t1Regions = ctx.arr.regionsForTrack(TrackId{"t1"});
             expectEquals((int)t1Regions.size(), 2);
-            auto t2Regions = ctx.arr.regionsForTrack("t2");
+            auto t2Regions = ctx.arr.regionsForTrack(TrackId{"t2"});
             expectEquals((int)t2Regions.size(), 1);
         }
 
         beginTest("Remove region");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             auto id = r->id;
             ctx.arr.removeRegion(id);
             expect(ctx.arr.findRegion(id) == nullptr);
@@ -2089,13 +2089,13 @@ public:
         beginTest("Scan MIDI events fires note on and off");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             auto* take = r->activeTake();
             take->events.push_back({ 1.0, 0x90, 1, 60, 100 });
             take->events.push_back({ 1.5, 0x80, 1, 60, 0 });
 
             std::vector<std::pair<int, int>> scanned;
-            ctx.arr.scanMidiEvents(0.0, 1.6, [&](const std::string&, const MidiEventState& e, double) {
+            ctx.arr.scanMidiEvents(0.0, 1.6, [&](const TrackId&, const MidiEventState& e, double) {
                 scanned.push_back({ e.status, e.data1 });
             });
 
@@ -2107,7 +2107,7 @@ public:
         beginTest("Scan skips regions outside range");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 8.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 8.0, 4.0);
             auto* take = r->activeTake();
             take->events.push_back({ 0.0, 0x90, 1, 60, 100 });
 
@@ -2119,7 +2119,7 @@ public:
         beginTest("Recording creates region with take and captures events");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.startRecording("t1", 2.0);
+            auto* r = ctx.arr.startRecording(TrackId{"t1"}, 2.0);
             expect(ctx.arr.isRecording());
             expect(r != nullptr);
             expect(r->activeTake() != nullptr);
@@ -2451,10 +2451,10 @@ public:
         beginTest("Move region changes start beat");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             expect(r != nullptr);
             auto id = r->id;
-            ctx.arr.moveRegion(id, "t1", 8.0);
+            ctx.arr.moveRegion(id, TrackId{"t1"}, 8.0);
             auto* moved = ctx.arr.findRegion(id);
             expectWithinAbsoluteError(moved->startBeat, 8.0, 0.01);
         }
@@ -2462,15 +2462,15 @@ public:
         beginTest("Move region to different track");
         {
             TestContext ctx({"t1", "t2"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             auto id = r->id;
-            ctx.arr.moveRegion(id, "t2", 2.0);
+            ctx.arr.moveRegion(id, TrackId{"t2"}, 2.0);
 
             // Gone from t1
-            auto t1regions = ctx.arr.regionsForTrack("t1");
+            auto t1regions = ctx.arr.regionsForTrack(TrackId{"t1"});
             expectEquals((int)t1regions.size(), 0);
             // Present in t2
-            auto t2regions = ctx.arr.regionsForTrack("t2");
+            auto t2regions = ctx.arr.regionsForTrack(TrackId{"t2"});
             expectEquals((int)t2regions.size(), 1);
             expectWithinAbsoluteError(t2regions[0]->startBeat, 2.0, 0.01);
         }
@@ -2478,21 +2478,21 @@ public:
         beginTest("Duplicate region creates copy at offset");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             auto origId = r->id;
-            auto* dup = ctx.arr.duplicateRegion(origId, "t1", 4.0);
+            auto* dup = ctx.arr.duplicateRegion(origId, TrackId{"t1"}, 4.0);
             expect(dup != nullptr);
             expect(dup->id != origId);
             expectWithinAbsoluteError(dup->startBeat, 4.0, 0.01);
             expectWithinAbsoluteError(dup->lengthBeats, 4.0, 0.01);
-            auto allRegions = ctx.arr.regionsForTrack("t1");
+            auto allRegions = ctx.arr.regionsForTrack(TrackId{"t1"});
             expectEquals((int)allRegions.size(), 2);
         }
 
         beginTest("Split region at beat creates two regions");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 8.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 8.0);
 
             // Add a note spanning the split point
             auto& take = r->takes.back();
@@ -2503,7 +2503,7 @@ public:
             auto* right = ctx.arr.splitRegion(origId, 4.0, true);
             expect(right != nullptr);
 
-            auto regions = ctx.arr.regionsForTrack("t1");
+            auto regions = ctx.arr.regionsForTrack(TrackId{"t1"});
             expectEquals((int)regions.size(), 2);
 
             // Left region: 0-4
@@ -2519,7 +2519,7 @@ public:
         beginTest("Scan MIDI events with quantize applies snap");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 4.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 4.0);
             r->quantize = 1.0;  // snap to whole beats
 
             auto& take = r->takes.back();
@@ -2529,7 +2529,7 @@ public:
 
             std::vector<std::pair<double, uint8_t>> captured;
             ctx.arr.scanMidiEvents(0.0, 4.0,
-                [&](const std::string&, const MidiEventState& ev, double beat) {
+                [&](const TrackId&, const MidiEventState& ev, double beat) {
                     captured.push_back({ beat, ev.status });
                 });
 
@@ -2543,7 +2543,7 @@ public:
         beginTest("Looped region repeats events");
         {
             TestContext ctx({"t1"});
-            auto* r = ctx.arr.addMidiRegion("t1", 0.0, 2.0);
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 2.0);
             r->looped = true;
             r->loopEndBeat = 6.0;
 
@@ -2553,7 +2553,7 @@ public:
 
             std::vector<double> noteOnBeats;
             ctx.arr.scanMidiEvents(0.0, 6.0,
-                [&](const std::string&, const MidiEventState& ev, double beat) {
+                [&](const TrackId&, const MidiEventState& ev, double beat) {
                     if ((ev.status & 0xF0) == 0x90) noteOnBeats.push_back(beat);
                 });
 
@@ -2659,14 +2659,14 @@ public:
             auto* song = original.findSong(songId);
             auto* track = original.findTrack(trackId);
             RegionState region;
-            region.id = StateAPI::generateId();
+            region.id = RegionId{StateAPI::generateId()};
             region.startBeat = 0.0;
             region.lengthBeats = 4.0;
             region.looped = true;
             region.loopEndBeat = 12.0;
             region.quantize = 0.5;
             TakeState take;
-            take.id = StateAPI::generateId();
+            take.id = TakeId{StateAPI::generateId()};
             take.name = "Take 1";
             region.takes.push_back(take);
             region.activeTakeId = take.id;
@@ -2698,11 +2698,11 @@ public:
 
             auto* track = original.findTrack(trackId);
             RegionState region;
-            region.id = StateAPI::generateId();
+            region.id = RegionId{StateAPI::generateId()};
             region.startBeat = 0.0;
             region.lengthBeats = 4.0;
             TakeState take;
-            take.id = StateAPI::generateId();
+            take.id = TakeId{StateAPI::generateId()};
             take.name = "Take 1";
             // A small chord: note-on + note-on + note-off + note-off
             take.events.push_back({ 0.0,  0x90, 1, 60, 100 });
@@ -2966,11 +2966,11 @@ public:
                 expect(track != nullptr);
                 if (track) {
                     RegionState region;
-                    region.id = StateAPI::generateId();
+                    region.id = RegionId{StateAPI::generateId()};
                     region.startBeat = 0.0;
                     region.lengthBeats = 4.0;
                     TakeState take;
-                    take.id = StateAPI::generateId();
+                    take.id = TakeId{StateAPI::generateId()};
                     take.name = "Take 1";
                     take.events.push_back({ 0.0, 0x90, 1, 60, 100 });
                     take.events.push_back({ 1.0, 0x80, 1, 60,   0 });

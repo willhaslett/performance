@@ -218,8 +218,8 @@ public:
             auto* arr = arrangement.load(std::memory_order_acquire);
             if (arr) {
                 arr->scanMidiEvents(prevBeat, nextBeat,
-                    [&](const std::string& trackId, const MidiEventState& event, double eventBeat) {
-                        auto it = trackMidiSources.find(juce::String(trackId));
+                    [&](const TrackId& trackId, const MidiEventState& event, double eventBeat) {
+                        auto it = trackMidiSources.find(juce::String(trackId.str()));
                         if (it == trackMidiSources.end() || !it->second) return;
 
                         int sampleOffset = (beatsPerSample > 0)
@@ -248,13 +248,13 @@ public:
                         if (afNode) afNode->setActive(false);
                         continue;
                     }
-                    auto regions = arr->regionsForTrack(trkId.toStdString());
+                    auto regions = arr->regionsForTrack(TrackId{trkId.toStdString()});
                     bool found = false;
                     for (auto* r : regions) {
                         if (r->type != "audio" || r->muted) continue;
                         double endBeat = r->startBeat + r->lengthBeats;
                         if (prevBeat >= r->startBeat && prevBeat < endBeat) {
-                            afNode->setActiveRegion(juce::String(r->id), r->startBeat, prevBeat);
+                            afNode->setActiveRegion(juce::String(r->id.str()), r->startBeat, prevBeat);
                             found = true;
                             break;
                         }
