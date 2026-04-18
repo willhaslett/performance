@@ -616,6 +616,11 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     // Apply song tempo and time signature to sequencer
     syncTempoFromState();
 
+    // Load any persisted audio region files into the engine (and compute
+    // waveform peaks). Without this, audio regions come back visually
+    // but silent + waveform-less until the user explicitly reloads.
+    loadAudioFilesIntoEngine();
+
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
 }
 
