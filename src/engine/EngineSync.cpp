@@ -84,8 +84,8 @@ void EngineSync::loadSong(const std::string& songId) {
             songId.c_str(), (int)song->tracks.size(), (int)song->busses.size());
 
     // Rebuild: busses → tracks → effects → sends → master effects
-    for (auto& bus : song->busses) onBusCreated(bus.id);
-    for (auto& track : song->tracks) onTrackCreated(track.id);
+    for (auto& bus : song->busses) onBusCreated(bus.id.str());
+    for (auto& track : song->tracks) onTrackCreated(track.id.str());
     for (auto& bus : song->busses)
         for (auto& fx : bus.effects) onEffectCreated(fx.id);
     for (auto& track : song->tracks)
@@ -101,51 +101,51 @@ void EngineSync::loadSong(const std::string& songId) {
 // --- Entity handlers ---
 
 void EngineSync::onBusCreated(const std::string& busId) {
-    auto* bus = stateAPI.findBus(busId);
+    auto* bus = stateAPI.findBus(BusId{busId});
     PERF_ASSERT(bus, "onBusCreated: bus not found");
-    engine.createBusWithId(juce::String(bus->id), juce::String(bus->name));
-    engine.setBusGain(juce::String(bus->id), bus->outputGain);
+    engine.createBusWithId(juce::String(bus->id.str()), juce::String(bus->name));
+    engine.setBusGain(juce::String(bus->id.str()), bus->outputGain);
 }
 
 void EngineSync::onTrackCreated(const std::string& trackId) {
-    auto* track = stateAPI.findTrack(trackId);
+    auto* track = stateAPI.findTrack(TrackId{trackId});
     PERF_ASSERT(track, "onTrackCreated: track not found");
 
     // Action tracks have no audio engine representation
     if (track->sourceType == TrackSourceType::Action) return;
 
     if (track->sourceType == TrackSourceType::AudioInput) {
-        engine.createAudioInputTrackWithId(juce::String(track->id), juce::String(track->name),
+        engine.createAudioInputTrackWithId(juce::String(track->id.str()), juce::String(track->name),
                                             track->inputChannelStart, track->inputChannelCount);
-        engine.setTrackGain(juce::String(track->id), track->outputGain);
+        engine.setTrackGain(juce::String(track->id.str()), track->outputGain);
         if (!track->audioEnabled)
-            engine.setTrackAudioEnabled(juce::String(track->id), false);
+            engine.setTrackAudioEnabled(juce::String(track->id.str()), false);
         // Apply persisted input monitoring. The engine's default is true
         // (pass live input through), so we must apply state unconditionally
         // on creation — otherwise a persisted `false` silently reverts to
         // true on reload, producing audible input even though the UI shows
         // monitoring off.
-        engine.setTrackInputMonitoring(juce::String(track->id), track->inputMonitoring);
+        engine.setTrackInputMonitoring(juce::String(track->id.str()), track->inputMonitoring);
         return;
     }
 
-    engine.createTrackWithId(juce::String(track->id), juce::String(track->name));
-    engine.setTrackGain(juce::String(track->id), track->outputGain);
+    engine.createTrackWithId(juce::String(track->id.str()), juce::String(track->name));
+    engine.setTrackGain(juce::String(track->id.str()), track->outputGain);
     if (!track->midiEnabled)
-        engine.setTrackMidiEnabled(juce::String(track->id), false);
+        engine.setTrackMidiEnabled(juce::String(track->id.str()), false);
     if (!track->audioEnabled)
-        engine.setTrackAudioEnabled(juce::String(track->id), false);
+        engine.setTrackAudioEnabled(juce::String(track->id.str()), false);
 
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
         if (plugin) {
             stateAPI.setTrackInstrumentLoadStatus(track->id, LoadStatus::Pending);
             auto presetId = track->presetId;
-            engine.addTrackInstrument(juce::String(track->id), juce::String(plugin->name),
+            engine.addTrackInstrument(juce::String(track->id.str()), juce::String(plugin->name),
                 [this, id = track->id, presetId] {
-                    perfLog("[EngineSync] Instrument loaded: %s\n", id.c_str());
+                    perfLog("[EngineSync] Instrument loaded: %s\n", id.str().c_str());
                     stateAPI.setTrackInstrumentLoadStatus(id, LoadStatus::Loaded);
-                    restorePresetState(id, "", presetId);
+                    restorePresetState(id.str(), "", presetId);
                 });
         }
     }
@@ -175,11 +175,11 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     if (engineParentId.isEmpty())
         for (auto& t : song->tracks)
             for (auto& tfx : t.effects)
-                if (tfx.id == effectId) { engineParentId = juce::String(t.id.str()); stateParentId = t.id; break; }
+                if (tfx.id == effectId) { engineParentId = juce::String(t.id.str()); stateParentId = t.id.str(); break; }
     if (engineParentId.isEmpty())
         for (auto& b : song->busses)
             for (auto& bfx : b.effects)
-                if (bfx.id == effectId) { engineParentId = juce::String(b.id.str()); stateParentId = b.id; break; }
+                if (bfx.id == effectId) { engineParentId = juce::String(b.id.str()); stateParentId = b.id.str(); break; }
 
     if (engineParentId.isEmpty()) {
         perfLog("[EngineSync] onEffectCreated: no parent found for effect %s\n", effectId.c_str());
@@ -210,7 +210,7 @@ void EngineSync::restorePresetState(const std::string& parentId, const std::stri
     // Priority 1: captured processor state (base64 blob from last save)
     std::string processorState;
     if (effectId.empty()) {
-        auto* track = stateAPI.findTrack(parentId);
+        auto* track = stateAPI.findTrack(TrackId{parentId});
         if (track) processorState = track->processorState;
     } else {
         auto* fx = stateAPI.findEffect(effectId);
@@ -249,7 +249,7 @@ void EngineSync::onSendCreated(const std::string& sendId) {
     for (auto& track : song->tracks) {
         for (auto& send : track.sends) {
             if (send.id == sendId) {
-                engine.addSend(juce::String(track.id), juce::String(send.busId), send.gain);
+                engine.addSend(juce::String(track.id.str()), juce::String(send.busId.str()), send.gain);
                 return;
             }
         }
@@ -260,7 +260,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     auto id = juce::String(entityId);
 
     if (entityType == "track") {
-        auto* t = stateAPI.findTrack(entityId);
+        auto* t = stateAPI.findTrack(TrackId{entityId});
         PERF_ASSERT(t, "onEntityUpdated: track not found");
         if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
@@ -290,9 +290,9 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
                 auto presetId = t->presetId;
                 engine.addTrackInstrument(id, juce::String(plugin->name),
                     [this, trackId = t->id, presetId] {
-                        perfLog("[EngineSync] Instrument loaded: %s\n", trackId.c_str());
+                        perfLog("[EngineSync] Instrument loaded: %s\n", trackId.str().c_str());
                         stateAPI.setTrackInstrumentLoadStatus(trackId, LoadStatus::Loaded);
-                        restorePresetState(trackId, "", presetId);
+                        restorePresetState(trackId.str(), "", presetId);
                     });
             }
         } else if (currentPlugin.isNotEmpty()) {
@@ -300,7 +300,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         }
     }
     else if (entityType == "bus") {
-        auto* b = stateAPI.findBus(entityId);
+        auto* b = stateAPI.findBus(BusId{entityId});
         PERF_ASSERT(b, "onEntityUpdated: bus not found");
         engine.setBusGain(id, b->outputGain);
         engine.setBusAudioEnabled(id, b->audioEnabled);

@@ -717,7 +717,7 @@ void SongMappingsPane::showActionMenu(const std::string& deviceId, const std::st
             juce::String firstArg;
             if (sub > 0) {
                 int ti = sub - 1;
-                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id);
+                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
             }
 
             juce::var args;

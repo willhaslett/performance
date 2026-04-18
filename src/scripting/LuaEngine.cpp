@@ -53,20 +53,20 @@ void LuaEngine::registerAPI() {
         auto id = state.findTrackIdByName(name);
         if (id.empty())
             throw std::runtime_error("track '" + name + "' not found. Run registryList('track') to see available names.");
-        return id;
+        return id.str();
     };
     auto resolveBusId = [&state](const std::string& name) -> std::string {
         auto id = state.findBusIdByName(name);
         if (id.empty())
             throw std::runtime_error("bus '" + name + "' not found. Run registryList('bus') to see available names.");
-        return id;
+        return id.str();
     };
     auto resolveParentId = [&state](const std::string& name) -> std::string {
         if (name == "Output") return state.getMasterOutputId();
-        auto id = state.findTrackIdByName(name);
-        if (!id.empty()) return id;
-        id = state.findBusIdByName(name);
-        if (!id.empty()) return id;
+        auto tid = state.findTrackIdByName(name);
+        if (!tid.empty()) return tid.str();
+        auto bid = state.findBusIdByName(name);
+        if (!bid.empty()) return bid.str();
         throw std::runtime_error("'" + name + "' is not a track, bus, or 'Output'. Run registryList('track') and registryList('bus') for available names.");
     };
 
@@ -77,15 +77,15 @@ void LuaEngine::registerAPI() {
 
     // Track management
     lua.set_function("createTrack", [&state](const std::string& name) -> std::string {
-        return state.createTrack(name);
+        return state.createTrack(name).str();
     });
     lua.set_function("createAudioInputTrack", [&state](const std::string& name,
                                                           int inputStart, int inputCount) -> std::string {
-        return state.createAudioInputTrack(name, inputStart, inputCount);
+        return state.createAudioInputTrack(name, inputStart, inputCount).str();
     });
     lua.set_function("setTrackInputChannels", [&state, resolveTrackId](const std::string& track,
                                                 int start, int count) {
-        state.setTrackInputChannels(resolveTrackId(track), start, count);
+        state.setTrackInputChannels(TrackId{resolveTrackId(track)}, start, count);
     });
     lua.set_function("listInputChannels", [this, &engine]() -> sol::table {
         auto names = engine.getInputChannelNames();
@@ -125,11 +125,11 @@ void LuaEngine::registerAPI() {
         });
     });
     lua.set_function("removeTrack", [&state, resolveTrackId](const std::string& name) {
-        state.removeTrack(resolveTrackId(name));
+        state.removeTrack(TrackId{resolveTrackId(name)});
     });
     lua.set_function("addInstrument", [&state, resolveTrackId](const std::string& track,
                                        const std::string& plugin, sol::optional<std::string> preset) {
-        auto trackId = resolveTrackId(track);
+        auto trackId = TrackId{resolveTrackId(track)};
         auto* p = state.findPluginByName(plugin);
         if (!p)
             throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
@@ -165,58 +165,58 @@ void LuaEngine::registerAPI() {
         state.removeEffect(effectId);
     });
     lua.set_function("setTrackMidiEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
-        state.setTrackMidiEnabled(resolveTrackId(track), enabled);
+        state.setTrackMidiEnabled(TrackId{resolveTrackId(track)}, enabled);
     });
     lua.set_function("setTrackAudioEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
-        state.setTrackAudioEnabled(resolveTrackId(track), enabled);
+        state.setTrackAudioEnabled(TrackId{resolveTrackId(track)}, enabled);
     });
     lua.set_function("setTrackInputMonitoring", [&state, resolveTrackId](const std::string& track, bool enabled) {
-        state.setTrackInputMonitoring(resolveTrackId(track), enabled);
+        state.setTrackInputMonitoring(TrackId{resolveTrackId(track)}, enabled);
     });
     lua.set_function("setTrackGain", [&state, resolveTrackId](const std::string& track, float gain) {
-        state.setTrackGain(resolveTrackId(track), gain);
+        state.setTrackGain(TrackId{resolveTrackId(track)}, gain);
     });
     lua.set_function("setTrackGainDb", [&state, resolveTrackId](const std::string& track, float db) {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
-        state.setTrackGain(resolveTrackId(track), linear);
+        state.setTrackGain(TrackId{resolveTrackId(track)}, linear);
     });
     lua.set_function("getTrackGain", [&state, resolveTrackId](const std::string& track) -> float {
-        return state.getTrackGain(resolveTrackId(track));
+        return state.getTrackGain(TrackId{resolveTrackId(track)});
     });
 
     // Bus management
     lua.set_function("createBus", [&state](const std::string& name) -> std::string {
-        return state.createBus(name);
+        return state.createBus(name).str();
     });
     lua.set_function("removeBus", [&state, resolveBusId](const std::string& name) {
-        state.removeBus(resolveBusId(name));
+        state.removeBus(BusId{resolveBusId(name)});
     });
     lua.set_function("setBusGain", [&state, resolveBusId](const std::string& bus, float gain) {
-        state.setBusGain(resolveBusId(bus), gain);
+        state.setBusGain(BusId{resolveBusId(bus)}, gain);
     });
     lua.set_function("setBusGainDb", [&state, resolveBusId](const std::string& bus, float db) {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
-        state.setBusGain(resolveBusId(bus), linear);
+        state.setBusGain(BusId{resolveBusId(bus)}, linear);
     });
 
     // Sends
     lua.set_function("addSendDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                     const std::string& bus, float db) -> std::string {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
-        return state.addSend(resolveTrackId(track), resolveBusId(bus), linear);
+        return state.addSend(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, linear);
     });
     lua.set_function("setSendGainDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                         const std::string& bus, float db) {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
-        state.setSendGainByBus(resolveTrackId(track), resolveBusId(bus), linear);
+        state.setSendGainByBus(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, linear);
     });
     lua.set_function("addSend", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                   const std::string& bus, sol::optional<float> gain) {
-        state.addSend(resolveTrackId(track), resolveBusId(bus), gain.value_or(1.0f));
+        state.addSend(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, gain.value_or(1.0f));
     });
     lua.set_function("setSendGain", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                       const std::string& bus, float gain) {
-        state.setSendGainByBus(resolveTrackId(track), resolveBusId(bus), gain);
+        state.setSendGainByBus(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, gain);
     });
 
     // Parameters (engine)
@@ -483,12 +483,12 @@ void LuaEngine::registerAPI() {
                         // Resolve: try exact, then case-insensitive
                         std::string resolved;
                         for (auto& t : state.listTracks()) {
-                            if (juce::String(t.name) == trackName) { resolved = t.id; break; }
+                            if (juce::String(t.name) == trackName) { resolved = t.id.str(); break; }
                         }
                         if (resolved.empty()) {
                             auto lower = trackName.toLowerCase();
                             for (auto& t : state.listTracks()) {
-                                if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id; break; }
+                                if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id.str(); break; }
                             }
                         }
                         if (resolved.empty())
@@ -512,13 +512,13 @@ void LuaEngine::registerAPI() {
         if (type == "track") {
             for (auto& t : state.listTracks()) {
                 sol::table row = lua.create_table();
-                row["id"] = t.id; row["name"] = t.name;
+                row["id"] = t.id.str(); row["name"] = t.name;
                 result.add(row);
             }
         } else if (type == "bus") {
             for (auto& b : state.listBusses()) {
                 sol::table row = lua.create_table();
-                row["id"] = b.id; row["name"] = b.name;
+                row["id"] = b.id.str(); row["name"] = b.name;
                 result.add(row);
             }
         } else if (type == "song") {
@@ -531,8 +531,8 @@ void LuaEngine::registerAPI() {
         return result;
     });
     lua.set_function("registryDelete", [&state](const std::string& id) {
-        if (state.findTrack(id)) state.removeTrack(id);
-        else if (state.findBus(id)) state.removeBus(id);
+        if (state.findTrack(TrackId{id})) state.removeTrack(TrackId{id});
+        else if (state.findBus(BusId{id})) state.removeBus(BusId{id});
         else if (state.findSong(id)) state.deleteSong(id);
     });
 

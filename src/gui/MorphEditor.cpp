@@ -274,10 +274,10 @@ void MorphEditor::showActionPickerForSlot(int slotIndex, juce::Point<int> screen
             else if (sub >= 500) {
                 auto busses = state.listBusses();
                 int bi = sub - 500;
-                if (bi < (int)busses.size()) firstArg = juce::String(busses[bi].id);
+                if (bi < (int)busses.size()) firstArg = juce::String(busses[bi].id.str());
             } else if (sub > 0) {
                 int ti = sub - 1;
-                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id);
+                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
             }
 
             auto schema = actions[ai].paramSchema;

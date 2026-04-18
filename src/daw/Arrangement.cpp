@@ -11,7 +11,7 @@ RegionState* Arrangement::addMidiRegion(const std::string& trackId,
                                          double startBeat, double lengthBeats) {
     PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {
-        if (t.id == trackId) {
+        if (t.id.str() == trackId) {
             RegionState region;
             region.id = generateId();
             region.type = "midi";
@@ -66,7 +66,7 @@ void Arrangement::moveRegion(const std::string& regionId,
 
     // Insert into target track
     for (auto& t : *songTracks) {
-        if (t.id == newTrackId) {
+        if (t.id.str() == newTrackId) {
             t.regions.push_back(std::move(found));
             return;
         }
@@ -91,7 +91,7 @@ RegionState* Arrangement::duplicateRegion(const std::string& regionId,
 
     // Find target track
     for (auto& t : *songTracks) {
-        if (t.id == targetTrackId) {
+        if (t.id.str() == targetTrackId) {
             RegionState copy;
             copy.id = generateId();
             copy.type = source->type;
@@ -261,7 +261,7 @@ std::vector<RegionState*> Arrangement::regionsForTrack(const std::string& trackI
     std::vector<RegionState*> result;
     PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {
-        if (t.id == trackId) {
+        if (t.id.str() == trackId) {
             for (auto& r : t.regions)
                 result.push_back(const_cast<RegionState*>(&r));
             break;
@@ -331,7 +331,7 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                     else if (isNoteOff) openNotes.erase(noteKey);
 
                     if (absBeat >= prevBeat && absBeat < currentBeat)
-                        callback(t.id, event, absBeat);
+                        callback(t.id.str(), event, absBeat);
                 };
 
                 if (r.quantize > 0.0) {
@@ -379,7 +379,7 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                         offEvent.data1 = onEvent.data1;
                         offEvent.data2 = 0;
                         offEvent.beatOffset = 0;  // not meaningful for synthetic
-                        callback(t.id, offEvent, boundaryBeat);
+                        callback(t.id.str(), offEvent, boundaryBeat);
                     }
                 }
             }  // end rep loop

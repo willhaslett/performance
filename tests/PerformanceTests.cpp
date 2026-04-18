@@ -189,7 +189,7 @@ public:
             s.setCurrentSong(s.createSong("S"));
             auto pluginId = s.registerPlugin("Raum", "NI", "fx", false);
             auto trackId = s.createTrack("T");
-            auto fxId = s.addEffect(trackId, "Raum", pluginId);
+            auto fxId = s.addEffect(trackId.str(), "Raum", pluginId);
             expect(!fxId.empty());
             auto effects = s.getTrackEffects(trackId);
             expectEquals((int)effects.size(), 1);
@@ -202,7 +202,7 @@ public:
             s.setCurrentSong(s.createSong("S"));
             auto pluginId = s.registerPlugin("Delay", "NI", "fx", false);
             auto busId = s.createBus("FX");
-            s.addEffect(busId, "Delay", pluginId);
+            s.addEffect(busId.str(), "Delay", pluginId);
             expectEquals((int)s.getBusEffects(busId).size(), 1);
         }
 
@@ -222,8 +222,8 @@ public:
             s.setCurrentSong(s.createSong("S"));
             auto pluginId = s.registerPlugin("FX", "M", "fx", false);
             auto trackId = s.createTrack("T");
-            auto fx1 = s.addEffect(trackId, "FX", pluginId);
-            auto fx2 = s.addEffect(trackId, "FX", pluginId);
+            auto fx1 = s.addEffect(trackId.str(), "FX", pluginId);
+            auto fx2 = s.addEffect(trackId.str(), "FX", pluginId);
             expectEquals((int)s.getTrackEffects(trackId).size(), 2);
             s.removeEffect(fx1);
             auto remaining = s.getTrackEffects(trackId);
@@ -237,7 +237,7 @@ public:
             s.setCurrentSong(s.createSong("S"));
             auto pluginId = s.registerPlugin("FX", "M", "fx", false);
             auto trackId = s.createTrack("T");
-            auto fxId = s.addEffect(trackId, "FX", pluginId);
+            auto fxId = s.addEffect(trackId.str(), "FX", pluginId);
             auto* fx = s.findEffect(fxId);
             expect(fx->loadStatus == LoadStatus::None);
             s.setEffectLoadStatus(fxId, LoadStatus::Loaded);
@@ -281,7 +281,7 @@ public:
             s.removeSend(s1);
             auto sends = s.getTrackSends(trackId);
             expectEquals((int)sends.size(), 1);
-            expectEquals(sends[0].busId, b2);
+            expectEquals(sends[0].busId.str(), b2.str());
         }
 
         beginTest("Send survives bus rename");
@@ -451,8 +451,8 @@ public:
             s.setCurrentSong(s.createSong("S"));
             auto t1 = s.createTrack("Keys");
             auto b1 = s.createBus("Reverb");
-            expectEquals(s.findTrackIdByName("Keys"), t1);
-            expectEquals(s.findBusIdByName("Reverb"), b1);
+            expectEquals(s.findTrackIdByName("Keys").str(), t1.str());
+            expectEquals(s.findBusIdByName("Reverb").str(), b1.str());
             expect(s.findTrackIdByName("Missing").empty());
         }
 
@@ -878,8 +878,8 @@ public:
             auto busId = original.createBus("Reverb");
             original.setBusGain(busId, 0.7f);
 
-            original.addEffect(t1, "Delay", fxPluginId);
-            original.addEffect(busId, "Delay2", fxPluginId);
+            original.addEffect(t1.str(), "Delay", fxPluginId);
+            original.addEffect(busId.str(), "Delay2", fxPluginId);
             original.addEffect(songId, "MasterFX", fxPluginId);
 
             original.addSend(t1, busId, 0.5f);
@@ -996,7 +996,7 @@ public:
             original.setCurrentSong(songId);
             auto trackId = original.createTrack("T");
             original.setTrackPlugin(trackId, pluginId);
-            auto fxId = original.addEffect(trackId, "FX", fxPluginId);
+            auto fxId = original.addEffect(trackId.str(), "FX", fxPluginId);
 
             // Simulate captured processor state
             auto* track = original.findTrack(trackId);
@@ -1271,7 +1271,7 @@ public:
             // DLSMusicDevice is always available on macOS
             auto* plugin = tc.state().findPluginByName("DLSMusicDevice");
             expect(plugin != nullptr);
-            auto fxId = tc.state().addEffect(trackId, "FX", plugin->id);
+            auto fxId = tc.state().addEffect(trackId.str(), "FX", plugin->id);
             auto effects = tc.state().getTrackEffects(trackId);
             expectEquals((int)effects.size(), 1);
         }
@@ -1281,8 +1281,8 @@ public:
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             auto* plugin = tc.state().findPluginByName("DLSMusicDevice");
-            auto fx1 = tc.state().addEffect(trackId, "FX1", plugin->id);
-            auto fx2 = tc.state().addEffect(trackId, "FX2", plugin->id);
+            auto fx1 = tc.state().addEffect(trackId.str(), "FX1", plugin->id);
+            auto fx2 = tc.state().addEffect(trackId.str(), "FX2", plugin->id);
             tc.state().removeEffect(fx1);
             auto remaining = tc.state().getTrackEffects(trackId);
             expectEquals((int)remaining.size(), 1);
@@ -1567,7 +1567,7 @@ public:
             auto* call = mock.findCall("setTrackInputMonitoring");
             expect(call != nullptr);
             if (call) {
-                expectEquals(call->arg1, trackId);
+                expectEquals(call->arg1, trackId.str());
                 expect(!call->boolArg);
             }
         }
@@ -1609,7 +1609,7 @@ public:
             mock.clear();
 
             auto trackId = state.listTracks()[0].id;
-            state.addEffect(trackId, "MyDelay", pluginId);
+            state.addEffect(trackId.str(), "MyDelay", pluginId);
 
             expect(mock.hasCall("addEffect"));
             auto* call = mock.findCall("addEffect");
@@ -1862,7 +1862,7 @@ public:
         beginTest("audioEnabled persists through save/load cycle");
         {
             TempDB db;
-            std::string trackId;
+            TrackId trackId;
             {
                 PerformanceCoordinator coord;
                 coord.initialise(db.path());
@@ -2042,7 +2042,7 @@ public:
         TestContext(std::initializer_list<std::string> trackIds) {
             for (auto& id : trackIds) {
                 TrackState t;
-                t.id = id;
+                t.id = TrackId{id};
                 t.name = id;
                 tracks.push_back(std::move(t));
             }
@@ -2438,7 +2438,7 @@ public:
         TestContext(std::initializer_list<std::string> trackIds) {
             for (auto& id : trackIds) {
                 TrackState t;
-                t.id = id;
+                t.id = TrackId{id};
                 t.name = id;
                 tracks.push_back(std::move(t));
             }
