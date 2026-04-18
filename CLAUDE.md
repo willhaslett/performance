@@ -20,7 +20,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 ## 0.1.0 Release Plan
 
-Target: first beta, roughly a week out. Not a rush. Ship gate: §1–4 done, §5 decided (in or explicitly deferred), §3 in or explicitly backed out. Then bump `CMakeLists.txt` to `0.1.0`, tag, run `scripts/build-release.sh`, upload to Drive, distribute to 4 musician friends. This is the last round before strangers.
+Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4 decided (in or explicitly deferred), §3 in or explicitly backed out. Then bump `CMakeLists.txt` to `0.1.0`, tag, run `scripts/build-release.sh`, upload to Drive, distribute to 4 musician friends. This is the last round before strangers.
 
 ### 1. Distribution proof
 
@@ -49,9 +49,9 @@ Carry-over from pre-beta:
 - [x] Debounced autosave (3-second quiet period after last state change)
 - [x] File → Open Song submenu
 - [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
-- [ ] Getting-started doc — keyboard shortcuts, audio setup, basic workflow. Prose, lives in the `performance-testing` repo.
+- [ ] **perfuce.com rebuilt as the single docs/reference surface.** Three featured sections (AI / sequencer / perform), each with a looping UI demo video. New `/docs` route with step-by-step guides per pane (Producer / Chat / Mixer / Perform / Settings). See `../performance-testing/rounds/01-v0.1.0-first-friends/02-materials/perfuce-site-plan.md` for the checklist. No in-repo getting-started doc — the site replaces it.
 - [ ] "Show Log File" menu item (View → Reveal Log in Finder). Less critical now that telemetry auto-ships, but handy for live tester triage.
-- [ ] Feedback channel — pick one (email, Linear, Slack, Discord) and document in the getting-started doc.
+- [x] Feedback channel — resolved: individual outreach per tester (text / email / iMessage). Documented in `performance-testing/.../welcome.md`.
 
 ### 3. Built-in AI for testers
 
@@ -59,7 +59,8 @@ Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat 
 
 **Decided:**
 - **API-key provisioning: Lambda proxy only.** The app sends chat requests to our Lambda (existing telemetry stack), which adds the Anthropic key and forwards. Per-install rate-limit + monthly cap via DynamoDB. No key ever on tester machines. For Will's local dev until the Lambda is built: keep the current `getenv("ANTHROPIC_API_KEY")` path as a temporary hack; delete once the proxy is live. "Bring your own key" Settings field is deferred to 0.2.x.
-- **Tool-call visibility:** today `ChatView::onToolUse` renders raw Lua as a "Tool" bubble (`ChatView.cpp:93-99`). Reconsider for testers — likely replace with a short "Doing X…" summary so users don't see implementation details. Decide during local iteration.
+- **Tool-call visibility: hidden.** `ChatView::onToolUse` is a no-op — no raw Lua, no raw errors in chat. Users see only assistant bubbles. Tool activity still goes to `/tmp/performance.log` for debugging.
+- **Safety + dB API.** All gain setters clamp to [0.0, 2.0] (matches fader floor = true silence, fader top = +6dB). dB-native Lua bindings (`setTrackGainDb`, `setBusGainDb`, `addSendDb`, `setSendGainDb`) so Claude never does dB↔linear math. Prompt codifies safe defaults for new tracks / busses / sends (audio-input tracks have no input + monitoring off; new busses silent; new sends -12dB).
 
 **Open:**
 - **Streaming.** `ClaudeClient` is fully non-streaming today (`readEntireStreamAsString()` blocks for the whole response, then one `notifyText`). Evaluate locally first — if "thinking…" then wall-of-text feels acceptable for chat, ship non-streaming; if it feels sluggish, do SSE end-to-end (Lambda already streams cleanly; C++ side is bounded SSE plumbing, ~4 hours).
@@ -67,33 +68,23 @@ Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat 
 
 **To do:**
 
-- [ ] **Refresh `runtime/CLAUDE.md`** — the embedded system prompt. Almost certainly stale. Must reflect current state model, actions/bindings vocabulary, Lua surface (`perf` tool), pane names, UUID-only identity. *Next concrete dev task — done in local mode.*
-- [ ] **Tool-use surface** — audit what Claude can call through `perf`: list state, mutate state, load plugins, set up bindings. Gate destructive operations behind confirmation or dry-run.
-- [ ] **ChatView UX** — error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight, tool-call rendering decision (per Decided above).
+- [x] **Refresh `runtime/CLAUDE.md`** — embedded system prompt rewritten, bundled as BinaryData so it ships with the binary, clarifies safe defaults + dB API. Continues to be tuned through self-test.
+- [x] **Silent-failure surface** — resolver helpers and plugin lookups now throw with actionable errors (`"plugin 'X' not found. Run listPlugins() for available names."`). Claude self-corrects instead of claiming success on no-ops.
+- [x] **ChatView typing indicator** — three pulsing dots while Claude is working; appears instantly on send.
+- [ ] **Tool-use surface** — full audit of what Claude can call through `perf` (list / mutate / plugins / bindings). Safe-default rules cover the biggest risks; destructive-op gating (confirm / dry-run) still open.
+- [ ] **ChatView UX tail** — error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight.
 - [ ] **Lambda proxy** — extend the telemetry Lambda with a `/chat` route. Auth via existing bearer + install-ID. Per-install rate + monthly cap in DynamoDB. Streaming or not depending on §3 Open decision. Delete the `getenv()` key path once this is live.
 - [ ] **Cost guardrails** — per-install monthly cap enforced in Lambda; graceful error in Chat.
-- [ ] **Model bump** — apply chosen default model.
-- [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try.
-- [ ] **Tester onboarding copy** — one paragraph in the getting-started doc with 3–4 example prompts.
+- [ ] **Model bump** — apply chosen default model (still pinned to stale `claude-sonnet-4-20250514`).
+- [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try. Ongoing through local use.
+- [ ] **Tester onboarding copy** — 3–4 example prompts shown on perfuce.com (not a repo doc).
 
-### 4. Unproven / sub-par audit
-
-Some may already be solid. Each needs a deliberate test before ship, not "I think it works."
-
-- [ ] **State-management mutation paths** — audit GUI / Lua / IPC / MIDI-binding / EngineSync paths for StateAPI-only discipline; registry-engine consistency; re-enable track preset load. (Flagged in memory as next major work — decide if 0.1.0-blocking or deferrable.)
-- [ ] **Stuck notes at region boundaries** — synthetic noteOffs at region end. Cheap test: play a region that ends mid-note; confirm silence.
-- [ ] **ProducePane size/complexity** (~2520 lines) — not a ship blocker by itself. Flag bug-prone areas surfaced during testing; full refactor is 0.2.x.
-- [ ] **Recording round-trips** — audio + MIDI. Arm, record, stop, replay, quit, relaunch, replay again. Both record types, with and without plugins in the chain.
-- [ ] **Plugin state save/load on relaunch** — third-party AU plugins restore patch + parameters correctly. Test DLS + two known third-party plugins.
-- [ ] **Song-switching in performance** — rapid switching under MIDI activity. No stuck notes, no lingering audio, UI reflects new song immediately.
-- [ ] **Autosave under stress** — ~50 mutations in 10 seconds. Debounce holds, no partial writes, backup file consistent.
-
-### 5. Nice-to-haves considered
+### 4. Nice-to-haves considered
 
 - [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. Size before deciding; likely cheap since offline render already exists on the record path.
 - [ ] (open — fill in as testing surfaces asks)
 
-### 6. Explicitly deferred to 0.2.x
+### 5. Explicitly deferred to 0.2.x
 
 Named so it's a decision, not a gap:
 
@@ -193,6 +184,16 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - Background plugin state capture (getStateInformation off message thread).
 - Settings window MIDI tab content.
 - ⌘O Songs palette (type-to-filter overlay for performance-time song switching).
+
+**Unverified behaviors — revisit if a tester hits one or when next touching the area:**
+
+Pulled from the pre-ship punch list after Will reported extensive click-testing shook none of these out. Not 0.1.0 blockers; test deliberately before relying on any of them in a harder-edge scenario.
+
+- State-management mutation paths — audit GUI / Lua / IPC / MIDI-binding / EngineSync paths for StateAPI-only discipline; registry↔engine consistency; re-enable track preset load.
+- Recording round-trips — audio + MIDI. Arm, record, stop, replay, quit, relaunch, replay again. Both types, with and without plugins in the chain.
+- Plugin state save/load on relaunch — third-party AU plugins restore patch + parameters correctly after an app restart.
+- Song-switching in performance — rapid switching under MIDI activity: no stuck notes, no lingering audio, UI reflects the new song immediately.
+- Autosave under stress — ~50 mutations in 10 seconds: debounce holds, no partial writes, backup file consistent.
 
 ## Core Concepts
 
