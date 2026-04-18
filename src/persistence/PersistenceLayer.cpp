@@ -274,7 +274,12 @@ void PersistenceLayer::createSchema() {
 
 static std::string col_str(sqlite3_stmt* stmt, int i) {
     auto* text = sqlite3_column_text(stmt, i);
-    return text ? std::string((const char*)text) : std::string();
+    if (!text) return {};
+    // Use explicit byte count — the string may contain null bytes (e.g. raw
+    // binary in processor_state if a future caller stores it unencoded).
+    // std::string(const char*) null-terminates and would silently truncate.
+    int bytes = sqlite3_column_bytes(stmt, i);
+    return std::string((const char*)text, (size_t)bytes);
 }
 
 void PersistenceLayer::loadInto(StateAPI& state) {
@@ -587,11 +592,30 @@ void PersistenceLayer::readConfig(AppState& out) {
 // ============================================================================
 
 void PersistenceLayer::saveFrom(const StateAPI& state) {
-    // Backup DB before save
-    if (!dbPath.empty()) {
-        auto src = juce::File(dbPath);
-        auto bak = src.getSiblingFile(src.getFileNameWithoutExtension() + ".bak.db");
-        src.copyFileTo(bak);
+    // Backup DB before save using the SQLite backup API. A naive
+    // juce::File::copyFileTo only copies the main .db file — in WAL mode
+    // (which we use), the authoritative data lives in the -wal sidecar,
+    // so a file copy produces a schema-only empty backup. sqlite3_backup_*
+    // captures the full database including uncommitted WAL pages.
+    if (!dbPath.empty() && db) {
+        auto bakPath = juce::File(dbPath)
+                           .getSiblingFile(juce::File(dbPath).getFileNameWithoutExtension() + ".bak.db");
+        bakPath.deleteFile();
+
+        sqlite3* bak = nullptr;
+        if (sqlite3_open(bakPath.getFullPathName().toRawUTF8(), &bak) == SQLITE_OK) {
+            auto* backup = sqlite3_backup_init(bak, "main", db, "main");
+            if (backup) {
+                sqlite3_backup_step(backup, -1);  // -1 = copy all pages
+                sqlite3_backup_finish(backup);
+            } else {
+                perfLog("[Persistence] Backup init failed: %s\n", sqlite3_errmsg(bak));
+            }
+            sqlite3_close(bak);
+        } else {
+            perfLog("[Persistence] Backup open failed: %s\n", sqlite3_errmsg(bak));
+            if (bak) sqlite3_close(bak);
+        }
     }
 
     exec("BEGIN TRANSACTION");
@@ -736,7 +760,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 else sqlite3_bind_null(fs, 5);
                 sqlite3_bind_int(fs, 6, fx.position);
                 if (!fx.processorState.empty())
-                    sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(fs, 7, fx.processorState.data(), (int)fx.processorState.size(), SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 7);
                 if (!fx.processorStateHash.empty())
                     sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
@@ -771,7 +795,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_int(ts, 7, t.midiEnabled ? 1 : 0);
             sqlite3_bind_int(ts, 8, t.position);
             if (!t.processorState.empty())
-                sqlite3_bind_text(ts, 9, t.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(ts, 9, t.processorState.data(), (int)t.processorState.size(), SQLITE_TRANSIENT);
             else sqlite3_bind_null(ts, 9);
             if (!t.processorStateHash.empty())
                 sqlite3_bind_text(ts, 10, t.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
@@ -803,7 +827,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 else sqlite3_bind_null(fs, 5);
                 sqlite3_bind_int(fs, 6, fx.position);
                 if (!fx.processorState.empty())
-                    sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text(fs, 7, fx.processorState.data(), (int)fx.processorState.size(), SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 7);
                 if (!fx.processorStateHash.empty())
                     sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
@@ -887,7 +911,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             else sqlite3_bind_null(fs, 5);
             sqlite3_bind_int(fs, 6, fx.position);
             if (!fx.processorState.empty())
-                sqlite3_bind_text(fs, 7, fx.processorState.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text(fs, 7, fx.processorState.data(), (int)fx.processorState.size(), SQLITE_TRANSIENT);
             else sqlite3_bind_null(fs, 7);
             if (!fx.processorStateHash.empty())
                 sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);

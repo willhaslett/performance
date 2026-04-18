@@ -2709,7 +2709,7 @@ public:
             }
         }
 
-        beginTest("Backup file (state.bak.db) is valid after save");
+        beginTest("Backup file (state.bak.db) captures the last committed save");
         {
             TempDB db;
 
@@ -2719,16 +2719,17 @@ public:
             original.createTrack("Track 1");
             original.createTrack("Track 2");
 
+            // The backup is taken BEFORE each save runs (as a safety net for
+            // the about-to-run save failing). So after the first save, the
+            // backup is still pre-save and empty. After the second save, the
+            // backup captures what the first save committed.
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
             auto dbFile = juce::File(db.path());
             auto bakFile = dbFile.getSiblingFile(dbFile.getFileNameWithoutExtension() + ".bak.db");
             expect(bakFile.existsAsFile());
 
-            // The backup should open and load as a valid SQLite DB with the
-            // same song + track count as the main DB. Today this fails because
-            // the main DB is in WAL mode and the backup copies only the main
-            // file, not the -wal sidecar.
             StateAPI fromBackup;
             { PersistenceLayer p; p.open(bakFile.getFullPathName().toStdString()); p.loadInto(fromBackup); }
 
@@ -2762,6 +2763,53 @@ public:
 
                 // Resave the reloaded state — simulates autosave + quit cycles.
                 { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(reloaded); }
+            }
+        }
+
+        beginTest("Track processorState blob round-trips through save/load");
+        {
+            TempDB db;
+
+            StateAPI original;
+            // Register a fake plugin in the catalog so the track's pluginId
+            // resolves to something real.
+            auto pluginId = original.registerPlugin("DLSMusicDevice", "Apple",
+                                                    "AudioUnit", /*isInstrument*/true);
+
+            auto songId = original.createSong("Plugin Test");
+            original.setCurrentSong(songId);
+            auto trackId = original.createTrack("Keys");
+            auto* track = original.findTrack(trackId);
+            if (track) {
+                track->pluginId = pluginId;
+                // Simulate a plugin state blob the size DLS produces (~916 bytes
+                // per the real logs). Binary, stored base64-encoded by the
+                // save path; use a mix of printable + high-bit chars so we'd
+                // catch encoding bugs.
+                std::string blob;
+                blob.reserve(916);
+                for (int i = 0; i < 916; ++i)
+                    blob.push_back((char)(i & 0xFF));
+                track->processorState = blob;
+                track->processorStateHash = "test-hash";
+            }
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.currentSong();
+            expect(loadedSong != nullptr);
+            if (loadedSong && !loadedSong->tracks.empty()) {
+                auto& t = loadedSong->tracks[0];
+                expectEquals(t.pluginId, pluginId);
+                expectEquals((int)t.processorState.size(), 916);
+                if (t.processorState.size() == 916) {
+                    expect(t.processorState[0]     == (char)0);
+                    expect(t.processorState[255]   == (char)255);
+                    expect(t.processorState[916-1] == (char)((916-1) & 0xFF));
+                }
             }
         }
 
