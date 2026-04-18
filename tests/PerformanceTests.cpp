@@ -1544,6 +1544,34 @@ public:
             expectWithinAbsoluteError(gainCall->floatArg, 0.5f, 0.01f);
         }
 
+        beginTest("Audio input track applies inputMonitoring on song load");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createAudioInputTrack("Mic", 0, 1);
+            state.setTrackInputMonitoring(trackId, false);
+
+            // Reset + attach EngineSync so the next setCurrentSong triggers
+            // a full re-creation via loadSong.
+            state.setCurrentSong("");
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+
+            // The engine's default inputMonitoring is true, so a persisted
+            // `false` must be applied on (re)creation. Regression guard —
+            // missing this call caused live input to leak even when the UI
+            // showed monitoring off until the user toggled it manually.
+            auto* call = mock.findCall("setTrackInputMonitoring");
+            expect(call != nullptr);
+            if (call) {
+                expectEquals(call->arg1, trackId);
+                expect(!call->boolArg);
+            }
+        }
+
         beginTest("Track rename event updates engine");
         {
             StateAPI state;

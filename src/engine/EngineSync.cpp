@@ -120,6 +120,12 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
         engine.setTrackGain(juce::String(track->id), track->outputGain);
         if (!track->audioEnabled)
             engine.setTrackAudioEnabled(juce::String(track->id), false);
+        // Apply persisted input monitoring. The engine's default is true
+        // (pass live input through), so we must apply state unconditionally
+        // on creation — otherwise a persisted `false` silently reverts to
+        // true on reload, producing audible input even though the UI shows
+        // monitoring off.
+        engine.setTrackInputMonitoring(juce::String(track->id), track->inputMonitoring);
         return;
     }
 
