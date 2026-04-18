@@ -1,9 +1,22 @@
 #include "api/StateAPI.h"
 #include "engine/Log.h"
 #include <algorithm>
+#include <cmath>
 #include <random>
 #include <sstream>
 #include <iomanip>
+
+// Gain range matches the mixer fader: [-60dB, +6dB] — -60dB (0.001 linear)
+// and below snap to true 0.0 so the fader at its floor produces actual
+// silence, not barely-audible. +6dB matches the trackVolume binding's max
+// (cubic * 2.0f). Every gain setter routes through this so no caller can
+// blast past the fader's visible range.
+static float clampGain(float g) {
+    constexpr float kMinAudibleGain = 0.001f;  // -60dB = fader floor
+    constexpr float kMaxGain        = 2.0f;    // +6dB  = fader top
+    if (!std::isfinite(g) || g <= kMinAudibleGain) return 0.0f;
+    return std::min(g, kMaxGain);
+}
 
 StateAPI::StateAPI() {}
 
@@ -394,7 +407,7 @@ void StateAPI::moveTrack(const std::string& id, int newPosition) {
 
 void StateAPI::setTrackGain(const std::string& id, float gain) {
     pushUndo();
-    track(id).outputGain = gain;
+    track(id).outputGain = clampGain(gain);
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
 }
@@ -565,7 +578,7 @@ void StateAPI::renameBus(const std::string& id, const std::string& name) {
 
 void StateAPI::setBusGain(const std::string& id, float gain) {
     pushUndo();
-    bus(id).outputGain = gain;
+    bus(id).outputGain = clampGain(gain);
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
 }
@@ -653,7 +666,7 @@ std::string StateAPI::addSend(const std::string& trackId, const std::string& bus
     SendState send;
     send.id = generateId();
     send.busId = busId;
-    send.gain = gain;
+    send.gain = clampGain(gain);
     t.sends.push_back(std::move(send));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id, trackId });
@@ -689,7 +702,7 @@ void StateAPI::setSendGain(const std::string& sendId, float gain) {
     for (auto& t : s.tracks) {
         for (auto& send : t.sends) {
             if (send.id == sendId) {
-                send.gain = gain;
+                send.gain = clampGain(gain);
                 markDirty();
                 eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId, t.id });
                 return;

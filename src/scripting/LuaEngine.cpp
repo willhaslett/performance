@@ -167,8 +167,18 @@ void LuaEngine::registerAPI() {
     lua.set_function("setTrackMidiEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
         state.setTrackMidiEnabled(resolveTrackId(track), enabled);
     });
+    lua.set_function("setTrackAudioEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
+        state.setTrackAudioEnabled(resolveTrackId(track), enabled);
+    });
+    lua.set_function("setTrackInputMonitoring", [&state, resolveTrackId](const std::string& track, bool enabled) {
+        state.setTrackInputMonitoring(resolveTrackId(track), enabled);
+    });
     lua.set_function("setTrackGain", [&state, resolveTrackId](const std::string& track, float gain) {
         state.setTrackGain(resolveTrackId(track), gain);
+    });
+    lua.set_function("setTrackGainDb", [&state, resolveTrackId](const std::string& track, float db) {
+        float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
+        state.setTrackGain(resolveTrackId(track), linear);
     });
     lua.set_function("getTrackGain", [&state, resolveTrackId](const std::string& track) -> float {
         return state.getTrackGain(resolveTrackId(track));
@@ -184,8 +194,22 @@ void LuaEngine::registerAPI() {
     lua.set_function("setBusGain", [&state, resolveBusId](const std::string& bus, float gain) {
         state.setBusGain(resolveBusId(bus), gain);
     });
+    lua.set_function("setBusGainDb", [&state, resolveBusId](const std::string& bus, float db) {
+        float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
+        state.setBusGain(resolveBusId(bus), linear);
+    });
 
     // Sends
+    lua.set_function("addSendDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
+                                    const std::string& bus, float db) -> std::string {
+        float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
+        return state.addSend(resolveTrackId(track), resolveBusId(bus), linear);
+    });
+    lua.set_function("setSendGainDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
+                                        const std::string& bus, float db) {
+        float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
+        state.setSendGainByBus(resolveTrackId(track), resolveBusId(bus), linear);
+    });
     lua.set_function("addSend", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                   const std::string& bus, sol::optional<float> gain) {
         state.addSend(resolveTrackId(track), resolveBusId(bus), gain.value_or(1.0f));
