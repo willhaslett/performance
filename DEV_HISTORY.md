@@ -6,7 +6,7 @@ Changelog, test inventory, completed work, and known issues. Archived from CLAUD
 
 Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests isolated (fresh state per case, temp DB files cleaned up). `MockAudioEngine` captures call log for EngineSync verification.
 
-134 tests across 11 classes:
+143 tests across 11 classes:
 - **StateAPI tests (51)**: Unit — in-memory state mutations/queries. Songs, tracks, busses, effects, sends, bindings, devices, config, events, selection, score steps. Comprehensive.
 - **Persistence tests (11)**: Integration — save/load round-trips. Full state, multi-song, empty DB, processor state, score steps, global bindings, custom actions, device control groups, audio config.
 - **Integration tests (10)**: Coordinator→state→EngineSync→engine path. Track/bus CRUD, gains, effects, song switching, persistence through coordinator.
@@ -17,7 +17,7 @@ Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests 
 - **UndoHistory tests (9)**: Unit — push/undo/redo, max steps trimming, suspend/resume, clear, empty-state edge cases.
 - **SongRuntime tests (11)**: Unit — MIDI dispatch exact match, wildcard any-device, wildcard any-channel, combined wildcards, note on/off velocity normalization, pitch bend normalization, remove/clear bindings, multiple handlers.
 - **Arrangement extended tests (6)**: Unit — move region (same/cross track), duplicate, split with note splitting, quantize snap with per-note shift, looped region repetition.
-- **Persistence extended tests (4)**: Integration — stub binding (empty actionId) round-trip, stub score step round-trip, duplicate device control rejection, region looped/quantize field round-trip.
+- **Persistence extended tests (11)**: Integration — stub binding round-trips, duplicate device control rejection, region looped/quantize fields, **takes with MIDI events round-trip, WAL-mode backup file validity (via sqlite3_backup_*), multi-cycle save/reopen, binary-safe processor state blobs, multi-cycle save with plugin-referencing tracks (FK regression), createDefaultSong full round-trip (FK regression), save failure rolls back and preserves prior state, full coordinator shutdown→relaunch with recorded region**.
 
 **Coverage gaps** (components with zero tests):
 - AutomationEngine — interpolations, easing, delay
@@ -43,7 +43,7 @@ Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests 
 - AUPitch: preset state restore doesn't take effect — AU bug.
 - juce_String.cpp:327 assertion on startup — non-fatal, JUCE internals.
 - No error handling on failed plugin loads (user sees nothing).
-- State changes sometimes not visible until restart — watch for missed rebuildConnections/restoreBindings calls.
+- State changes sometimes not visible until restart — watch for missed rebuildConnections/restoreBindings calls. (Partially addressed by the 2026-04-18 persistence hardening — saves now roll back loudly on FK violation instead of committing partial data, and `EngineSync::onTrackCreated` now applies `inputMonitoring` at load time. Other "not visible until restart" patterns may remain; investigate case-by-case.)
 - Transport requires active audio device: beat clock runs in `GraphWrapper.processBlock`, so play/stop/position don't advance without an audio output device linked. Fix: fallback timer-based clock. Low priority — live use always has a device.
 - DocumentWindow close button renders red despite custom LookAndFeel. JUCE's internal button drawing ignores TextButton colour overrides for the built-in close/minimize/maximize buttons. Fix: fully custom title bar component or custom LookAndFeel that overrides the specific draw method. Low priority cosmetic issue.
 
@@ -82,6 +82,18 @@ MIDI + audio recording/playback, region management (select/move/copy/delete/mute
 - **Theme redesign** — semantic color tokens, unified surface hierarchy (bgApp → bgSurface → bgSlot), neutral track headers (no per-track color), two-row track headers with pill buttons, subdued pill colors, spacing/typography scales. All hardcoded colors migrated to Theme.h tokens.
 - **Fail-loud assertions** — `PERF_ASSERT` macro, asserting helpers `song()`/`track()`/`bus()`/`device()` in StateAPI, assertions in EngineSync and Arrangement. Silent failures replaced with crashes for programming errors.
 - **Audio region persistence** — takes table now stores file_path, record_tempo, sample_rate, channel_count.
+- **Persistence hardening (2026-04-18)** — resolved a long-latent data-loss regression where first-session recordings disappeared after quit. Root cause: `createDefaultSong` passed the DLS plugin's display name as the `presetId` argument to `setTrackPlugin`, which put a non-UUID string into `tracks.preset_id`. Every save then failed `SQLITE_CONSTRAINT_FOREIGNKEY` (ext=787) on the preset_id FK, rolled back the entire transaction, and left the DB empty. The failure had been silent for months. Supporting fixes all landed together:
+  - `saveFrom` now returns bool. `stepWrite` helper replaces bare `sqlite3_step` in the save path, captures SQLite errors, logs the expanded SQL on failure, and trips a class-level `saveHadError` flag.
+  - `saveFrom` checks the flag before COMMIT — any write error triggers ROLLBACK. DB is guaranteed to stay in its last-committed state on any failure.
+  - `exec()` now returns bool; `BEGIN` / `COMMIT` / `ROLLBACK` are all checked.
+  - Save path reordered: new `clearAllData()` deletes every row in child-to-parent order first; catalog writes (plugins, presets, actions) are plain `INSERT` into empty tables instead of `INSERT OR REPLACE` (which triggered implicit DELETEs that cascaded into FK violations).
+  - WAL-mode backup rewritten to use `sqlite3_backup_*`; the previous `juce::File::copyFileTo` copied only the main `.db` file and not the `-wal` sidecar, producing empty `state.bak.db` files.
+  - `col_str` uses `sqlite3_column_bytes` for explicit length; all `processor_state` binds pass `.data()+.size()` instead of `.c_str()+(-1)`. Binary-safe round-trip for blobs (production base64-encodes, so this is defense-in-depth).
+  - `EngineSync::onTrackCreated` now applies `inputMonitoring` on audio input track creation — previously the engine's default (`true`) silently overrode a persisted `false` on reload.
+  - `PerformanceCoordinator::loadSong` calls `loadAudioFilesIntoEngine` at the end — previously audio regions came back visually on relaunch but silent and waveformless because the WAV wasn't loaded into the engine's AudioFileNode.
+- **Offline bounce spike** — `bounce(path, startBeat, endBeat)` Lua binding renders the arrangement faster-than-realtime to a stereo WAV. Engine pauses during render (`AudioEngine::pauseDeviceProcessing`), `GraphWrapper::processBlock` is driven in a tight loop on a caller-owned thread. DLS renders ~76× realtime. Works with heavy plugins. Punts documented in CLAUDE.md §4: constant tempo, automation frozen, no tail time, master output only.
+- **Safe defaults + dB-native Lua API** — gain setters clamp to [0.0, 2.0] in StateAPI (matches fader range); below -60dB snaps to exact 0.0 so the fader floor is true silence. `setTrackGainDb` / `setBusGainDb` / `addSendDb` / `setSendGainDb` convert dB→linear internally. System prompt codifies safe defaults for Claude-created tracks / busses / sends (audio input tracks have no input + monitoring off; new busses silent; new sends at -12dB).
+- **Embedded Claude refinements** — system prompt rewritten, bundled as BinaryData so it ships with the binary. Silent Lua-lookup failures (track/bus/plugin not found) replaced with `std::runtime_error` throws that propagate to Claude as tool errors. ChatView hides raw Lua / tool-error bubbles (users see only assistant text). Three-dots typing indicator while Claude is working. Ambiguity guidance for plugin-name matches.
 
 ## LOC
 

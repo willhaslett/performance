@@ -49,6 +49,7 @@ Carry-over from pre-beta:
 - [x] Debounced autosave (3-second quiet period after last state change)
 - [x] File → Open Song submenu
 - [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
+- [x] **Persistence integrity** (2026-04-18) — data-loss regression fixed: first-session recordings now actually persist through quit/relaunch. Saves are error-checked and roll back cleanly on any constraint violation; WAL-mode backup works; `createDefaultSong` no longer poisons `tracks.preset_id` with a plugin name; `onTrackCreated` applies `inputMonitoring` on load; `loadSong` hydrates audio region WAV files + waveforms. See `DEV_HISTORY.md` for the full list of fixes. Tests: 143/143. *Ship blocker resolved.*
 - [ ] **perfuce.com rebuilt as the single docs/reference surface.** Three featured sections (AI / sequencer / perform), each with a looping UI demo video. New `/docs` route with step-by-step guides per pane (Producer / Chat / Mixer / Perform / Settings). See `../performance-testing/rounds/01-v0.1.0-first-friends/02-materials/perfuce-site-plan.md` for the checklist. No in-repo getting-started doc — the site replaces it.
 - [ ] "Show Log File" menu item (View → Reveal Log in Finder). Less critical now that telemetry auto-ships, but handy for live tester triage.
 - [x] Feedback channel — resolved: individual outreach per tester (text / email / iMessage). Documented in `performance-testing/.../welcome.md`.
@@ -81,7 +82,7 @@ Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat 
 
 ### 4. Nice-to-haves considered
 
-- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. **Spike underway as faster-than-realtime offline render** (engine paused during bounce, graph driven from a render thread). Explicit punts in the spike:
+- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. **Spike complete** (faster-than-realtime offline render; engine paused during bounce, graph driven from a render thread). DLS renders ~76× realtime; verified with heavy plugins too. Still a 0.1.0-or-not decision (no UI yet, just the `bounce(path, startBeat, endBeat)` Lua binding). Explicit punts in the spike:
   - Automation values freeze during render (AutomationEngine pauses rather than ticking per-buffer).
   - Constant tempo (start-of-render tempo applied throughout). Proper variable tempo needs TempoMap runtime evaluation — a prerequisite, tracked separately in Backlog.
   - Constant time signature (same reason; TimeSignatureMap prerequisite).
