@@ -38,13 +38,15 @@ void PersistenceLayer::close() {
     }
 }
 
-void PersistenceLayer::exec(const std::string& sql) {
+bool PersistenceLayer::exec(const std::string& sql) {
     char* err = nullptr;
     if (sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err) != SQLITE_OK) {
         std::string msg = err ? err : "unknown error";
         sqlite3_free(err);
-        perfLog("[Persistence] SQL error: %s\n", msg.c_str());
+        perfLog("[Persistence] SQL error in '%s': %s\n", sql.c_str(), msg.c_str());
+        return false;
     }
+    return true;
 }
 
 sqlite3_stmt* PersistenceLayer::prepare(const std::string& sql) {
@@ -52,6 +54,22 @@ sqlite3_stmt* PersistenceLayer::prepare(const std::string& sql) {
     if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK)
         perfLog("[Persistence] Prepare error: %s\n", sqlite3_errmsg(db));
     return stmt;
+}
+
+bool PersistenceLayer::stepWrite(sqlite3_stmt* stmt, const char* context) {
+    if (!stmt) {
+        saveHadError = true;
+        return false;
+    }
+    int rc = sqlite3_step(stmt);
+    bool ok = (rc == SQLITE_DONE || rc == SQLITE_ROW);
+    if (!ok) {
+        perfLog("[Persistence] step failed (%s, rc=%d): %s\n",
+                context, rc, sqlite3_errmsg(db));
+        saveHadError = true;
+    }
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 void PersistenceLayer::createSchema() {
@@ -591,7 +609,7 @@ void PersistenceLayer::readConfig(AppState& out) {
 // Save
 // ============================================================================
 
-void PersistenceLayer::saveFrom(const StateAPI& state) {
+bool PersistenceLayer::saveFrom(const StateAPI& state) {
     // Backup DB before save using the SQLite backup API. A naive
     // juce::File::copyFileTo only copies the main .db file — in WAL mode
     // (which we use), the authoritative data lives in the -wal sidecar,
@@ -618,7 +636,12 @@ void PersistenceLayer::saveFrom(const StateAPI& state) {
         }
     }
 
-    exec("BEGIN TRANSACTION");
+    saveHadError = false;
+
+    if (!exec("BEGIN TRANSACTION")) {
+        perfLog("[Persistence] SAVE FAILED: could not begin transaction\n");
+        return false;
+    }
 
     savePlugins(state);
     savePresets(state);
@@ -626,8 +649,19 @@ void PersistenceLayer::saveFrom(const StateAPI& state) {
     saveSongs(state);
     saveConfig(state);
 
-    exec("COMMIT");
+    if (saveHadError) {
+        perfLog("[Persistence] SAVE FAILED: one or more writes errored — rolling back\n");
+        exec("ROLLBACK");
+        return false;
+    }
+
+    if (!exec("COMMIT")) {
+        perfLog("[Persistence] SAVE FAILED: commit rejected — rolling back\n");
+        exec("ROLLBACK");
+        return false;
+    }
     perfLog("[Persistence] State saved to database\n");
+    return true;
 }
 
 void PersistenceLayer::savePlugins(const StateAPI& state) {
@@ -638,8 +672,7 @@ void PersistenceLayer::savePlugins(const StateAPI& state) {
         sqlite3_bind_text(stmt, 3, p.manufacturer.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 4, p.formatId.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt, 5, p.isInstrument ? 1 : 0);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
     }
 }
 
@@ -651,8 +684,7 @@ void PersistenceLayer::savePresets(const StateAPI& state) {
         sqlite3_bind_text(stmt, 3, p.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 4, p.statePath.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt, 5, static_cast<int>(p.kind));
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
     }
 }
 
@@ -665,8 +697,7 @@ void PersistenceLayer::saveActions(const StateAPI& state) {
         sqlite3_bind_text(stmt, 4, a.paramSchema.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 5, a.luaCode.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 6, a.songId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
     }
 }
 
@@ -689,8 +720,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_text(ds, 1, device.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(ds, 2, device.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(ds, 3, device.midiPortName.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step(ds);
-        sqlite3_finalize(ds);
+        stepWrite(ds, "save");
 
         for (int i = 0; i < (int)device.controls.size(); ++i) {
             auto& ctrl = device.controls[i];
@@ -706,8 +736,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_text(cs, 7, ctrl.group.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(cs, 7);
             sqlite3_bind_int(cs, 8, i);
-            sqlite3_step(cs);
-            sqlite3_finalize(cs);
+            stepWrite(cs, "save");
         }
     }
     // Delete global bindings separately (not cascaded)
@@ -733,8 +762,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 8, song.cycleStart);
         sqlite3_bind_double(stmt, 9, song.cycleEnd);
         sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
 
         // Busses (before tracks, since sends reference busses)
         for (auto& b : song.busses) {
@@ -745,8 +773,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_double(bs, 4, b.outputGain);
             sqlite3_bind_int(bs, 5, b.position);
             sqlite3_bind_text(bs, 6, b.outputTarget.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_step(bs);
-            sqlite3_finalize(bs);
+            stepWrite(bs, "save");
 
             // Bus effects
             for (auto& fx : b.effects) {
@@ -765,8 +792,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 if (!fx.processorStateHash.empty())
                     sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 8);
-                sqlite3_step(fs);
-                sqlite3_finalize(fs);
+                stepWrite(fs, "save");
             }
         }
 
@@ -775,8 +801,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             auto* sd = prepare("INSERT INTO song_devices (song_id, device_id) VALUES (?, ?)");
             sqlite3_bind_text(sd, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(sd, 2, devId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_step(sd);
-            sqlite3_finalize(sd);
+            stepWrite(sd, "save");
         }
 
         // Tracks (after busses, since sends reference bus IDs)
@@ -812,8 +837,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_int(ts, 16, (int)t.color);
             sqlite3_bind_text(ts, 17, t.outputTarget.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ts, 18, t.inputMonitoring ? 1 : 0);
-            sqlite3_step(ts);
-            sqlite3_finalize(ts);
+            stepWrite(ts, "save");
 
             // Track effects
             for (auto& fx : t.effects) {
@@ -832,8 +856,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 if (!fx.processorStateHash.empty())
                     sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
                 else sqlite3_bind_null(fs, 8);
-                sqlite3_step(fs);
-                sqlite3_finalize(fs);
+                stepWrite(fs, "save");
             }
 
             // Sends
@@ -843,8 +866,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_text(ss, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(ss, 3, s.busId.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_double(ss, 4, s.gain);
-                sqlite3_step(ss);
-                sqlite3_finalize(ss);
+                stepWrite(ss, "save");
             }
 
             // Regions and takes
@@ -863,8 +885,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_double(rs, 9, r.quantize);
                 sqlite3_bind_int(rs, 10, r.looped ? 1 : 0);
                 sqlite3_bind_double(rs, 11, r.loopEndBeat);
-                sqlite3_step(rs);
-                sqlite3_finalize(rs);
+                stepWrite(rs, "save");
 
                 for (auto& take : r.takes) {
                     auto* ts2 = prepare(
@@ -879,8 +900,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                     sqlite3_bind_double(ts2, 5, take.recordTempo);
                     sqlite3_bind_int(ts2, 6, take.sampleRate);
                     sqlite3_bind_int(ts2, 7, take.channelCount);
-                    sqlite3_step(ts2);
-                    sqlite3_finalize(ts2);
+                    stepWrite(ts2, "save");
 
                     for (auto& e : take.events) {
                         auto* es = prepare(
@@ -892,8 +912,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                         sqlite3_bind_int(es, 4, e.channel);
                         sqlite3_bind_int(es, 5, e.data1);
                         sqlite3_bind_int(es, 6, e.data2);
-                        sqlite3_step(es);
-                        sqlite3_finalize(es);
+                        stepWrite(es, "save");
                     }
                 }
             }
@@ -916,8 +935,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             if (!fx.processorStateHash.empty())
                 sqlite3_bind_text(fs, 8, fx.processorStateHash.c_str(), -1, SQLITE_TRANSIENT);
             else sqlite3_bind_null(fs, 8);
-            sqlite3_step(fs);
-            sqlite3_finalize(fs);
+            stepWrite(fs, "save");
         }
 
         // Song-scoped bindings (score steps stored as bindings with isScoreStep flag)
@@ -942,8 +960,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             else sqlite3_bind_null(bs, 9);
             sqlite3_bind_int(bs, 10, bind.isScoreStep ? 1 : 0);
             sqlite3_bind_int(bs, 11, bind.scorePosition);
-            sqlite3_step(bs);
-            sqlite3_finalize(bs);
+            stepWrite(bs, "save");
         }
         // Action events (on action tracks)
         for (auto& t : song.tracks) {
@@ -955,8 +972,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_double(aes, 3, ev.beat);
                 sqlite3_bind_text(aes, 4, ev.actionId.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(aes, 5, ev.argsJson.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_step(aes);
-                sqlite3_finalize(aes);
+                stepWrite(aes, "save");
             }
         }
     }
@@ -982,8 +998,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         else sqlite3_bind_null(bs, 8);
         sqlite3_bind_int(bs, 9, bind.isScoreStep ? 1 : 0);
         sqlite3_bind_int(bs, 10, bind.scorePosition);
-        sqlite3_step(bs);
-        sqlite3_finalize(bs);
+        stepWrite(bs, "save");
     }
 }
 
@@ -994,16 +1009,14 @@ void PersistenceLayer::saveConfig(const StateAPI& state) {
     if (!state.appState().currentSongId.empty()) {
         auto* stmt = prepare("INSERT INTO config (key, value) VALUES ('current_song_id', ?)");
         sqlite3_bind_text(stmt, 1, state.appState().currentSongId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
     }
 
     for (auto& [key, value] : state.appState().config) {
         auto* stmt = prepare("INSERT INTO config (key, value) VALUES (?, ?)");
         sqlite3_bind_text(stmt, 1, key.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, value.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
+        stepWrite(stmt, "save");
     }
 }
 

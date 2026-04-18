@@ -273,10 +273,13 @@ void PerformanceCoordinator::timerCallback() {
     if (stateAPI && persistence && stateAPI->isDirty() && lastStateChangeMs > 0.0) {
         double now = juce::Time::getMillisecondCounterHiRes();
         if (now - lastStateChangeMs >= 3000.0) {
-            persistence->saveFrom(*stateAPI);
-            stateAPI->clearDirty();
-            lastStateChangeMs = 0.0;
-            perfLog("[Coordinator] Auto-saved\n");
+            if (!persistence->saveFrom(*stateAPI))
+                perfLog("[Coordinator] Auto-save FAILED — see [Persistence] errors above; DB unchanged, dirty flag held\n");
+            else {
+                stateAPI->clearDirty();
+                lastStateChangeMs = 0.0;
+                perfLog("[Coordinator] Auto-saved\n");
+            }
         }
     }
 }
@@ -565,7 +568,8 @@ void PerformanceCoordinator::shutdown() {
     // Full save on shutdown — captures processor state and flushes
     if (stateAPI && persistence) {
         captureProcessorState();
-        persistence->saveFrom(*stateAPI);
+        if (!persistence->saveFrom(*stateAPI))
+            perfLog("[Coordinator] Shutdown save FAILED — session may not be fully persisted\n");
     }
     songRuntime.reset();
     midiEngine.reset();
@@ -803,8 +807,10 @@ void PerformanceCoordinator::save() {
         }
     }
     if (persistence && stateAPI) {
-        persistence->saveFrom(*stateAPI);
-        perfLog("[Coordinator] Saved\n");
+        if (persistence->saveFrom(*stateAPI))
+            perfLog("[Coordinator] Saved\n");
+        else
+            perfLog("[Coordinator] Explicit save FAILED — see [Persistence] errors above\n");
     }
 }
 

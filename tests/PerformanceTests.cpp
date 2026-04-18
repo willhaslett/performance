@@ -956,7 +956,11 @@ public:
             auto s2 = original.createSong("Song B");
             original.setCurrentSong(s2);
             original.createTrack("B Track");
-            original.setConfig("current_song_id", s2);
+            // Note: setCurrentSong above already stamps currentSongId; we used
+            // to also call setConfig("current_song_id", s2) here, but that put
+            // the same key in the config map AND in the special-cased save
+            // path — a UNIQUE constraint violation that was silently swallowed
+            // before the save-side error checking landed.
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
@@ -2810,6 +2814,49 @@ public:
                     expect(t.processorState[255]   == (char)255);
                     expect(t.processorState[916-1] == (char)((916-1) & 0xFF));
                 }
+            }
+        }
+
+        beginTest("Save failure rolls back, returns false, preserves prior state");
+        {
+            TempDB db;
+
+            // First, a clean save so the DB has a known-good prior state.
+            {
+                StateAPI s;
+                auto songId = s.createSong("Good");
+                s.setCurrentSong(songId);
+                s.createTrack("Keys");
+                PersistenceLayer p;
+                p.open(db.path().toStdString());
+                expect(p.saveFrom(s));
+            }
+
+            // Now construct a state that will fail the save: put
+                // current_song_id in the config map AND also set the canonical
+                // currentSongId. On save both will try to INSERT the same key
+                // into the config table — UNIQUE constraint violation.
+            {
+                StateAPI s;
+                auto songId = s.createSong("Broken");
+                s.setCurrentSong(songId);
+                s.createTrack("A");
+                s.createTrack("B");
+                s.setConfig("current_song_id", songId);  // the poison pill
+
+                PersistenceLayer p;
+                p.open(db.path().toStdString());
+                expect(!p.saveFrom(s));  // returns false
+            }
+
+            // Reopen — should see the first save's state ("Good" with "Keys"),
+                // not the failed save's state.
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            expectEquals((int)loaded.allSongs().size(), 1);
+            if (!loaded.allSongs().empty()) {
+                expectEquals(loaded.allSongs()[0].name, std::string("Good"));
             }
         }
 

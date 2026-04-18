@@ -17,15 +17,28 @@ public:
     void close();
 
     void loadInto(StateAPI& state);
-    void saveFrom(const StateAPI& state);
+    // Returns true on a successful commit, false if anything goes wrong
+    // (BEGIN / COMMIT failure, etc.). On failure, the transaction has been
+    // rolled back and the DB is unchanged from before saveFrom was called.
+    // Details are logged.
+    bool saveFrom(const StateAPI& state);
 
 private:
     sqlite3* db = nullptr;
     std::string dbPath;
+    // Tripped by stepWrite() on any SQLITE error during a save transaction.
+    // saveFrom() checks this before COMMIT — any single write failure ->
+    // ROLLBACK instead of committing partial / broken data.
+    bool saveHadError = false;
 
     void createSchema();
-    void exec(const std::string& sql);
+    // Returns true on SQLITE_OK. Errors are logged.
+    bool exec(const std::string& sql);
     sqlite3_stmt* prepare(const std::string& sql);
+    // Step + finalize a write statement. Returns true if step returned
+    // SQLITE_DONE or SQLITE_ROW. On failure, logs with the given context.
+    // Always finalizes the statement, regardless of step outcome.
+    bool stepWrite(sqlite3_stmt* stmt, const char* context);
 
     // Load helpers — build AppState directly, no StateAPI mutators
     void readPlugins(AppState& out);
