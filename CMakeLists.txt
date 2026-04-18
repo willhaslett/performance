@@ -198,6 +198,7 @@ target_sources(PerformanceTests PRIVATE
     src/daw/InternalSequencer.cpp
     src/daw/Arrangement.cpp
     src/gui/Theme.cpp
+    src/rendering/OfflineRenderer.cpp
 )
 
 target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)

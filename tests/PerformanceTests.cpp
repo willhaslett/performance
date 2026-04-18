@@ -2654,6 +2654,173 @@ public:
             expectWithinAbsoluteError(loadedTrack.regions[0].loopEndBeat, 12.0, 0.01);
             expectWithinAbsoluteError(loadedTrack.regions[0].quantize, 0.5, 0.01);
         }
+
+        beginTest("Take with MIDI events round-trips through save/load");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            original.setCurrentSong(songId);
+            auto trackId = original.createTrack("Track 1");
+
+            auto* track = original.findTrack(trackId);
+            RegionState region;
+            region.id = StateAPI::generateId();
+            region.startBeat = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = StateAPI::generateId();
+            take.name = "Take 1";
+            // A small chord: note-on + note-on + note-off + note-off
+            take.events.push_back({ 0.0,  0x90, 1, 60, 100 });
+            take.events.push_back({ 0.0,  0x90, 1, 64, 100 });
+            take.events.push_back({ 2.0,  0x80, 1, 60,   0 });
+            take.events.push_back({ 2.0,  0x80, 1, 64,   0 });
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+            track->regions.push_back(region);
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.currentSong();
+            expect(loadedSong != nullptr);
+            if (loadedSong && !loadedSong->tracks.empty()) {
+                auto& loadedTrack = loadedSong->tracks[0];
+                expectEquals((int)loadedTrack.regions.size(), 1);
+                if (!loadedTrack.regions.empty()) {
+                    auto& loadedRegion = loadedTrack.regions[0];
+                    expectEquals((int)loadedRegion.takes.size(), 1);
+                    if (!loadedRegion.takes.empty()) {
+                        auto& loadedTake = loadedRegion.takes[0];
+                        expectEquals((int)loadedTake.events.size(), 4);
+                        if (loadedTake.events.size() >= 4) {
+                            expectEquals(loadedTake.events[0].status, 0x90);
+                            expectEquals(loadedTake.events[0].data1, 60);
+                            expectEquals(loadedTake.events[0].data2, 100);
+                            expectEquals(loadedTake.events[3].status, 0x80);
+                            expectEquals(loadedTake.events[3].data1, 64);
+                        }
+                    }
+                }
+            }
+        }
+
+        beginTest("Backup file (state.bak.db) is valid after save");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Backup Me");
+            original.setCurrentSong(songId);
+            original.createTrack("Track 1");
+            original.createTrack("Track 2");
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            auto dbFile = juce::File(db.path());
+            auto bakFile = dbFile.getSiblingFile(dbFile.getFileNameWithoutExtension() + ".bak.db");
+            expect(bakFile.existsAsFile());
+
+            // The backup should open and load as a valid SQLite DB with the
+            // same song + track count as the main DB. Today this fails because
+            // the main DB is in WAL mode and the backup copies only the main
+            // file, not the -wal sidecar.
+            StateAPI fromBackup;
+            { PersistenceLayer p; p.open(bakFile.getFullPathName().toStdString()); p.loadInto(fromBackup); }
+
+            auto* bakSong = fromBackup.currentSong();
+            expect(bakSong != nullptr);
+            if (bakSong) expectEquals((int)bakSong->tracks.size(), 2);
+
+            bakFile.deleteFile();
+        }
+
+        beginTest("Multi-cycle save/reopen preserves state across many cycles");
+        {
+            TempDB db;
+
+            StateAPI seed;
+            auto songId = seed.createSong("MultiSave");
+            seed.setCurrentSong(songId);
+            seed.createTrack("Kit");
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(seed); }
+
+            for (int cycle = 0; cycle < 5; ++cycle) {
+                StateAPI reloaded;
+                { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(reloaded); }
+
+                auto* song = reloaded.currentSong();
+                expect(song != nullptr);
+                if (song) {
+                    expectEquals(song->name, std::string("MultiSave"));
+                    expectEquals((int)song->tracks.size(), 1);
+                }
+
+                // Resave the reloaded state — simulates autosave + quit cycles.
+                { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(reloaded); }
+            }
+        }
+
+        beginTest("Coordinator shutdown → relaunch preserves track with recorded region");
+        {
+            TempDB db;
+
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto songId = coord.state().createSong("Session");
+                coord.state().setCurrentSong(songId);
+                auto trackId = coord.state().createTrack("Keys");
+
+                auto* track = coord.state().findTrack(trackId);
+                expect(track != nullptr);
+                if (track) {
+                    RegionState region;
+                    region.id = StateAPI::generateId();
+                    region.startBeat = 0.0;
+                    region.lengthBeats = 4.0;
+                    TakeState take;
+                    take.id = StateAPI::generateId();
+                    take.name = "Take 1";
+                    take.events.push_back({ 0.0, 0x90, 1, 60, 100 });
+                    take.events.push_back({ 1.0, 0x80, 1, 60,   0 });
+                    region.takes.push_back(take);
+                    region.activeTakeId = take.id;
+                    track->regions.push_back(region);
+                }
+
+                coord.save();
+                // coord dtor runs shutdown(): captureProcessorState +
+                // saveFrom + persistence.reset() — same as real app quit.
+            }
+
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+
+                auto* song = coord.state().currentSong();
+                expect(song != nullptr);
+                if (song) {
+                    expectEquals(song->name, std::string("Session"));
+                    expectEquals((int)song->tracks.size(), 1);
+                    if (!song->tracks.empty()) {
+                        auto& t = song->tracks[0];
+                        expectEquals((int)t.regions.size(), 1);
+                        if (!t.regions.empty()) {
+                            auto& r = t.regions[0];
+                            expectEquals((int)r.takes.size(), 1);
+                            if (!r.takes.empty()) {
+                                expectEquals((int)r.takes[0].events.size(), 2);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 };
 
