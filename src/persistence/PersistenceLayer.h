@@ -49,6 +49,7 @@ private:
     void readConfig(AppState& out);
 
     // Save helpers
+    void clearAllData();
     void savePlugins(const StateAPI& state);
     void savePresets(const StateAPI& state);
     void saveActions(const StateAPI& state);

@@ -2845,6 +2845,35 @@ public:
             }
         }
 
+        beginTest("Multi-cycle save with plugin-referencing tracks (FK regression)");
+        {
+            TempDB db;
+
+            StateAPI seed;
+            auto pluginId = seed.registerPlugin("DLSMusicDevice", "Apple", "AudioUnit", true);
+            auto songId = seed.createSong("Session");
+            seed.setCurrentSong(songId);
+            auto trackId = seed.createTrack("Keys");
+            if (auto* t = seed.findTrack(trackId))
+                t->pluginId = pluginId;
+
+            // The bug: on the second save, INSERT OR REPLACE on plugins
+            // triggers an implicit DELETE of the existing plugin row, which
+            // fails the tracks.plugin_id foreign key. Before the clearAllData
+            // reorder the whole transaction rolled back silently.
+            for (int cycle = 0; cycle < 3; ++cycle) {
+                PersistenceLayer p;
+                p.open(db.path().toStdString());
+                expect(p.saveFrom(seed));
+            }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+            expect(loaded.currentSong() != nullptr);
+            if (auto* s = loaded.currentSong())
+                expectEquals((int)s->tracks.size(), 1);
+        }
+
         beginTest("Save failure rolls back, returns false, preserves prior state");
         {
             TempDB db;

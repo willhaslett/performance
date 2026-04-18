@@ -643,6 +643,16 @@ bool PersistenceLayer::saveFrom(const StateAPI& state) {
         return false;
     }
 
+    // Clear every table first, in child-to-parent order, so that the
+    // subsequent INSERTs run against empty tables. Historically this
+    // function used INSERT OR REPLACE on plugins/presets/actions before
+    // deleting rows that referenced them — with foreign_keys=ON and the
+    // tracks.plugin_id / effects.plugin_id / bindings.action_id FKs
+    // (which default to NO ACTION), the implicit DELETE triggered by
+    // REPLACE fails on the FK constraint. The whole save silently
+    // aborted and on next launch the DB looked empty.
+    clearAllData();
+
     savePlugins(state);
     savePresets(state);
     saveActions(state);
@@ -664,9 +674,28 @@ bool PersistenceLayer::saveFrom(const StateAPI& state) {
     return true;
 }
 
+void PersistenceLayer::clearAllData() {
+    // Order: child tables before parents, leaf-referenced catalog last.
+    exec("DELETE FROM take_events");
+    exec("DELETE FROM takes");
+    exec("DELETE FROM regions");
+    exec("DELETE FROM effects");
+    exec("DELETE FROM sends");
+    exec("DELETE FROM action_events");
+    exec("DELETE FROM song_devices");
+    exec("DELETE FROM bindings");           // both global + song-scoped
+    exec("DELETE FROM device_controls");
+    exec("DELETE FROM songs");              // CASCADEs tracks + busses
+    exec("DELETE FROM devices");
+    exec("DELETE FROM presets");
+    exec("DELETE FROM actions");
+    exec("DELETE FROM plugins");
+    exec("DELETE FROM config");
+}
+
 void PersistenceLayer::savePlugins(const StateAPI& state) {
     for (auto& p : state.allPlugins()) {
-        auto* stmt = prepare("INSERT OR REPLACE INTO plugins (id, name, manufacturer, format_id, is_instrument) VALUES (?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO plugins (id, name, manufacturer, format_id, is_instrument) VALUES (?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, p.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, p.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, p.manufacturer.c_str(), -1, SQLITE_TRANSIENT);
@@ -678,7 +707,7 @@ void PersistenceLayer::savePlugins(const StateAPI& state) {
 
 void PersistenceLayer::savePresets(const StateAPI& state) {
     for (auto& p : state.appState().presets) {
-        auto* stmt = prepare("INSERT OR REPLACE INTO presets (id, plugin_id, name, state_path, kind) VALUES (?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO presets (id, plugin_id, name, state_path, kind) VALUES (?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, p.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, p.pluginId.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, p.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -690,7 +719,7 @@ void PersistenceLayer::savePresets(const StateAPI& state) {
 
 void PersistenceLayer::saveActions(const StateAPI& state) {
     for (auto& a : state.allActions()) {
-        auto* stmt = prepare("INSERT OR REPLACE INTO actions (id, name, label, param_schema, lua_code, song_id) VALUES (?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO actions (id, name, label, param_schema, lua_code, song_id) VALUES (?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, a.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, a.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, a.label.c_str(), -1, SQLITE_TRANSIENT);
@@ -702,18 +731,7 @@ void PersistenceLayer::saveActions(const StateAPI& state) {
 }
 
 void PersistenceLayer::saveSongs(const StateAPI& state) {
-    // Delete all existing data
-    exec("DELETE FROM take_events");
-    exec("DELETE FROM takes");
-    exec("DELETE FROM regions");
-    exec("DELETE FROM effects");
-    exec("DELETE FROM sends");
-    exec("DELETE FROM song_devices");
-    exec("DELETE FROM action_events");
-    exec("DELETE FROM songs");  // CASCADE clears tracks, busses, bindings
-    exec("DELETE FROM device_controls");
-    exec("DELETE FROM devices");
-
+    // Tables were already cleared in clearAllData() at the top of saveFrom.
     // Write devices
     for (auto& device : state.appState().devices) {
         auto* ds = prepare("INSERT INTO devices (id, name, midi_port_name) VALUES (?, ?, ?)");
@@ -739,9 +757,6 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             stepWrite(cs, "save");
         }
     }
-    // Delete global bindings separately (not cascaded)
-    exec("DELETE FROM bindings WHERE song_id IS NULL");
-
     for (auto& song : state.allSongs()) {
         // Song
         double songTempo = song.tempoEvents.empty() ? 120.0 : song.tempoEvents[0].bpm;
@@ -1003,8 +1018,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 }
 
 void PersistenceLayer::saveConfig(const StateAPI& state) {
-    exec("DELETE FROM config");
-
+    // config was cleared in clearAllData() at the top of saveFrom.
     // Save current song ID as config (not in the config map, but needs persisting)
     if (!state.appState().currentSongId.empty()) {
         auto* stmt = prepare("INSERT INTO config (key, value) VALUES ('current_song_id', ?)");
