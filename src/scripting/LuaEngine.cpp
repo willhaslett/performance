@@ -162,7 +162,7 @@ void LuaEngine::registerAPI() {
         state.addEffect(resolveParentId(parent), effectName, p->id);
     });
     lua.set_function("removeEffect", [&state](const std::string&, const std::string& effectId) {
-        state.removeEffect(effectId);
+        state.removeEffect(EffectId{effectId});
     });
     lua.set_function("setTrackMidiEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
         state.setTrackMidiEnabled(TrackId{resolveTrackId(track)}, enabled);

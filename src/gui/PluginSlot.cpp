@@ -197,7 +197,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
                 if (slotType == Instrument)
                     state.clearTrackPlugin(TrackId{parentId.toStdString()});
                 else
-                    state.removeEffect(effectId.toStdString());
+                    state.removeEffect(EffectId{effectId.toStdString()});
                 if (onChanged) onChanged();
                 return;
             }
@@ -229,7 +229,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             } else {
                 // Replace: remove old effect, then add new one in its place
                 if (!effectId.isEmpty())
-                    state.removeEffect(effectId.toStdString());
+                    state.removeEffect(EffectId{effectId.toStdString()});
                 auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
                 if (pluginInfo)
                     state.addEffect(parentId.toStdString(), selectedPlugin.toStdString(), pluginInfo->id);

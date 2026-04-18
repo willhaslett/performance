@@ -87,12 +87,12 @@ void EngineSync::loadSong(const std::string& songId) {
     for (auto& bus : song->busses) onBusCreated(bus.id.str());
     for (auto& track : song->tracks) onTrackCreated(track.id.str());
     for (auto& bus : song->busses)
-        for (auto& fx : bus.effects) onEffectCreated(fx.id);
+        for (auto& fx : bus.effects) onEffectCreated(fx.id.str());
     for (auto& track : song->tracks)
-        for (auto& fx : track.effects) onEffectCreated(fx.id);
+        for (auto& fx : track.effects) onEffectCreated(fx.id.str());
     for (auto& track : song->tracks)
         for (auto& send : track.sends) onSendCreated(send.id);
-    for (auto& fx : song->masterEffects) onEffectCreated(fx.id);
+    for (auto& fx : song->masterEffects) onEffectCreated(fx.id.str());
 
     engine.setMasterGain(song->masterGain);
     engine.setMasterAudioEnabled(song->masterAudioEnabled);
@@ -152,7 +152,8 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
 }
 
 void EngineSync::onEffectCreated(const std::string& effectId) {
-    auto* fx = stateAPI.findEffect(effectId);
+    EffectId eid{effectId};
+    auto* fx = stateAPI.findEffect(eid);
     if (!fx) {
         perfLog("[EngineSync] onEffectCreated: effect not found: %s\n", effectId.c_str());
         return;
@@ -171,15 +172,15 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     juce::String engineParentId;
     std::string stateParentId;  // for preset restore
     for (auto& mfx : song->masterEffects)
-        if (mfx.id == effectId) { engineParentId = "Output"; stateParentId = song->id.str(); break; }
+        if (mfx.id == eid) { engineParentId = "Output"; stateParentId = song->id.str(); break; }
     if (engineParentId.isEmpty())
         for (auto& t : song->tracks)
             for (auto& tfx : t.effects)
-                if (tfx.id == effectId) { engineParentId = juce::String(t.id.str()); stateParentId = t.id.str(); break; }
+                if (tfx.id == eid) { engineParentId = juce::String(t.id.str()); stateParentId = t.id.str(); break; }
     if (engineParentId.isEmpty())
         for (auto& b : song->busses)
             for (auto& bfx : b.effects)
-                if (bfx.id == effectId) { engineParentId = juce::String(b.id.str()); stateParentId = b.id.str(); break; }
+                if (bfx.id == eid) { engineParentId = juce::String(b.id.str()); stateParentId = b.id.str(); break; }
 
     if (engineParentId.isEmpty()) {
         perfLog("[EngineSync] onEffectCreated: no parent found for effect %s\n", effectId.c_str());
@@ -188,11 +189,11 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
 
     perfLog("[EngineSync] Loading effect %s on %s\n", plugin->name.c_str(), engineParentId.toRawUTF8());
     auto presetId = fx->presetId;
-    stateAPI.setEffectLoadStatus(effectId, LoadStatus::Pending);
-    engine.addEffect(engineParentId, juce::String(fx->id), juce::String(plugin->name),
-        [this, stateParentId, effectId, presetId] {
-            stateAPI.setEffectLoadStatus(effectId, LoadStatus::Loaded);
-            restorePresetState(stateParentId, effectId, presetId);
+    stateAPI.setEffectLoadStatus(eid, LoadStatus::Pending);
+    engine.addEffect(engineParentId, juce::String(fx->id.str()), juce::String(plugin->name),
+        [this, stateParentId, eid, presetId] {
+            stateAPI.setEffectLoadStatus(eid, LoadStatus::Loaded);
+            restorePresetState(stateParentId, eid.str(), presetId);
         });
 }
 
@@ -213,7 +214,7 @@ void EngineSync::restorePresetState(const std::string& parentId, const std::stri
         auto* track = stateAPI.findTrack(TrackId{parentId});
         if (track) processorState = track->processorState;
     } else {
-        auto* fx = stateAPI.findEffect(effectId);
+        auto* fx = stateAPI.findEffect(EffectId{effectId});
         if (fx) processorState = fx->processorState;
     }
 

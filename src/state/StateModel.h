@@ -69,7 +69,7 @@ struct ActionEventData {
 };
 
 struct EffectState {
-    std::string id;
+    EffectId id;
     std::string name;
     PluginId pluginId;
     PresetId presetId;

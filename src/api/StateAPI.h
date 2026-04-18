@@ -80,12 +80,12 @@ public:
     const BusState* findBus(const BusId& id) const;
 
     // --- Effects (on tracks, busses, or master output) ---
-    std::string addEffect(const std::string& parentId, const std::string& name,
+    EffectId addEffect(const std::string& parentId, const std::string& name,
                           const PluginId& pluginId);  // parentId is raw string: could be trackId.str(), busId.str(), or master-output id
-    void removeEffect(const std::string& effectId);
-    void setEffectLoadStatus(const std::string& effectId, LoadStatus status);
-    const EffectState* findEffect(const std::string& effectId) const;
-    void setEffectPresetId(const std::string& effectId, const PresetId& presetId);
+    void removeEffect(const EffectId& effectId);
+    void setEffectLoadStatus(const EffectId& effectId, LoadStatus status);
+    const EffectState* findEffect(const EffectId& effectId) const;
+    void setEffectPresetId(const EffectId& effectId, const PresetId& presetId);
 
     // --- Sends ---
     std::string addSend(const TrackId& trackId, const BusId& busId, float gain = 1.0f);
@@ -182,7 +182,7 @@ public:
     // --- Query helpers ---
     struct TrackInfo { TrackId id; std::string name; };
     struct BusInfo { BusId id; std::string name; };
-    struct EffectSlotInfo { std::string effectId; std::string pluginName; };
+    struct EffectSlotInfo { EffectId effectId; std::string pluginName; };
     struct TrackSendInfo { std::string busName; BusId busId; float gain; };
 
     std::vector<TrackInfo> listTracks() const;
@@ -241,7 +241,7 @@ private:
     DeviceState& device(const std::string& id);
 
     // Find the effects vector that contains effectId, and optionally the parent ID
-    std::vector<EffectState>* findEffectList(const std::string& effectId, std::string* outParentId = nullptr);
+    std::vector<EffectState>* findEffectList(const EffectId& effectId, std::string* outParentId = nullptr);
     // Find the sends vector that contains sendId
     std::vector<SendState>* findSendList(const std::string& sendId, std::string* outTrackId = nullptr);
 };

@@ -228,7 +228,7 @@ public:
             s.removeEffect(fx1);
             auto remaining = s.getTrackEffects(trackId);
             expectEquals((int)remaining.size(), 1);
-            expectEquals(remaining[0].effectId, fx2);
+            expectEquals(remaining[0].effectId.str(), fx2.str());
         }
 
         beginTest("Effect load status");
@@ -1286,7 +1286,7 @@ public:
             tc.state().removeEffect(fx1);
             auto remaining = tc.state().getTrackEffects(trackId);
             expectEquals((int)remaining.size(), 1);
-            expectEquals(remaining[0].effectId, fx2);
+            expectEquals(remaining[0].effectId.str(), fx2.str());
         }
 
         beginTest("Song switching preserves state");

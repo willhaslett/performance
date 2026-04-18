@@ -57,7 +57,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
         }
     } else {
         // Effect
-        auto* fx = state.findEffect(effectId.toStdString());
+        auto* fx = state.findEffect(EffectId{effectId.toStdString()});
         if (fx) {
             auto* plugin = state.findPluginById(fx->pluginId);
             if (plugin) pluginName = juce::String(plugin->name);
@@ -73,7 +73,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
             auto* track = state.findTrack(TrackId{TrackId{parentId.toStdString()}});
             if (track) presetId = track->presetId;
         } else {
-            auto* fx = state.findEffect(effectId.toStdString());
+            auto* fx = state.findEffect(EffectId{effectId.toStdString()});
             if (fx) presetId = fx->presetId;
         }
         if (!presetId.empty()) {
@@ -94,7 +94,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
                     if (effectId.isEmpty())
                         state.setTrackPresetId(TrackId{TrackId{parentId.toStdString()}}, preset->id);
                     else
-                        state.setEffectPresetId(effectId.toStdString(), preset->id);
+                        state.setEffectPresetId(EffectId{effectId.toStdString()}, preset->id);
                 }
             }
         };
@@ -108,7 +108,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
                     if (effectId.isEmpty())
                         state.setTrackPresetId(TrackId{TrackId{parentId.toStdString()}}, preset->id);
                     else
-                        state.setEffectPresetId(effectId.toStdString(), preset->id);
+                        state.setEffectPresetId(EffectId{effectId.toStdString()}, preset->id);
                 }
             }
         };

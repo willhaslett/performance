@@ -416,7 +416,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(fxs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 t.effects.push_back({
-                    col_str(fxs, 0), col_str(fxs, 1),
+                    EffectId{col_str(fxs, 0)}, col_str(fxs, 1),
                     PluginId{col_str(fxs, 2)}, PresetId{col_str(fxs, 3)},
                     sqlite3_column_int(fxs, 4),
                     LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
@@ -502,7 +502,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(fxs, 1, b.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 b.effects.push_back({
-                    col_str(fxs, 0), col_str(fxs, 1),
+                    EffectId{col_str(fxs, 0)}, col_str(fxs, 1),
                     PluginId{col_str(fxs, 2)}, PresetId{col_str(fxs, 3)},
                     sqlite3_column_int(fxs, 4),
                     LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
@@ -519,7 +519,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(mfx, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(mfx) == SQLITE_ROW) {
             song.masterEffects.push_back({
-                col_str(mfx, 0), col_str(mfx, 1),
+                EffectId{col_str(mfx, 0)}, col_str(mfx, 1),
                 PluginId{col_str(mfx, 2)}, PresetId{col_str(mfx, 3)},
                 sqlite3_column_int(mfx, 4),
                 LoadStatus::None, col_str(mfx, 5), col_str(mfx, 6)

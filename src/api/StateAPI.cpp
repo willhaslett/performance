@@ -147,7 +147,7 @@ const BusState* StateAPI::findBus(const BusId& id) const {
     return nullptr;
 }
 
-std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, std::string* outParentId) {
+std::vector<EffectState>* StateAPI::findEffectList(const EffectId& effectId, std::string* outParentId) {
     auto& s = song();
     for (auto& fx : s.masterEffects) {
         if (fx.id == effectId) {
@@ -187,7 +187,7 @@ std::vector<SendState>* StateAPI::findSendList(const std::string& sendId, std::s
     return nullptr;
 }
 
-const EffectState* StateAPI::findEffect(const std::string& effectId) const {
+const EffectState* StateAPI::findEffect(const EffectId& effectId) const {
     auto& s = song();
     for (auto& fx : s.masterEffects)
         if (fx.id == effectId) return &fx;
@@ -200,7 +200,7 @@ const EffectState* StateAPI::findEffect(const std::string& effectId) const {
     return nullptr;
 }
 
-void StateAPI::setEffectPresetId(const std::string& effectId, const PresetId& presetId) {
+void StateAPI::setEffectPresetId(const EffectId& effectId, const PresetId& presetId) {
     auto* list = findEffectList(effectId, nullptr);
     if (!list) { perfLog("[StateAPI] setEffectPresetId: effect '%s' not found\n", effectId.c_str()); return; }
     for (auto& fx : *list) {
@@ -530,14 +530,14 @@ void StateAPI::setTrackInstrumentLoadStatus(const TrackId& id, LoadStatus status
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus status) {
+void StateAPI::setEffectLoadStatus(const EffectId& effectId, LoadStatus status) {
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
     if (!list) { perfLog("[StateAPI] setEffectLoadStatus: effect '%s' not found\n", effectId.c_str()); return; }
     for (auto& fx : *list) {
         if (fx.id == effectId) {
             fx.loadStatus = status;
-            eventBus.emit({ StateEvent::Updated, StateEvent::Effect, effectId, parentId });
+            eventBus.emit({ StateEvent::Updated, StateEvent::Effect, effectId.str(), parentId });
             return;
         }
     }
@@ -611,13 +611,13 @@ std::string StateAPI::getBusOutputTarget(const BusId& id) const {
 
 // --- Effects ---
 
-std::string StateAPI::addEffect(const std::string& parentId, const std::string& name,
-                                 const PluginId& pluginId) {
+EffectId StateAPI::addEffect(const std::string& parentId, const std::string& name,
+                              const PluginId& pluginId) {
     pushUndo();
     auto& s = song();
 
     EffectState effect;
-    effect.id = generateId();
+    effect.id = EffectId{generateId()};
     effect.name = name;
     effect.pluginId = pluginId;
 
@@ -642,11 +642,11 @@ std::string StateAPI::addEffect(const std::string& parentId, const std::string& 
     list->push_back(std::move(effect));
     auto& added = list->back();
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Effect, added.id, parentId });
+    eventBus.emit({ StateEvent::Created, StateEvent::Effect, added.id.str(), parentId });
     return added.id;
 }
 
-void StateAPI::removeEffect(const std::string& effectId) {
+void StateAPI::removeEffect(const EffectId& effectId) {
     pushUndo();
     std::string parentId;
     auto* list = findEffectList(effectId, &parentId);
@@ -655,7 +655,7 @@ void StateAPI::removeEffect(const std::string& effectId) {
                                [&](auto& fx) { return fx.id == effectId; }),
                 list->end());
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Effect, effectId, parentId });
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Effect, effectId.str(), parentId });
 }
 
 // --- Sends ---

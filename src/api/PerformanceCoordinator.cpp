@@ -730,7 +730,7 @@ void PerformanceCoordinator::captureProcessorState() {
 
         // Effects
         for (auto& fx : track.effects) {
-            auto* fxProc = audioEngine->getEffectProcessor(juce::String(track.id.str()), juce::String(fx.id));
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(track.id.str()), juce::String(fx.id.str()));
             if (fxProc) {
                 std::string newHash;
                 std::string newState;
@@ -747,7 +747,7 @@ void PerformanceCoordinator::captureProcessorState() {
     // Bus effects
     for (auto& bus : song->busses) {
         for (auto& fx : bus.effects) {
-            auto* fxProc = audioEngine->getEffectProcessor(juce::String(bus.id.str()), juce::String(fx.id));
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(bus.id.str()), juce::String(fx.id.str()));
             if (fxProc) {
                 std::string newHash;
                 std::string newState;
@@ -763,7 +763,7 @@ void PerformanceCoordinator::captureProcessorState() {
 
     // Master effects
     for (auto& fx : song->masterEffects) {
-        auto* fxProc = audioEngine->getEffectProcessor(juce::String("Output"), juce::String(fx.id));
+        auto* fxProc = audioEngine->getEffectProcessor(juce::String("Output"), juce::String(fx.id.str()));
         if (fxProc) {
             std::string newHash;
             std::string newState;
@@ -948,7 +948,7 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
     for (auto& fx : stateAPI->getTrackEffects(TrackId{TrackId{trackId.toStdString()}})) {
         auto* fxObj = new juce::DynamicObject();
         fxObj->setProperty("plugin", juce::String(fx.pluginName));
-        if (auto* proc = audioEngine->getEffectProcessor(trackId, juce::String(fx.effectId))) {
+        if (auto* proc = audioEngine->getEffectProcessor(trackId, juce::String(fx.effectId.str()))) {
             juce::MemoryBlock memState;
             proc->getStateInformation(memState);
             fxObj->setProperty("state", memState.toBase64Encoding());
@@ -1363,10 +1363,10 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
         ensureDefaultPreset(track->id.str(), "", track->pluginId, PresetKind::Instrument);
     }
     else if (event.entity == StateEvent::Effect) {
-        auto* fx = stateAPI->findEffect(event.entityId);
+        auto* fx = stateAPI->findEffect(EffectId{event.entityId});
         if (!fx || fx->loadStatus != LoadStatus::Loaded) return;
         if (fx->pluginId.empty()) return;
-        ensureDefaultPreset(event.parentId, fx->id, fx->pluginId, PresetKind::Effect);
+        ensureDefaultPreset(event.parentId, fx->id.str(), fx->pluginId, PresetKind::Effect);
     }
 }
 

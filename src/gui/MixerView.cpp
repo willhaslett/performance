@@ -132,7 +132,7 @@ void MixerView::timerCallback() {
             auto stateEffects = state.getTrackEffects(TrackId{TrackId{id.toStdString()}});
             std::vector<TrackStrip::EffectSlotInfo> effects;
             for (auto& e : stateEffects)
-                effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+                effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
             trackStrips[i]->setEffects(effects);
 
             trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{id.toStdString()}}));
@@ -169,7 +169,7 @@ void MixerView::timerCallback() {
             auto stateEffects = state.getBusEffects(BusId{BusId{id.toStdString()}});
             std::vector<BusStrip::EffectSlotInfo> effects;
             for (auto& e : stateEffects)
-                effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+                effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
             busStrips[i]->setEffects(effects);
 
             busStrips[i]->setGain(state.getBusGain(BusId{BusId{id.toStdString()}}));
@@ -192,7 +192,7 @@ void MixerView::timerCallback() {
     auto stateMasterEffects = state.getMasterEffects();
     std::vector<OutputStrip::EffectSlotInfo> masterEffects;
     for (auto& e : stateMasterEffects)
-        masterEffects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+        masterEffects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
     outputStrip.setEffects(masterEffects);
     outputStrip.setGain(state.getMasterGain());
     outputStrip.setAudioEnabled(state.isMasterAudioEnabled());
@@ -231,7 +231,7 @@ void MixerView::rebuildStrips() {
         auto stateEffects = state.getTrackEffects(TrackId{TrackId{t.id.toStdString()}});
         std::vector<TrackStrip::EffectSlotInfo> effects;
         for (auto& e : stateEffects)
-            effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+            effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
         strip->setEffects(effects);
 
         strip->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{t.id.toStdString()}}));
@@ -264,7 +264,7 @@ void MixerView::rebuildStrips() {
         auto stateEffects = state.getBusEffects(BusId{BusId{b.id.toStdString()}});
         std::vector<BusStrip::EffectSlotInfo> effects;
         for (auto& e : stateEffects)
-            effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
+            effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
         strip->setEffects(effects);
 
         stripContainer.addAndMakeVisible(*strip);
