@@ -328,15 +328,33 @@ void LuaEngine::registerAPI() {
     // Offline render (bounce) to a stereo WAV file. Returns a one-line
     // human-readable status string so the caller (Claude or dev console)
     // knows wall-clock duration and audio length.
+    //
+    // Two forms:
+    //   bounce(path)                       — use the active cycle region
+    //                                        (errors if cycle mode is off)
+    //   bounce(path, startBeat, endBeat)   — explicit range
     lua.set_function("bounce", [&coord](const std::string& path,
-                                         double startBeat, double endBeat) -> std::string {
-        auto result = coord.bounce(juce::File(juce::String(path)), startBeat, endBeat);
+                                         sol::optional<double> startBeat,
+                                         sol::optional<double> endBeat) -> std::string {
+        PerformanceCoordinator::BounceResult result =
+            (startBeat.has_value() && endBeat.has_value())
+                ? coord.bounce(juce::File(juce::String(path)),
+                               startBeat.value(), endBeat.value())
+                : coord.bounce(juce::File(juce::String(path)));
+
+        // Throw on failure so the error surfaces through executeString
+        // even when the caller wrote `bounce(...)` as a bare statement
+        // rather than `return bounce(...)`. Matches the resolver-helper
+        // pattern for all name-lookup failures.
         if (!result.ok)
-            return std::string("error: ") + result.errorMessage.toStdString();
-        char buf[256];
+            throw std::runtime_error(std::string("bounce failed: ")
+                                     + result.errorMessage.toStdString());
+        char buf[320];
         std::snprintf(buf, sizeof(buf),
-                      "ok: wrote %.2fs of audio to %s in %.2fs wall (%.1fx realtime)",
-                      result.audioDurationSeconds, path.c_str(), result.wallClockSeconds,
+                      "ok: wrote %.2fs of audio (beats %.2f..%.2f) to %s in %.2fs wall (%.1fx realtime)",
+                      result.audioDurationSeconds,
+                      result.startBeat, result.endBeat,
+                      path.c_str(), result.wallClockSeconds,
                       result.wallClockSeconds > 0 ? result.audioDurationSeconds / result.wallClockSeconds : 0.0);
         return std::string(buf);
     });

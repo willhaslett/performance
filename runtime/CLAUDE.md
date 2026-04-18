@@ -168,7 +168,8 @@ Output and input are independent on macOS.
 - `dB(value)` — convert dB to linear gain.
 - `save()` — force a state save. Rarely needed; the app autosaves 3 seconds after every change.
 - `openEditor(track)` or `openEditor(track, effect)` — open the plugin's native UI.
-- `bounce(path, startBeat, endBeat)` — render the arrangement in `[startBeat, endBeat)` to a stereo WAV at `path`. Faster-than-realtime; the engine pauses during the render. Returns a status string with wall-clock vs audio-duration ratio. Experimental — some plugins may glitch when driven faster than realtime, and automation values freeze during the render. Master output only (no stem bouncing).
+- `bounce(path, startBeat, endBeat)` — render the arrangement in `[startBeat, endBeat)` to a stereo WAV at `path`. Faster-than-realtime; the engine pauses during the render. Returns a status string with the beat range, wall-clock time, and realtime-multiplier. Experimental — some plugins may glitch when driven faster than realtime, and automation values freeze during the render. Master output only (no stem bouncing).
+- `bounce(path)` — same, but uses the currently-active cycle region. Errors if cycle mode is off or the cycle range is empty. Prefer this when the user says "bounce the loop" or "bounce this section" after they've set up a cycle.
 
 ## Examples
 

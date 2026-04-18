@@ -861,9 +861,31 @@ void PerformanceCoordinator::replayScore(int upToStep) {
 // --- Offline render (bounce) ---
 
 PerformanceCoordinator::BounceResult
+PerformanceCoordinator::bounce(const juce::File& outputFile) {
+    BounceResult out;
+    if (!sequencerImpl) {
+        out.errorMessage = "engine not initialised";
+        return out;
+    }
+    if (!sequencerImpl->isLoopEnabled()) {
+        out.errorMessage = "no cycle active — enable cycle mode or pass startBeat + endBeat explicitly";
+        return out;
+    }
+    const double loopStart = sequencerImpl->getLoopStart();
+    const double loopEnd = sequencerImpl->getLoopEnd();
+    if (loopEnd <= loopStart) {
+        out.errorMessage = "cycle range is empty — set a cycle region first";
+        return out;
+    }
+    return bounce(outputFile, loopStart, loopEnd);
+}
+
+PerformanceCoordinator::BounceResult
 PerformanceCoordinator::bounce(const juce::File& outputFile,
                                 double startBeat, double endBeat) {
     BounceResult out;
+    out.startBeat = startBeat;
+    out.endBeat = endBeat;
     if (!audioEngine || !sequencerImpl) {
         out.errorMessage = "engine not initialised";
         return out;

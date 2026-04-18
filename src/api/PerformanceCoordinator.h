@@ -80,8 +80,13 @@ public:
         juce::String errorMessage;
         double wallClockSeconds = 0.0;
         double audioDurationSeconds = 0.0;
+        double startBeat = 0.0;
+        double endBeat = 0.0;
     };
     BounceResult bounce(const juce::File& outputFile, double startBeat, double endBeat);
+    // Overload: when no range is given, use the current cycle region if
+    // cycle mode is enabled on the sequencer. Errors if cycle is off.
+    BounceResult bounce(const juce::File& outputFile);
 
     // --- Automation ---
     using AutomationCallback = std::function<void(float)>;
