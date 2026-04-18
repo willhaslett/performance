@@ -6,6 +6,7 @@
 #include "engine/Log.h"
 #include <juce_events/juce_events.h>
 #include <filesystem>
+#include <stdexcept>
 
 namespace fs = std::filesystem;
 
@@ -44,14 +45,21 @@ void LuaEngine::registerAPI() {
     auto& engine = engineRef;
     auto& coord = coordRef;
 
-    // Name resolution helpers
+    // Name resolution helpers. Throw on failure — sol2 converts the exception
+    // into a Lua error, which propagates back to Claude via executeString as
+    // "error: ...". That's what lets Claude self-correct (e.g. retry with a
+    // name it got from a query call).
     auto resolveTrackId = [&state](const std::string& name) -> std::string {
         auto id = state.findTrackIdByName(name);
-        return id.empty() ? name : id;
+        if (id.empty())
+            throw std::runtime_error("track '" + name + "' not found. Run registryList('track') to see available names.");
+        return id;
     };
     auto resolveBusId = [&state](const std::string& name) -> std::string {
         auto id = state.findBusIdByName(name);
-        return id.empty() ? name : id;
+        if (id.empty())
+            throw std::runtime_error("bus '" + name + "' not found. Run registryList('bus') to see available names.");
+        return id;
     };
     auto resolveParentId = [&state](const std::string& name) -> std::string {
         if (name == "Output") return state.getMasterOutputId();
@@ -59,7 +67,7 @@ void LuaEngine::registerAPI() {
         if (!id.empty()) return id;
         id = state.findBusIdByName(name);
         if (!id.empty()) return id;
-        return name;
+        throw std::runtime_error("'" + name + "' is not a track, bus, or 'Output'. Run registryList('track') and registryList('bus') for available names.");
     };
 
     // Song
@@ -123,7 +131,8 @@ void LuaEngine::registerAPI() {
                                        const std::string& plugin, sol::optional<std::string> preset) {
         auto trackId = resolveTrackId(track);
         auto* p = state.findPluginByName(plugin);
-        if (!p) return;
+        if (!p)
+            throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
         std::string presetId;
         if (preset.has_value() && !preset.value().empty()) {
             auto* pr = state.findPreset(p->id, preset.value());
@@ -134,17 +143,23 @@ void LuaEngine::registerAPI() {
     lua.set_function("addEffect", [&state, resolveParentId](const std::string& parent,
                                     const std::string& effectName, const std::string& plugin) {
         auto* p = state.findPluginByName(plugin);
-        if (p) state.addEffect(resolveParentId(parent), effectName, p->id);
+        if (!p)
+            throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
+        state.addEffect(resolveParentId(parent), effectName, p->id);
     });
     lua.set_function("addTrackEffect", [&state, resolveParentId](const std::string& parent,
                                          const std::string& effectName, const std::string& plugin) {
         auto* p = state.findPluginByName(plugin);
-        if (p) state.addEffect(resolveParentId(parent), effectName, p->id);
+        if (!p)
+            throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
+        state.addEffect(resolveParentId(parent), effectName, p->id);
     });
     lua.set_function("addBusEffect", [&state, resolveParentId](const std::string& parent,
                                        const std::string& effectName, const std::string& plugin) {
         auto* p = state.findPluginByName(plugin);
-        if (p) state.addEffect(resolveParentId(parent), effectName, p->id);
+        if (!p)
+            throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
+        state.addEffect(resolveParentId(parent), effectName, p->id);
     });
     lua.set_function("removeEffect", [&state](const std::string&, const std::string& effectId) {
         state.removeEffect(effectId);
@@ -391,15 +406,12 @@ void LuaEngine::registerAPI() {
         if (deviceIdOpt.has_value()) deviceId = deviceIdOpt.value();
 
         auto* action = state.findActionByName(actionName);
-        if (!action) {
-            perfLog("[Lua] bind: unknown action '%s'\n", actionName.c_str());
-            return;
-        }
+        if (!action)
+            throw std::runtime_error("action '" + actionName + "' not found. Built-in actions: setActiveTrack, enableTrack, disableTrack, fadeOut, fadeIn, crossfade, trackVolume, morphToPreset.");
+
         auto songId = state.getMasterOutputId();
-        if (songId.empty()) {
-            perfLog("[Lua] bind: no active song\n");
-            return;
-        }
+        if (songId.empty())
+            throw std::runtime_error("no active song; cannot bind.");
 
         // Resolve track-name args to UUIDs at bind-time using paramSchema
         auto argsVar = juce::JSON::parse(juce::String(argsJson));
@@ -421,10 +433,8 @@ void LuaEngine::registerAPI() {
                                 if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id; break; }
                             }
                         }
-                        if (resolved.empty()) {
-                            perfLog("[Lua] bind: track '%s' not found\n", trackName.toRawUTF8());
-                            return;
-                        }
+                        if (resolved.empty())
+                            throw std::runtime_error(std::string("bind: track '") + trackName.toStdString() + "' not found. Run registryList('track') to see available names.");
                         argsArr->set(i, juce::var(juce::String(resolved)));
                     }
                 }
