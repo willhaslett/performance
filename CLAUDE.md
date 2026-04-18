@@ -57,11 +57,22 @@ Carry-over from pre-beta:
 
 Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat pane and gets meaningful help — "add a reverb to track 2," "why isn't my MIDI working." If scope balloons past ~3 days, back out and ship without.
 
-- [ ] **API-key provisioning** — decide how testers get access without paying or making an Anthropic account. Options: (a) compiled-in dev key (usage leaks — no), (b) proxy through the telemetry Lambda with per-install rate + monthly cap (recommended — hides key, enforces cost), (c) tester pastes their own key (simplest, but a barrier). Decision before anything else.
-- [ ] **Refresh `runtime/CLAUDE.md`** — the embedded system prompt. Almost certainly stale. Must reflect current state model, actions/bindings vocabulary, Lua surface (`perf` tool), pane names, UUID-only identity.
+**Decided:**
+- **API-key provisioning: Lambda proxy only.** The app sends chat requests to our Lambda (existing telemetry stack), which adds the Anthropic key and forwards. Per-install rate-limit + monthly cap via DynamoDB. No key ever on tester machines. For Will's local dev until the Lambda is built: keep the current `getenv("ANTHROPIC_API_KEY")` path as a temporary hack; delete once the proxy is live. "Bring your own key" Settings field is deferred to 0.2.x.
+- **Tool-call visibility:** today `ChatView::onToolUse` renders raw Lua as a "Tool" bubble (`ChatView.cpp:93-99`). Reconsider for testers — likely replace with a short "Doing X…" summary so users don't see implementation details. Decide during local iteration.
+
+**Open:**
+- **Streaming.** `ClaudeClient` is fully non-streaming today (`readEntireStreamAsString()` blocks for the whole response, then one `notifyText`). Evaluate locally first — if "thinking…" then wall-of-text feels acceptable for chat, ship non-streaming; if it feels sluggish, do SSE end-to-end (Lambda already streams cleanly; C++ side is bounded SSE plumbing, ~4 hours).
+- **Default model.** Currently pinned to stale `claude-sonnet-4-20250514` (`ClaudeClient.h:53`). Bump to current — Sonnet 4.6 (cheap, smart enough) or Opus 4.7 (~5× cost). Decide alongside cost guardrails.
+
+**To do:**
+
+- [ ] **Refresh `runtime/CLAUDE.md`** — the embedded system prompt. Almost certainly stale. Must reflect current state model, actions/bindings vocabulary, Lua surface (`perf` tool), pane names, UUID-only identity. *Next concrete dev task — done in local mode.*
 - [ ] **Tool-use surface** — audit what Claude can call through `perf`: list state, mutate state, load plugins, set up bindings. Gate destructive operations behind confirmation or dry-run.
-- [ ] **ChatView UX** — streaming, error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight.
+- [ ] **ChatView UX** — error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight, tool-call rendering decision (per Decided above).
+- [ ] **Lambda proxy** — extend the telemetry Lambda with a `/chat` route. Auth via existing bearer + install-ID. Per-install rate + monthly cap in DynamoDB. Streaming or not depending on §3 Open decision. Delete the `getenv()` key path once this is live.
 - [ ] **Cost guardrails** — per-install monthly cap enforced in Lambda; graceful error in Chat.
+- [ ] **Model bump** — apply chosen default model.
 - [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try.
 - [ ] **Tester onboarding copy** — one paragraph in the getting-started doc with 3–4 example prompts.
 
@@ -87,6 +98,7 @@ Some may already be solid. Each needs a deliberate test before ship, not "I thin
 Named so it's a decision, not a gap:
 
 - Failed plugin load UI feedback (no issues in months; telemetry will surface; revisit if a tester hits it)
+- Bring-your-own-key Settings field (not needed for the friends round; Lambda proxy covers everyone)
 - Theme picker UI (backend ready, UI deferred)
 - Remaining theming sweep (DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay)
 - MIDI effects (transpose, channel filter, arpeggiator)
