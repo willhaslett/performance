@@ -37,7 +37,8 @@ void SongMappingsPane::buildRows() {
     if (!song) return;
 
     struct ControlKey {
-        std::string deviceId, controlType;
+        DeviceId deviceId;
+        std::string controlType;
         int channel, number;
         bool operator<(const ControlKey& o) const {
             if (deviceId != o.deviceId) return deviceId < o.deviceId;
@@ -116,7 +117,7 @@ void SongMappingsPane::buildRows() {
 void SongMappingsPane::refresh() { buildRows(); resized(); repaint(); }
 
 bool SongMappingsPane::isDeviceConnected(const std::string& deviceId) const {
-    auto* dev = state.findDevice(deviceId);
+    auto* dev = state.findDevice(DeviceId{deviceId});
     if (!dev) return false;
     auto midiDevices = juce::MidiInput::getAvailableDevices();
     for (auto& d : midiDevices)
@@ -385,12 +386,12 @@ void SongMappingsPane::mouseDrag(const juce::MouseEvent& event) {
     if (pendingDragMappingRow >= 0 && pendingDragMappingRow < (int)mappingRows.size()) {
         auto& m = mappingRows[pendingDragMappingRow];
         obj->setProperty("kind", "mapping");
-        obj->setProperty("bindingId", juce::String(m.bindingId));
+        obj->setProperty("bindingId", juce::String(m.bindingId.str()));
         dragLabel = juce::String(m.controlName);
     } else if (pendingDragScoreRow >= 0 && pendingDragScoreRow < (int)scoreRows.size()) {
         auto& s = scoreRows[pendingDragScoreRow];
         obj->setProperty("kind", "score");
-        obj->setProperty("bindingId", juce::String(s.bindingId));
+        obj->setProperty("bindingId", juce::String(s.bindingId.str()));
         dragLabel = juce::String(s.controlName);
     } else {
         resetPendingDrag();
@@ -477,7 +478,7 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
     };
 
     if (kind == "control") {
-        auto deviceId    = obj->getProperty("deviceId").toString().toStdString();
+        DeviceId deviceId{obj->getProperty("deviceId").toString().toStdString()};
         auto controlType = obj->getProperty("controlType").toString().toStdString();
         int channel      = (int)obj->getProperty("channel");
         int number       = (int)obj->getProperty("number");
@@ -485,8 +486,8 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
 
         auto* song = state.currentSong();
         if (song) {
-            auto bindingId = state.addBinding(song->id.str(), controlType, channel, number,
-                                              "", "[]", controlName, deviceId);
+            auto bindingId = state.addBinding(song->id, controlType, channel, number,
+                                              ActionId{}, "[]", controlName, deviceId);
             if (target == DropTarget::Score) {
                 int insertAt = scoreInsertIndex(cursor.y);
                 for (int i = (int)scoreRows.size() - 1; i >= insertAt; --i)
@@ -496,7 +497,7 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
             refresh();
         }
     } else if (kind == "mapping") {
-        auto bindingId = obj->getProperty("bindingId").toString().toStdString();
+        BindingId bindingId{obj->getProperty("bindingId").toString().toStdString()};
         if (target == DropTarget::Score) {
             int insertAt = scoreInsertIndex(cursor.y);
             for (int i = (int)scoreRows.size() - 1; i >= insertAt; --i)
@@ -505,7 +506,7 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
             refresh();
         }
     } else if (kind == "score") {
-        auto bindingId = obj->getProperty("bindingId").toString().toStdString();
+        BindingId bindingId{obj->getProperty("bindingId").toString().toStdString()};
         int sourceIndex = -1;
         for (int i = 0; i < (int)scoreRows.size(); ++i) {
             if (scoreRows[i].bindingId == bindingId) { sourceIndex = i; break; }
@@ -519,7 +520,7 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
             refresh();
         } else if (target == DropTarget::Score && sourceIndex >= 0) {
             int insertAt = scoreInsertIndex(cursor.y);
-            std::vector<std::string> ordered;
+            std::vector<BindingId> ordered;
             for (int i = 0; i < (int)scoreRows.size(); ++i)
                 if (i != sourceIndex) ordered.push_back(scoreRows[i].bindingId);
             int ins = std::min(insertAt, (int)ordered.size());
@@ -668,9 +669,9 @@ void SongMappingsPane::mouseWheelMove(const juce::MouseEvent& event,
     repaint();
 }
 
-void SongMappingsPane::showActionMenu(const std::string& deviceId, const std::string& ctrlType,
+void SongMappingsPane::showActionMenu(const DeviceId& deviceId, const std::string& ctrlType,
                                        int channel, int number, const std::string& controlName,
-                                       const std::string& existingBindingId,
+                                       const BindingId& existingBindingId,
                                        juce::Point<int> screenPos, bool asScoreStep) {
     auto actions = state.allActions();
     auto tracks = state.listTracks();
@@ -729,7 +730,7 @@ void SongMappingsPane::showActionMenu(const std::string& deviceId, const std::st
 
             if (!capBindId.empty()) state.removeBinding(capBindId);
 
-            auto bindingId = state.addBinding(song->id.str(), capCtrlType, channel, number,
+            auto bindingId = state.addBinding(song->id, capCtrlType, channel, number,
                                                actions[ai].id, argsJson, controlName, capDevId);
             if (asScoreStep) {
                 int nextPos = (int)scoreRows.size() + 1;
@@ -745,14 +746,14 @@ void SongMappingsPane::showControlPicker(bool forScore, juce::Point<int> screenP
 
     // Build a flat list of all unbound controls across devices.
     auto* song = state.currentSong();
-    std::set<std::tuple<std::string, std::string, int, int>> bound;
+    std::set<std::tuple<DeviceId, std::string, int, int>> bound;
     if (song) {
         for (auto& b : song->bindings)
             bound.insert({ b.deviceId, b.controlType, b.channel, b.number });
     }
 
     struct PickEntry {
-        std::string deviceId;
+        DeviceId deviceId;
         std::string controlType;
         int channel;
         int number;
@@ -808,8 +809,8 @@ void SongMappingsPane::showControlPicker(bool forScore, juce::Point<int> screenP
             auto& e = entries[idx];
             auto* song = state.currentSong();
             if (!song) return;
-            auto bindingId = state.addBinding(song->id.str(), e.controlType, e.channel, e.number,
-                                               "", "[]", e.controlName, e.deviceId);
+            auto bindingId = state.addBinding(song->id, e.controlType, e.channel, e.number,
+                                               ActionId{}, "[]", e.controlName, e.deviceId);
             if (forScore) {
                 int nextPos = (int)scoreRows.size() + 1;
                 state.setBindingAsScoreStep(bindingId, nextPos);
@@ -821,12 +822,13 @@ void SongMappingsPane::showControlPicker(bool forScore, juce::Point<int> screenP
 void SongMappingsPane::handleMidiActivity(const std::string& type, int channel, int number,
                                           const std::string& deviceId) {
     auto now = juce::Time::currentTimeMillis();
+    DeviceId devId{deviceId};
     for (auto& mr : mappingRows)
-        if (mr.deviceId == deviceId && mr.controlType == type
+        if (mr.deviceId == devId && mr.controlType == type
             && mr.channel == channel && mr.number == number)
             mr.lastActivityMs = now;
     for (auto& sr : scoreRows)
-        if (sr.deviceId == deviceId && sr.controlType == type
+        if (sr.deviceId == devId && sr.controlType == type
             && sr.channel == channel && sr.number == number)
             sr.lastActivityMs = now;
 }

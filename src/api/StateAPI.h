@@ -94,50 +94,50 @@ public:
     void setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain);
 
     // --- Bindings (songId empty = global, deviceId empty = any device) ---
-    std::string addBinding(const std::string& songId, const std::string& controlType,
-                           int channel, int number, const std::string& actionId,
-                           const std::string& args = "[]", const std::string& description = "",
-                           const std::string& deviceId = "");
-    std::string addGlobalBinding(const std::string& controlType, int channel, int number,
-                                  const std::string& actionId, const std::string& args = "[]",
-                                  const std::string& description = "",
-                                  const std::string& deviceId = "");
-    void removeBinding(const std::string& id);
-    std::vector<BindingState> bindingsForSong(const std::string& songId) const;
+    BindingId addBinding(const SongId& songId, const std::string& controlType,
+                         int channel, int number, const ActionId& actionId,
+                         const std::string& args = "[]", const std::string& description = "",
+                         const DeviceId& deviceId = {});
+    BindingId addGlobalBinding(const std::string& controlType, int channel, int number,
+                                const ActionId& actionId, const std::string& args = "[]",
+                                const std::string& description = "",
+                                const DeviceId& deviceId = {});
+    void removeBinding(const BindingId& id);
+    std::vector<BindingState> bindingsForSong(const SongId& songId) const;
     std::vector<BindingState> globalBindings() const;
     std::vector<BindingState> effectiveBindings() const;  // global + current song (song wins on conflict)
 
     // --- Action Events (beat-triggered actions on the timeline) ---
-    std::string addActionEvent(double beat, const std::string& actionId,
-                               const std::string& argsJson = "[]");
-    void removeActionEvent(const std::string& id);
-    void setActionEventBeat(const std::string& id, double beat);
+    ActionEventId addActionEvent(double beat, const ActionId& actionId,
+                                  const std::string& argsJson = "[]");
+    void removeActionEvent(const ActionEventId& id);
+    void setActionEventBeat(const ActionEventId& id, double beat);
     std::vector<SongState::ActionEvent>& actionEvents();
 
     // Score — ordered subset of song bindings where isScoreStep == true
     std::vector<BindingState> scoreSteps() const;  // sorted by scorePosition
-    void setBindingAsScoreStep(const std::string& bindingId, int position);
-    void clearScoreStep(const std::string& bindingId);
+    void setBindingAsScoreStep(const BindingId& bindingId, int position);
+    void clearScoreStep(const BindingId& bindingId);
 
     // --- Devices ---
-    std::string registerDevice(const std::string& name, const std::string& midiPortName);
-    void removeDevice(const std::string& id);
-    DeviceState* findDevice(const std::string& id);
-    const DeviceState* findDevice(const std::string& id) const;
+    DeviceId registerDevice(const std::string& name, const std::string& midiPortName);
+    void removeDevice(const DeviceId& id);
+    DeviceState* findDevice(const DeviceId& id);
+    const DeviceState* findDevice(const DeviceId& id) const;
     DeviceState* findDeviceByPortName(const std::string& portName);
     const std::vector<DeviceState>& allDevices() const;
-    void renameDevice(const std::string& id, const std::string& name);
-    std::string addDeviceControl(const std::string& deviceId, const std::string& name,
+    void renameDevice(const DeviceId& id, const std::string& name);
+    std::string addDeviceControl(const DeviceId& deviceId, const std::string& name,
                                  const std::string& controlType, int channel, int number,
                                  const std::string& group = "");
-    void removeDeviceControl(const std::string& deviceId, int index);
-    void renameDeviceControl(const std::string& deviceId, int index, const std::string& name);
-    void setDeviceControlGroup(const std::string& deviceId, int index, const std::string& group);
+    void removeDeviceControl(const DeviceId& deviceId, int index);
+    void renameDeviceControl(const DeviceId& deviceId, int index, const std::string& name);
+    void setDeviceControlGroup(const DeviceId& deviceId, int index, const std::string& group);
 
     // Song-device association
-    void addDeviceToSong(const std::string& songId, const std::string& deviceId);
-    void removeDeviceFromSong(const std::string& songId, const std::string& deviceId);
-    std::vector<std::string> devicesForSong(const std::string& songId) const;
+    void addDeviceToSong(const SongId& songId, const DeviceId& deviceId);
+    void removeDeviceFromSong(const SongId& songId, const DeviceId& deviceId);
+    std::vector<DeviceId> devicesForSong(const SongId& songId) const;
 
     // --- Catalog: Plugins ---
     PluginId registerPlugin(const std::string& name, const std::string& manufacturer,
@@ -154,14 +154,14 @@ public:
     std::vector<const PresetInfo*> presetsForPlugin(const PluginId& pluginId) const;
 
     // --- Catalog: Actions ---
-    std::string registerAction(const std::string& name, const std::string& label = "",
-                               const std::string& paramSchema = "",
-                               int durationParamIndex = -1);
-    std::string createCustomAction(const std::string& name, const std::string& label,
-                                    const std::string& luaCode, const std::string& songId = "");
-    void removeAction(const std::string& id);
+    ActionId registerAction(const std::string& name, const std::string& label = "",
+                             const std::string& paramSchema = "",
+                             int durationParamIndex = -1);
+    ActionId createCustomAction(const std::string& name, const std::string& label,
+                                 const std::string& luaCode, const SongId& songId = {});
+    void removeAction(const ActionId& id);
     const ActionInfo* findActionByName(const std::string& name) const;
-    const ActionInfo* findActionById(const std::string& id) const;
+    const ActionInfo* findActionById(const ActionId& id) const;
     const std::vector<ActionInfo>& allActions() const;
 
     // --- Selection ---
@@ -238,7 +238,7 @@ private:
     const TrackState& track(const TrackId& id) const;
     BusState& bus(const BusId& id);
     const BusState& bus(const BusId& id) const;
-    DeviceState& device(const std::string& id);
+    DeviceState& device(const DeviceId& id);
 
     // Find the effects vector that contains effectId, and optionally the parent ID
     std::vector<EffectState>* findEffectList(const EffectId& effectId, std::string* outParentId = nullptr);

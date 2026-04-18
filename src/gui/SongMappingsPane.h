@@ -51,7 +51,7 @@ private:
     int stateSubscriptionId = -1;
 
     struct MappingRow {
-        std::string deviceId;
+        DeviceId deviceId;
         std::string deviceName;
         std::string controlName;
         std::string group;
@@ -59,20 +59,20 @@ private:
         int channel = 0;
         int number = 0;
         int controlIndex = -1;
-        std::string bindingId;
+        BindingId bindingId;
         std::string actionLabel;
         std::string argsDisplay;
         int64_t lastActivityMs = 0;
     };
 
     struct ScoreRow {
-        std::string deviceId;
+        DeviceId deviceId;
         std::string deviceName;
         std::string controlName;
         std::string controlType;
         int channel = 0;
         int number = 0;
-        std::string bindingId;
+        BindingId bindingId;
         std::string actionLabel;
         std::string argsDisplay;
         int scorePosition = 0;
@@ -102,9 +102,9 @@ private:
     void paintAtemporalSection(juce::Graphics& g);
     void paintScoreSection(juce::Graphics& g);
 
-    void showActionMenu(const std::string& deviceId, const std::string& ctrlType,
+    void showActionMenu(const DeviceId& deviceId, const std::string& ctrlType,
                         int channel, int number, const std::string& controlName,
-                        const std::string& existingBindingId,
+                        const BindingId& existingBindingId,
                         juce::Point<int> screenPos, bool asScoreStep);
     void showControlPicker(bool forScore, juce::Point<int> screenPos);
 

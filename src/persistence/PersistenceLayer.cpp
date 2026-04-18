@@ -355,12 +355,12 @@ void PersistenceLayer::readActions(AppState& out) {
     auto* stmt = prepare("SELECT id, name, label, param_schema, lua_code, song_id FROM actions");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         ActionInfo a;
-        a.id = col_str(stmt, 0);
+        a.id = ActionId{col_str(stmt, 0)};
         a.name = col_str(stmt, 1);
         a.label = col_str(stmt, 2);
         a.paramSchema = col_str(stmt, 3);
         a.luaCode = col_str(stmt, 4);
-        a.songId = col_str(stmt, 5);
+        a.songId = SongId{col_str(stmt, 5)};
         out.actions.push_back(std::move(a));
     }
     sqlite3_finalize(stmt);
@@ -531,7 +531,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         auto* sd = prepare("SELECT device_id FROM song_devices WHERE song_id = ?");
         sqlite3_bind_text(sd, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(sd) == SQLITE_ROW)
-            song.deviceIds.push_back(col_str(sd, 0));
+            song.deviceIds.push_back(DeviceId{col_str(sd, 0)});
         sqlite3_finalize(sd);
 
         // Song-scoped bindings (includes score steps via isScoreStep flag)
@@ -539,9 +539,9 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(bi, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(bi) == SQLITE_ROW) {
             song.bindings.push_back({
-                col_str(bi, 0), song.id.str(), col_str(bi, 1), col_str(bi, 2),
+                BindingId{col_str(bi, 0)}, song.id, DeviceId{col_str(bi, 1)}, col_str(bi, 2),
                 sqlite3_column_int(bi, 3), sqlite3_column_int(bi, 4),
-                col_str(bi, 5), col_str(bi, 6), col_str(bi, 7),
+                ActionId{col_str(bi, 5)}, col_str(bi, 6), col_str(bi, 7),
                 sqlite3_column_int(bi, 8) != 0, sqlite3_column_int(bi, 9)
             });
         }
@@ -557,9 +557,9 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(ae, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(ae) == SQLITE_ROW) {
                 ActionEventData ev;
-                ev.id = col_str(ae, 0);
+                ev.id = ActionEventId{col_str(ae, 0)};
                 ev.beat = sqlite3_column_double(ae, 1);
-                ev.actionId = col_str(ae, 2);
+                ev.actionId = ActionId{col_str(ae, 2)};
                 ev.argsJson = col_str(ae, 3);
                 t.actionData.push_back(std::move(ev));
             }
@@ -572,9 +572,9 @@ void PersistenceLayer::readSongs(AppState& out) {
     auto* gb = prepare("SELECT id, device_id, control_type, channel, number, action_id, args, description, is_score_step, score_position FROM bindings WHERE song_id IS NULL");
     while (sqlite3_step(gb) == SQLITE_ROW) {
         out.globalBindings.push_back({
-            col_str(gb, 0), "", col_str(gb, 1), col_str(gb, 2),
+            BindingId{col_str(gb, 0)}, SongId{}, DeviceId{col_str(gb, 1)}, col_str(gb, 2),
             sqlite3_column_int(gb, 3), sqlite3_column_int(gb, 4),
-            col_str(gb, 5), col_str(gb, 6), col_str(gb, 7),
+            ActionId{col_str(gb, 5)}, col_str(gb, 6), col_str(gb, 7),
             sqlite3_column_int(gb, 8) != 0, sqlite3_column_int(gb, 9)
         });
     }
@@ -585,7 +585,7 @@ void PersistenceLayer::readDevices(AppState& out) {
     auto* ds = prepare("SELECT id, name, midi_port_name FROM devices");
     while (sqlite3_step(ds) == SQLITE_ROW) {
         DeviceState device;
-        device.id = col_str(ds, 0);
+        device.id = DeviceId{col_str(ds, 0)};
         device.name = col_str(ds, 1);
         device.midiPortName = col_str(ds, 2);
 

@@ -184,7 +184,7 @@ void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string
                     auto* ts = state ? state->findTrack(TrackId{trackId}) : nullptr;
                     if (!ts) return;
                     ActionEventData ae;
-                    ae.id = juce::Uuid().toString().toStdString();
+                    ae.id = ActionEventId{juce::Uuid().toString().toStdString()};
                     ae.beat = beat;
                     ae.actionId = actionId;
                     ae.argsJson = argsJson;
@@ -206,7 +206,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
         auto* ts = state->findTrack(TrackId{trackId});
         if (ts) {
             for (auto& ae : ts->actionData) {
-                if (ae.id == existingEventId) {
+                if (ae.id.str() == existingEventId) {
                     editor->setMorphData(juce::JSON::parse(juce::String(ae.argsJson)));
                     break;
                 }
@@ -236,7 +236,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
         auto morphData = editor->getMorphData();
         auto json = juce::JSON::toString(morphData, true).toStdString();
 
-        std::string morphActionId;
+        ActionId morphActionId;
         for (auto& a : state->allActions())
             if (a.name == "morph") { morphActionId = a.id; break; }
 
@@ -244,7 +244,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
         if (ts && !morphActionId.empty()) {
             if (!evId.empty()) {
                 for (auto& ae : ts->actionData) {
-                    if (ae.id == evId) {
+                    if (ae.id.str() == evId) {
                         ae.argsJson = json;
                         ae.actionId = morphActionId;
                         break;
@@ -252,7 +252,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
                 }
             } else {
                 ActionEventData ae;
-                ae.id = juce::Uuid().toString().toStdString();
+                ae.id = ActionEventId{juce::Uuid().toString().toStdString()};
                 ae.beat = evBeat;
                 ae.actionId = morphActionId;
                 ae.argsJson = json;
@@ -1784,7 +1784,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
 
     // Complete action event drag
     if (!dragActionEventId.empty()) {
-        dragActionEventId.clear();
+        dragActionEventId = {};
         dragActionTrackId = {};
         draggingActionEvent = false;
         repaint();

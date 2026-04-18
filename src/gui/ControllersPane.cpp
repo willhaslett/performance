@@ -30,7 +30,8 @@ void ControllersPane::buildRows() {
     auto* song = state.currentSong();
 
     struct ControlKey {
-        std::string deviceId, controlType;
+        DeviceId deviceId;
+        std::string controlType;
         int channel, number;
         bool operator<(const ControlKey& o) const {
             if (deviceId != o.deviceId) return deviceId < o.deviceId;
@@ -53,11 +54,11 @@ void ControllersPane::buildRows() {
     for (int di = 0; di < (int)devices.size(); ++di) {
         auto& dev = devices[di];
         bool connected = connectedPorts.count(dev.midiPortName) > 0;
-        bool collapsed = collapsedDevices.count(dev.id) > 0;
+        bool collapsed = collapsedDevices.count(dev.id.str()) > 0;
 
         LeftPanelEntry header;
         header.type = LeftPanelEntry::DeviceHeader;
-        header.deviceId = dev.id;
+        header.deviceId = dev.id.str();
         header.deviceName = dev.name;
         header.deviceConnected = connected;
         leftEntries.push_back(header);
@@ -70,7 +71,7 @@ void ControllersPane::buildRows() {
 
                 LeftPanelEntry entry;
                 entry.type = LeftPanelEntry::Control;
-                entry.deviceId = dev.id;
+                entry.deviceId = dev.id.str();
                 entry.deviceName = dev.name;
                 entry.deviceConnected = connected;
                 entry.controlName = ctrl.name;
@@ -96,7 +97,7 @@ void ControllersPane::buildRows() {
 void ControllersPane::refresh() { buildRows(); resized(); repaint(); }
 
 bool ControllersPane::isDeviceConnected(const std::string& deviceId) const {
-    auto* dev = state.findDevice(deviceId);
+    auto* dev = state.findDevice(DeviceId{deviceId});
     if (!dev) return false;
     auto midiDevices = juce::MidiInput::getAvailableDevices();
     for (auto& d : midiDevices)
@@ -350,7 +351,7 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                 auto entryIdx = i;
 
                 std::set<std::string> groups;
-                auto* dev = state.findDevice(devId);
+                auto* dev = state.findDevice(DeviceId{devId});
                 if (dev) {
                     for (auto& c : dev->controls)
                         if (!c.group.empty()) groups.insert(c.group);
@@ -376,7 +377,7 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                             int gfW = 60;
                             auto bounds = juce::Rectangle<int>(checkXl - gfW, ey, gfW, rowHeight);
                             inlineEditor.onCommit = [this, devId, ctrlIdx](const juce::String& text) {
-                                state.setDeviceControlGroup(devId, ctrlIdx, text.toStdString());
+                                state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, text.toStdString());
                                 editingLeftRow = -1;
                                 refresh();
                             };
@@ -386,10 +387,10 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                             editingLeftRow = entryIdx;
                             inlineEditor.show(*this, bounds, "");
                         } else if (r == 101) {
-                            state.setDeviceControlGroup(devId, ctrlIdx, "");
+                            state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, "");
                             refresh();
                         } else if (r >= 200 && r - 200 < (int)groupList.size()) {
-                            state.setDeviceControlGroup(devId, ctrlIdx, groupList[r - 200]);
+                            state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, groupList[r - 200]);
                             refresh();
                         }
                     });
@@ -422,7 +423,7 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                 auto entryIdx = i;
 
                 std::set<std::string> groups;
-                auto* dev = state.findDevice(devId);
+                auto* dev = state.findDevice(DeviceId{devId});
                 if (dev) {
                     for (auto& c : dev->controls)
                         if (!c.group.empty()) groups.insert(c.group);
@@ -446,7 +447,7 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                 menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(screenArea),
                     [this, devId, ctrlIdx, entryIdx, groupList](int r) {
                         if (r == 1) {
-                            state.removeDeviceControl(devId, ctrlIdx);
+                            state.removeDeviceControl(DeviceId{devId}, ctrlIdx);
                             refresh();
                         } else if (r == 100) {
                             int ey = leftHeaderHeight - leftScrollOffset;
@@ -454,7 +455,7 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                             auto bounds = juce::Rectangle<int>(getLocalBounds().getX() + 30, ey,
                                                                 getLocalBounds().getWidth() - 70, rowHeight);
                             inlineEditor.onCommit = [this, devId, ctrlIdx](const juce::String& text) {
-                                state.setDeviceControlGroup(devId, ctrlIdx, text.toStdString());
+                                state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, text.toStdString());
                                 editingLeftRow = -1;
                                 refresh();
                             };
@@ -464,10 +465,10 @@ void ControllersPane::mouseUp(const juce::MouseEvent& event) {
                             editingLeftRow = entryIdx;
                             inlineEditor.show(*this, bounds, "");
                         } else if (r == 101) {
-                            state.setDeviceControlGroup(devId, ctrlIdx, "");
+                            state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, "");
                             refresh();
                         } else if (r >= 200 && r - 200 < (int)groupList.size()) {
-                            state.setDeviceControlGroup(devId, ctrlIdx, groupList[r - 200]);
+                            state.setDeviceControlGroup(DeviceId{devId}, ctrlIdx, groupList[r - 200]);
                             refresh();
                         }
                     });
@@ -509,7 +510,7 @@ void ControllersPane::openLeftEditor(int entryIndex) {
     auto commitRename = [this](int idx, const juce::String& newText) {
         if (idx >= 0 && idx < (int)leftEntries.size()) {
             auto& e = leftEntries[idx];
-            state.renameDeviceControl(e.deviceId, e.controlIndex, newText.toStdString());
+            state.renameDeviceControl(DeviceId{e.deviceId}, e.controlIndex, newText.toStdString());
         }
         editingLeftRow = -1;
         refresh();
@@ -608,7 +609,7 @@ void ControllersPane::onLearnCapture(const std::string& type, int channel, int n
                                       const std::string& portName) {
     if (!isLearning) return;
 
-    std::string targetDeviceId;
+    DeviceId targetDeviceId;
     if (!portName.empty()) {
         if (juce::String(portName).containsIgnoreCase("IAC Driver")) {
             if (isLearning) armLearnCapture();
@@ -633,7 +634,7 @@ void ControllersPane::onLearnCapture(const std::string& type, int channel, int n
             if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
                 auto now = juce::Time::currentTimeMillis();
                 for (auto& entry : leftEntries)
-                    if (entry.type == LeftPanelEntry::Control && entry.deviceId == targetDeviceId
+                    if (entry.type == LeftPanelEntry::Control && entry.deviceId == targetDeviceId.str()
                         && entry.controlType == type && entry.channel == channel && entry.number == number)
                         entry.flashMs = now;
                 repaint();

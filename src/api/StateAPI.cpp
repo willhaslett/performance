@@ -84,7 +84,7 @@ const BusState& StateAPI::bus(const BusId& id) const {
     __builtin_unreachable();
 }
 
-DeviceState& StateAPI::device(const std::string& id) {
+DeviceState& StateAPI::device(const DeviceId& id) {
     for (auto& d : state.devices)
         if (d.id == id) return d;
     PERF_ASSERT(false, "Device not found");
@@ -713,15 +713,15 @@ void StateAPI::setSendGain(const SendId& sendId, float gain) {
 
 // --- Bindings ---
 
-std::string StateAPI::addBinding(const std::string& songId, const std::string& controlType,
-                                  int channel, int number, const std::string& actionId,
-                                  const std::string& args, const std::string& description,
-                                  const std::string& deviceId) {
+BindingId StateAPI::addBinding(const SongId& songId, const std::string& controlType,
+                                int channel, int number, const ActionId& actionId,
+                                const std::string& args, const std::string& description,
+                                const DeviceId& deviceId) {
     pushUndo();
-    auto* s = findSong(SongId{songId});
+    auto* s = findSong(songId);
     PERF_ASSERT(s, "addBinding: song not found");
     BindingState binding;
-    binding.id = generateId();
+    binding.id = BindingId{generateId()};
     binding.songId = songId;
     binding.deviceId = deviceId;
     binding.controlType = controlType;
@@ -732,17 +732,17 @@ std::string StateAPI::addBinding(const std::string& songId, const std::string& c
     binding.description = description;
     s->bindings.push_back(std::move(binding));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Binding, s->bindings.back().id, songId });
+    eventBus.emit({ StateEvent::Created, StateEvent::Binding, s->bindings.back().id.str(), songId.str() });
     return s->bindings.back().id;
 }
 
-std::string StateAPI::addGlobalBinding(const std::string& controlType, int channel, int number,
-                                        const std::string& actionId, const std::string& args,
-                                        const std::string& description,
-                                        const std::string& deviceId) {
+BindingId StateAPI::addGlobalBinding(const std::string& controlType, int channel, int number,
+                                      const ActionId& actionId, const std::string& args,
+                                      const std::string& description,
+                                      const DeviceId& deviceId) {
     pushUndo();
     BindingState binding;
-    binding.id = generateId();
+    binding.id = BindingId{generateId()};
     binding.deviceId = deviceId;
     binding.controlType = controlType;
     binding.channel = channel;
@@ -752,11 +752,11 @@ std::string StateAPI::addGlobalBinding(const std::string& controlType, int chann
     binding.description = description;
     state.globalBindings.push_back(std::move(binding));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Binding, state.globalBindings.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Binding, state.globalBindings.back().id.str(), "" });
     return state.globalBindings.back().id;
 }
 
-void StateAPI::removeBinding(const std::string& id) {
+void StateAPI::removeBinding(const BindingId& id) {
     pushUndo();
     // Check global bindings first
     auto git = std::find_if(state.globalBindings.begin(), state.globalBindings.end(),
@@ -764,7 +764,7 @@ void StateAPI::removeBinding(const std::string& id) {
     if (git != state.globalBindings.end()) {
         state.globalBindings.erase(git);
         markDirty();
-        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, "" });
+        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id.str(), "" });
         return;
     }
     // Then current song
@@ -774,12 +774,12 @@ void StateAPI::removeBinding(const std::string& id) {
     if (sit != s.bindings.end()) {
         s.bindings.erase(sit);
         markDirty();
-        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id, s.id.str() });
+        eventBus.emit({ StateEvent::Deleted, StateEvent::Binding, id.str(), s.id.str() });
     }
 }
 
-std::vector<BindingState> StateAPI::bindingsForSong(const std::string& songId) const {
-    auto* s = findSong(SongId{songId});
+std::vector<BindingState> StateAPI::bindingsForSong(const SongId& songId) const {
+    auto* s = findSong(songId);
     PERF_ASSERT(s, "bindingsForSong: song not found");
     return s->bindings;
 }
@@ -810,41 +810,41 @@ std::vector<BindingState> StateAPI::effectiveBindings() const {
 
 // --- Devices ---
 
-std::string StateAPI::registerDevice(const std::string& name, const std::string& midiPortName) {
+DeviceId StateAPI::registerDevice(const std::string& name, const std::string& midiPortName) {
     for (auto& d : state.devices)
         if (d.midiPortName == midiPortName) return d.id;  // dedup
     DeviceState dev;
-    dev.id = generateId();
+    dev.id = DeviceId{generateId()};
     dev.name = name;
     dev.midiPortName = midiPortName;
     state.devices.push_back(std::move(dev));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Device, state.devices.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Device, state.devices.back().id.str(), "" });
     return state.devices.back().id;
 }
 
-void StateAPI::removeDevice(const std::string& id) {
+void StateAPI::removeDevice(const DeviceId& id) {
     state.devices.erase(
         std::remove_if(state.devices.begin(), state.devices.end(),
                        [&](auto& d) { return d.id == id; }),
         state.devices.end());
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Device, id, "" });
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Device, id.str(), "" });
 }
 
-void StateAPI::renameDevice(const std::string& id, const std::string& name) {
+void StateAPI::renameDevice(const DeviceId& id, const std::string& name) {
     device(id).name = name;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Device, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, id.str(), "" });
 }
 
-DeviceState* StateAPI::findDevice(const std::string& id) {
+DeviceState* StateAPI::findDevice(const DeviceId& id) {
     for (auto& d : state.devices)
         if (d.id == id) return &d;
     return nullptr;
 }
 
-const DeviceState* StateAPI::findDevice(const std::string& id) const {
+const DeviceState* StateAPI::findDevice(const DeviceId& id) const {
     for (auto& d : state.devices)
         if (d.id == id) return &d;
     return nullptr;
@@ -860,45 +860,45 @@ const std::vector<DeviceState>& StateAPI::allDevices() const {
     return state.devices;
 }
 
-std::string StateAPI::addDeviceControl(const std::string& deviceId, const std::string& name,
+std::string StateAPI::addDeviceControl(const DeviceId& deviceId, const std::string& name,
                                         const std::string& controlType, int channel, int number,
                                         const std::string& group) {
     auto& dev = device(deviceId);
     for (auto& c : dev.controls)
         if (c.controlType == controlType && c.channel == channel && c.number == number)
-            return deviceId;  // duplicate
+            return deviceId.str();  // duplicate
     dev.controls.push_back({ name, controlType, channel, number, group });
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
-    return deviceId;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId.str(), "" });
+    return deviceId.str();
 }
 
-void StateAPI::removeDeviceControl(const std::string& deviceId, int index) {
+void StateAPI::removeDeviceControl(const DeviceId& deviceId, int index) {
     auto& dev = device(deviceId);
     if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
     dev.controls.erase(dev.controls.begin() + index);
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId.str(), "" });
 }
 
-void StateAPI::renameDeviceControl(const std::string& deviceId, int index, const std::string& name) {
+void StateAPI::renameDeviceControl(const DeviceId& deviceId, int index, const std::string& name) {
     auto& dev = device(deviceId);
     if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
     dev.controls[index].name = name;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId.str(), "" });
 }
 
-void StateAPI::setDeviceControlGroup(const std::string& deviceId, int index, const std::string& group) {
+void StateAPI::setDeviceControlGroup(const DeviceId& deviceId, int index, const std::string& group) {
     auto& dev = device(deviceId);
     if (index < 0 || index >= (int)dev.controls.size()) return;  // bounds check
     dev.controls[index].group = group;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Device, deviceId.str(), "" });
 }
 
-void StateAPI::addDeviceToSong(const std::string& songId, const std::string& deviceId) {
-    auto* s = findSong(SongId{songId});
+void StateAPI::addDeviceToSong(const SongId& songId, const DeviceId& deviceId) {
+    auto* s = findSong(songId);
     PERF_ASSERT(s, "addDeviceToSong: song not found");
     for (auto& id : s->deviceIds)
         if (id == deviceId) return;  // already added
@@ -906,8 +906,8 @@ void StateAPI::addDeviceToSong(const std::string& songId, const std::string& dev
     markDirty();
 }
 
-void StateAPI::removeDeviceFromSong(const std::string& songId, const std::string& deviceId) {
-    auto* s = findSong(SongId{songId});
+void StateAPI::removeDeviceFromSong(const SongId& songId, const DeviceId& deviceId) {
+    auto* s = findSong(songId);
     PERF_ASSERT(s, "removeDeviceFromSong: song not found");
     s->deviceIds.erase(
         std::remove(s->deviceIds.begin(), s->deviceIds.end(), deviceId),
@@ -915,8 +915,8 @@ void StateAPI::removeDeviceFromSong(const std::string& songId, const std::string
     markDirty();
 }
 
-std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) const {
-    auto* s = findSong(SongId{songId});
+std::vector<DeviceId> StateAPI::devicesForSong(const SongId& songId) const {
+    auto* s = findSong(songId);
     PERF_ASSERT(s, "devicesForSong: song not found");
     return s->deviceIds;
 }
@@ -925,12 +925,12 @@ std::vector<std::string> StateAPI::devicesForSong(const std::string& songId) con
 
 // --- Action Events ---
 
-std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
-                                      const std::string& argsJson) {
+ActionEventId StateAPI::addActionEvent(double beat, const ActionId& actionId,
+                                        const std::string& argsJson) {
     pushUndo();
     auto& s = song();
     SongState::ActionEvent ev;
-    ev.id = generateId();
+    ev.id = ActionEventId{generateId()};
     ev.beat = beat;
     ev.actionId = actionId;
     ev.argsJson = argsJson;
@@ -939,7 +939,7 @@ std::string StateAPI::addActionEvent(double beat, const std::string& actionId,
     return s.actionEvents.back().id;
 }
 
-void StateAPI::removeActionEvent(const std::string& id) {
+void StateAPI::removeActionEvent(const ActionEventId& id) {
     pushUndo();
     auto& s = song();
     auto& events = s.actionEvents;
@@ -948,7 +948,7 @@ void StateAPI::removeActionEvent(const std::string& id) {
     markDirty();
 }
 
-void StateAPI::setActionEventBeat(const std::string& id, double beat) {
+void StateAPI::setActionEventBeat(const ActionEventId& id, double beat) {
     pushUndo();
     auto& s = song();
     for (auto& ev : s.actionEvents) {
@@ -972,7 +972,7 @@ std::vector<BindingState> StateAPI::scoreSteps() const {
     return result;
 }
 
-void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position) {
+void StateAPI::setBindingAsScoreStep(const BindingId& bindingId, int position) {
     pushUndo();
     auto& s = song();
     for (auto& b : s.bindings) {
@@ -980,13 +980,13 @@ void StateAPI::setBindingAsScoreStep(const std::string& bindingId, int position)
             b.isScoreStep = true;
             b.scorePosition = position;
             markDirty();
-            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, s.id.str() });
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId.str(), s.id.str() });
             return;
         }
     }
 }
 
-void StateAPI::clearScoreStep(const std::string& bindingId) {
+void StateAPI::clearScoreStep(const BindingId& bindingId) {
     pushUndo();
     auto& s = song();
     for (auto& b : s.bindings) {
@@ -994,7 +994,7 @@ void StateAPI::clearScoreStep(const std::string& bindingId) {
             b.isScoreStep = false;
             b.scorePosition = -1;
             markDirty();
-            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId, s.id.str() });
+            eventBus.emit({ StateEvent::Updated, StateEvent::Binding, bindingId.str(), s.id.str() });
             return;
         }
     }
@@ -1118,8 +1118,8 @@ std::vector<const PresetInfo*> StateAPI::presetsForPlugin(const PluginId& plugin
 
 // --- Catalog: Actions ---
 
-std::string StateAPI::registerAction(const std::string& name, const std::string& label,
-                                      const std::string& paramSchema, int durationParamIndex) {
+ActionId StateAPI::registerAction(const std::string& name, const std::string& label,
+                                   const std::string& paramSchema, int durationParamIndex) {
     for (auto& a : state.actions) {
         if (a.name == name) {
             a.label = label;
@@ -1129,7 +1129,7 @@ std::string StateAPI::registerAction(const std::string& name, const std::string&
         }
     }
     ActionInfo action;
-    action.id = generateId();
+    action.id = ActionId{generateId()};
     action.name = name;
     action.label = label;
     action.paramSchema = paramSchema;
@@ -1138,8 +1138,8 @@ std::string StateAPI::registerAction(const std::string& name, const std::string&
     return state.actions.back().id;
 }
 
-std::string StateAPI::createCustomAction(const std::string& name, const std::string& label,
-                                          const std::string& luaCode, const std::string& songId) {
+ActionId StateAPI::createCustomAction(const std::string& name, const std::string& label,
+                                       const std::string& luaCode, const SongId& songId) {
     for (auto& a : state.actions) {
         if (a.name == name) {
             a.label = label;
@@ -1150,7 +1150,7 @@ std::string StateAPI::createCustomAction(const std::string& name, const std::str
         }
     }
     ActionInfo action;
-    action.id = generateId();
+    action.id = ActionId{generateId()};
     action.name = name;
     action.label = label;
     action.luaCode = luaCode;
@@ -1160,7 +1160,7 @@ std::string StateAPI::createCustomAction(const std::string& name, const std::str
     return state.actions.back().id;
 }
 
-void StateAPI::removeAction(const std::string& id) {
+void StateAPI::removeAction(const ActionId& id) {
     auto& actions = state.actions;
     actions.erase(std::remove_if(actions.begin(), actions.end(),
         [&](const ActionInfo& a) { return a.id == id; }), actions.end());
@@ -1173,7 +1173,7 @@ const ActionInfo* StateAPI::findActionByName(const std::string& name) const {
     return nullptr;
 }
 
-const ActionInfo* StateAPI::findActionById(const std::string& id) const {
+const ActionInfo* StateAPI::findActionById(const ActionId& id) const {
     for (auto& a : state.actions)
         if (a.id == id) return &a;
     return nullptr;

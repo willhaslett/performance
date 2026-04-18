@@ -54,7 +54,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
             else if (evType == "Pitch") ctrlType = "pitchbend";
             else if (evType == "Pressure") ctrlType = "pressure";
             if (ctrlType.empty()) return;
-            juce::MessageManager::callAsync([this, ctrlType, ch, num, devId] {
+            juce::MessageManager::callAsync([this, ctrlType, ch, num, devId = devId.str()] {
                 performPane.controllers().handleMidiActivity(ctrlType, ch, num, devId);
                 performPane.songMappings().handleMidiActivity(ctrlType, ch, num, devId);
             });

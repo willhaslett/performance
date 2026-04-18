@@ -395,13 +395,13 @@ public:
             auto songId = s.createSong("S");
             s.setCurrentSong(songId);
             auto actionId = s.registerAction("test", "Test");
-            auto bindId = s.addBinding(songId.str(), "cc", 1, 42, actionId, "[\"arg\"]", "Test");
+            auto bindId = s.addBinding(songId, "cc", 1, 42, actionId, "[\"arg\"]", "Test");
             expect(!bindId.empty());
-            auto bindings = s.bindingsForSong(songId.str());
+            auto bindings = s.bindingsForSong(songId);
             expectEquals((int)bindings.size(), 1);
             expect(!bindings[0].songId.empty());
             s.removeBinding(bindId);
-            expect(s.bindingsForSong(songId.str()).empty());
+            expect(s.bindingsForSong(songId).empty());
         }
 
         beginTest("Global bindings");
@@ -427,13 +427,13 @@ public:
             auto a1 = s.registerAction("g", "Global");
             auto a2 = s.registerAction("s", "Song");
             s.addGlobalBinding("cc", 1, 7, a1);
-            s.addBinding(songId.str(), "cc", 1, 7, a2);
+            s.addBinding(songId, "cc", 1, 7, a2);
             s.addGlobalBinding("cc", 1, 10, a1);
             auto eff = s.effectiveBindings();
             expectEquals((int)eff.size(), 2);
             for (auto& b : eff) {
-                if (b.number == 7) expectEquals(b.actionId, a2);
-                if (b.number == 10) expectEquals(b.actionId, a1);
+                if (b.number == 7) expectEquals(b.actionId.str(), a2.str());
+                if (b.number == 10) expectEquals(b.actionId.str(), a1.str());
             }
         }
 
@@ -482,7 +482,7 @@ public:
             expect(!devId.empty());
             // Deduplicate by port name
             auto devId2 = s.registerDevice("KeyLab 88", "Arturia KeyLab 88 mkII");
-            expectEquals(devId, devId2);
+            expectEquals(devId.str(), devId2.str());
             expectEquals((int)s.allDevices().size(), 1);
 
             s.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
@@ -504,16 +504,16 @@ public:
             auto devId = s.registerDevice("KeyLab", "keylab-port");
 
             // Binding with device
-            auto b1 = s.addBinding(songId.str(), "cc", 1, 7, actionId, "[]", "KeyLab vol", devId);
+            auto b1 = s.addBinding(songId, "cc", 1, 7, actionId, "[]", "KeyLab vol", devId);
             // Binding without device (any)
-            auto b2 = s.addBinding(songId.str(), "cc", 1, 10, actionId, "[]", "Any device");
+            auto b2 = s.addBinding(songId, "cc", 1, 10, actionId, "[]", "Any device");
 
-            auto bindings = s.bindingsForSong(songId.str());
+            auto bindings = s.bindingsForSong(songId);
             expectEquals((int)bindings.size(), 2);
 
             bool foundDevice = false, foundAny = false;
             for (auto& b : bindings) {
-                if (b.id == b1) { expectEquals(b.deviceId, devId); foundDevice = true; }
+                if (b.id == b1) { expectEquals(b.deviceId.str(), devId.str()); foundDevice = true; }
                 if (b.id == b2) { expect(b.deviceId.empty()); foundAny = true; }
             }
             expect(foundDevice);
@@ -528,15 +528,15 @@ public:
             auto dev1 = s.registerDevice("KeyLab", "keylab-port");
             auto dev2 = s.registerDevice("MPK", "mpk-port");
 
-            s.addDeviceToSong(songId.str(), dev1);
-            s.addDeviceToSong(songId.str(), dev2);
-            auto devices = s.devicesForSong(songId.str());
+            s.addDeviceToSong(songId, dev1);
+            s.addDeviceToSong(songId, dev2);
+            auto devices = s.devicesForSong(songId);
             expectEquals((int)devices.size(), 2);
 
-            s.removeDeviceFromSong(songId.str(), dev1);
-            devices = s.devicesForSong(songId.str());
+            s.removeDeviceFromSong(songId, dev1);
+            devices = s.devicesForSong(songId);
             expectEquals((int)devices.size(), 1);
-            expectEquals(devices[0], dev2);
+            expectEquals(devices[0].str(), dev2.str());
         }
 
         beginTest("Device persistence round-trip");
@@ -547,9 +547,9 @@ public:
             original.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
             auto songId = original.createSong("S");
             original.setCurrentSong(songId);
-            original.addDeviceToSong(songId.str(), devId);
+            original.addDeviceToSong(songId, devId);
             auto actionId = original.registerAction("test", "Test");
-            original.addBinding(songId.str(), "cc", 1, 73, actionId, "[]", "Vol", devId);
+            original.addBinding(songId, "cc", 1, 73, actionId, "[]", "Vol", devId);
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
@@ -563,10 +563,10 @@ public:
             expectEquals((int)dev->controls.size(), 1);
 
             loaded.setCurrentSong(loaded.allSongs()[0].id);
-            auto devices = loaded.devicesForSong(loaded.allSongs()[0].id.str());
+            auto devices = loaded.devicesForSong(loaded.allSongs()[0].id);
             expectEquals((int)devices.size(), 1);
 
-            auto bindings = loaded.bindingsForSong(loaded.allSongs()[0].id.str());
+            auto bindings = loaded.bindingsForSong(loaded.allSongs()[0].id);
             expectEquals((int)bindings.size(), 1);
             expect(!bindings[0].deviceId.empty());
         }
@@ -710,7 +710,7 @@ public:
         {
             StateAPI s;
             auto id = s.createCustomAction("myAction", "My Action",
-                                            "log('hello')", "");
+                                            "log('hello')", SongId{});
             expect(!id.empty());
 
             auto* action = s.findActionByName("myAction");
@@ -720,12 +720,12 @@ public:
             expect(action->songId.empty());  // global
 
             // Update existing by same name
-            auto id2 = s.createCustomAction("myAction", "Updated", "log('bye')", "song1");
-            expectEquals(id, id2);  // same ID
+            auto id2 = s.createCustomAction("myAction", "Updated", "log('bye')", SongId{"song1"});
+            expectEquals(id.str(), id2.str());  // same ID
             action = s.findActionByName("myAction");
             expectEquals(action->label, std::string("Updated"));
             expectEquals(action->luaCode, std::string("log('bye')"));
-            expectEquals(action->songId, std::string("song1"));
+            expectEquals(action->songId.str(), std::string("song1"));
 
             // Remove
             s.removeAction(id);
@@ -741,25 +741,25 @@ public:
             auto t2 = s.createTrack("T2");
             auto actionId = s.registerAction("fadeOut", "Fade Out");
 
-            auto b1 = s.addBinding(songId.str(), "note", 10, 40, actionId, "[]", "Pad 1");
-            auto b2 = s.addBinding(songId.str(), "note", 10, 41, actionId, "[]", "Pad 2");
-            auto b3 = s.addBinding(songId.str(), "note", 10, 42, actionId, "[]", "Pad 3");
+            auto b1 = s.addBinding(songId, "note", 10, 40, actionId, "[]", "Pad 1");
+            auto b2 = s.addBinding(songId, "note", 10, 41, actionId, "[]", "Pad 2");
+            auto b3 = s.addBinding(songId, "note", 10, 42, actionId, "[]", "Pad 3");
 
             s.setBindingAsScoreStep(b1, 1);
             s.setBindingAsScoreStep(b3, 2);
 
             auto steps = s.scoreSteps();
             expectEquals((int)steps.size(), 2);
-            expectEquals(steps[0].id, b1);
+            expectEquals(steps[0].id.str(), b1.str());
             expectEquals(steps[0].scorePosition, 1);
-            expectEquals(steps[1].id, b3);
+            expectEquals(steps[1].id.str(), b3.str());
             expectEquals(steps[1].scorePosition, 2);
 
             // Clear a step
             s.clearScoreStep(b1);
             steps = s.scoreSteps();
             expectEquals((int)steps.size(), 1);
-            expectEquals(steps[0].id, b3);
+            expectEquals(steps[0].id.str(), b3.str());
 
             // b2 was never a score step
             auto* song = s.findSong(songId);
@@ -798,14 +798,14 @@ public:
             s.setCurrentSong(songId);
             auto actionId = s.registerAction("test");
 
-            auto bId = s.addBinding(songId.str(), "note", 10, 40, actionId,
-                                     "[]", "desc", "device123");
+            auto bId = s.addBinding(songId, "note", 10, 40, actionId,
+                                     "[]", "desc", DeviceId{"device123"});
 
             auto* song = s.findSong(songId);
             expect(song != nullptr);
             for (auto& b : song->bindings) {
                 if (b.id == bId) {
-                    expectEquals(b.deviceId, std::string("device123"));
+                    expectEquals(b.deviceId.str(), std::string("device123"));
                 }
             }
         }
@@ -885,7 +885,7 @@ public:
             original.addSend(t1, busId, 0.5f);
 
             auto actionId = original.findActionByName("fadeOut")->id;
-            original.addBinding(songId.str(), "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
+            original.addBinding(songId, "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
             original.addGlobalBinding("cc", 1, 7, actionId, "[]", "Master vol");
 
             {
@@ -939,7 +939,7 @@ public:
             expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
 
             // Bindings
-            expectEquals((int)loaded.bindingsForSong(song->id.str()).size(), 1);
+            expectEquals((int)loaded.bindingsForSong(song->id).size(), 1);
             expectEquals((int)loaded.globalBindings().size(), 1);
 
             expect(!loaded.isDirty());
@@ -1064,9 +1064,9 @@ public:
             original.setCurrentSong(songId);
 
             // Create bindings, mark some as score steps
-            auto b1 = original.addBinding(songId.str(), "cc", 10, 1, actionId, "[\"Keys\"]", "Fade keys");
-            auto b2 = original.addBinding(songId.str(), "cc", 10, 2, actionId, "[\"Bass\"]", "Fade bass");
-            auto b3 = original.addBinding(songId.str(), "cc", 1, 5, actionId, "[]", "Utility toggle");
+            auto b1 = original.addBinding(songId, "cc", 10, 1, actionId, "[\"Keys\"]", "Fade keys");
+            auto b2 = original.addBinding(songId, "cc", 10, 2, actionId, "[\"Bass\"]", "Fade bass");
+            auto b3 = original.addBinding(songId, "cc", 1, 5, actionId, "[]", "Utility toggle");
             original.setBindingAsScoreStep(b1, 0);
             original.setBindingAsScoreStep(b2, 1);
             // b3 is NOT a score step
@@ -1077,7 +1077,7 @@ public:
             { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
 
             // All 3 bindings should be there
-            auto bindings = loaded.bindingsForSong(loaded.currentSong()->id.str());
+            auto bindings = loaded.bindingsForSong(loaded.currentSong()->id);
             expectEquals((int)bindings.size(), 3);
 
             // Score should have 2 steps in order
@@ -1137,8 +1137,8 @@ public:
             StateAPI original;
             original.createSong("S");
             original.registerAction("builtIn", "Built-in");  // no lua_code
-            original.createCustomAction("custom1", "Custom One", "log('hi')", "");
-            original.createCustomAction("custom2", "Custom Two", "fadeOut()", "song123");
+            original.createCustomAction("custom1", "Custom One", "log('hi')", SongId{});
+            original.createCustomAction("custom2", "Custom Two", "fadeOut()", SongId{"song123"});
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
@@ -1158,7 +1158,7 @@ public:
             auto* c2 = loaded.findActionByName("custom2");
             expect(c2 != nullptr);
             expectEquals(c2->luaCode, std::string("fadeOut()"));
-            expectEquals(c2->songId, std::string("song123"));
+            expectEquals(c2->songId.str(), std::string("song123"));
         }
 
         beginTest("Audio device config round-trip with buffer and sample rate");
@@ -1791,7 +1791,7 @@ public:
                     bindingEventFired = true;
             });
 
-            state.addBinding(songId.str(), "note", 10, 40, actionId, "[]", "test");
+            state.addBinding(songId, "note", 10, 40, actionId, "[]", "test");
             expect(bindingEventFired);
 
             state.events().unsubscribe(subId);
@@ -2588,12 +2588,12 @@ public:
             original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
 
             // Create a stub binding — control in the song but no action assigned
-            auto bindId = original.addBinding(songId.str(), "note", 10, 36, "", "[]", "Pad 1", devId);
+            auto bindId = original.addBinding(songId, "note", 10, 36, ActionId{}, "[]", "Pad 1", devId);
             expect(!bindId.empty());
 
             auto* song = original.findSong(songId);
             expectEquals((int)song->bindings.size(), 1);
-            expectEquals(song->bindings[0].actionId, std::string(""));
+            expectEquals(song->bindings[0].actionId.str(), std::string(""));
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
@@ -2603,8 +2603,8 @@ public:
             auto* loadedSong = loaded.currentSong();
             expect(loadedSong != nullptr);
             expectEquals((int)loadedSong->bindings.size(), 1);
-            expectEquals(loadedSong->bindings[0].actionId, std::string(""));
-            expectEquals(loadedSong->bindings[0].deviceId, devId);
+            expectEquals(loadedSong->bindings[0].actionId.str(), std::string(""));
+            expectEquals(loadedSong->bindings[0].deviceId.str(), devId.str());
             expectEquals(loadedSong->bindings[0].controlType, std::string("note"));
             expectEquals(loadedSong->bindings[0].channel, 10);
             expectEquals(loadedSong->bindings[0].number, 36);
@@ -2620,7 +2620,7 @@ public:
             auto devId = original.registerDevice("MPK", "MPK mini 3");
             original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
 
-            auto bindId = original.addBinding(songId.str(), "note", 10, 36, "", "[]", "Pad 1", devId);
+            auto bindId = original.addBinding(songId, "note", 10, 36, ActionId{}, "[]", "Pad 1", devId);
             original.setBindingAsScoreStep(bindId, 1);
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
@@ -2632,7 +2632,7 @@ public:
             expectEquals((int)song->bindings.size(), 1);
             expect(song->bindings[0].isScoreStep);
             expectEquals(song->bindings[0].scorePosition, 1);
-            expectEquals(song->bindings[0].actionId, std::string(""));
+            expectEquals(song->bindings[0].actionId.str(), std::string(""));
         }
 
         beginTest("Duplicate device control rejected by StateAPI");

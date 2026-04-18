@@ -14,7 +14,7 @@ MIDIEngine::~MIDIEngine() {
 void MIDIEngine::refreshDeviceMapping() {
     portToDeviceId.clear();
     for (auto& device : stateAPI.allDevices())
-        portToDeviceId[juce::String(device.midiPortName)] = device.id;
+        portToDeviceId[juce::String(device.midiPortName)] = device.id.str();
 }
 
 void MIDIEngine::initialise() {
@@ -129,7 +129,7 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
             learnMatch = true;
         } else if (!learnDeviceId.empty() && sourcePortName.isNotEmpty()) {
             // Try matching by port name — the device may have been registered with this port name
-            auto* device = stateAPI.findDevice(learnDeviceId);
+            auto* device = stateAPI.findDevice(DeviceId{learnDeviceId});
             if (device && device->midiPortName == sourcePortName.toStdString())
                 learnMatch = true;
         }
@@ -180,7 +180,7 @@ void MIDIEngine::handleIncomingMidiMessage(juce::MidiInput* source,
     if (deviceMonitorCallback) {
         bool monitorMatch = (monitorDeviceId == deviceId);
         if (!monitorMatch && !monitorDeviceId.empty() && sourcePortName.isNotEmpty()) {
-            auto* device = stateAPI.findDevice(monitorDeviceId);
+            auto* device = stateAPI.findDevice(DeviceId{monitorDeviceId});
             if (device && device->midiPortName == sourcePortName.toStdString())
                 monitorMatch = true;
         }

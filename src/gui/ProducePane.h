@@ -118,7 +118,7 @@ private:
     std::vector<RegionHitInfo> regionHitRects;  // rebuilt each paint
 
     struct ActionHitInfo {
-        std::string eventId;
+        ActionEventId eventId;
         RegionId regionId;
         TrackId trackId;
         juce::Rectangle<int> bounds;
@@ -162,7 +162,7 @@ private:
     static constexpr int cycleEdgeThreshold = 6;  // pixels
 
     // Action event drag
-    std::string dragActionEventId;
+    ActionEventId dragActionEventId;
     TrackId dragActionTrackId;
     bool draggingActionEvent = false;
 

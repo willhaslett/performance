@@ -28,12 +28,12 @@ struct PresetInfo {
 };
 
 struct ActionInfo {
-    std::string id;
+    ActionId id;
     std::string name;
     std::string label;
     std::string paramSchema;  // JSON
     std::string luaCode;      // custom action body (empty for built-in)
-    std::string songId;       // empty = global, non-empty = song-scoped
+    SongId songId;            // empty = global, non-empty = song-scoped
     int durationParamIndex = -1;  // which arg index is the duration (-1 = none)
 };
 
@@ -48,7 +48,7 @@ struct ControlDef {
 };
 
 struct DeviceState {
-    std::string id;
+    DeviceId id;
     std::string name;           // "KeyLab 88 MkII"
     std::string midiPortName;   // JUCE MidiInput identifier for port matching
     std::vector<ControlDef> controls;
@@ -62,9 +62,9 @@ enum class ChannelMode { Mono, Stereo };
 
 // Action event data — stored directly on Action tracks (no regions)
 struct ActionEventData {
-    std::string id;
+    ActionEventId id;
     double beat = 0.0;         // absolute beat position
-    std::string actionId;      // references ActionInfo
+    ActionId actionId;         // references ActionInfo
     std::string argsJson = "[]";
 };
 
@@ -181,13 +181,13 @@ struct BusState {
 };
 
 struct BindingState {
-    std::string id;
-    std::string songId;    // empty = global binding
-    std::string deviceId;  // empty = any device
+    BindingId id;
+    SongId songId;         // empty = global binding
+    DeviceId deviceId;     // empty = any device
     std::string controlType;
     int channel = 0;
     int number = 0;
-    std::string actionId;
+    ActionId actionId;
     std::string args;  // JSON
     std::string description;
     bool isScoreStep = false;
@@ -218,7 +218,7 @@ struct SongState {
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;
     std::vector<BindingState> bindings;      // song-scoped bindings (includes score steps)
-    std::vector<std::string> deviceIds;    // which devices this song uses
+    std::vector<DeviceId> deviceIds;    // which devices this song uses
     std::string initialState;                 // JSON snapshot
 
     // Tempo and time signature maps (sorted by beat)
@@ -232,9 +232,9 @@ struct SongState {
 
     // Action events — beat-triggered actions on the timeline
     struct ActionEvent {
-        std::string id;
+        ActionEventId id;
         double beat = 0.0;
-        std::string actionId;    // references ActionInfo
+        ActionId actionId;       // references ActionInfo
         std::string argsJson;    // JSON array of arguments
     };
     std::vector<ActionEvent> actionEvents;

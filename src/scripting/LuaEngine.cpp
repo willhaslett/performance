@@ -365,21 +365,21 @@ void LuaEngine::registerAPI() {
     lua.set_function("registerDevice", [&state, &coord](const std::string& name, const std::string& portName) -> std::string {
         auto id = state.registerDevice(name, portName);
         coord.refreshMidiDevices();
-        return id;
+        return id.str();
     });
     lua.set_function("addDeviceControl", [&state](const std::string& deviceId, const std::string& name,
                                                     const std::string& controlType, int channel, int number,
                                                     sol::optional<std::string> group) {
-        state.addDeviceControl(deviceId, name, controlType, channel, number, group.value_or(""));
+        state.addDeviceControl(DeviceId{deviceId}, name, controlType, channel, number, group.value_or(""));
     });
     lua.set_function("addDeviceToSong", [&state](const std::string& songId, const std::string& deviceId) {
-        state.addDeviceToSong(songId, deviceId);
+        state.addDeviceToSong(SongId{songId}, DeviceId{deviceId});
     });
     lua.set_function("listDevices", [this, &state]() -> sol::table {
         sol::table result = lua.create_table();
         for (auto& d : state.allDevices()) {
             sol::table row = lua.create_table();
-            row["id"] = d.id;
+            row["id"] = d.id.str();
             row["name"] = d.name;
             row["port"] = d.midiPortName;
             result.add(row);
@@ -500,7 +500,7 @@ void LuaEngine::registerAPI() {
             argsJson = juce::JSON::toString(argsVar, true).toStdString();
         }
 
-        state.addBinding(songId, type, channel, number, action->id, argsJson, description, deviceId);
+        state.addBinding(SongId{songId}, type, channel, number, action->id, argsJson, description, DeviceId{deviceId});
         perfLog("[Lua] bind: %s ch%d #%d dev='%s' -> %s args=%s\n",
                 type.c_str(), channel, number, deviceId.c_str(), actionName.c_str(), argsJson.c_str());
     });
@@ -524,7 +524,7 @@ void LuaEngine::registerAPI() {
         } else if (type == "song") {
             for (auto& s : state.allSongs()) {
                 sol::table row = lua.create_table();
-                row["id"] = s.id; row["name"] = s.name;
+                row["id"] = s.id.str(); row["name"] = s.name;
                 result.add(row);
             }
         }
@@ -539,14 +539,14 @@ void LuaEngine::registerAPI() {
     // Custom actions
     lua.set_function("createAction", [&state](const std::string& name, const std::string& label,
                                                const std::string& luaCode,
-                                               sol::optional<std::string> songId) {
-        auto sid = songId.has_value() ? songId.value() : "";
+                                               sol::optional<std::string> songId) -> std::string {
+        SongId sid = songId.has_value() ? SongId{songId.value()} : SongId{};
         auto id = state.createCustomAction(name, label, luaCode, sid);
         perfLog("[Lua] Created custom action: %s (id=%s)\n", name.c_str(), id.c_str());
-        return id;
+        return id.str();
     });
     lua.set_function("removeAction", [&state](const std::string& id) {
-        state.removeAction(id);
+        state.removeAction(ActionId{id});
     });
     lua.set_function("triggerAction", [&coord](const std::string& actionName) {
         coord.executeAction(actionName, juce::var(), 1.0f);
