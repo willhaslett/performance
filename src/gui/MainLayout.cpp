@@ -2,6 +2,7 @@
 #include "gui/KeyBindings.h"
 #include "gui/Theme.h"
 #include "BuildVersion.h"
+#include "BinaryData.h"
 #include <set>
 #include "engine/Log.h"
 #include "api/StateAPI.h"
@@ -156,23 +157,17 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     };
     // sidebar.onNewSong is wired by main.mm after layout construction.
 
-    // Load system prompt for Claude
-    auto workDir = juce::File(juce::File::getSpecialLocation(juce::File::currentApplicationFile)
-                       .getFullPathName());
-    for (int i = 0; i < 5; ++i)
-        workDir = workDir.getParentDirectory();
-
-    auto runtimeDir = workDir.getChildFile("runtime");
-    if (!runtimeDir.getChildFile("CLAUDE.md").existsAsFile())
-        runtimeDir = juce::File("/Users/will/ideas_and_projects/performance/runtime");
-
-    auto claudeMd = runtimeDir.getChildFile("CLAUDE.md");
-    if (claudeMd.existsAsFile()) {
+    // Load system prompt for Claude from BinaryData (baked in at build time
+    // from runtime/CLAUDE.md — rebuilt automatically when the .md changes).
+    int promptSize = 0;
+    if (auto* promptData = BinaryData::getNamedResource("CLAUDE_md", promptSize); promptData && promptSize > 0) {
         auto preamble = juce::String(
             "You have a `perf` tool that executes Lua code directly in the running performance engine. "
             "Use tool calls instead of shell commands. The `code` parameter takes the same Lua that the "
             "API docs below describe. Always use the perf tool to make changes — never suggest shell commands.\n\n");
-        chatView.setSystemPrompt(preamble + claudeMd.loadFileAsString());
+        chatView.setSystemPrompt(preamble + juce::String::fromUTF8(promptData, promptSize));
+    } else {
+        perfLog("[MainLayout] WARNING: CLAUDE.md not found in BinaryData — Claude will have no system prompt\n");
     }
 }
 

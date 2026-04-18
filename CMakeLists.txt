@@ -46,6 +46,7 @@ juce_add_binary_data(PerformanceResources
     SOURCES
         runtime/themes/minimal_dark.json
         runtime/themes/minimal_light.json
+        runtime/CLAUDE.md
 )
 
 # --- Application ---
