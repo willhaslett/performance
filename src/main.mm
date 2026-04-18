@@ -180,7 +180,7 @@ static void installMenuStyling() {
 
 enum CommandIDs {
     // File
-    newSong = 1, saveSong = 2, closeSong = 3,
+    newSong = 1, saveSong = 2, closeSong = 3, bounceSong = 4,
     // Edit
     menuUndo = 10, menuRedo = 11, menuSplit = 12, menuDuplicate = 13,
     menuDelete = 14, menuSelectAll = 15, menuCycleFromSel = 16,
@@ -251,6 +251,10 @@ public:
 
             menu.addItem(shortcut(CommandIDs::saveSong, "Save", "file.save"));
             menu.addSeparator();
+            menu.addItem(CommandIDs::bounceSong,
+                         juce::String::fromUTF8("Bounce\xe2\x80\xa6"),
+                         coord.state().currentSong() != nullptr);
+            menu.addSeparator();
             menu.addItem(CommandIDs::closeSong, "Close Song");
         }
         else if (index == 1) {  // Edit
@@ -308,6 +312,81 @@ public:
             break;
         }
         case CommandIDs::saveSong: coord.save(); break;
+        case CommandIDs::bounceSong: {
+            auto* song = coord.state().currentSong();
+            if (!song) break;
+
+            // If cycle is active, use its range and mark the filename
+            // with a -cycle suffix. Otherwise bounce the whole arrangement
+            // from beat 0 to the last region's end.
+            bool useCycle = false;
+            double startBeat = 0.0, endBeat = 0.0;
+            if (auto* seq = coord.sequencer(); seq && seq->isLoopEnabled()
+                    && seq->getLoopEnd() > seq->getLoopStart()) {
+                useCycle = true;
+                startBeat = seq->getLoopStart();
+                endBeat   = seq->getLoopEnd();
+            } else {
+                for (auto& t : song->tracks)
+                    for (auto& r : t.regions)
+                        endBeat = std::max(endBeat, r.startBeat + r.lengthBeats);
+                if (endBeat <= 0.0) {
+                    layout.showOverlay(juce::String::fromUTF8("Nothing to bounce \xe2\x80\x94 the arrangement is empty."));
+                    juce::Timer::callAfterDelay(1500, [this] { layout.hideOverlay(); });
+                    break;
+                }
+            }
+
+            // Suggested filename + default folder. Persist the folder so
+            // subsequent bounces default to where the user last put one.
+            auto now = juce::Time::getCurrentTime();
+            auto timestamp = now.formatted("%Y-%m-%d-%H%M%S");
+            juce::String suffix = useCycle ? "-cycle-" : "-";
+            juce::String suggestedName = juce::String(song->name) + suffix + timestamp + ".wav";
+
+            auto lastFolderStr = coord.state().getConfig("last_bounce_folder");
+            juce::File defaultFolder = lastFolderStr.empty()
+                ? juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                : juce::File(juce::String(lastFolderStr));
+            if (!defaultFolder.isDirectory())
+                defaultFolder = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+
+            auto chooser = std::make_shared<juce::FileChooser>(
+                "Bounce to WAV file",
+                defaultFolder.getChildFile(suggestedName),
+                "*.wav");
+
+            chooser->launchAsync(
+                juce::FileBrowserComponent::saveMode
+                    | juce::FileBrowserComponent::canSelectFiles
+                    | juce::FileBrowserComponent::warnAboutOverwriting,
+                [this, chooser, useCycle, startBeat, endBeat](const juce::FileChooser& fc) {
+                    auto file = fc.getResult();
+                    if (file == juce::File{}) return;  // user cancelled
+
+                    auto withExt = file.hasFileExtension("wav")
+                        ? file : file.withFileExtension(".wav");
+
+                    coord.state().setConfig("last_bounce_folder",
+                        withExt.getParentDirectory().getFullPathName().toStdString());
+
+                    layout.showOverlay(juce::String::fromUTF8("Bouncing\xe2\x80\xa6"));
+                    // Dispatch the bounce async so the overlay paints
+                    // before we block the message thread.
+                    juce::MessageManager::callAsync(
+                        [this, withExt, useCycle, startBeat, endBeat] {
+                            auto result = useCycle
+                                ? coord.bounce(withExt)
+                                : coord.bounce(withExt, startBeat, endBeat);
+                            layout.hideOverlay();
+                            if (!result.ok) {
+                                perfLog("[App] Bounce failed: %s\n",
+                                        result.errorMessage.toRawUTF8());
+                            }
+                        });
+                });
+            break;
+        }
         case CommandIDs::closeSong: coord.unloadSong(); break;
 
         // Edit
