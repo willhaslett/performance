@@ -22,6 +22,20 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4 decided (in or explicitly deferred), §3 in or explicitly backed out. Then bump `CMakeLists.txt` to `0.1.0`, tag, run `scripts/build-release.sh`, upload to Drive, distribute to 4 musician friends. This is the last round before strangers.
 
+### Current focus / recommended sequence
+
+As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`) and bounce shipped end-to-end (menu + Lua). What's left for 0.1.0, in the order to tackle it:
+
+1. **Typed IDs for the state model** (R2 in the incident report, ~1 focused day). *Do before Lambda work.* The incident was caused by passing a plugin name where a preset UUID was expected — `std::string` everywhere made it a silent runtime bug instead of a compile error. Do it while the persistence/engine-sync surface is fresh in mind; it gets harder to refactor after weeks of other work. Wraps each entity ID in its own newtype struct (`PluginId`, `PresetId`, `TrackId`, `BusId`, `SendId`, `EffectId`, `RegionId`, `TakeId`, `DeviceId`, `ActionId`, `SongId`). Mechanical refactor; compile errors guide every fix.
+2. **Model bump** (~10 min). Stale `claude-sonnet-4-20250514` in `ClaudeClient.h:53` → current default (Sonnet 4.6). Cheap, tidy, independent of Lambda.
+3. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
+4. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Requires a decision on streaming and default model before starting.
+5. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
+6. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+7. **Tag + release.**
+
+Total rough estimate: 4–6 days of focused work on the app + ~several days of site work in parallel. The sequence above is chosen to (a) get the highest-leverage insurance (typed IDs) in early, (b) clear the small quick wins, (c) then take on the Lambda work with a clean base.
+
 ### 1. Distribution proof
 
 Pipeline is built but has only ever run on the dev machine. Before shipping:
