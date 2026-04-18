@@ -1,6 +1,7 @@
 #pragma once
 #include <juce_events/juce_events.h>
 #include "state/StateEvents.h"
+#include "state/Id.h"
 #include <string>
 
 class AudioEngineInterface;
@@ -30,7 +31,7 @@ private:
 
     // Restore plugin state from preset file after async load
     void restorePresetState(const std::string& parentId, const std::string& effectId,
-                            const std::string& presetId);
+                            const PresetId& presetId);
 
     AudioEngineInterface& engine;
     StateAPI& stateAPI;

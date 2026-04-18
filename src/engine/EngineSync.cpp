@@ -197,7 +197,7 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
 }
 
 void EngineSync::restorePresetState(const std::string& parentId, const std::string& effectId,
-                                     const std::string& presetId) {
+                                     const PresetId& presetId) {
     // Get the processor from the engine
     juce::AudioProcessor* proc = nullptr;
     auto engParentId = (parentId == activeSongId) ? juce::String("Output") : juce::String(parentId);

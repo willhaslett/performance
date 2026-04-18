@@ -68,7 +68,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
     AudioEngine::PresetCallbacks callbacks;
     if (pluginName.isNotEmpty()) {
         // Resolve current preset name from state
-        std::string presetId;
+        PresetId presetId;
         if (effectId.isEmpty()) {
             auto* track = state.findTrack(parentId.toStdString());
             if (track) presetId = track->presetId;

@@ -2,6 +2,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "state/Id.h"
 
 // In-memory state model — pure C++ structs, no JUCE dependency.
 // This is the live SSOT while the app is running.
@@ -9,7 +10,7 @@
 // --- Catalog (immutable templates, reusable across songs) ---
 
 struct PluginInfo {
-    std::string id;
+    PluginId id;
     std::string name;
     std::string manufacturer;
     std::string formatId;  // AU identifier string
@@ -19,8 +20,8 @@ struct PluginInfo {
 enum class PresetKind { Instrument, Effect, Track };
 
 struct PresetInfo {
-    std::string id;
-    std::string pluginId;
+    PresetId id;
+    PluginId pluginId;
     std::string name;
     std::string statePath;
     PresetKind kind = PresetKind::Instrument;
@@ -70,8 +71,8 @@ struct ActionEventData {
 struct EffectState {
     std::string id;
     std::string name;
-    std::string pluginId;
-    std::string presetId;
+    PluginId pluginId;
+    PresetId presetId;
     int position = 0;
     LoadStatus loadStatus = LoadStatus::None;
     std::string processorState;      // base64 blob from getStateInformation
@@ -144,8 +145,8 @@ struct RegionState {
 struct TrackState {
     std::string id;
     std::string name;
-    std::string pluginId;
-    std::string presetId;
+    PluginId pluginId;
+    PresetId presetId;
     uint32_t color = 0;        // track color (0 = use default for source type)
     float outputGain = 1.0f;
     bool midiEnabled = true;   // receives MIDI notes (instrument tracks)

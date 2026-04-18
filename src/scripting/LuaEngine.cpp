@@ -133,7 +133,7 @@ void LuaEngine::registerAPI() {
         auto* p = state.findPluginByName(plugin);
         if (!p)
             throw std::runtime_error("plugin '" + plugin + "' not found. Run listPlugins() for available names.");
-        std::string presetId;
+        PresetId presetId;
         if (preset.has_value() && !preset.value().empty()) {
             auto* pr = state.findPreset(p->id, preset.value());
             if (pr) presetId = pr->id;

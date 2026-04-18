@@ -1372,7 +1372,7 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
 
 void PerformanceCoordinator::ensureDefaultPreset(const std::string& parentId,
                                                    const std::string& effectId,
-                                                   const std::string& pluginId,
+                                                   const PluginId& pluginId,
                                                    PresetKind kind) {
     // Already has a Default preset?
     if (stateAPI->findPreset(pluginId, "Default")) return;

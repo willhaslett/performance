@@ -200,7 +200,7 @@ const EffectState* StateAPI::findEffect(const std::string& effectId) const {
     return nullptr;
 }
 
-void StateAPI::setEffectPresetId(const std::string& effectId, const std::string& presetId) {
+void StateAPI::setEffectPresetId(const std::string& effectId, const PresetId& presetId) {
     auto* list = findEffectList(effectId, nullptr);
     if (!list) { perfLog("[StateAPI] setEffectPresetId: effect '%s' not found\n", effectId.c_str()); return; }
     for (auto& fx : *list) {
@@ -495,8 +495,8 @@ bool StateAPI::isAnySoloed() const {
     return false;
 }
 
-void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId,
-                               const std::string& presetId) {
+void StateAPI::setTrackPlugin(const std::string& id, const PluginId& pluginId,
+                               const PresetId& presetId) {
     pushUndo();
     auto& t = track(id);
     t.pluginId = pluginId;
@@ -507,10 +507,10 @@ void StateAPI::setTrackPlugin(const std::string& id, const std::string& pluginId
 
 void StateAPI::clearTrackPlugin(const std::string& id) {
     pushUndo();
-    setTrackPlugin(id, "", "");
+    setTrackPlugin(id, PluginId{}, PresetId{});
 }
 
-void StateAPI::setTrackPresetId(const std::string& id, const std::string& presetId) {
+void StateAPI::setTrackPresetId(const std::string& id, const PresetId& presetId) {
     track(id).presetId = presetId;
     markDirty();
 }
@@ -612,7 +612,7 @@ std::string StateAPI::getBusOutputTarget(const std::string& id) const {
 // --- Effects ---
 
 std::string StateAPI::addEffect(const std::string& parentId, const std::string& name,
-                                 const std::string& pluginId) {
+                                 const PluginId& pluginId) {
     pushUndo();
     auto& s = song();
 
@@ -1049,18 +1049,18 @@ std::vector<std::string> StateAPI::selectedBusIds() const {
 
 // --- Catalog: Plugins ---
 
-std::string StateAPI::registerPlugin(const std::string& name, const std::string& manufacturer,
-                                      const std::string& formatId, bool isInstrument) {
+PluginId StateAPI::registerPlugin(const std::string& name, const std::string& manufacturer,
+                                   const std::string& formatId, bool isInstrument) {
     for (auto& p : state.plugins)
         if (p.name == name) return p.id;  // dedup
     PluginInfo plugin;
-    plugin.id = generateId();
+    plugin.id = PluginId{generateId()};
     plugin.name = name;
     plugin.manufacturer = manufacturer;
     plugin.formatId = formatId;
     plugin.isInstrument = isInstrument;
     state.plugins.push_back(std::move(plugin));
-    eventBus.emit({ StateEvent::Created, StateEvent::Plugin, state.plugins.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Plugin, state.plugins.back().id.str(), "" });
     return state.plugins.back().id;
 }
 
@@ -1070,7 +1070,7 @@ const PluginInfo* StateAPI::findPluginByName(const std::string& name) const {
     return nullptr;
 }
 
-const PluginInfo* StateAPI::findPluginById(const std::string& id) const {
+const PluginInfo* StateAPI::findPluginById(const PluginId& id) const {
     for (auto& p : state.plugins)
         if (p.id == id) return &p;
     return nullptr;
@@ -1082,34 +1082,34 @@ const std::vector<PluginInfo>& StateAPI::allPlugins() const {
 
 // --- Catalog: Presets ---
 
-std::string StateAPI::createPreset(const std::string& pluginId, const std::string& name,
-                                    const std::string& statePath, PresetKind kind) {
+PresetId StateAPI::createPreset(const PluginId& pluginId, const std::string& name,
+                                 const std::string& statePath, PresetKind kind) {
     for (auto& p : state.presets)
         if (p.pluginId == pluginId && p.name == name) return p.id;  // dedup
     PresetInfo preset;
-    preset.id = generateId();
+    preset.id = PresetId{generateId()};
     preset.pluginId = pluginId;
     preset.name = name;
     preset.statePath = statePath;
     preset.kind = kind;
     state.presets.push_back(std::move(preset));
-    eventBus.emit({ StateEvent::Created, StateEvent::Preset, state.presets.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Preset, state.presets.back().id.str(), "" });
     return state.presets.back().id;
 }
 
-const PresetInfo* StateAPI::findPreset(const std::string& pluginId, const std::string& name) const {
+const PresetInfo* StateAPI::findPreset(const PluginId& pluginId, const std::string& name) const {
     for (auto& p : state.presets)
         if (p.pluginId == pluginId && p.name == name) return &p;
     return nullptr;
 }
 
-const PresetInfo* StateAPI::findPresetById(const std::string& id) const {
+const PresetInfo* StateAPI::findPresetById(const PresetId& id) const {
     for (auto& p : state.presets)
         if (p.id == id) return &p;
     return nullptr;
 }
 
-std::vector<const PresetInfo*> StateAPI::presetsForPlugin(const std::string& pluginId) const {
+std::vector<const PresetInfo*> StateAPI::presetsForPlugin(const PluginId& pluginId) const {
     std::vector<const PresetInfo*> result;
     for (auto& p : state.presets)
         if (p.pluginId == pluginId) result.push_back(&p);

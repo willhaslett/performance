@@ -333,7 +333,7 @@ void PersistenceLayer::readPlugins(AppState& out) {
     auto* stmt = prepare("SELECT id, name, manufacturer, format_id, is_instrument FROM plugins");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         out.plugins.push_back({
-            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2),
+            PluginId{col_str(stmt, 0)}, col_str(stmt, 1), col_str(stmt, 2),
             col_str(stmt, 3), sqlite3_column_int(stmt, 4) != 0
         });
     }
@@ -344,7 +344,7 @@ void PersistenceLayer::readPresets(AppState& out) {
     auto* stmt = prepare("SELECT id, plugin_id, name, state_path, kind FROM presets");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         out.presets.push_back({
-            col_str(stmt, 0), col_str(stmt, 1), col_str(stmt, 2),
+            PresetId{col_str(stmt, 0)}, PluginId{col_str(stmt, 1)}, col_str(stmt, 2),
             col_str(stmt, 3), static_cast<PresetKind>(sqlite3_column_int(stmt, 4))
         });
     }
@@ -391,8 +391,8 @@ void PersistenceLayer::readSongs(AppState& out) {
             TrackState t;
             t.id = col_str(ts, 0);
             t.name = col_str(ts, 1);
-            t.pluginId = col_str(ts, 2);
-            t.presetId = col_str(ts, 3);
+            t.pluginId = PluginId{col_str(ts, 2)};
+            t.presetId = PresetId{col_str(ts, 3)};
             t.outputGain = (float)sqlite3_column_double(ts, 4);
             t.midiEnabled = sqlite3_column_int(ts, 5) != 0;
             t.position = sqlite3_column_int(ts, 6);
@@ -416,8 +416,9 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(fxs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 t.effects.push_back({
-                    col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
-                    col_str(fxs, 3), sqlite3_column_int(fxs, 4),
+                    col_str(fxs, 0), col_str(fxs, 1),
+                    PluginId{col_str(fxs, 2)}, PresetId{col_str(fxs, 3)},
+                    sqlite3_column_int(fxs, 4),
                     LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
                 });
             }
@@ -501,8 +502,9 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_bind_text(fxs, 1, b.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(fxs) == SQLITE_ROW) {
                 b.effects.push_back({
-                    col_str(fxs, 0), col_str(fxs, 1), col_str(fxs, 2),
-                    col_str(fxs, 3), sqlite3_column_int(fxs, 4),
+                    col_str(fxs, 0), col_str(fxs, 1),
+                    PluginId{col_str(fxs, 2)}, PresetId{col_str(fxs, 3)},
+                    sqlite3_column_int(fxs, 4),
                     LoadStatus::None, col_str(fxs, 5), col_str(fxs, 6)
                 });
             }
@@ -517,8 +519,9 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(mfx, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(mfx) == SQLITE_ROW) {
             song.masterEffects.push_back({
-                col_str(mfx, 0), col_str(mfx, 1), col_str(mfx, 2),
-                col_str(mfx, 3), sqlite3_column_int(mfx, 4),
+                col_str(mfx, 0), col_str(mfx, 1),
+                PluginId{col_str(mfx, 2)}, PresetId{col_str(mfx, 3)},
+                sqlite3_column_int(mfx, 4),
                 LoadStatus::None, col_str(mfx, 5), col_str(mfx, 6)
             });
         }

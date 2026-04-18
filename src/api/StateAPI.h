@@ -55,10 +55,10 @@ public:
     void setTrackSoloed(const std::string& id, bool soloed);
     bool isTrackSoloed(const std::string& id) const;
     bool isAnySoloed() const;  // true if any track in current song is soloed
-    void setTrackPlugin(const std::string& id, const std::string& pluginId,
-                        const std::string& presetId = "");
+    void setTrackPlugin(const std::string& id, const PluginId& pluginId,
+                        const PresetId& presetId = {});
     void clearTrackPlugin(const std::string& id);
-    void setTrackPresetId(const std::string& id, const std::string& presetId);
+    void setTrackPresetId(const std::string& id, const PresetId& presetId);
     void setTrackInputChannels(const std::string& id, int start, int count);
     void setTrackOutputTarget(const std::string& id, const std::string& target);
     std::string getTrackOutputTarget(const std::string& id) const;
@@ -81,11 +81,11 @@ public:
 
     // --- Effects (on tracks, busses, or master output) ---
     std::string addEffect(const std::string& parentId, const std::string& name,
-                          const std::string& pluginId);
+                          const PluginId& pluginId);
     void removeEffect(const std::string& effectId);
     void setEffectLoadStatus(const std::string& effectId, LoadStatus status);
     const EffectState* findEffect(const std::string& effectId) const;
-    void setEffectPresetId(const std::string& effectId, const std::string& presetId);
+    void setEffectPresetId(const std::string& effectId, const PresetId& presetId);
 
     // --- Sends ---
     std::string addSend(const std::string& trackId, const std::string& busId, float gain = 1.0f);
@@ -140,18 +140,18 @@ public:
     std::vector<std::string> devicesForSong(const std::string& songId) const;
 
     // --- Catalog: Plugins ---
-    std::string registerPlugin(const std::string& name, const std::string& manufacturer,
-                               const std::string& formatId, bool isInstrument = false);
+    PluginId registerPlugin(const std::string& name, const std::string& manufacturer,
+                            const std::string& formatId, bool isInstrument = false);
     const PluginInfo* findPluginByName(const std::string& name) const;
-    const PluginInfo* findPluginById(const std::string& id) const;
+    const PluginInfo* findPluginById(const PluginId& id) const;
     const std::vector<PluginInfo>& allPlugins() const;
 
     // --- Catalog: Presets ---
-    std::string createPreset(const std::string& pluginId, const std::string& name,
-                             const std::string& statePath, PresetKind kind = PresetKind::Instrument);
-    const PresetInfo* findPreset(const std::string& pluginId, const std::string& name) const;
-    const PresetInfo* findPresetById(const std::string& id) const;
-    std::vector<const PresetInfo*> presetsForPlugin(const std::string& pluginId) const;
+    PresetId createPreset(const PluginId& pluginId, const std::string& name,
+                          const std::string& statePath, PresetKind kind = PresetKind::Instrument);
+    const PresetInfo* findPreset(const PluginId& pluginId, const std::string& name) const;
+    const PresetInfo* findPresetById(const PresetId& id) const;
+    std::vector<const PresetInfo*> presetsForPlugin(const PluginId& pluginId) const;
 
     // --- Catalog: Actions ---
     std::string registerAction(const std::string& name, const std::string& label = "",

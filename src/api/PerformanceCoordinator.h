@@ -180,6 +180,6 @@ private:
     void restoreBindings();
     void onStateEvent(const StateEvent& event);
     void ensureDefaultPreset(const std::string& parentId, const std::string& effectId,
-                             const std::string& pluginId, PresetKind kind);
+                             const PluginId& pluginId, PresetKind kind);
     int stateSubscriptionId = -1;
 };

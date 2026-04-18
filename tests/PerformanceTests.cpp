@@ -364,7 +364,7 @@ public:
             auto id1 = s.registerPlugin("Synth", "Mfg", "au", true);
             auto id2 = s.registerPlugin("Delay", "Mfg", "au2", false);
             auto id1dup = s.registerPlugin("Synth", "Mfg", "au", true);
-            expectEquals(id1, id1dup);
+            expectEquals(id1.str(), id1dup.str());
             expectEquals((int)s.allPlugins().size(), 2);
             expect(s.findPluginByName("Synth")->isInstrument == true);
             expect(s.findPluginByName("Delay")->isInstrument == false);
@@ -2835,7 +2835,7 @@ public:
             expect(loadedSong != nullptr);
             if (loadedSong && !loadedSong->tracks.empty()) {
                 auto& t = loadedSong->tracks[0];
-                expectEquals(t.pluginId, pluginId);
+                expectEquals(t.pluginId.str(), pluginId.str());
                 expectEquals((int)t.processorState.size(), 916);
                 if (t.processorState.size() == 916) {
                     expect(t.processorState[0]     == (char)0);

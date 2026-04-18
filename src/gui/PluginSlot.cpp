@@ -160,7 +160,7 @@ void PluginSlot::showPicker(juce::Point<int> position) {
                 // Resolve plugin name to ID, then set on track
                 auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
                 if (pluginInfo) {
-                    std::string presetId;
+                    PresetId presetId;
                     if (presetName.isNotEmpty()) {
                         auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
                         if (preset) presetId = preset->id;
@@ -219,7 +219,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
             if (slotType == Instrument) {
                 auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
                 if (pluginInfo) {
-                    std::string presetId;
+                    PresetId presetId;
                     if (presetName.isNotEmpty()) {
                         auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
                         if (preset) presetId = preset->id;
