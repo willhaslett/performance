@@ -24,17 +24,16 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`) and bounce shipped end-to-end (menu + Lua). What's left for 0.1.0, in the order to tackle it:
+As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, and **typed IDs are complete**: all 13 entity ID families (`PluginId`, `PresetId`, `TrackId`, `BusId`, `SongId`, `EffectId`, `SendId`, `RegionId`, `TakeId`, `DeviceId`, `ActionId`, `BindingId`, `ActionEventId`) live in the state model as strongly-typed newtypes; no entity ID remains as bare `std::string`. The incident's root-cause bug class — passing an ID of the wrong family where another was expected — is now a compile error. What's left for 0.1.0, in the order to tackle it:
 
-1. **Typed IDs for the state model** (R2 in the incident report). Phase 1 (`PluginId` + `PresetId`) landed in commit `4da42a7` — closes the specific bug class that caused the data-loss incident. Phase 2+ remaining: `TrackId`, `BusId`, then `SendId` / `EffectId` / `RegionId` / `TakeId` / `DeviceId` / `ActionId` / `SongId`. Bigger than a single session — TrackId alone cascades through ~30 files (GUI, Coordinator, tests, Lua). Do in a fresh focused day; tackle one ID family at a time, commit after each. Foundation (`src/state/Id.h`) already exists — just follow the Phase 1 pattern.
-2. **Model bump** (~10 min). Stale `claude-sonnet-4-20250514` in `ClaudeClient.h:53` → current default (Sonnet 4.6). Cheap, tidy, independent of Lambda.
-3. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
-4. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Requires a decision on streaming and default model before starting.
-5. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
-6. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
-7. **Tag + release.**
+1. **Model bump** (~10 min). Stale `claude-sonnet-4-20250514` in `ClaudeClient.h:53` → current default (Sonnet 4.6). Cheap, tidy, independent of Lambda.
+2. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
+3. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Requires a decision on streaming and default model before starting.
+4. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
+5. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+6. **Tag + release.**
 
-Total rough estimate: 4–6 days of focused work on the app + ~several days of site work in parallel. The sequence above is chosen to (a) get the highest-leverage insurance (typed IDs) in early, (b) clear the small quick wins, (c) then take on the Lambda work with a clean base.
+Total rough estimate: 3–5 days of focused work on the app + ~several days of site work in parallel.
 
 ### 1. Distribution proof
 
