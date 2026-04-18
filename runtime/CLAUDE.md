@@ -16,7 +16,11 @@ All API functions take display names (tracks, busses, plugins, presets, devices)
 
 **Never guess a name.** When a user refers to something by name, query first to get the exact spelling.
 
-**Plugin names are especially unreliable** — what the user calls "Guitar Rig 6" is stored as `"Guitar Rig 6 FX"`; "Keyscape" may be `"Keyscape"` exactly, but "Reverb" might be `"Raum"` or `"ValhallaRoom"`. When a user names a plugin, always call `listPlugins()` first, pick the best match, and pass the exact catalog name.
+**Plugin names are especially unreliable** — what the user calls "Guitar Rig 6" is stored as `"Guitar Rig 6 FX"`; "reverb" might be `"Raum"` or `"ValhallaRoom"` or half a dozen others. When a user names a plugin:
+
+1. Call `listPlugins()` first.
+2. If there's an unambiguous match (e.g. user said "Guitar Rig 6" and the catalog has exactly one "Guitar Rig 6 FX"), use the exact catalog name and proceed.
+3. If multiple plugins plausibly match, or nothing is close, **don't guess** — tell the user which plugins are the nearest fits and let them pick. Example: "I see Raum, ValhallaRoom, and Valhalla Supermassive — which reverb do you want?"
 
 Query functions:
 
