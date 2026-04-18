@@ -18,7 +18,25 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Reset script:** `bin/reset` — scorched-earth reset of `~/.config/performance/` preserving `keys/` (notarization + telemetry config) and `plugin-cache.xml` (AU scan cache). Does not touch `~/Library/Application Support/com.performance.app/install.json`, so a reset keeps the same installation identity. Simulates "reset song library," not "fresh install."
 
-### Pre-beta checklist (for first-friend distribution)
+## 0.1.0 Release Plan
+
+Target: first beta, roughly a week out. Not a rush. Ship gate: §1–4 done, §5 decided (in or explicitly deferred), §3 in or explicitly backed out. Then bump `CMakeLists.txt` to `0.1.0`, tag, run `scripts/build-release.sh`, upload to Drive, distribute to 4 musician friends. This is the last round before strangers.
+
+### 1. Distribution proof
+
+Pipeline is built but has only ever run on the dev machine. Before shipping:
+
+- [ ] Upload `dist/Performance-0.1.0.dmg` to Drive
+- [ ] Install on a second Mac (ideally a fresh user account)
+- [ ] Gatekeeper accepts the notarized DMG without warnings
+- [ ] First launch creates a new install ID in `install.json`
+- [ ] Default song reaches sound-on-first-keypress
+- [ ] Session log lands in the S3 bucket + DDB row appears
+- [ ] Force a crash (`kill -9` mid-session); `.prev` log ships on next launch
+
+### 2. First-friend checklist
+
+Carry-over from pre-beta:
 
 - [x] Code signing + notarization pipeline
 - [x] Beta expiry check
@@ -31,10 +49,53 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - [x] Debounced autosave (3-second quiet period after last state change)
 - [x] File → Open Song submenu
 - [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
-- [ ] Failed plugin load feedback — status indicator on the slot when instantiation fails
-- [ ] Getting started doc — keyboard shortcuts, audio setup, basic workflow
-- [ ] "Show Log File" menu item for crash reporting
-- [ ] Feedback channel for testers
+- [ ] Getting-started doc — keyboard shortcuts, audio setup, basic workflow. Prose, lives in the `performance-testing` repo.
+- [ ] "Show Log File" menu item (View → Reveal Log in Finder). Less critical now that telemetry auto-ships, but handy for live tester triage.
+- [ ] Feedback channel — pick one (email, Linear, Slack, Discord) and document in the getting-started doc.
+
+### 3. Built-in AI for testers
+
+Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat pane and gets meaningful help — "add a reverb to track 2," "why isn't my MIDI working." If scope balloons past ~3 days, back out and ship without.
+
+- [ ] **API-key provisioning** — decide how testers get access without paying or making an Anthropic account. Options: (a) compiled-in dev key (usage leaks — no), (b) proxy through the telemetry Lambda with per-install rate + monthly cap (recommended — hides key, enforces cost), (c) tester pastes their own key (simplest, but a barrier). Decision before anything else.
+- [ ] **Refresh `runtime/CLAUDE.md`** — the embedded system prompt. Almost certainly stale. Must reflect current state model, actions/bindings vocabulary, Lua surface (`perf` tool), pane names, UUID-only identity.
+- [ ] **Tool-use surface** — audit what Claude can call through `perf`: list state, mutate state, load plugins, set up bindings. Gate destructive operations behind confirmation or dry-run.
+- [ ] **ChatView UX** — streaming, error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight.
+- [ ] **Cost guardrails** — per-install monthly cap enforced in Lambda; graceful error in Chat.
+- [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try.
+- [ ] **Tester onboarding copy** — one paragraph in the getting-started doc with 3–4 example prompts.
+
+### 4. Unproven / sub-par audit
+
+Some may already be solid. Each needs a deliberate test before ship, not "I think it works."
+
+- [ ] **State-management mutation paths** — audit GUI / Lua / IPC / MIDI-binding / EngineSync paths for StateAPI-only discipline; registry-engine consistency; re-enable track preset load. (Flagged in memory as next major work — decide if 0.1.0-blocking or deferrable.)
+- [ ] **Stuck notes at region boundaries** — synthetic noteOffs at region end. Cheap test: play a region that ends mid-note; confirm silence.
+- [ ] **ProducePane size/complexity** (~2520 lines) — not a ship blocker by itself. Flag bug-prone areas surfaced during testing; full refactor is 0.2.x.
+- [ ] **Recording round-trips** — audio + MIDI. Arm, record, stop, replay, quit, relaunch, replay again. Both record types, with and without plugins in the chain.
+- [ ] **Plugin state save/load on relaunch** — third-party AU plugins restore patch + parameters correctly. Test DLS + two known third-party plugins.
+- [ ] **Song-switching in performance** — rapid switching under MIDI activity. No stuck notes, no lingering audio, UI reflects new song immediately.
+- [ ] **Autosave under stress** — ~50 mutations in 10 seconds. Debounce holds, no partial writes, backup file consistent.
+
+### 5. Nice-to-haves considered
+
+- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. Size before deciding; likely cheap since offline render already exists on the record path.
+- [ ] (open — fill in as testing surfaces asks)
+
+### 6. Explicitly deferred to 0.2.x
+
+Named so it's a decision, not a gap:
+
+- Failed plugin load UI feedback (no issues in months; telemetry will surface; revisit if a tester hits it)
+- Theme picker UI (backend ready, UI deferred)
+- Remaining theming sweep (DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay)
+- MIDI effects (transpose, channel filter, arpeggiator)
+- LCD interactivity (drag / double-click to edit)
+- TempoMap + TimeSignatureMap runtime evaluation
+- Background plugin state capture
+- Settings MIDI tab content
+- ⌘O Songs palette
+- Full ProducePane refactor
 
 ## Active Work
 
