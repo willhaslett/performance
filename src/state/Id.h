@@ -33,6 +33,7 @@ struct Id {
     const std::string& str() const noexcept { return v; }
     const char* c_str() const noexcept { return v.c_str(); }
     bool empty() const noexcept { return v.empty(); }
+    void clear() noexcept { v.clear(); }
 
     friend bool operator==(const Id& a, const Id& b) noexcept { return a.v == b.v; }
     friend bool operator!=(const Id& a, const Id& b) noexcept { return a.v != b.v; }
