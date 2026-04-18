@@ -52,7 +52,7 @@ const SongState& StateAPI::song() const {
     return *s;
 }
 
-TrackState& StateAPI::track(const std::string& id) {
+TrackState& StateAPI::track(const TrackId& id) {
     auto& s = song();
     for (auto& t : s.tracks)
         if (t.id == id) return t;
@@ -60,7 +60,7 @@ TrackState& StateAPI::track(const std::string& id) {
     __builtin_unreachable();
 }
 
-const TrackState& StateAPI::track(const std::string& id) const {
+const TrackState& StateAPI::track(const TrackId& id) const {
     auto& s = song();
     for (auto& t : s.tracks)
         if (t.id == id) return t;
@@ -68,7 +68,7 @@ const TrackState& StateAPI::track(const std::string& id) const {
     __builtin_unreachable();
 }
 
-BusState& StateAPI::bus(const std::string& id) {
+BusState& StateAPI::bus(const BusId& id) {
     auto& s = song();
     for (auto& b : s.busses)
         if (b.id == id) return b;
@@ -76,7 +76,7 @@ BusState& StateAPI::bus(const std::string& id) {
     __builtin_unreachable();
 }
 
-const BusState& StateAPI::bus(const std::string& id) const {
+const BusState& StateAPI::bus(const BusId& id) const {
     auto& s = song();
     for (auto& b : s.busses)
         if (b.id == id) return b;
@@ -115,7 +115,7 @@ const SongState* StateAPI::findSong(const std::string& id) const {
     return nullptr;
 }
 
-TrackState* StateAPI::findTrack(const std::string& id) {
+TrackState* StateAPI::findTrack(const TrackId& id) {
     auto* s = currentSong();
     if (!s) return nullptr;
     for (auto& t : s->tracks)
@@ -123,7 +123,7 @@ TrackState* StateAPI::findTrack(const std::string& id) {
     return nullptr;
 }
 
-const TrackState* StateAPI::findTrack(const std::string& id) const {
+const TrackState* StateAPI::findTrack(const TrackId& id) const {
     auto* s = currentSong();
     if (!s) return nullptr;
     for (auto& t : s->tracks)
@@ -131,7 +131,7 @@ const TrackState* StateAPI::findTrack(const std::string& id) const {
     return nullptr;
 }
 
-BusState* StateAPI::findBus(const std::string& id) {
+BusState* StateAPI::findBus(const BusId& id) {
     auto* s = currentSong();
     if (!s) return nullptr;
     for (auto& b : s->busses)
@@ -139,7 +139,7 @@ BusState* StateAPI::findBus(const std::string& id) {
     return nullptr;
 }
 
-const BusState* StateAPI::findBus(const std::string& id) const {
+const BusState* StateAPI::findBus(const BusId& id) const {
     auto* s = currentSong();
     if (!s) return nullptr;
     for (auto& b : s->busses)
@@ -158,7 +158,7 @@ std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, 
     for (auto& t : s.tracks) {
         for (auto& fx : t.effects) {
             if (fx.id == effectId) {
-                if (outParentId) *outParentId = t.id;
+                if (outParentId) *outParentId = t.id.str();
                 return &t.effects;
             }
         }
@@ -166,7 +166,7 @@ std::vector<EffectState>* StateAPI::findEffectList(const std::string& effectId, 
     for (auto& b : s.busses) {
         for (auto& fx : b.effects) {
             if (fx.id == effectId) {
-                if (outParentId) *outParentId = b.id;
+                if (outParentId) *outParentId = b.id.str();
                 return &b.effects;
             }
         }
@@ -179,7 +179,7 @@ std::vector<SendState>* StateAPI::findSendList(const std::string& sendId, std::s
     for (auto& t : s.tracks) {
         for (auto& send : t.sends) {
             if (send.id == sendId) {
-                if (outTrackId) *outTrackId = t.id;
+                if (outTrackId) *outTrackId = t.id.str();
                 return &t.sends;
             }
         }
@@ -316,25 +316,25 @@ std::string StateAPI::getMasterOutputId() const {
 
 // --- Tracks ---
 
-std::string StateAPI::createTrack(const std::string& name) {
+TrackId StateAPI::createTrack(const std::string& name) {
     pushUndo();
     auto& s = song();
     TrackState t;
-    t.id = generateId();
+    t.id = TrackId{generateId()};
     t.name = name;
     t.position = (int)s.tracks.size();
     s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
     return s.tracks.back().id;
 }
 
-std::string StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
+TrackId StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
                                              int inputChannelCount) {
     pushUndo();
     auto& s = song();
     TrackState t;
-    t.id = generateId();
+    t.id = TrackId{generateId()};
     t.name = name;
     t.position = (int)s.tracks.size();
     t.sourceType = TrackSourceType::AudioInput;
@@ -344,14 +344,14 @@ std::string StateAPI::createAudioInputTrack(const std::string& name, int inputCh
     t.midiEnabled = false;
     s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
     return s.tracks.back().id;
 }
 
-std::string StateAPI::createActionTrack(const std::string& name) {
+TrackId StateAPI::createActionTrack(const std::string& name) {
     auto& s = song();
     TrackState t;
-    t.id = generateId();
+    t.id = TrackId{generateId()};
     t.name = name;
     t.position = (int)s.tracks.size();
     t.sourceType = TrackSourceType::Action;
@@ -359,11 +359,11 @@ std::string StateAPI::createActionTrack(const std::string& name) {
     t.audioEnabled = true;
     s.tracks.push_back(std::move(t));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
     return s.tracks.back().id;
 }
 
-void StateAPI::removeTrack(const std::string& id) {
+void StateAPI::removeTrack(const TrackId& id) {
     pushUndo();
     auto& s = song();
     auto it = std::find_if(s.tracks.begin(), s.tracks.end(),
@@ -371,18 +371,18 @@ void StateAPI::removeTrack(const std::string& id) {
     if (it == s.tracks.end()) return;  // idempotent
     s.tracks.erase(it);
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::renameTrack(const std::string& id, const std::string& name) {
+void StateAPI::renameTrack(const TrackId& id, const std::string& name) {
     pushUndo();
     auto& t = track(id);
     t.name = name;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::moveTrack(const std::string& id, int newPosition) {
+void StateAPI::moveTrack(const TrackId& id, int newPosition) {
     pushUndo();
     auto& s = song();
     auto& t = track(id);
@@ -402,88 +402,88 @@ void StateAPI::moveTrack(const std::string& id, int newPosition) {
     t.position = newPosition;
 
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::setTrackGain(const std::string& id, float gain) {
+void StateAPI::setTrackGain(const TrackId& id, float gain) {
     pushUndo();
     track(id).outputGain = clampGain(gain);
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-float StateAPI::getTrackGain(const std::string& id) const {
+float StateAPI::getTrackGain(const TrackId& id) const {
     return track(id).outputGain;
 }
 
-void StateAPI::setTrackMidiEnabled(const std::string& id, bool enabled) {
+void StateAPI::setTrackMidiEnabled(const TrackId& id, bool enabled) {
     pushUndo();
     track(id).midiEnabled = enabled;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackMidiEnabled(const std::string& id) const {
+bool StateAPI::isTrackMidiEnabled(const TrackId& id) const {
     return track(id).midiEnabled;
 }
 
-void StateAPI::setTrackAudioEnabled(const std::string& id, bool enabled) {
+void StateAPI::setTrackAudioEnabled(const TrackId& id, bool enabled) {
     pushUndo();
     track(id).audioEnabled = enabled;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackAudioEnabled(const std::string& id) const {
+bool StateAPI::isTrackAudioEnabled(const TrackId& id) const {
     return track(id).audioEnabled;
 }
 
-void StateAPI::setTrackOutputTarget(const std::string& id, const std::string& target) {
+void StateAPI::setTrackOutputTarget(const TrackId& id, const std::string& target) {
     pushUndo();
     track(id).outputTarget = target;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-std::string StateAPI::getTrackOutputTarget(const std::string& id) const {
+std::string StateAPI::getTrackOutputTarget(const TrackId& id) const {
     return track(id).outputTarget;
 }
 
-void StateAPI::setTrackArmed(const std::string& id, bool armed) {
+void StateAPI::setTrackArmed(const TrackId& id, bool armed) {
     track(id).armed = armed;
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackArmed(const std::string& id) const {
+bool StateAPI::isTrackArmed(const TrackId& id) const {
     return track(id).armed;
 }
 
-void StateAPI::setTrackInputMonitoring(const std::string& id, bool enabled) {
+void StateAPI::setTrackInputMonitoring(const TrackId& id, bool enabled) {
     pushUndo();
     track(id).inputMonitoring = enabled;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackInputMonitoring(const std::string& id) const {
+bool StateAPI::isTrackInputMonitoring(const TrackId& id) const {
     return track(id).inputMonitoring;
 }
 
-void StateAPI::setTrackMuted(const std::string& id, bool muted) {
+void StateAPI::setTrackMuted(const TrackId& id, bool muted) {
     track(id).muted = muted;
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackMuted(const std::string& id) const {
+bool StateAPI::isTrackMuted(const TrackId& id) const {
     return track(id).muted;
 }
 
-void StateAPI::setTrackSoloed(const std::string& id, bool soloed) {
+void StateAPI::setTrackSoloed(const TrackId& id, bool soloed) {
     track(id).soloed = soloed;
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-bool StateAPI::isTrackSoloed(const std::string& id) const {
+bool StateAPI::isTrackSoloed(const TrackId& id) const {
     return track(id).soloed;
 }
 
@@ -495,39 +495,39 @@ bool StateAPI::isAnySoloed() const {
     return false;
 }
 
-void StateAPI::setTrackPlugin(const std::string& id, const PluginId& pluginId,
+void StateAPI::setTrackPlugin(const TrackId& id, const PluginId& pluginId,
                                const PresetId& presetId) {
     pushUndo();
     auto& t = track(id);
     t.pluginId = pluginId;
     t.presetId = presetId;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::clearTrackPlugin(const std::string& id) {
+void StateAPI::clearTrackPlugin(const TrackId& id) {
     pushUndo();
     setTrackPlugin(id, PluginId{}, PresetId{});
 }
 
-void StateAPI::setTrackPresetId(const std::string& id, const PresetId& presetId) {
+void StateAPI::setTrackPresetId(const TrackId& id, const PresetId& presetId) {
     track(id).presetId = presetId;
     markDirty();
 }
 
-void StateAPI::setTrackInputChannels(const std::string& id, int start, int count) {
+void StateAPI::setTrackInputChannels(const TrackId& id, int start, int count) {
     pushUndo();
     auto& t = track(id);
     t.inputChannelStart = start;
     t.inputChannelCount = count;
     t.channelMode = (count == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
-void StateAPI::setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status) {
+void StateAPI::setTrackInstrumentLoadStatus(const TrackId& id, LoadStatus status) {
     track(id).instrumentLoadStatus = status;
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
 void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus status) {
@@ -545,20 +545,20 @@ void StateAPI::setEffectLoadStatus(const std::string& effectId, LoadStatus statu
 
 // --- Busses ---
 
-std::string StateAPI::createBus(const std::string& name) {
+BusId StateAPI::createBus(const std::string& name) {
     pushUndo();
     auto& s = song();
     BusState b;
-    b.id = generateId();
+    b.id = BusId{generateId()};
     b.name = name;
     b.position = (int)s.busses.size();
     s.busses.push_back(std::move(b));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Bus, s.busses.back().id, "" });
+    eventBus.emit({ StateEvent::Created, StateEvent::Bus, s.busses.back().id.str(), "" });
     return s.busses.back().id;
 }
 
-void StateAPI::removeBus(const std::string& id) {
+void StateAPI::removeBus(const BusId& id) {
     pushUndo();
     auto& s = song();
     auto it = std::find_if(s.busses.begin(), s.busses.end(),
@@ -566,46 +566,46 @@ void StateAPI::removeBus(const std::string& id) {
     if (it == s.busses.end()) return;  // idempotent
     s.busses.erase(it);
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Bus, id, "" });
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Bus, id.str(), "" });
 }
 
-void StateAPI::renameBus(const std::string& id, const std::string& name) {
+void StateAPI::renameBus(const BusId& id, const std::string& name) {
     pushUndo();
     bus(id).name = name;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id.str(), "" });
 }
 
-void StateAPI::setBusGain(const std::string& id, float gain) {
+void StateAPI::setBusGain(const BusId& id, float gain) {
     pushUndo();
     bus(id).outputGain = clampGain(gain);
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id.str(), "" });
 }
 
-float StateAPI::getBusGain(const std::string& id) const {
+float StateAPI::getBusGain(const BusId& id) const {
     return bus(id).outputGain;
 }
 
-void StateAPI::setBusAudioEnabled(const std::string& id, bool enabled) {
+void StateAPI::setBusAudioEnabled(const BusId& id, bool enabled) {
     pushUndo();
     bus(id).audioEnabled = enabled;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id.str(), "" });
 }
 
-bool StateAPI::isBusAudioEnabled(const std::string& id) const {
+bool StateAPI::isBusAudioEnabled(const BusId& id) const {
     return bus(id).audioEnabled;
 }
 
-void StateAPI::setBusOutputTarget(const std::string& id, const std::string& target) {
+void StateAPI::setBusOutputTarget(const BusId& id, const std::string& target) {
     pushUndo();
     bus(id).outputTarget = target;
     markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id.str(), "" });
 }
 
-std::string StateAPI::getBusOutputTarget(const std::string& id) const {
+std::string StateAPI::getBusOutputTarget(const BusId& id) const {
     return bus(id).outputTarget;
 }
 
@@ -627,10 +627,10 @@ std::string StateAPI::addEffect(const std::string& parentId, const std::string& 
         list = &s.masterEffects;
     } else {
         for (auto& t : s.tracks)
-            if (t.id == parentId) { list = &t.effects; break; }
+            if (t.id.str() == parentId) { list = &t.effects; break; }
         if (!list) {
             for (auto& b : s.busses)
-                if (b.id == parentId) { list = &b.effects; break; }
+                if (b.id.str() == parentId) { list = &b.effects; break; }
         }
     }
 
@@ -660,7 +660,7 @@ void StateAPI::removeEffect(const std::string& effectId) {
 
 // --- Sends ---
 
-std::string StateAPI::addSend(const std::string& trackId, const std::string& busId, float gain) {
+std::string StateAPI::addSend(const TrackId& trackId, const BusId& busId, float gain) {
     pushUndo();
     auto& t = track(trackId);
     SendState send;
@@ -669,7 +669,7 @@ std::string StateAPI::addSend(const std::string& trackId, const std::string& bus
     send.gain = clampGain(gain);
     t.sends.push_back(std::move(send));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id, trackId });
+    eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id, trackId.str() });
     return t.sends.back().id;
 }
 
@@ -685,7 +685,7 @@ void StateAPI::removeSend(const std::string& sendId) {
     eventBus.emit({ StateEvent::Deleted, StateEvent::Send, sendId, trackId });
 }
 
-void StateAPI::setSendGainByBus(const std::string& trackId, const std::string& busId, float gain) {
+void StateAPI::setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain) {
     pushUndo();
     auto& t = track(trackId);
     for (auto& s : t.sends) {
@@ -704,7 +704,7 @@ void StateAPI::setSendGain(const std::string& sendId, float gain) {
             if (send.id == sendId) {
                 send.gain = clampGain(gain);
                 markDirty();
-                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId, t.id });
+                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId, t.id.str() });
                 return;
             }
         }
@@ -1002,7 +1002,7 @@ void StateAPI::clearScoreStep(const std::string& bindingId) {
 
 // --- Selection ---
 
-void StateAPI::selectTrack(const std::string& trackId, bool addToSelection) {
+void StateAPI::selectTrack(const TrackId& trackId, bool addToSelection) {
     auto& s = song();
     if (!addToSelection) {
         s.selectedTrackIds.clear();
@@ -1013,10 +1013,10 @@ void StateAPI::selectTrack(const std::string& trackId, bool addToSelection) {
         s.selectedTrackIds.erase(it);
     else
         s.selectedTrackIds.push_back(trackId);
-    eventBus.emit({ StateEvent::Updated, StateEvent::Selection, trackId, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Selection, trackId.str(), "" });
 }
 
-void StateAPI::selectBus(const std::string& busId, bool addToSelection) {
+void StateAPI::selectBus(const BusId& busId, bool addToSelection) {
     auto& s = song();
     if (!addToSelection) {
         s.selectedTrackIds.clear();
@@ -1027,7 +1027,7 @@ void StateAPI::selectBus(const std::string& busId, bool addToSelection) {
         s.selectedBusIds.erase(it);
     else
         s.selectedBusIds.push_back(busId);
-    eventBus.emit({ StateEvent::Updated, StateEvent::Selection, busId, "" });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Selection, busId.str(), "" });
 }
 
 void StateAPI::clearSelection() {
@@ -1037,14 +1037,14 @@ void StateAPI::clearSelection() {
     eventBus.emit({ StateEvent::Updated, StateEvent::Selection, "", "" });
 }
 
-std::vector<std::string> StateAPI::selectedTrackIds() const {
+std::vector<TrackId> StateAPI::selectedTrackIds() const {
     auto* s = currentSong();
-    return s ? s->selectedTrackIds : std::vector<std::string>{};
+    return s ? s->selectedTrackIds : std::vector<TrackId>{};
 }
 
-std::vector<std::string> StateAPI::selectedBusIds() const {
+std::vector<BusId> StateAPI::selectedBusIds() const {
     auto* s = currentSong();
-    return s ? s->selectedBusIds : std::vector<std::string>{};
+    return s ? s->selectedBusIds : std::vector<BusId>{};
 }
 
 // --- Catalog: Plugins ---
@@ -1198,7 +1198,7 @@ std::string StateAPI::getConfig(const std::string& key, const std::string& defau
 
 // --- Name resolution ---
 
-std::string StateAPI::findTrackIdByName(const std::string& name) const {
+TrackId StateAPI::findTrackIdByName(const std::string& name) const {
     auto* s = currentSong();
     if (!s) return {};
     for (auto& t : s->tracks)
@@ -1206,7 +1206,7 @@ std::string StateAPI::findTrackIdByName(const std::string& name) const {
     return {};
 }
 
-std::string StateAPI::findBusIdByName(const std::string& name) const {
+BusId StateAPI::findBusIdByName(const std::string& name) const {
     auto* s = currentSong();
     if (!s) return {};
     for (auto& b : s->busses)
@@ -1238,14 +1238,14 @@ std::vector<StateAPI::BusInfo> StateAPI::listBusses() const {
     return result;
 }
 
-std::string StateAPI::getTrackPluginName(const std::string& trackId) const {
+std::string StateAPI::getTrackPluginName(const TrackId& trackId) const {
     auto& t = track(trackId);
     if (t.pluginId.empty()) return {};
     auto* plugin = findPluginById(t.pluginId);
     return plugin ? plugin->name : std::string{};
 }
 
-std::vector<StateAPI::EffectSlotInfo> StateAPI::getTrackEffects(const std::string& trackId) const {
+std::vector<StateAPI::EffectSlotInfo> StateAPI::getTrackEffects(const TrackId& trackId) const {
     std::vector<EffectSlotInfo> result;
     auto& t = track(trackId);
     for (auto& fx : t.effects) {
@@ -1255,7 +1255,7 @@ std::vector<StateAPI::EffectSlotInfo> StateAPI::getTrackEffects(const std::strin
     return result;
 }
 
-std::vector<StateAPI::EffectSlotInfo> StateAPI::getBusEffects(const std::string& busId) const {
+std::vector<StateAPI::EffectSlotInfo> StateAPI::getBusEffects(const BusId& busId) const {
     std::vector<EffectSlotInfo> result;
     auto& b = bus(busId);
     for (auto& fx : b.effects) {
@@ -1276,7 +1276,7 @@ std::vector<StateAPI::EffectSlotInfo> StateAPI::getMasterEffects() const {
     return result;
 }
 
-std::vector<StateAPI::TrackSendInfo> StateAPI::getTrackSends(const std::string& trackId) const {
+std::vector<StateAPI::TrackSendInfo> StateAPI::getTrackSends(const TrackId& trackId) const {
     std::vector<TrackSendInfo> result;
     auto& t = track(trackId);
     for (auto& send : t.sends) {

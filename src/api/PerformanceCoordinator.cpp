@@ -336,7 +336,7 @@ void PerformanceCoordinator::startRecording() {
 
     // Start MIDI recording regions
     for (auto& trackId : recordingTrackIds) {
-        auto* region = arrangementImpl.startRecording(trackId, recordStartBeat);
+        auto* region = arrangementImpl.startRecording(trackId.str(), recordStartBeat);
         perfLog("[Coordinator] Started MIDI recording on track %s\n", trackId.c_str());
     }
 
@@ -348,7 +348,7 @@ void PerformanceCoordinator::startRecording() {
             auto* ts = stateAPI->findTrack(t.id);
             if (!ts || !ts->armed || ts->sourceType != TrackSourceType::AudioInput) continue;
 
-            auto* region = arrangementImpl.addMidiRegion(t.id, recordStartBeat, 0.0);
+            auto* region = arrangementImpl.addMidiRegion(t.id.str(), recordStartBeat, 0.0);
             if (!region) continue;
             region->type = "audio";
             auto* take = region->activeTake();
@@ -512,7 +512,7 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
             auto* take = region.activeTake();
             if (!take || take->filePath.empty()) continue;
 
-            audioEngine->loadAudioFileForTrack(juce::String(track.id),
+            audioEngine->loadAudioFileForTrack(juce::String(track.id.str()),
                 juce::String(region.id), juce::String(take->filePath),
                 take->recordTempo, take->sampleRate);
 
@@ -716,7 +716,7 @@ void PerformanceCoordinator::captureProcessorState() {
     int captured = 0;
     for (auto& track : song->tracks) {
         // Instrument
-        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(track.id));
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(track.id.str()));
         if (proc) {
             std::string newHash;
             std::string newState;
@@ -730,7 +730,7 @@ void PerformanceCoordinator::captureProcessorState() {
 
         // Effects
         for (auto& fx : track.effects) {
-            auto* fxProc = audioEngine->getEffectProcessor(juce::String(track.id), juce::String(fx.id));
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(track.id.str()), juce::String(fx.id));
             if (fxProc) {
                 std::string newHash;
                 std::string newState;
@@ -747,7 +747,7 @@ void PerformanceCoordinator::captureProcessorState() {
     // Bus effects
     for (auto& bus : song->busses) {
         for (auto& fx : bus.effects) {
-            auto* fxProc = audioEngine->getEffectProcessor(juce::String(bus.id), juce::String(fx.id));
+            auto* fxProc = audioEngine->getEffectProcessor(juce::String(bus.id.str()), juce::String(fx.id));
             if (fxProc) {
                 std::string newHash;
                 std::string newState;
@@ -933,7 +933,7 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
                                               const juce::String& presetName) {
     auto* body = new juce::DynamicObject();
 
-    auto pluginName = juce::String(stateAPI->getTrackPluginName(trackId.toStdString()));
+    auto pluginName = juce::String(stateAPI->getTrackPluginName(TrackId{TrackId{trackId.toStdString()}}));
     body->setProperty("plugin", pluginName);
 
     // Instrument state from engine
@@ -945,7 +945,7 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
 
     // Effects from state + engine processor state
     juce::Array<juce::var> effectsArr;
-    for (auto& fx : stateAPI->getTrackEffects(trackId.toStdString())) {
+    for (auto& fx : stateAPI->getTrackEffects(TrackId{TrackId{trackId.toStdString()}})) {
         auto* fxObj = new juce::DynamicObject();
         fxObj->setProperty("plugin", juce::String(fx.pluginName));
         if (auto* proc = audioEngine->getEffectProcessor(trackId, juce::String(fx.effectId))) {
@@ -959,7 +959,7 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
 
     // Sends from state
     juce::Array<juce::var> sendsArr;
-    for (auto& send : stateAPI->getTrackSends(trackId.toStdString())) {
+    for (auto& send : stateAPI->getTrackSends(TrackId{TrackId{trackId.toStdString()}})) {
         auto* sendObj = new juce::DynamicObject();
         sendObj->setProperty("bus", juce::String(send.busName));
         sendObj->setProperty("gain", send.gain);
@@ -967,8 +967,8 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
     }
     body->setProperty("sends", sendsArr);
 
-    body->setProperty("gain", stateAPI->getTrackGain(trackId.toStdString()));
-    body->setProperty("midiEnabled", stateAPI->isTrackMidiEnabled(trackId.toStdString()));
+    body->setProperty("gain", stateAPI->getTrackGain(TrackId{TrackId{trackId.toStdString()}}));
+    body->setProperty("midiEnabled", stateAPI->isTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}));
 
     auto dir = getTrackPresetsDir();
     dir.createDirectory();
@@ -987,16 +987,16 @@ void PerformanceCoordinator::loadTrackPreset(const juce::String& trackId,
     auto pluginName = json.getProperty("plugin", "").toString();
 
     if (pluginName.isNotEmpty()) {
-        stateAPI->clearTrackPlugin(trackId.toStdString());
+        stateAPI->clearTrackPlugin(TrackId{TrackId{trackId.toStdString()}});
         auto* plugin = stateAPI->findPluginByName(pluginName.toStdString());
         if (plugin)
-            stateAPI->setTrackPlugin(trackId.toStdString(), plugin->id);
+            stateAPI->setTrackPlugin(TrackId{TrackId{trackId.toStdString()}}, plugin->id);
 
         // Store captured state on the track — EngineSync restores it
         // automatically when the plugin finishes async loading (LoadStatus → Loaded)
         auto stateB64 = json.getProperty("pluginState", "").toString();
         if (stateB64.isNotEmpty()) {
-            auto* track = stateAPI->findTrack(trackId.toStdString());
+            auto* track = stateAPI->findTrack(TrackId{TrackId{trackId.toStdString()}});
             if (track) {
                 track->processorState = stateB64.toStdString();
                 track->processorStateHash.clear();  // will be set on next capture
@@ -1006,7 +1006,7 @@ void PerformanceCoordinator::loadTrackPreset(const juce::String& trackId,
 
     // Effects
     if (auto* effectsArr = json.getProperty("effects", juce::var()).getArray()) {
-        for (auto& fx : stateAPI->getTrackEffects(trackId.toStdString()))
+        for (auto& fx : stateAPI->getTrackEffects(TrackId{TrackId{trackId.toStdString()}}))
             stateAPI->removeEffect(fx.effectId);
 
         for (auto& fxVar : *effectsArr) {
@@ -1019,9 +1019,9 @@ void PerformanceCoordinator::loadTrackPreset(const juce::String& trackId,
         }
     }
 
-    stateAPI->setTrackGain(trackId.toStdString(), (float)json.getProperty("gain", 1.0));
-    stateAPI->setTrackMidiEnabled(trackId.toStdString(), (bool)json.getProperty("midiEnabled", true));
-    stateAPI->renameTrack(trackId.toStdString(), presetName.toStdString());
+    stateAPI->setTrackGain(TrackId{TrackId{trackId.toStdString()}}, (float)json.getProperty("gain", 1.0));
+    stateAPI->setTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}, (bool)json.getProperty("midiEnabled", true));
+    stateAPI->renameTrack(TrackId{TrackId{trackId.toStdString()}}, presetName.toStdString());
 
     perfLog("[Coordinator] Loaded track preset \"%s\"\n", presetName.toRawUTF8());
 }
@@ -1094,11 +1094,11 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return def;
     };
 
-    auto resolveTrack = [this](const juce::String& id) -> std::string {
-        auto s = id.toStdString();
-        if (!stateAPI->findTrack(s))
-            perfLog("[Coordinator] resolveTrack: '%s' not found\n", s.c_str());
-        return s;
+    auto resolveTrack = [this](const juce::String& id) -> TrackId {
+        TrackId tid{id.toStdString()};
+        if (!stateAPI->findTrack(tid))
+            perfLog("[Coordinator] resolveTrack: '%s' not found\n", tid.c_str());
+        return tid;
     };
 
     if (actionName == "setActiveTrack") {
@@ -1150,10 +1150,10 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         float gain = value * value * value * 2.0f;  // cubic curve, +6dB max
         if (channelId == "output") {
             stateAPI->setMasterGain(gain);
-        } else if (stateAPI->findTrack(channelId)) {
-            stateAPI->setTrackGain(channelId, gain);
-        } else if (stateAPI->findBus(channelId)) {
-            stateAPI->setBusGain(channelId, gain);
+        } else if (stateAPI->findTrack(TrackId{channelId})) {
+            stateAPI->setTrackGain(TrackId{channelId}, gain);
+        } else if (stateAPI->findBus(BusId{channelId})) {
+            stateAPI->setBusGain(BusId{channelId}, gain);
         }
     }
     else if (actionName == "morphToPreset") {
@@ -1162,7 +1162,7 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         auto dur = getArgFloat(2, 3.0f);
         auto easing = AutomationEngine::easingByName(getArg(3).toStdString());
 
-        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId));
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId.str()));
         if (!proc) {
             perfLog("[Action] morphToPreset: no processor for track %s\n", trackId.c_str());
         } else {
@@ -1191,13 +1191,13 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         auto morphDur = getArgFloat(4, 3.0f);
         auto easingName = getArg(5).toStdString();
 
-        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId));
+        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId.str()));
         if (!proc) {
             perfLog("[Action] morphChain: no processor for track %s\n", trackId.c_str());
         } else {
             auto pluginName = proc->getName();
             // Load preset A state blob immediately
-            engineAPI->loadPreset(juce::String(trackId), "", presetA);
+            engineAPI->loadPreset(juce::String(trackId.str()), "", presetA);
             perfLog("[Action] morphChain: loaded %s, dwell %.1fs then morph to %s over %.1fs\n",
                     presetA.toRawUTF8(), dwell, presetB.toRawUTF8(), morphDur);
 
@@ -1357,10 +1357,10 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
     if (event.action != StateEvent::Updated) return;
 
     if (event.entity == StateEvent::Track) {
-        auto* track = stateAPI->findTrack(event.entityId);
+        auto* track = stateAPI->findTrack(TrackId{event.entityId});
         if (!track || track->instrumentLoadStatus != LoadStatus::Loaded) return;
         if (track->pluginId.empty()) return;
-        ensureDefaultPreset(track->id, "", track->pluginId, PresetKind::Instrument);
+        ensureDefaultPreset(track->id.str(), "", track->pluginId, PresetKind::Instrument);
     }
     else if (event.entity == StateEvent::Effect) {
         auto* fx = stateAPI->findEffect(event.entityId);

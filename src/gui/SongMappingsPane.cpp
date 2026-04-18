@@ -132,7 +132,7 @@ std::string SongMappingsPane::formatArgs(const std::string& argsJson) const {
         if (i > 0) result += ", ";
         auto val = args[i].toString();
         if (val.length() > 20) {
-            auto* track = state.findTrack(val.toStdString());
+            auto* track = state.findTrack(TrackId{val.toStdString()});
             if (track) val = juce::String(track->name);
         }
         result += val;

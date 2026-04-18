@@ -169,9 +169,9 @@ void SendsPanel::mouseDown(const juce::MouseEvent& event) {
                             auto* song = state.currentSong();
                             if (song) {
                                 for (auto& t : song->tracks) {
-                                    if (t.id == tId.toStdString()) {
+                                    if (t.id.str() == tId.toStdString()) {
                                         for (auto& s : t.sends) {
-                                            if (s.busId == sendId.toStdString()) {
+                                            if (s.busId.str() == sendId.toStdString()) {
                                                 state.removeSend(s.id);
                                                 break;
                                             }
@@ -201,7 +201,7 @@ void SendsPanel::mouseDrag(const juce::MouseEvent& event) {
     float newGain = std::pow(10.0f, newDb / 20.0f);
 
     rows[draggingRow].gain = newGain;
-    state.setSendGainByBus(trackId.toStdString(), rows[draggingRow].busId.toStdString(), newGain);
+    state.setSendGainByBus(TrackId{trackId.toStdString()}, BusId{rows[draggingRow].busId.toStdString()}, newGain);
     repaint();
 }
 
@@ -219,6 +219,6 @@ void SendsPanel::showBusPicker(int rowIndex, juce::Point<int> position) {
         [this, rowIndex](int result) {
             if (result == 0 || result - 1 >= (int)availableBusses.size()) return;
             auto& bus = availableBusses[result - 1];
-            state.addSend(trackId.toStdString(), bus.id.toStdString(), 1.0f);
+            state.addSend(TrackId{trackId.toStdString()}, BusId{bus.id.toStdString()}, 1.0f);
         });
 }

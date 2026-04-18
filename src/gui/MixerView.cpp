@@ -79,11 +79,11 @@ void MixerView::timerCallback() {
     for (auto& t : stateTracks) {
         auto* ts = state.findTrack(t.id);
         if (ts && ts->sourceType == TrackSourceType::Action) continue;
-        tracks.push_back({ juce::String(t.id), juce::String(t.name) });
+        tracks.push_back({ juce::String(t.id.str()), juce::String(t.name) });
     }
     std::vector<BusInfo> busses;
     for (auto& b : stateBusses)
-        busses.push_back({ juce::String(b.id), juce::String(b.name) });
+        busses.push_back({ juce::String(b.id.str()), juce::String(b.name) });
 
     // Detect changes by comparing IDs and names
     bool tracksChanged = (tracks.size() != lastTracks.size());
@@ -119,35 +119,35 @@ void MixerView::timerCallback() {
         for (size_t i = 0; i < trackStrips.size() && i < lastTracks.size(); ++i) {
             auto& id = lastTracks[i].id;
 
-            auto* trackState = state.findTrack(id.toStdString());
+            auto* trackState = state.findTrack(TrackId{TrackId{id.toStdString()}});
             if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
                 auto inputNames = engine.getInputChannelNames();
                 trackStrips[i]->setInputChannels(trackState->inputChannelStart,
                                                   trackState->inputChannelCount, inputNames);
             } else {
-                trackStrips[i]->setInstrumentName(juce::String(state.getTrackPluginName(id.toStdString())));
+                trackStrips[i]->setInstrumentName(juce::String(state.getTrackPluginName(TrackId{TrackId{id.toStdString()}})));
             }
 
             // Convert StateAPI::EffectSlotInfo to TrackStrip::EffectSlotInfo
-            auto stateEffects = state.getTrackEffects(id.toStdString());
+            auto stateEffects = state.getTrackEffects(TrackId{TrackId{id.toStdString()}});
             std::vector<TrackStrip::EffectSlotInfo> effects;
             for (auto& e : stateEffects)
                 effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
             trackStrips[i]->setEffects(effects);
 
-            trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(id.toStdString()));
-            trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(id.toStdString()));
-            trackStrips[i]->setArmed(state.isTrackArmed(id.toStdString()));
-            trackStrips[i]->setInputMonitoring(state.isTrackInputMonitoring(id.toStdString()));
-            trackStrips[i]->setMuted(state.isTrackMuted(id.toStdString()));
-            trackStrips[i]->setSoloed(state.isTrackSoloed(id.toStdString()));
-            trackStrips[i]->setGain(state.getTrackGain(id.toStdString()));
+            trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setArmed(state.isTrackArmed(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setInputMonitoring(state.isTrackInputMonitoring(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setMuted(state.isTrackMuted(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setSoloed(state.isTrackSoloed(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setGain(state.getTrackGain(TrackId{TrackId{id.toStdString()}}));
             {
-                auto target = state.getTrackOutputTarget(id.toStdString());
+                auto target = state.getTrackOutputTarget(TrackId{TrackId{id.toStdString()}});
                 juce::String displayName = "Main";
                 if (target == "none") displayName = "No Output";
                 else if (!target.empty()) {
-                    auto* bus = state.findBus(target);
+                    auto* bus = state.findBus(BusId{target});
                     if (bus) displayName = juce::String(bus->name);
                 }
                 trackStrips[i]->setOutputTarget(juce::String(target), displayName);
@@ -155,10 +155,10 @@ void MixerView::timerCallback() {
             { auto [l, r] = engine.getTrackPeakLevelStereo(id); trackStrips[i]->setPeakLevelStereo(l, r); }
 
             // Sends
-            auto stateSends = state.getTrackSends(id.toStdString());
+            auto stateSends = state.getTrackSends(TrackId{TrackId{id.toStdString()}});
             std::vector<SendsPanel::SendInfo> sends;
             for (auto& s : stateSends)
-                sends.push_back({ juce::String(s.busName), juce::String(s.busId), s.gain, 0.0f });
+                sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f });
             trackStrips[i]->setSends(sends);
             trackStrips[i]->setAvailableBusses(busOptions);
         }
@@ -166,20 +166,20 @@ void MixerView::timerCallback() {
         for (size_t i = 0; i < busStrips.size() && i < lastBusses.size(); ++i) {
             auto& id = lastBusses[i].id;
 
-            auto stateEffects = state.getBusEffects(id.toStdString());
+            auto stateEffects = state.getBusEffects(BusId{BusId{id.toStdString()}});
             std::vector<BusStrip::EffectSlotInfo> effects;
             for (auto& e : stateEffects)
                 effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
             busStrips[i]->setEffects(effects);
 
-            busStrips[i]->setGain(state.getBusGain(id.toStdString()));
-            busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(id.toStdString()));
+            busStrips[i]->setGain(state.getBusGain(BusId{BusId{id.toStdString()}}));
+            busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(BusId{BusId{id.toStdString()}}));
             {
-                auto target = state.getBusOutputTarget(id.toStdString());
+                auto target = state.getBusOutputTarget(BusId{BusId{id.toStdString()}});
                 juce::String displayName = "Main";
                 if (target == "none") displayName = "No Output";
                 else if (!target.empty()) {
-                    auto* bus = state.findBus(target);
+                    auto* bus = state.findBus(BusId{target});
                     if (bus) displayName = juce::String(bus->name);
                 }
                 busStrips[i]->setOutputTarget(juce::String(target), displayName);
@@ -218,30 +218,30 @@ void MixerView::rebuildStrips() {
     for (auto& t : lastTracks) {
         auto strip = std::make_unique<TrackStrip>(t.id, t.name, state, engine);
 
-        auto* trackState = state.findTrack(t.id.toStdString());
+        auto* trackState = state.findTrack(TrackId{TrackId{t.id.toStdString()}});
         if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
             strip->setSourceType(TrackSourceType::AudioInput);
             auto inputNames = engine.getInputChannelNames();
             strip->setInputChannels(trackState->inputChannelStart,
                                      trackState->inputChannelCount, inputNames);
         } else {
-            strip->setInstrumentName(juce::String(state.getTrackPluginName(t.id.toStdString())));
+            strip->setInstrumentName(juce::String(state.getTrackPluginName(TrackId{TrackId{t.id.toStdString()}})));
         }
 
-        auto stateEffects = state.getTrackEffects(t.id.toStdString());
+        auto stateEffects = state.getTrackEffects(TrackId{TrackId{t.id.toStdString()}});
         std::vector<TrackStrip::EffectSlotInfo> effects;
         for (auto& e : stateEffects)
             effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
         strip->setEffects(effects);
 
-        strip->setMidiEnabled(state.isTrackMidiEnabled(t.id.toStdString()));
-        strip->setAudioEnabled(state.isTrackAudioEnabled(t.id.toStdString()));
+        strip->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{t.id.toStdString()}}));
+        strip->setAudioEnabled(state.isTrackAudioEnabled(TrackId{TrackId{t.id.toStdString()}}));
         strip->setAvailableBusses(busOptions);
 
-        auto stateSends = state.getTrackSends(t.id.toStdString());
+        auto stateSends = state.getTrackSends(TrackId{TrackId{t.id.toStdString()}});
         std::vector<SendsPanel::SendInfo> sends;
         for (auto& s : stateSends)
-            sends.push_back({ juce::String(s.busName), juce::String(s.busId), s.gain, 0.0f });
+            sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f });
         strip->setSends(sends);
 
         // Wire track preset callbacks from coordinator
@@ -261,7 +261,7 @@ void MixerView::rebuildStrips() {
     for (auto& b : lastBusses) {
         auto strip = std::make_unique<BusStrip>(b.id, b.name, state, engine);
 
-        auto stateEffects = state.getBusEffects(b.id.toStdString());
+        auto stateEffects = state.getBusEffects(BusId{BusId{b.id.toStdString()}});
         std::vector<BusStrip::EffectSlotInfo> effects;
         for (auto& e : stateEffects)
             effects.push_back({ juce::String(e.effectId), juce::String(e.pluginName) });
@@ -300,9 +300,9 @@ void MixerView::onTrackDragEnd() {
 
     // Find the target track's position
     if (targetIdx < (int)lastTracks.size()) {
-        auto* targetTrack = state.findTrack(lastTracks[targetIdx].id.toStdString());
+        auto* targetTrack = state.findTrack(TrackId{TrackId{lastTracks[targetIdx].id.toStdString()}});
         if (targetTrack)
-            state.moveTrack(dragTrackId.toStdString(), targetTrack->position);
+            state.moveTrack(TrackId{TrackId{dragTrackId.toStdString()}}, targetTrack->position);
     }
 
     dragTrackId = {};

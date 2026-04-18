@@ -175,11 +175,11 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     if (engineParentId.isEmpty())
         for (auto& t : song->tracks)
             for (auto& tfx : t.effects)
-                if (tfx.id == effectId) { engineParentId = juce::String(t.id); stateParentId = t.id; break; }
+                if (tfx.id == effectId) { engineParentId = juce::String(t.id.str()); stateParentId = t.id; break; }
     if (engineParentId.isEmpty())
         for (auto& b : song->busses)
             for (auto& bfx : b.effects)
-                if (bfx.id == effectId) { engineParentId = juce::String(b.id); stateParentId = b.id; break; }
+                if (bfx.id == effectId) { engineParentId = juce::String(b.id.str()); stateParentId = b.id; break; }
 
     if (engineParentId.isEmpty()) {
         perfLog("[EngineSync] onEffectCreated: no parent found for effect %s\n", effectId.c_str());
@@ -313,7 +313,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         for (auto& t : song->tracks)
             for (auto& s : t.sends)
                 if (s.id == entityId) {
-                    engine.setSendGain(juce::String(t.id), juce::String(s.busId), s.gain);
+                    engine.setSendGain(juce::String(t.id.str()), juce::String(s.busId.str()), s.gain);
                     return;
                 }
     }
@@ -339,8 +339,8 @@ void EngineSync::onEntityDeleted(const std::string& entityType, const std::strin
         PERF_ASSERT(song, "onEntityDeleted(effect): active song not found");
         engine.removeEffect(juce::String("Output"), id);
         for (auto& t : song->tracks)
-            engine.removeEffect(juce::String(t.id), id);
+            engine.removeEffect(juce::String(t.id.str()), id);
         for (auto& b : song->busses)
-            engine.removeEffect(juce::String(b.id), id);
+            engine.removeEffect(juce::String(b.id.str()), id);
     }
 }

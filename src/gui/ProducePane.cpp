@@ -203,7 +203,7 @@ void ProducePane::showMorphEditor(const std::string& trackId, double beat,
 
     // Load existing data if editing
     if (!existingEventId.empty()) {
-        auto* ts = state->findTrack(trackId);
+        auto* ts = state->findTrack(TrackId{trackId});
         if (ts) {
             for (auto& ae : ts->actionData) {
                 if (ae.id == existingEventId) {
@@ -1681,7 +1681,7 @@ void ProducePane::mouseDrag(const juce::MouseEvent& event) {
                 // Only allow drop on compatible track type
                 auto tracks = state->listTracks();
                 if (trackIdx < (int)tracks.size()) {
-                    auto* targetTrack = state->findTrack(tracks[trackIdx].id);
+                    auto* targetTrack = state->findTrack(TrackId{tracks[trackIdx].id});
                     auto* region = arrangement ? arrangement->findRegion(dragRegionId) : nullptr;
                     if (targetTrack && region) {
                         bool compatible = false;

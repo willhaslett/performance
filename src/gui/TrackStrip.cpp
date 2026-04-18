@@ -13,7 +13,7 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     addChildComponent(sendsPanel);  // hidden until busses exist
 
     faderMeter.onGainChanged = [&](float newGain) {
-        state.setTrackGain(trackId.toStdString(), newGain);
+        state.setTrackGain(TrackId{TrackId{trackId.toStdString()}}, newGain);
     };
     faderMeter.onDragStart = [&]() { state.beginTransaction(); };
     faderMeter.onDragEnd = [&]() { state.endTransaction(); };
@@ -154,13 +154,13 @@ void TrackStrip::showOutputTargetMenu(juce::Point<int> screenPos) {
         juce::Rectangle<int>(screenPos.getX(), screenPos.getY(), 1, 1)),
         [this, busOptions](int result) {
             if (result == 1)
-                state.setTrackOutputTarget(trackId.toStdString(), "");
+                state.setTrackOutputTarget(TrackId{TrackId{trackId.toStdString()}}, "");
             else if (result == 2)
-                state.setTrackOutputTarget(trackId.toStdString(), "none");
+                state.setTrackOutputTarget(TrackId{TrackId{trackId.toStdString()}}, "none");
             else if (result >= 100) {
                 int idx = result - 100;
                 if (idx < (int)busOptions.size())
-                    state.setTrackOutputTarget(trackId.toStdString(), busOptions[idx].id.toStdString());
+                    state.setTrackOutputTarget(TrackId{TrackId{trackId.toStdString()}}, busOptions[idx].id.toStdString());
             }
         });
 }
@@ -212,11 +212,11 @@ void TrackStrip::showInputPicker(juce::Point<int> screenPos) {
         [this](int result) {
             if (result == 0) return;
             if (result == 1) {
-                state.setTrackInputChannels(trackId.toStdString(), -1, 0);
+                state.setTrackInputChannels(TrackId{TrackId{trackId.toStdString()}}, -1, 0);
             } else if (result >= 1000) {
-                state.setTrackInputChannels(trackId.toStdString(), result - 1002, 2);
+                state.setTrackInputChannels(TrackId{TrackId{trackId.toStdString()}}, result - 1002, 2);
             } else {
-                state.setTrackInputChannels(trackId.toStdString(), result - 2, 1);
+                state.setTrackInputChannels(TrackId{TrackId{trackId.toStdString()}}, result - 2, 1);
             }
         });
 }
@@ -477,7 +477,7 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Mute toggle
     if (!muteBounds.isEmpty() && muteBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         muted = !muted;
-        state.setTrackMuted(trackId.toStdString(), muted);
+        state.setTrackMuted(TrackId{TrackId{trackId.toStdString()}}, muted);
         repaint();
         return;
     }
@@ -485,7 +485,7 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Solo toggle
     if (!soloBounds.isEmpty() && soloBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         soloed = !soloed;
-        state.setTrackSoloed(trackId.toStdString(), soloed);
+        state.setTrackSoloed(TrackId{TrackId{trackId.toStdString()}}, soloed);
         repaint();
         return;
     }
@@ -493,7 +493,7 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Input monitoring toggle
     if (!inputMonitorBounds.isEmpty() && inputMonitorBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         inputMonitoring = !inputMonitoring;
-        state.setTrackInputMonitoring(trackId.toStdString(), inputMonitoring);
+        state.setTrackInputMonitoring(TrackId{TrackId{trackId.toStdString()}}, inputMonitoring);
         repaint();
         return;
     }
@@ -501,7 +501,7 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     // Arm dot toggles recording arm (only when track is enabled)
     if (audioEnabled && armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         armed = !armed;
-        state.setTrackArmed(trackId.toStdString(), armed);
+        state.setTrackArmed(TrackId{TrackId{trackId.toStdString()}}, armed);
         repaint();
         return;
     }
@@ -510,12 +510,12 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     auto powerHitArea = midiDotBounds.expanded(6);
     if (powerHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         audioEnabled = !audioEnabled;
-        state.setTrackAudioEnabled(trackId.toStdString(), audioEnabled);
+        state.setTrackAudioEnabled(TrackId{TrackId{trackId.toStdString()}}, audioEnabled);
         if (audioEnabled && sourceType == TrackSourceType::Instrument)
-            state.setTrackMidiEnabled(trackId.toStdString(), true);
+            state.setTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}, true);
         if (!audioEnabled && armed) {
             armed = false;
-            state.setTrackArmed(trackId.toStdString(), false);
+            state.setTrackArmed(TrackId{TrackId{trackId.toStdString()}}, false);
         }
         repaint();
         return;
@@ -571,7 +571,7 @@ void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
                     onLoadTrackPreset(trackId, presets[result - 100]);
             }
             else if (result == 10) {
-                state.removeTrack(trackId.toStdString());
+                state.removeTrack(TrackId{TrackId{trackId.toStdString()}});
             }
         });
 }
@@ -580,7 +580,7 @@ void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
             if (newName != trackName) {
-                state.renameTrack(trackId.toStdString(), newName.toStdString());
+                state.renameTrack(TrackId{TrackId{trackId.toStdString()}}, newName.toStdString());
                 trackName = newName;
                 repaint();
             }

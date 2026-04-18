@@ -50,7 +50,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
     juce::String pluginName;
     if (effectId.isEmpty()) {
         // Instrument
-        auto* track = state.findTrack(parentId.toStdString());
+        auto* track = state.findTrack(TrackId{TrackId{parentId.toStdString()}});
         if (track && !track->pluginId.empty()) {
             auto* plugin = state.findPluginById(track->pluginId);
             if (plugin) pluginName = juce::String(plugin->name);
@@ -70,7 +70,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
         // Resolve current preset name from state
         PresetId presetId;
         if (effectId.isEmpty()) {
-            auto* track = state.findTrack(parentId.toStdString());
+            auto* track = state.findTrack(TrackId{TrackId{parentId.toStdString()}});
             if (track) presetId = track->presetId;
         } else {
             auto* fx = state.findEffect(effectId.toStdString());
@@ -92,7 +92,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
                 auto* preset = state.findPreset(plugin->id, name.toStdString());
                 if (preset) {
                     if (effectId.isEmpty())
-                        state.setTrackPresetId(parentId.toStdString(), preset->id);
+                        state.setTrackPresetId(TrackId{TrackId{parentId.toStdString()}}, preset->id);
                     else
                         state.setEffectPresetId(effectId.toStdString(), preset->id);
                 }
@@ -106,7 +106,7 @@ void EngineAPI::openPluginEditor(const juce::String& parentId, const juce::Strin
                 auto* preset = state.findPreset(plugin->id, name.toStdString());
                 if (preset) {
                     if (effectId.isEmpty())
-                        state.setTrackPresetId(parentId.toStdString(), preset->id);
+                        state.setTrackPresetId(TrackId{TrackId{parentId.toStdString()}}, preset->id);
                     else
                         state.setEffectPresetId(effectId.toStdString(), preset->id);
                 }

@@ -28,7 +28,7 @@ void PluginSlot::timerCallback() {
         return;
     }
 
-    auto* track = state.findTrack(parentId.toStdString());
+    auto* track = state.findTrack(TrackId{parentId.toStdString()});
     if (!track) return;
 
     bool loaded = (slotType == Instrument)
@@ -165,7 +165,7 @@ void PluginSlot::showPicker(juce::Point<int> position) {
                         auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
                         if (preset) presetId = preset->id;
                     }
-                    state.setTrackPlugin(parentId.toStdString(), pluginInfo->id, presetId);
+                    state.setTrackPlugin(TrackId{parentId.toStdString()}, pluginInfo->id, presetId);
                 }
             } else {
                 auto pluginInfo = state.findPluginByName(selectedPlugin.toStdString());
@@ -195,7 +195,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
 
             if (result == 1) {
                 if (slotType == Instrument)
-                    state.clearTrackPlugin(parentId.toStdString());
+                    state.clearTrackPlugin(TrackId{parentId.toStdString()});
                 else
                     state.removeEffect(effectId.toStdString());
                 if (onChanged) onChanged();
@@ -224,7 +224,7 @@ void PluginSlot::showContextMenu(juce::Point<int> position) {
                         auto preset = state.findPreset(pluginInfo->id, presetName.toStdString());
                         if (preset) presetId = preset->id;
                     }
-                    state.setTrackPlugin(parentId.toStdString(), pluginInfo->id, presetId);
+                    state.setTrackPlugin(TrackId{parentId.toStdString()}, pluginInfo->id, presetId);
                 }
             } else {
                 // Replace: remove old effect, then add new one in its place

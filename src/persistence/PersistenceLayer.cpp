@@ -389,7 +389,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(ts, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(ts) == SQLITE_ROW) {
             TrackState t;
-            t.id = col_str(ts, 0);
+            t.id = TrackId{col_str(ts, 0)};
             t.name = col_str(ts, 1);
             t.pluginId = PluginId{col_str(ts, 2)};
             t.presetId = PresetId{col_str(ts, 3)};
@@ -428,7 +428,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             auto* ss = prepare("SELECT id, bus_id, gain FROM sends WHERE track_id = ?");
             sqlite3_bind_text(ss, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(ss) == SQLITE_ROW) {
-                t.sends.push_back({ col_str(ss, 0), col_str(ss, 1), (float)sqlite3_column_double(ss, 2) });
+                t.sends.push_back({ col_str(ss, 0), BusId{col_str(ss, 1)}, (float)sqlite3_column_double(ss, 2) });
             }
             sqlite3_finalize(ss);
 
@@ -491,7 +491,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(bs, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(bs) == SQLITE_ROW) {
             BusState b;
-            b.id = col_str(bs, 0);
+            b.id = BusId{col_str(bs, 0)};
             b.name = col_str(bs, 1);
             b.outputGain = (float)sqlite3_column_double(bs, 2);
             b.position = sqlite3_column_int(bs, 3);

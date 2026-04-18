@@ -9,7 +9,7 @@ BusStrip::BusStrip(const juce::String& id, const juce::String& name,
     addAndMakeVisible(faderMeter);
 
     faderMeter.onGainChanged = [&](float newGain) {
-        state.setBusGain(busId.toStdString(), newGain);
+        state.setBusGain(BusId{busId.toStdString()}, newGain);
     };
     faderMeter.onDragStart = [&]() { state.beginTransaction(); };
     faderMeter.onDragEnd = [&]() { state.endTransaction(); };
@@ -162,9 +162,9 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
         // List other busses for bus-to-bus routing
         auto allBusses = state.listBusses();
         for (int i = 0; i < (int)allBusses.size(); ++i) {
-            if (juce::String(allBusses[i].id) == busId) continue;  // skip self
+            if (juce::String(allBusses[i].id.str()) == busId) continue;  // skip self
             menu.addItem(100 + i, juce::String(allBusses[i].name),
-                         true, outputTargetId == juce::String(allBusses[i].id));
+                         true, outputTargetId == juce::String(allBusses[i].id.str()));
         }
         auto bId = busId;
         auto busListCopy = allBusses;
@@ -172,13 +172,13 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this, bId, busListCopy](int result) {
                 if (result == 1)
-                    state.setBusOutputTarget(bId.toStdString(), "");
+                    state.setBusOutputTarget(BusId{bId.toStdString()}, "");
                 else if (result == 2)
-                    state.setBusOutputTarget(bId.toStdString(), "none");
+                    state.setBusOutputTarget(BusId{bId.toStdString()}, "none");
                 else if (result >= 100) {
                     int idx = result - 100;
                     if (idx < (int)busListCopy.size())
-                        state.setBusOutputTarget(bId.toStdString(), busListCopy[idx].id);
+                        state.setBusOutputTarget(BusId{bId.toStdString()}, busListCopy[idx].id.str());
                 }
             });
         return;
@@ -187,7 +187,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
     // Power icon toggle
     if (!event.mods.isPopupMenu() && powerIconBounds.expanded(6).contains(event.getPosition())) {
         audioEnabled = !audioEnabled;
-        state.setBusAudioEnabled(busId.toStdString(), audioEnabled);
+        state.setBusAudioEnabled(BusId{busId.toStdString()}, audioEnabled);
         repaint();
         return;
     }
@@ -213,7 +213,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this](int result) {
                 if (result == 1)
-                    state.removeBus(busId.toStdString());
+                    state.removeBus(BusId{busId.toStdString()});
                 else if (result == 10 && onSaveBusPreset) {
                     auto* dlg = new juce::AlertWindow("Save Bus Preset", "", juce::MessageBoxIconType::NoIcon);
                     dlg->addTextEditor("name", busName, "Preset Name");
@@ -241,7 +241,7 @@ void BusStrip::mouseDoubleClick(const juce::MouseEvent& event) {
     if (headerBounds.contains(event.getPosition())) {
         nameEditor.onCommit = [this](const juce::String& newName) {
             if (newName != busName) {
-                state.renameBus(busId.toStdString(), newName.toStdString());
+                state.renameBus(BusId{busId.toStdString()}, newName.toStdString());
                 busName = newName;
                 repaint();
             }

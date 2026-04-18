@@ -33,65 +33,65 @@ public:
     std::string getMasterOutputId() const;
 
     // --- Tracks ---
-    std::string createTrack(const std::string& name);  // virtual instrument track
-    std::string createAudioInputTrack(const std::string& name, int inputChannelStart,
-                                       int inputChannelCount);
-    std::string createActionTrack(const std::string& name);
-    void removeTrack(const std::string& id);
-    void renameTrack(const std::string& id, const std::string& name);
-    void moveTrack(const std::string& id, int newPosition);  // reorder within song
-    void setTrackGain(const std::string& id, float gain);
-    float getTrackGain(const std::string& id) const;
-    void setTrackMidiEnabled(const std::string& id, bool enabled);
-    bool isTrackMidiEnabled(const std::string& id) const;
-    void setTrackAudioEnabled(const std::string& id, bool enabled);
-    bool isTrackAudioEnabled(const std::string& id) const;
-    void setTrackArmed(const std::string& id, bool armed);
-    bool isTrackArmed(const std::string& id) const;
-    void setTrackInputMonitoring(const std::string& id, bool enabled);
-    bool isTrackInputMonitoring(const std::string& id) const;
-    void setTrackMuted(const std::string& id, bool muted);
-    bool isTrackMuted(const std::string& id) const;
-    void setTrackSoloed(const std::string& id, bool soloed);
-    bool isTrackSoloed(const std::string& id) const;
+    TrackId createTrack(const std::string& name);  // virtual instrument track
+    TrackId createAudioInputTrack(const std::string& name, int inputChannelStart,
+                                   int inputChannelCount);
+    TrackId createActionTrack(const std::string& name);
+    void removeTrack(const TrackId& id);
+    void renameTrack(const TrackId& id, const std::string& name);
+    void moveTrack(const TrackId& id, int newPosition);  // reorder within song
+    void setTrackGain(const TrackId& id, float gain);
+    float getTrackGain(const TrackId& id) const;
+    void setTrackMidiEnabled(const TrackId& id, bool enabled);
+    bool isTrackMidiEnabled(const TrackId& id) const;
+    void setTrackAudioEnabled(const TrackId& id, bool enabled);
+    bool isTrackAudioEnabled(const TrackId& id) const;
+    void setTrackArmed(const TrackId& id, bool armed);
+    bool isTrackArmed(const TrackId& id) const;
+    void setTrackInputMonitoring(const TrackId& id, bool enabled);
+    bool isTrackInputMonitoring(const TrackId& id) const;
+    void setTrackMuted(const TrackId& id, bool muted);
+    bool isTrackMuted(const TrackId& id) const;
+    void setTrackSoloed(const TrackId& id, bool soloed);
+    bool isTrackSoloed(const TrackId& id) const;
     bool isAnySoloed() const;  // true if any track in current song is soloed
-    void setTrackPlugin(const std::string& id, const PluginId& pluginId,
+    void setTrackPlugin(const TrackId& id, const PluginId& pluginId,
                         const PresetId& presetId = {});
-    void clearTrackPlugin(const std::string& id);
-    void setTrackPresetId(const std::string& id, const PresetId& presetId);
-    void setTrackInputChannels(const std::string& id, int start, int count);
-    void setTrackOutputTarget(const std::string& id, const std::string& target);
-    std::string getTrackOutputTarget(const std::string& id) const;
-    void setTrackInstrumentLoadStatus(const std::string& id, LoadStatus status);
-    TrackState* findTrack(const std::string& id);
-    const TrackState* findTrack(const std::string& id) const;
+    void clearTrackPlugin(const TrackId& id);
+    void setTrackPresetId(const TrackId& id, const PresetId& presetId);
+    void setTrackInputChannels(const TrackId& id, int start, int count);
+    void setTrackOutputTarget(const TrackId& id, const std::string& target);
+    std::string getTrackOutputTarget(const TrackId& id) const;
+    void setTrackInstrumentLoadStatus(const TrackId& id, LoadStatus status);
+    TrackState* findTrack(const TrackId& id);
+    const TrackState* findTrack(const TrackId& id) const;
 
     // --- Busses ---
-    std::string createBus(const std::string& name);
-    void removeBus(const std::string& id);
-    void renameBus(const std::string& id, const std::string& name);
-    void setBusGain(const std::string& id, float gain);
-    float getBusGain(const std::string& id) const;
-    void setBusAudioEnabled(const std::string& id, bool enabled);
-    bool isBusAudioEnabled(const std::string& id) const;
-    void setBusOutputTarget(const std::string& id, const std::string& target);
-    std::string getBusOutputTarget(const std::string& id) const;
-    BusState* findBus(const std::string& id);
-    const BusState* findBus(const std::string& id) const;
+    BusId createBus(const std::string& name);
+    void removeBus(const BusId& id);
+    void renameBus(const BusId& id, const std::string& name);
+    void setBusGain(const BusId& id, float gain);
+    float getBusGain(const BusId& id) const;
+    void setBusAudioEnabled(const BusId& id, bool enabled);
+    bool isBusAudioEnabled(const BusId& id) const;
+    void setBusOutputTarget(const BusId& id, const std::string& target);
+    std::string getBusOutputTarget(const BusId& id) const;
+    BusState* findBus(const BusId& id);
+    const BusState* findBus(const BusId& id) const;
 
     // --- Effects (on tracks, busses, or master output) ---
     std::string addEffect(const std::string& parentId, const std::string& name,
-                          const PluginId& pluginId);
+                          const PluginId& pluginId);  // parentId is raw string: could be trackId.str(), busId.str(), or master-output id
     void removeEffect(const std::string& effectId);
     void setEffectLoadStatus(const std::string& effectId, LoadStatus status);
     const EffectState* findEffect(const std::string& effectId) const;
     void setEffectPresetId(const std::string& effectId, const PresetId& presetId);
 
     // --- Sends ---
-    std::string addSend(const std::string& trackId, const std::string& busId, float gain = 1.0f);
+    std::string addSend(const TrackId& trackId, const BusId& busId, float gain = 1.0f);
     void removeSend(const std::string& sendId);
     void setSendGain(const std::string& sendId, float gain);
-    void setSendGainByBus(const std::string& trackId, const std::string& busId, float gain);
+    void setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain);
 
     // --- Bindings (songId empty = global, deviceId empty = any device) ---
     std::string addBinding(const std::string& songId, const std::string& controlType,
@@ -165,33 +165,33 @@ public:
     const std::vector<ActionInfo>& allActions() const;
 
     // --- Selection ---
-    void selectTrack(const std::string& trackId, bool addToSelection = false);
-    void selectBus(const std::string& busId, bool addToSelection = false);
+    void selectTrack(const TrackId& trackId, bool addToSelection = false);
+    void selectBus(const BusId& busId, bool addToSelection = false);
     void clearSelection();
-    std::vector<std::string> selectedTrackIds() const;
-    std::vector<std::string> selectedBusIds() const;
+    std::vector<TrackId> selectedTrackIds() const;
+    std::vector<BusId> selectedBusIds() const;
 
     // --- Config ---
     void setConfig(const std::string& key, const std::string& value);
     std::string getConfig(const std::string& key, const std::string& defaultValue = "") const;
 
     // --- Name resolution (Lua convenience) ---
-    std::string findTrackIdByName(const std::string& name) const;
-    std::string findBusIdByName(const std::string& name) const;
+    TrackId findTrackIdByName(const std::string& name) const;
+    BusId findBusIdByName(const std::string& name) const;
 
     // --- Query helpers ---
-    struct TrackInfo { std::string id; std::string name; };
-    struct BusInfo { std::string id; std::string name; };
+    struct TrackInfo { TrackId id; std::string name; };
+    struct BusInfo { BusId id; std::string name; };
     struct EffectSlotInfo { std::string effectId; std::string pluginName; };
-    struct TrackSendInfo { std::string busName; std::string busId; float gain; };
+    struct TrackSendInfo { std::string busName; BusId busId; float gain; };
 
     std::vector<TrackInfo> listTracks() const;
     std::vector<BusInfo> listBusses() const;
-    std::string getTrackPluginName(const std::string& trackId) const;
-    std::vector<EffectSlotInfo> getTrackEffects(const std::string& trackId) const;
-    std::vector<EffectSlotInfo> getBusEffects(const std::string& busId) const;
+    std::string getTrackPluginName(const TrackId& trackId) const;
+    std::vector<EffectSlotInfo> getTrackEffects(const TrackId& trackId) const;
+    std::vector<EffectSlotInfo> getBusEffects(const BusId& busId) const;
     std::vector<EffectSlotInfo> getMasterEffects() const;
-    std::vector<TrackSendInfo> getTrackSends(const std::string& trackId) const;
+    std::vector<TrackSendInfo> getTrackSends(const TrackId& trackId) const;
 
     // --- Events ---
     StateEventBus& events();
@@ -234,10 +234,10 @@ private:
     // Use inside StateAPI methods where the entity must exist.
     SongState& song();
     const SongState& song() const;
-    TrackState& track(const std::string& id);
-    const TrackState& track(const std::string& id) const;
-    BusState& bus(const std::string& id);
-    const BusState& bus(const std::string& id) const;
+    TrackState& track(const TrackId& id);
+    const TrackState& track(const TrackId& id) const;
+    BusState& bus(const BusId& id);
+    const BusState& bus(const BusId& id) const;
     DeviceState& device(const std::string& id);
 
     // Find the effects vector that contains effectId, and optionally the parent ID

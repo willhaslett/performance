@@ -81,7 +81,7 @@ struct EffectState {
 
 struct SendState {
     std::string id;
-    std::string busId;
+    BusId busId;
     float gain = 1.0f;
 };
 
@@ -143,7 +143,7 @@ struct RegionState {
 };
 
 struct TrackState {
-    std::string id;
+    TrackId id;
     std::string name;
     PluginId pluginId;
     PresetId presetId;
@@ -171,7 +171,7 @@ struct TrackState {
 };
 
 struct BusState {
-    std::string id;
+    BusId id;
     std::string name;
     float outputGain = 1.0f;
     bool audioEnabled = true;
@@ -240,8 +240,8 @@ struct SongState {
     std::vector<ActionEvent> actionEvents;
 
     // Selection state (observable, not persisted)
-    std::vector<std::string> selectedTrackIds;
-    std::vector<std::string> selectedBusIds;
+    std::vector<TrackId> selectedTrackIds;
+    std::vector<BusId> selectedBusIds;
 };
 
 // Top-level application state

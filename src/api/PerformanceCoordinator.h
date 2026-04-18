@@ -158,9 +158,9 @@ private:
     bool recordModeActive = false;  // user explicitly requested recording
     bool isRecording = false;
     std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
-    std::vector<std::string> recordingTrackIds;         // MIDI tracks being recorded into
+    std::vector<TrackId> recordingTrackIds;              // MIDI tracks being recorded into
     struct AudioRecordSession {
-        std::string trackId;
+        TrackId trackId;
         std::string regionId;
         std::unique_ptr<AudioRecordFIFO> fifo;
         std::unique_ptr<AudioWriterThread> writer;
