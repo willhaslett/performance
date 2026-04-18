@@ -318,7 +318,7 @@ void PersistenceLayer::loadInto(StateAPI& state) {
     // Resolve currentSongId from config
     auto it = loaded.config.find("current_song_id");
     if (it != loaded.config.end()) {
-        loaded.currentSongId = it->second;
+        loaded.currentSongId = SongId{it->second};
         loaded.config.erase(it);  // not needed in the config map
     } else if (!loaded.songs.empty()) {
         loaded.currentSongId = loaded.songs[0].id;
@@ -370,7 +370,7 @@ void PersistenceLayer::readSongs(AppState& out) {
     auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
-        song.id = col_str(songStmt, 0);
+        song.id = SongId{col_str(songStmt, 0)};
         song.name = col_str(songStmt, 1);
         song.masterGain = (float)sqlite3_column_double(songStmt, 2);
         song.initialState = col_str(songStmt, 3);
@@ -539,7 +539,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         sqlite3_bind_text(bi, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         while (sqlite3_step(bi) == SQLITE_ROW) {
             song.bindings.push_back({
-                col_str(bi, 0), song.id, col_str(bi, 1), col_str(bi, 2),
+                col_str(bi, 0), song.id.str(), col_str(bi, 1), col_str(bi, 2),
                 sqlite3_column_int(bi, 3), sqlite3_column_int(bi, 4),
                 col_str(bi, 5), col_str(bi, 6), col_str(bi, 7),
                 sqlite3_column_int(bi, 8) != 0, sqlite3_column_int(bi, 9)

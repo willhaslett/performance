@@ -533,7 +533,7 @@ void LuaEngine::registerAPI() {
     lua.set_function("registryDelete", [&state](const std::string& id) {
         if (state.findTrack(TrackId{id})) state.removeTrack(TrackId{id});
         else if (state.findBus(BusId{id})) state.removeBus(BusId{id});
-        else if (state.findSong(id)) state.deleteSong(id);
+        else if (state.findSong(SongId{id})) state.deleteSong(SongId{id});
     });
 
     // Custom actions
@@ -553,7 +553,7 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("currentSongId", [&state]() -> std::string {
         auto* song = state.currentSong();
-        return song ? song->id : "";
+        return song ? song->id.str() : std::string{};
     });
 
     // Utility

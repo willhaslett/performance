@@ -212,7 +212,7 @@ public:
             auto songId = s.createSong("S");
             s.setCurrentSong(songId);
             auto pluginId = s.registerPlugin("Limiter", "Apple", "fx", false);
-            s.addEffect(songId, "Limiter", pluginId);
+            s.addEffect(songId.str(), "Limiter", pluginId);
             expectEquals((int)s.getMasterEffects().size(), 1);
         }
 
@@ -395,13 +395,13 @@ public:
             auto songId = s.createSong("S");
             s.setCurrentSong(songId);
             auto actionId = s.registerAction("test", "Test");
-            auto bindId = s.addBinding(songId, "cc", 1, 42, actionId, "[\"arg\"]", "Test");
+            auto bindId = s.addBinding(songId.str(), "cc", 1, 42, actionId, "[\"arg\"]", "Test");
             expect(!bindId.empty());
-            auto bindings = s.bindingsForSong(songId);
+            auto bindings = s.bindingsForSong(songId.str());
             expectEquals((int)bindings.size(), 1);
             expect(!bindings[0].songId.empty());
             s.removeBinding(bindId);
-            expect(s.bindingsForSong(songId).empty());
+            expect(s.bindingsForSong(songId.str()).empty());
         }
 
         beginTest("Global bindings");
@@ -427,7 +427,7 @@ public:
             auto a1 = s.registerAction("g", "Global");
             auto a2 = s.registerAction("s", "Song");
             s.addGlobalBinding("cc", 1, 7, a1);
-            s.addBinding(songId, "cc", 1, 7, a2);
+            s.addBinding(songId.str(), "cc", 1, 7, a2);
             s.addGlobalBinding("cc", 1, 10, a1);
             auto eff = s.effectiveBindings();
             expectEquals((int)eff.size(), 2);
@@ -504,11 +504,11 @@ public:
             auto devId = s.registerDevice("KeyLab", "keylab-port");
 
             // Binding with device
-            auto b1 = s.addBinding(songId, "cc", 1, 7, actionId, "[]", "KeyLab vol", devId);
+            auto b1 = s.addBinding(songId.str(), "cc", 1, 7, actionId, "[]", "KeyLab vol", devId);
             // Binding without device (any)
-            auto b2 = s.addBinding(songId, "cc", 1, 10, actionId, "[]", "Any device");
+            auto b2 = s.addBinding(songId.str(), "cc", 1, 10, actionId, "[]", "Any device");
 
-            auto bindings = s.bindingsForSong(songId);
+            auto bindings = s.bindingsForSong(songId.str());
             expectEquals((int)bindings.size(), 2);
 
             bool foundDevice = false, foundAny = false;
@@ -528,13 +528,13 @@ public:
             auto dev1 = s.registerDevice("KeyLab", "keylab-port");
             auto dev2 = s.registerDevice("MPK", "mpk-port");
 
-            s.addDeviceToSong(songId, dev1);
-            s.addDeviceToSong(songId, dev2);
-            auto devices = s.devicesForSong(songId);
+            s.addDeviceToSong(songId.str(), dev1);
+            s.addDeviceToSong(songId.str(), dev2);
+            auto devices = s.devicesForSong(songId.str());
             expectEquals((int)devices.size(), 2);
 
-            s.removeDeviceFromSong(songId, dev1);
-            devices = s.devicesForSong(songId);
+            s.removeDeviceFromSong(songId.str(), dev1);
+            devices = s.devicesForSong(songId.str());
             expectEquals((int)devices.size(), 1);
             expectEquals(devices[0], dev2);
         }
@@ -547,9 +547,9 @@ public:
             original.addDeviceControl(devId, "Fader 1", "cc", 1, 73, "Faders");
             auto songId = original.createSong("S");
             original.setCurrentSong(songId);
-            original.addDeviceToSong(songId, devId);
+            original.addDeviceToSong(songId.str(), devId);
             auto actionId = original.registerAction("test", "Test");
-            original.addBinding(songId, "cc", 1, 73, actionId, "[]", "Vol", devId);
+            original.addBinding(songId.str(), "cc", 1, 73, actionId, "[]", "Vol", devId);
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 
@@ -563,10 +563,10 @@ public:
             expectEquals((int)dev->controls.size(), 1);
 
             loaded.setCurrentSong(loaded.allSongs()[0].id);
-            auto devices = loaded.devicesForSong(loaded.allSongs()[0].id);
+            auto devices = loaded.devicesForSong(loaded.allSongs()[0].id.str());
             expectEquals((int)devices.size(), 1);
 
-            auto bindings = loaded.bindingsForSong(loaded.allSongs()[0].id);
+            auto bindings = loaded.bindingsForSong(loaded.allSongs()[0].id.str());
             expectEquals((int)bindings.size(), 1);
             expect(!bindings[0].deviceId.empty());
         }
@@ -679,7 +679,7 @@ public:
             StateAPI s;
             auto songId = s.createSong("S");
             s.setCurrentSong(songId);
-            expectEquals(s.getMasterOutputId(), songId);
+            expectEquals(s.getMasterOutputId(), songId.str());
         }
 
     // --- New coverage: audioEnabled, custom actions, score steps, device groups ---
@@ -741,9 +741,9 @@ public:
             auto t2 = s.createTrack("T2");
             auto actionId = s.registerAction("fadeOut", "Fade Out");
 
-            auto b1 = s.addBinding(songId, "note", 10, 40, actionId, "[]", "Pad 1");
-            auto b2 = s.addBinding(songId, "note", 10, 41, actionId, "[]", "Pad 2");
-            auto b3 = s.addBinding(songId, "note", 10, 42, actionId, "[]", "Pad 3");
+            auto b1 = s.addBinding(songId.str(), "note", 10, 40, actionId, "[]", "Pad 1");
+            auto b2 = s.addBinding(songId.str(), "note", 10, 41, actionId, "[]", "Pad 2");
+            auto b3 = s.addBinding(songId.str(), "note", 10, 42, actionId, "[]", "Pad 3");
 
             s.setBindingAsScoreStep(b1, 1);
             s.setBindingAsScoreStep(b3, 2);
@@ -798,7 +798,7 @@ public:
             s.setCurrentSong(songId);
             auto actionId = s.registerAction("test");
 
-            auto bId = s.addBinding(songId, "note", 10, 40, actionId,
+            auto bId = s.addBinding(songId.str(), "note", 10, 40, actionId,
                                      "[]", "desc", "device123");
 
             auto* song = s.findSong(songId);
@@ -880,12 +880,12 @@ public:
 
             original.addEffect(t1.str(), "Delay", fxPluginId);
             original.addEffect(busId.str(), "Delay2", fxPluginId);
-            original.addEffect(songId, "MasterFX", fxPluginId);
+            original.addEffect(songId.str(), "MasterFX", fxPluginId);
 
             original.addSend(t1, busId, 0.5f);
 
             auto actionId = original.findActionByName("fadeOut")->id;
-            original.addBinding(songId, "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
+            original.addBinding(songId.str(), "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
             original.addGlobalBinding("cc", 1, 7, actionId, "[]", "Master vol");
 
             {
@@ -939,7 +939,7 @@ public:
             expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
 
             // Bindings
-            expectEquals((int)loaded.bindingsForSong(song->id).size(), 1);
+            expectEquals((int)loaded.bindingsForSong(song->id.str()).size(), 1);
             expectEquals((int)loaded.globalBindings().size(), 1);
 
             expect(!loaded.isDirty());
@@ -1064,9 +1064,9 @@ public:
             original.setCurrentSong(songId);
 
             // Create bindings, mark some as score steps
-            auto b1 = original.addBinding(songId, "cc", 10, 1, actionId, "[\"Keys\"]", "Fade keys");
-            auto b2 = original.addBinding(songId, "cc", 10, 2, actionId, "[\"Bass\"]", "Fade bass");
-            auto b3 = original.addBinding(songId, "cc", 1, 5, actionId, "[]", "Utility toggle");
+            auto b1 = original.addBinding(songId.str(), "cc", 10, 1, actionId, "[\"Keys\"]", "Fade keys");
+            auto b2 = original.addBinding(songId.str(), "cc", 10, 2, actionId, "[\"Bass\"]", "Fade bass");
+            auto b3 = original.addBinding(songId.str(), "cc", 1, 5, actionId, "[]", "Utility toggle");
             original.setBindingAsScoreStep(b1, 0);
             original.setBindingAsScoreStep(b2, 1);
             // b3 is NOT a score step
@@ -1077,7 +1077,7 @@ public:
             { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
 
             // All 3 bindings should be there
-            auto bindings = loaded.bindingsForSong(loaded.currentSong()->id);
+            auto bindings = loaded.bindingsForSong(loaded.currentSong()->id.str());
             expectEquals((int)bindings.size(), 3);
 
             // Score should have 2 steps in order
@@ -1527,7 +1527,7 @@ public:
             state.addSend(trackId, busId, 0.3f);
 
             // Reset current song so EngineSync can trigger loadSong
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
 
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);  // triggers loadSong
@@ -1556,7 +1556,7 @@ public:
 
             // Reset + attach EngineSync so the next setCurrentSong triggers
             // a full re-creation via loadSong.
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
 
@@ -1581,7 +1581,7 @@ public:
             state.setCurrentSong(songId);
             state.createTrack("Old");
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
             mock.clear();
@@ -1603,7 +1603,7 @@ public:
             state.setCurrentSong(songId);
             state.createTrack("T");
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
             mock.clear();
@@ -1625,7 +1625,7 @@ public:
             state.setCurrentSong(songId);
             auto trackId = state.createTrack("T");
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
             mock.clear();
@@ -1641,7 +1641,7 @@ public:
             MockAudioEngine mock;
 
             auto songId = state.createSong("S");
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
             mock.clear();
@@ -1664,7 +1664,7 @@ public:
             auto trackId = state.createTrack("T");
             state.setTrackPlugin(trackId, pluginId);
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
 
@@ -1690,7 +1690,7 @@ public:
             auto trackId = state.createTrack("T");
             state.setTrackPlugin(trackId, plugin1);
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
             mock.clear();
@@ -1717,7 +1717,7 @@ public:
             state.setCurrentSong(s2);
             state.createTrack("B Track");
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(s1);
             mock.clear();
@@ -1741,7 +1741,7 @@ public:
             state.setCurrentSong(songId);
             state.createAudioInputTrack("Mic", 0, 1);
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
 
@@ -1759,7 +1759,7 @@ public:
             auto trackId = state.createTrack("T");
             state.setTrackAudioEnabled(trackId, false);  // disable before sync
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);  // triggers loadSong
 
@@ -1778,7 +1778,7 @@ public:
             state.setCurrentSong(songId);
             auto actionId = state.registerAction("test");
 
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
 
@@ -1791,7 +1791,7 @@ public:
                     bindingEventFired = true;
             });
 
-            state.addBinding(songId, "note", 10, 40, actionId, "[]", "test");
+            state.addBinding(songId.str(), "note", 10, 40, actionId, "[]", "test");
             expect(bindingEventFired);
 
             state.events().unsubscribe(subId);
@@ -1846,7 +1846,7 @@ public:
             auto songId = state.createSong("S");
             state.setCurrentSong(songId);
             auto trackId = state.createTrack("T1");
-            state.setCurrentSong("");
+            state.setCurrentSong(SongId{});
 
             EngineSync sync(mock, state);
             state.setCurrentSong(songId);
@@ -2164,41 +2164,41 @@ public:
         beginTest("Push and undo restores previous state");
         {
             UndoHistory h;
-            AppState s1; s1.currentSongId = "song1";
-            AppState s2; s2.currentSongId = "song2";
+            AppState s1; s1.currentSongId = SongId{"song1"};
+            AppState s2; s2.currentSongId = SongId{"song2"};
 
             h.push(s1);
             expect(h.canUndo());
             auto restored = h.undo(s2);
-            expectEquals(restored.currentSongId, std::string("song1"));
+            expectEquals(restored.currentSongId.str(), std::string("song1"));
         }
 
         beginTest("Undo then redo restores forward state");
         {
             UndoHistory h;
-            AppState s1; s1.currentSongId = "song1";
-            AppState s2; s2.currentSongId = "song2";
+            AppState s1; s1.currentSongId = SongId{"song1"};
+            AppState s2; s2.currentSongId = SongId{"song2"};
 
             h.push(s1);
             auto afterUndo = h.undo(s2);
             expect(h.canRedo());
             auto afterRedo = h.redo(afterUndo);
-            expectEquals(afterRedo.currentSongId, std::string("song2"));
+            expectEquals(afterRedo.currentSongId.str(), std::string("song2"));
         }
 
         beginTest("Push after undo clears redo stack");
         {
             UndoHistory h;
-            AppState s1; s1.currentSongId = "s1";
-            AppState s2; s2.currentSongId = "s2";
-            AppState s3; s3.currentSongId = "s3";
+            AppState s1; s1.currentSongId = SongId{"s1"};
+            AppState s2; s2.currentSongId = SongId{"s2"};
+            AppState s3; s3.currentSongId = SongId{"s3"};
 
             h.push(s1);
             h.push(s2);
             h.undo(s3);  // undo s2, can redo
             expect(h.canRedo());
 
-            AppState s4; s4.currentSongId = "s4";
+            AppState s4; s4.currentSongId = SongId{"s4"};
             h.push(s4);  // new branch — redo should be gone
             expect(!h.canRedo());
         }
@@ -2206,17 +2206,17 @@ public:
         beginTest("Multiple undo steps");
         {
             UndoHistory h;
-            AppState s1; s1.currentSongId = "s1";
-            AppState s2; s2.currentSongId = "s2";
-            AppState s3; s3.currentSongId = "s3";
+            AppState s1; s1.currentSongId = SongId{"s1"};
+            AppState s2; s2.currentSongId = SongId{"s2"};
+            AppState s3; s3.currentSongId = SongId{"s3"};
 
             h.push(s1);
             h.push(s2);
 
             auto r1 = h.undo(s3);
-            expectEquals(r1.currentSongId, std::string("s2"));
+            expectEquals(r1.currentSongId.str(), std::string("s2"));
             auto r2 = h.undo(r1);
-            expectEquals(r2.currentSongId, std::string("s1"));
+            expectEquals(r2.currentSongId.str(), std::string("s1"));
             expect(!h.canUndo());
         }
 
@@ -2225,19 +2225,19 @@ public:
             UndoHistory h;
             for (int i = 0; i < UndoHistory::maxSteps + 10; ++i) {
                 AppState s;
-                s.currentSongId = "s" + std::to_string(i);
+                s.currentSongId = SongId{"s" + std::to_string(i)};
                 h.push(s);
             }
             // Should have exactly maxSteps entries
             int count = 0;
-            AppState current; current.currentSongId = "current";
+            AppState current; current.currentSongId = SongId{"current"};
             while (h.canUndo()) {
                 current = h.undo(current);
                 count++;
             }
             expectEquals(count, UndoHistory::maxSteps);
             // Oldest surviving should be s10 (0-9 trimmed)
-            expectEquals(current.currentSongId, std::string("s10"));
+            expectEquals(current.currentSongId.str(), std::string("s10"));
         }
 
         beginTest("Suspend prevents push");
@@ -2246,7 +2246,7 @@ public:
             h.suspend();
             expect(h.isSuspended());
 
-            AppState s1; s1.currentSongId = "s1";
+            AppState s1; s1.currentSongId = SongId{"s1"};
             h.push(s1);
             expect(!h.canUndo());
 
@@ -2259,8 +2259,8 @@ public:
         beginTest("Clear empties both stacks");
         {
             UndoHistory h;
-            AppState s1; s1.currentSongId = "s1";
-            AppState s2; s2.currentSongId = "s2";
+            AppState s1; s1.currentSongId = SongId{"s1"};
+            AppState s2; s2.currentSongId = SongId{"s2"};
             h.push(s1);
             h.undo(s2);  // creates redo entry
 
@@ -2272,17 +2272,17 @@ public:
         beginTest("Undo on empty returns current state unchanged");
         {
             UndoHistory h;
-            AppState current; current.currentSongId = "unchanged";
+            AppState current; current.currentSongId = SongId{"unchanged"};
             auto result = h.undo(current);
-            expectEquals(result.currentSongId, std::string("unchanged"));
+            expectEquals(result.currentSongId.str(), std::string("unchanged"));
         }
 
         beginTest("Redo on empty returns current state unchanged");
         {
             UndoHistory h;
-            AppState current; current.currentSongId = "unchanged";
+            AppState current; current.currentSongId = SongId{"unchanged"};
             auto result = h.redo(current);
-            expectEquals(result.currentSongId, std::string("unchanged"));
+            expectEquals(result.currentSongId.str(), std::string("unchanged"));
         }
     }
 };
@@ -2588,7 +2588,7 @@ public:
             original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
 
             // Create a stub binding — control in the song but no action assigned
-            auto bindId = original.addBinding(songId, "note", 10, 36, "", "[]", "Pad 1", devId);
+            auto bindId = original.addBinding(songId.str(), "note", 10, 36, "", "[]", "Pad 1", devId);
             expect(!bindId.empty());
 
             auto* song = original.findSong(songId);
@@ -2620,7 +2620,7 @@ public:
             auto devId = original.registerDevice("MPK", "MPK mini 3");
             original.addDeviceControl(devId, "Pad 1", "note", 10, 36);
 
-            auto bindId = original.addBinding(songId, "note", 10, 36, "", "[]", "Pad 1", devId);
+            auto bindId = original.addBinding(songId.str(), "note", 10, 36, "", "[]", "Pad 1", devId);
             original.setBindingAsScoreStep(bindId, 1);
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
@@ -2933,7 +2933,7 @@ public:
                 s.setCurrentSong(songId);
                 s.createTrack("A");
                 s.createTrack("B");
-                s.setConfig("current_song_id", songId);  // the poison pill
+                s.setConfig("current_song_id", songId.str());  // the poison pill
 
                 PersistenceLayer p;
                 p.open(db.path().toStdString());

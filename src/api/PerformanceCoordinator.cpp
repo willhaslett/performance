@@ -591,12 +591,12 @@ std::string PerformanceCoordinator::createSong(const juce::String& name) {
     stateAPI->setCurrentSong(songId);
     // Every song gets an Actions track
     stateAPI->createActionTrack("Actions");
-    perfLog("[Coordinator] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), songId.c_str());
-    return songId;
+    perfLog("[Coordinator] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), songId.str().c_str());
+    return songId.str();
 }
 
 void PerformanceCoordinator::loadSong(const std::string& songId) {
-    auto* song = stateAPI->findSong(songId);
+    auto* song = stateAPI->findSong(SongId{songId});
     if (!song) {
         perfLog("[Coordinator] Song not found: %s\n", songId.c_str());
         return;
@@ -606,11 +606,11 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     captureProcessorState();
 
     songRuntime->clearBindings();
-    stateAPI->setCurrentSong(songId);  // triggers EngineSync via config event
+    stateAPI->setCurrentSong(SongId{songId});  // triggers EngineSync via config event
     restoreBindings();
 
     // Point arrangement at new song's tracks
-    if (auto* newSong = stateAPI->findSong(songId))
+    if (auto* newSong = stateAPI->findSong(SongId{songId}))
         arrangementImpl.setTracks(&newSong->tracks);
 
     // Apply song tempo and time signature to sequencer
@@ -660,7 +660,7 @@ std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
 
     perfLog("[Coordinator] Created default song '%s' with DLS Electric Piano + Audio In\n",
             name.c_str());
-    return songId;
+    return songId.str();
 }
 
 bool PerformanceCoordinator::restoreSession() {
@@ -688,7 +688,7 @@ void PerformanceCoordinator::syncPluginCatalog() {
 }
 
 void PerformanceCoordinator::unloadSong() {
-    stateAPI->setCurrentSong("");
+    stateAPI->setCurrentSong(SongId{});
     songRuntime->clearBindings();
 }
 

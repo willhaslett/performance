@@ -240,7 +240,7 @@ public:
             // Open Song submenu — lists all songs, ticks the current one
             juce::PopupMenu openSubmenu;
             auto& songs = coord.state().allSongs();
-            std::string currentSongId;
+            SongId currentSongId;
             if (auto* cur = coord.state().currentSong())
                 currentSongId = cur->id;
             for (int i = 0; i < (int)songs.size(); ++i) {
@@ -485,7 +485,7 @@ public:
                 auto& songs = state.allSongs();
                 int idx = menuItemID - 100;
                 if (idx < (int)songs.size())
-                    coord.loadSong(songs[idx].id);
+                    coord.loadSong(songs[idx].id.str());
             }
             break;
         }
@@ -656,8 +656,8 @@ public:
                 auto& songs = coordinator->state().allSongs();
                 bool switched = false;
                 for (auto& s : songs) {
-                    if (s.id != songId) {
-                        coordinator->loadSong(s.id);
+                    if (s.id.str() != songId) {
+                        coordinator->loadSong(s.id.str());
                         switched = true;
                         break;
                     }
@@ -666,7 +666,7 @@ public:
                     coordinator->createDefaultSong("Untitled");
                 }
             }
-            coordinator->state().deleteSong(songId);
+            coordinator->state().deleteSong(SongId{songId});
             coordinator->save();
         };
 
@@ -772,7 +772,7 @@ private:
         // Build song list
         std::vector<std::pair<std::string, std::string>> songList;
         for (auto& s : coordinator->state().allSongs())
-            songList.push_back({ s.id, s.name });
+            songList.push_back({ s.id.str(), s.name });
 
         auto& chooser = layout->startupChooser;
         chooser.setSongs(songList);

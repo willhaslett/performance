@@ -77,7 +77,7 @@ void EngineSync::loadSong(const std::string& songId) {
     activeSongId = songId;
     clearEngine();
 
-    auto* song = stateAPI.findSong(songId);
+    auto* song = stateAPI.findSong(SongId{songId});
     PERF_ASSERT(song, "loadSong: song not found");
 
     perfLog("[EngineSync] loadSong: %s (%d tracks, %d busses)\n",
@@ -165,13 +165,13 @@ void EngineSync::onEffectCreated(const std::string& effectId) {
     }
 
     // Determine engine parent ID (songId → "Output")
-    auto* song = stateAPI.findSong(activeSongId);
+    auto* song = stateAPI.findSong(SongId{activeSongId});
     PERF_ASSERT(song, "onEffectCreated: active song not found");
 
     juce::String engineParentId;
     std::string stateParentId;  // for preset restore
     for (auto& mfx : song->masterEffects)
-        if (mfx.id == effectId) { engineParentId = "Output"; stateParentId = song->id; break; }
+        if (mfx.id == effectId) { engineParentId = "Output"; stateParentId = song->id.str(); break; }
     if (engineParentId.isEmpty())
         for (auto& t : song->tracks)
             for (auto& tfx : t.effects)
@@ -243,7 +243,7 @@ void EngineSync::restorePresetState(const std::string& parentId, const std::stri
 }
 
 void EngineSync::onSendCreated(const std::string& sendId) {
-    auto* song = stateAPI.findSong(activeSongId);
+    auto* song = stateAPI.findSong(SongId{activeSongId});
     PERF_ASSERT(song, "onSendCreated: active song not found");
 
     for (auto& track : song->tracks) {
@@ -308,7 +308,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         engine.renameBus(id, juce::String(b->name));
     }
     else if (entityType == "send") {
-        auto* song = stateAPI.findSong(activeSongId);
+        auto* song = stateAPI.findSong(SongId{activeSongId});
         PERF_ASSERT(song, "onEntityUpdated(send): active song not found");
         for (auto& t : song->tracks)
             for (auto& s : t.sends)
@@ -319,7 +319,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
     }
     else if (entityType == "song") {
         if (entityId == activeSongId) {
-            auto* song = stateAPI.findSong(activeSongId);
+            auto* song = stateAPI.findSong(SongId{activeSongId});
             PERF_ASSERT(song, "onEntityUpdated(song): active song not found");
             engine.setMasterGain(song->masterGain);
             engine.setMasterAudioEnabled(song->masterAudioEnabled);
@@ -335,7 +335,7 @@ void EngineSync::onEntityDeleted(const std::string& entityType, const std::strin
         engine.removeBus(id);
     else if (entityType == "effect") {
         // Try all parents including master output
-        auto* song = stateAPI.findSong(activeSongId);
+        auto* song = stateAPI.findSong(SongId{activeSongId});
         PERF_ASSERT(song, "onEntityDeleted(effect): active song not found");
         engine.removeEffect(juce::String("Output"), id);
         for (auto& t : song->tracks)

@@ -63,7 +63,7 @@ void Sidebar::rebuild() {
     if (state) {
         auto* currentSong = state->currentSong();
         for (auto& song : state->allSongs()) {
-            items.push_back({ Item::SongEntry, juce::String(song.name), song.id, {} });
+            items.push_back({ Item::SongEntry, juce::String(song.name), song.id.str(), {} });
             items.back().bounds = { 0, y, getWidth(), itemHeight };
             y += itemHeight;
         }
@@ -85,7 +85,7 @@ void Sidebar::paint(juce::Graphics& g) {
     std::string currentSongId;
     if (state) {
         auto* cur = state->currentSong();
-        if (cur) currentSongId = cur->id;
+        if (cur) currentSongId = cur->id.str();
     }
 
     for (int i = 0; i < (int)items.size(); ++i) {

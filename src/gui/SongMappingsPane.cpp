@@ -485,7 +485,7 @@ void SongMappingsPane::itemDropped(const SourceDetails& details) {
 
         auto* song = state.currentSong();
         if (song) {
-            auto bindingId = state.addBinding(song->id, controlType, channel, number,
+            auto bindingId = state.addBinding(song->id.str(), controlType, channel, number,
                                               "", "[]", controlName, deviceId);
             if (target == DropTarget::Score) {
                 int insertAt = scoreInsertIndex(cursor.y);
@@ -729,7 +729,7 @@ void SongMappingsPane::showActionMenu(const std::string& deviceId, const std::st
 
             if (!capBindId.empty()) state.removeBinding(capBindId);
 
-            auto bindingId = state.addBinding(song->id, capCtrlType, channel, number,
+            auto bindingId = state.addBinding(song->id.str(), capCtrlType, channel, number,
                                                actions[ai].id, argsJson, controlName, capDevId);
             if (asScoreStep) {
                 int nextPos = (int)scoreRows.size() + 1;
@@ -808,7 +808,7 @@ void SongMappingsPane::showControlPicker(bool forScore, juce::Point<int> screenP
             auto& e = entries[idx];
             auto* song = state.currentSong();
             if (!song) return;
-            auto bindingId = state.addBinding(song->id, e.controlType, e.channel, e.number,
+            auto bindingId = state.addBinding(song->id.str(), e.controlType, e.channel, e.number,
                                                "", "[]", e.controlName, e.deviceId);
             if (forScore) {
                 int nextPos = (int)scoreRows.size() + 1;

@@ -14,14 +14,14 @@ public:
     StateAPI();
 
     // --- Song ---
-    std::string createSong(const std::string& name);
-    void deleteSong(const std::string& id);
+    SongId createSong(const std::string& name);
+    void deleteSong(const SongId& id);
     SongState* currentSong();
     const SongState* currentSong() const;
-    SongState* findSong(const std::string& id);
-    const SongState* findSong(const std::string& id) const;
+    SongState* findSong(const SongId& id);
+    const SongState* findSong(const SongId& id) const;
     const std::vector<SongState>& allSongs() const;
-    void setCurrentSong(const std::string& songId);
+    void setCurrentSong(const SongId& songId);
     void setMasterGain(float gain);
     float getMasterGain() const;
     void setSongTempo(double bpm);

@@ -210,7 +210,7 @@ struct TimeSignatureEvent {
 };
 
 struct SongState {
-    std::string id;
+    SongId id;
     std::string name;
     float masterGain = 1.0f;
     bool masterAudioEnabled = true;
@@ -246,7 +246,7 @@ struct SongState {
 
 // Top-level application state
 struct AppState {
-    std::string currentSongId;
+    SongId currentSongId;
     std::vector<SongState> songs;
     std::vector<PluginInfo> plugins;
     std::vector<PresetInfo> presets;
