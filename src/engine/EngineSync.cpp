@@ -91,7 +91,7 @@ void EngineSync::loadSong(const std::string& songId) {
     for (auto& track : song->tracks)
         for (auto& fx : track.effects) onEffectCreated(fx.id.str());
     for (auto& track : song->tracks)
-        for (auto& send : track.sends) onSendCreated(send.id);
+        for (auto& send : track.sends) onSendCreated(send.id.str());
     for (auto& fx : song->masterEffects) onEffectCreated(fx.id.str());
 
     engine.setMasterGain(song->masterGain);
@@ -249,7 +249,7 @@ void EngineSync::onSendCreated(const std::string& sendId) {
 
     for (auto& track : song->tracks) {
         for (auto& send : track.sends) {
-            if (send.id == sendId) {
+            if (send.id.str() == sendId) {
                 engine.addSend(juce::String(track.id.str()), juce::String(send.busId.str()), send.gain);
                 return;
             }
@@ -313,7 +313,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         PERF_ASSERT(song, "onEntityUpdated(send): active song not found");
         for (auto& t : song->tracks)
             for (auto& s : t.sends)
-                if (s.id == entityId) {
+                if (s.id.str() == entityId) {
                     engine.setSendGain(juce::String(t.id.str()), juce::String(s.busId.str()), s.gain);
                     return;
                 }

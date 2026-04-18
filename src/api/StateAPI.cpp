@@ -174,7 +174,7 @@ std::vector<EffectState>* StateAPI::findEffectList(const EffectId& effectId, std
     return nullptr;
 }
 
-std::vector<SendState>* StateAPI::findSendList(const std::string& sendId, std::string* outTrackId) {
+std::vector<SendState>* StateAPI::findSendList(const SendId& sendId, std::string* outTrackId) {
     auto& s = song();
     for (auto& t : s.tracks) {
         for (auto& send : t.sends) {
@@ -660,20 +660,20 @@ void StateAPI::removeEffect(const EffectId& effectId) {
 
 // --- Sends ---
 
-std::string StateAPI::addSend(const TrackId& trackId, const BusId& busId, float gain) {
+SendId StateAPI::addSend(const TrackId& trackId, const BusId& busId, float gain) {
     pushUndo();
     auto& t = track(trackId);
     SendState send;
-    send.id = generateId();
+    send.id = SendId{generateId()};
     send.busId = busId;
     send.gain = clampGain(gain);
     t.sends.push_back(std::move(send));
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id, trackId.str() });
+    eventBus.emit({ StateEvent::Created, StateEvent::Send, t.sends.back().id.str(), trackId.str() });
     return t.sends.back().id;
 }
 
-void StateAPI::removeSend(const std::string& sendId) {
+void StateAPI::removeSend(const SendId& sendId) {
     pushUndo();
     std::string trackId;
     auto* list = findSendList(sendId, &trackId);
@@ -682,7 +682,7 @@ void StateAPI::removeSend(const std::string& sendId) {
                                [&](auto& s) { return s.id == sendId; }),
                 list->end());
     markDirty();
-    eventBus.emit({ StateEvent::Deleted, StateEvent::Send, sendId, trackId });
+    eventBus.emit({ StateEvent::Deleted, StateEvent::Send, sendId.str(), trackId });
 }
 
 void StateAPI::setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain) {
@@ -696,7 +696,7 @@ void StateAPI::setSendGainByBus(const TrackId& trackId, const BusId& busId, floa
     }
 }
 
-void StateAPI::setSendGain(const std::string& sendId, float gain) {
+void StateAPI::setSendGain(const SendId& sendId, float gain) {
     pushUndo();
     auto& s = song();
     for (auto& t : s.tracks) {
@@ -704,7 +704,7 @@ void StateAPI::setSendGain(const std::string& sendId, float gain) {
             if (send.id == sendId) {
                 send.gain = clampGain(gain);
                 markDirty();
-                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId, t.id.str() });
+                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId.str(), t.id.str() });
                 return;
             }
         }

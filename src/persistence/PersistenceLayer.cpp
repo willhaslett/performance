@@ -428,7 +428,7 @@ void PersistenceLayer::readSongs(AppState& out) {
             auto* ss = prepare("SELECT id, bus_id, gain FROM sends WHERE track_id = ?");
             sqlite3_bind_text(ss, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(ss) == SQLITE_ROW) {
-                t.sends.push_back({ col_str(ss, 0), BusId{col_str(ss, 1)}, (float)sqlite3_column_double(ss, 2) });
+                t.sends.push_back({ SendId{col_str(ss, 0)}, BusId{col_str(ss, 1)}, (float)sqlite3_column_double(ss, 2) });
             }
             sqlite3_finalize(ss);
 

@@ -203,7 +203,7 @@ void LuaEngine::registerAPI() {
     lua.set_function("addSendDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                     const std::string& bus, float db) -> std::string {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
-        return state.addSend(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, linear);
+        return state.addSend(TrackId{resolveTrackId(track)}, BusId{resolveBusId(bus)}, linear).str();
     });
     lua.set_function("setSendGainDb", [&state, resolveTrackId, resolveBusId](const std::string& track,
                                         const std::string& bus, float db) {

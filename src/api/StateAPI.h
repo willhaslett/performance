@@ -88,9 +88,9 @@ public:
     void setEffectPresetId(const EffectId& effectId, const PresetId& presetId);
 
     // --- Sends ---
-    std::string addSend(const TrackId& trackId, const BusId& busId, float gain = 1.0f);
-    void removeSend(const std::string& sendId);
-    void setSendGain(const std::string& sendId, float gain);
+    SendId addSend(const TrackId& trackId, const BusId& busId, float gain = 1.0f);
+    void removeSend(const SendId& sendId);
+    void setSendGain(const SendId& sendId, float gain);
     void setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain);
 
     // --- Bindings (songId empty = global, deviceId empty = any device) ---
@@ -243,5 +243,5 @@ private:
     // Find the effects vector that contains effectId, and optionally the parent ID
     std::vector<EffectState>* findEffectList(const EffectId& effectId, std::string* outParentId = nullptr);
     // Find the sends vector that contains sendId
-    std::vector<SendState>* findSendList(const std::string& sendId, std::string* outTrackId = nullptr);
+    std::vector<SendState>* findSendList(const SendId& sendId, std::string* outTrackId = nullptr);
 };

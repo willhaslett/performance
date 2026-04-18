@@ -80,7 +80,7 @@ struct EffectState {
 };
 
 struct SendState {
-    std::string id;
+    SendId id;
     BusId busId;
     float gain = 1.0f;
 };
