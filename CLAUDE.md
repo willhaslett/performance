@@ -82,7 +82,7 @@ Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat 
 
 ### 4. Nice-to-haves considered
 
-- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. **Spike complete** (faster-than-realtime offline render; engine paused during bounce, graph driven from a render thread). DLS renders ~76× realtime; verified with heavy plugins too. Still a 0.1.0-or-not decision (no UI yet, just the `bounce(path, startBeat, endBeat)` Lua binding). Explicit punts in the spike:
+- [x] **Bounce to stereo file** — shipped for 0.1.0. File → Bounce… with native Save As dialog; uses the cycle region when active, else bounces 0 to the last region's endBeat. Faster-than-realtime render via `OfflineRenderer` (engine paused during bounce, graph driven from a render thread). DLS renders ~76× realtime; verified with heavy plugins. Lua surface: `bounce(path)` (cycle, throws on error) and `bounce(path, startBeat, endBeat)` (explicit). Explicit punts carried forward:
   - Automation values freeze during render (AutomationEngine pauses rather than ticking per-buffer).
   - Constant tempo (start-of-render tempo applied throughout). Proper variable tempo needs TempoMap runtime evaluation — a prerequisite, tracked separately in Backlog.
   - Constant time signature (same reason; TimeSignatureMap prerequisite).
