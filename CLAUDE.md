@@ -81,7 +81,15 @@ Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat 
 
 ### 4. Nice-to-haves considered
 
-- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. Size before deciding; likely cheap since offline render already exists on the record path.
+- [ ] **Bounce to stereo file** — render a sequence / region / song to stereo WAV. Useful for testers to share sketches outside the app. **Spike underway as faster-than-realtime offline render** (engine paused during bounce, graph driven from a render thread). Explicit punts in the spike:
+  - Automation values freeze during render (AutomationEngine pauses rather than ticking per-buffer).
+  - Constant tempo (start-of-render tempo applied throughout). Proper variable tempo needs TempoMap runtime evaluation — a prerequisite, tracked separately in Backlog.
+  - Constant time signature (same reason; TimeSignatureMap prerequisite).
+  - Hard cutoff at end beat (no tail-time option for reverb/delay decays).
+  - Master output only (no stem / per-track bouncing).
+  - Plugin compatibility varies — some AUs glitch when driven faster than realtime despite `setNonRealtime(true)`. Known risk; document per-plugin as testers hit it.
+
+  Graduating the feature to production-ready requires all the above: automation by render position, TempoMap + TimeSignatureMap honored, tail-time option, stem bouncing.
 - [ ] (open — fill in as testing surfaces asks)
 
 ### 5. Explicitly deferred to 0.2.x

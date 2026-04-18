@@ -70,6 +70,19 @@ public:
     void loadTrackPreset(const juce::String& trackId, const juce::String& presetName);
     std::vector<juce::String> listTrackPresets();
 
+    // --- Offline render (bounce) ---
+    // Renders [startBeat, endBeat) to a stereo WAV at the given tempo, faster
+    // than realtime. The engine's device callback outputs silence during the
+    // render. Synchronous — returns when rendering is done. Not for calling
+    // from the audio thread. See src/rendering/OfflineRenderer.h for caveats.
+    struct BounceResult {
+        bool ok = false;
+        juce::String errorMessage;
+        double wallClockSeconds = 0.0;
+        double audioDurationSeconds = 0.0;
+    };
+    BounceResult bounce(const juce::File& outputFile, double startBeat, double endBeat);
+
     // --- Automation ---
     using AutomationCallback = std::function<void(float)>;
     using EasingFn = std::function<float(float)>;

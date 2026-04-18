@@ -50,6 +50,16 @@ void AudioEngine::shutdown() {
     busses.clear();
 }
 
+void AudioEngine::pauseDeviceProcessing() {
+    // Detach the processor so the device callback outputs silence while
+    // something else (the offline renderer) drives the graph directly.
+    if (player) player->setProcessor(nullptr);
+}
+
+void AudioEngine::resumeDeviceProcessing() {
+    if (player && graphWrapper) player->setProcessor(graphWrapper.get());
+}
+
 void AudioEngine::setupGraph() {
     auto* device = deviceManager.getCurrentAudioDevice();
     if (!device) return;

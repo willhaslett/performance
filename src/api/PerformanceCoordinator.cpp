@@ -10,6 +10,7 @@
 #include "song/SongRuntime.h"
 #include "daw/InternalSequencer.h"
 #include "gui/Theme.h"
+#include "rendering/OfflineRenderer.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <set>
@@ -840,6 +841,48 @@ void PerformanceCoordinator::replayScore(int upToStep) {
         executeAction(action->name, args, 1.0f);
         perfLog("[Coordinator] Score step %d: %s\n", i + 1, step.description.c_str());
     }
+}
+
+// --- Offline render (bounce) ---
+
+PerformanceCoordinator::BounceResult
+PerformanceCoordinator::bounce(const juce::File& outputFile,
+                                double startBeat, double endBeat) {
+    BounceResult out;
+    if (!audioEngine || !sequencerImpl) {
+        out.errorMessage = "engine not initialised";
+        return out;
+    }
+
+    // Snapshot transport so we restore the live playhead after rendering.
+    const bool wasPlaying = sequencerImpl->isPlaying();
+    const double savedBeat = sequencerImpl->getBeatPosition();
+    const double tempo = sequencerImpl->getTempo();
+
+    // Stop live transport so the sequencer's timer doesn't fight the render.
+    sequencerImpl->stop();
+
+    // Cancel any running interpolations so automation doesn't mutate state
+    // mid-render. (Spike punt: no automation during bounce.)
+    cancelAllAutomation();
+
+    audioEngine->pauseDeviceProcessing();
+
+    auto result = OfflineRenderer::render(*audioEngine, outputFile,
+                                          startBeat, endBeat, tempo);
+
+    audioEngine->resumeDeviceProcessing();
+
+    // Restore transport. Position set explicitly; we don't auto-resume
+    // playback — if the user was playing, they'll hit play again.
+    sequencerImpl->setBeatPosition(savedBeat);
+    (void)wasPlaying;
+
+    out.ok = result.ok;
+    out.errorMessage = result.errorMessage;
+    out.wallClockSeconds = result.wallClockSeconds;
+    out.audioDurationSeconds = result.audioDurationSeconds;
+    return out;
 }
 
 // --- Track presets ---

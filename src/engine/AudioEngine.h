@@ -144,6 +144,14 @@ public:
     juce::AudioDeviceManager& getDeviceManager() { return deviceManager; }
     juce::AudioProcessorGraph& getGraph() { return *graph; }
     juce::KnownPluginList& getKnownPlugins() { return knownPlugins; }
+    GraphWrapper& getGraphWrapper() { return *graphWrapper; }
+
+    // Temporarily detach the graph from the audio device so an external
+    // caller (e.g. OfflineRenderer) has exclusive access to it. During
+    // pause, the device callback outputs silence. Must be paired with
+    // resumeDeviceProcessing() on the same thread.
+    void pauseDeviceProcessing();
+    void resumeDeviceProcessing();
 
 private:
     juce::AudioDeviceManager deviceManager;

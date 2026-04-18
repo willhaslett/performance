@@ -101,6 +101,7 @@ target_sources(Performance PRIVATE
     src/automation/AutomationEngine.cpp
     src/engine/EngineSync.cpp
     src/engine/AudioEngine.mm
+    src/rendering/OfflineRenderer.cpp
     src/engine/MIDIEngine.cpp
     src/engine/Log.cpp
     src/song/SongRuntime.cpp

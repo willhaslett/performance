@@ -324,6 +324,22 @@ void LuaEngine::registerAPI() {
         juce::MessageManager::callAsync([this] { unloadSong(); });
     });
     lua.set_function("save", [&coord]() { coord.save(); });
+
+    // Offline render (bounce) to a stereo WAV file. Returns a one-line
+    // human-readable status string so the caller (Claude or dev console)
+    // knows wall-clock duration and audio length.
+    lua.set_function("bounce", [&coord](const std::string& path,
+                                         double startBeat, double endBeat) -> std::string {
+        auto result = coord.bounce(juce::File(juce::String(path)), startBeat, endBeat);
+        if (!result.ok)
+            return std::string("error: ") + result.errorMessage.toStdString();
+        char buf[256];
+        std::snprintf(buf, sizeof(buf),
+                      "ok: wrote %.2fs of audio to %s in %.2fs wall (%.1fx realtime)",
+                      result.audioDurationSeconds, path.c_str(), result.wallClockSeconds,
+                      result.wallClockSeconds > 0 ? result.audioDurationSeconds / result.wallClockSeconds : 0.0);
+        return std::string(buf);
+    });
     lua.set_function("saveInitialState", [&coord]() { coord.saveInitialState(); });
     lua.set_function("loadInitialState", [&coord]() { coord.loadInitialState(); });
 
