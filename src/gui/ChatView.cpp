@@ -42,6 +42,9 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     bubbleBg.owner = this;
     messageContainer.addAndMakeVisible(bubbleBg);
 
+    // Typing indicator — added but hidden until a request is in flight
+    messageContainer.addChildComponent(typingIndicator);
+
     // Message container in viewport
     messageViewport.setViewedComponent(&messageContainer, false);
     messageViewport.setScrollBarsShown(true, false);
@@ -102,6 +105,9 @@ void ChatView::onError(const juce::String& error) {
 }
 
 void ChatView::onBusyChanged(bool busy) {
+    typingIndicator.setVisible(busy);
+    layoutBubbles();
+    scrollToBottom();
     inputField.setEnabled(!busy);
     if (!busy)
         inputField.grabKeyboardFocus();
@@ -168,10 +174,56 @@ void ChatView::layoutBubbles() {
         y += bubbleHeight + Theme::chatGap;
     }
 
+    // Position the typing indicator just below the last bubble when visible.
+    // Compact width — matches the iMessage/Slack-style "small composing bubble"
+    // rather than a full-width bubble.
+    if (typingIndicator.isVisible()) {
+        int indicatorHeight = (int)Theme::font(Theme::fontSizeSm).getHeight() + 4
+                              + Theme::chatBubblePad * 2;
+        int indicatorWidth = Theme::chatBubblePad * 4 + 34;  // 3 dots (6px) + 2 gaps (8px) = 34
+        typingIndicator.setBounds(Theme::chatBubblePad, y, indicatorWidth, indicatorHeight);
+        y += indicatorHeight + Theme::chatGap;
+    }
+
     int totalHeight = std::max(y, messageViewport.getHeight());
     messageContainer.setSize(width, totalHeight);
     bubbleBg.setBounds(0, 0, width, totalHeight);
     bubbleBg.repaint();
+}
+
+// --- TypingIndicator ---
+
+void ChatView::TypingIndicator::visibilityChanged() {
+    if (isVisible()) startTimerHz(30);
+    else stopTimer();
+}
+
+void ChatView::TypingIndicator::paint(juce::Graphics& g) {
+    auto bounds = getLocalBounds().toFloat();
+
+    // Assistant-style bubble background
+    g.setColour(Theme::color(Theme::Color::chatAssistant));
+    g.fillRoundedRectangle(bounds, (float)Theme::chatBubbleRadius);
+
+    // Three dots, phase-shifted so they pulse in sequence
+    const float dotSize = 6.0f;
+    const float dotGap = 8.0f;
+    const float totalDotsWidth = dotSize * 3 + dotGap * 2;
+    const float startX = bounds.getX() + (bounds.getWidth() - totalDotsWidth) * 0.5f + dotSize * 0.5f;
+    const float cy = bounds.getCentreY();
+
+    const double t = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    const double period = 1.2;
+    auto dotBase = Theme::color(Theme::Color::textSecondary);
+
+    for (int i = 0; i < 3; ++i) {
+        const double phase = (t / period - i * 0.15) * juce::MathConstants<double>::twoPi;
+        const float v = 0.5f * (1.0f + (float)std::sin(phase));
+        const float alpha = 0.3f + 0.55f * v;
+        const float x = startX + i * (dotSize + dotGap);
+        g.setColour(dotBase.withAlpha(alpha));
+        g.fillEllipse(x - dotSize * 0.5f, cy - dotSize * 0.5f, dotSize, dotSize);
+    }
 }
 
 void ChatView::scrollToBottom() {

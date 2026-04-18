@@ -52,4 +52,17 @@ private:
         void paint(juce::Graphics& g) override;
     };
     BubbleBackground bubbleBg;
+
+    // "Assistant is composing" indicator. Three dots in an assistant-style
+    // bubble, pulsing with phase-shifted opacity. Timer runs only while
+    // visible (visibilityChanged handles start/stop).
+    class TypingIndicator : public juce::Component, private juce::Timer {
+    public:
+        TypingIndicator() = default;
+        void paint(juce::Graphics& g) override;
+        void visibilityChanged() override;
+    private:
+        void timerCallback() override { repaint(); }
+    };
+    TypingIndicator typingIndicator;
 };
