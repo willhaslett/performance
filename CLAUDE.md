@@ -2,7 +2,7 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
+> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
 
 ## Version & Distribution
 
