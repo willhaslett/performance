@@ -2344,8 +2344,9 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
     }
 
     // c: toggle cycle playback
-    // l: toggle loop on selected regions
+    // l: toggle loop on selected regions (plain l only — Cmd+L is zoom-in)
     if (key.getTextCharacter() == 'l' && !key.getModifiers().isShiftDown()
+        && !key.getModifiers().isCommandDown()
         && !selectedRegionIds.empty() && arrangement) {
         for (auto& rid : selectedRegionIds) {
             auto* r = arrangement->findRegion(rid);
