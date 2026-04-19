@@ -54,7 +54,7 @@ public:
 
 private:
     StateAPI& state;
-    const ActionInfo& action;
+    ActionInfo action;  // by value — outlives any caller-side vector
 
     struct ParamWidget {
         const ParamSchema* schema = nullptr;
