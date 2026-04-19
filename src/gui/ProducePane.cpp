@@ -943,26 +943,40 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
                             float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
 
-                            // Velocity → brightness: dim to bright, tinted by track color
-                            float velNorm = note.velocity / 127.0f;
-                            auto noteCol = Theme::color(Theme::Color::textSecondary)
-                                .interpolatedWith(juce::Colours::white, velNorm * 0.35f)
-                                .withAlpha(0.4f + velNorm * 0.5f);
+                            // Velocity → brightness + alpha, on the instrument-track hue.
+                            float velNorm = juce::jlimit(0.0f, 1.0f, note.velocity / 127.0f);
+                            auto base = Theme::color(Theme::Color::typeInstrument);
+                            auto noteCol = base.darker(0.55f)
+                                               .interpolatedWith(base.brighter(0.45f), velNorm)
+                                               .withAlpha(0.75f + velNorm * 0.2f);
                             g.setColour(noteCol);
                             g.fillRect(nx, ny - noteH * 0.5f, nw, std::max(1.0f, noteH));
                         }
                     }
                 }
 
-                // Audio waveform preview
+                // Audio waveform preview — tinted with the audio-track type color,
+                // gradient-filled vertically (intense at top, dim at bottom) so
+                // taller peaks visually pop a touch more than shorter ones.
+                // Subtle by design — the y-axis amplitude is the real signal; this
+                // is denormalized sugar.
                 if (r->type == "audio") {
                     auto* take = r->activeTake();
                     if (take && !take->peakData.peaks.empty()) {
                         auto inner = regionBounds.reduced(1, 3);
                         float centreY = inner.getCentreY();
                         float halfH = inner.getHeight() * 0.5f;
-                        auto waveCol = Theme::color(Theme::Color::textSecondary).withAlpha(0.7f);
-                        g.setColour(waveCol);
+
+                        auto base = Theme::color(Theme::Color::typeAudio);
+                        auto intense = base.brighter(0.25f).withAlpha(0.95f);
+                        auto dim     = base.darker(0.15f).withAlpha(0.8f);
+                        juce::ColourGradient grad(intense,
+                                                   (float)inner.getX(), (float)inner.getY(),
+                                                   intense,
+                                                   (float)inner.getX(), (float)inner.getBottom(),
+                                                   false);
+                        grad.addColour(0.5, dim);  // dim at the silent center, intense at peak excursions
+                        g.setGradientFill(grad);
 
                         // Map peaks to pixels
                         int numPeaks = (int)take->peakData.peaks.size();
@@ -979,7 +993,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
                             float y1 = centreY - scaledMx * halfH;
                             float y2 = centreY - scaledMn * halfH;
-                            g.drawLine(px, y1, px, y2, pw > 1.5f ? 1.0f : pw);
+                            float h = std::max(1.0f, y2 - y1);
+                            g.fillRect(px, y1, std::max(1.0f, pw), h);
                         }
                     }
                 }
@@ -1035,16 +1050,21 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         ghostEdgeRects.push_back({ r->id, ghostBounds.getRight(),
                             ghostBounds.getY(), ghostBounds.getHeight() });
 
-                        // Dimmed note preview
+                        // Dimmed note preview — same hue as the originals, lower alpha overall
                         if (!ghostNotes.empty()) {
                             auto inner = ghostBounds.reduced(1, 3);
                             constexpr float noteH = 2.0f;
+                            auto base = Theme::color(Theme::Color::typeInstrument);
                             for (auto& note : ghostNotes) {
                                 if (note.beatOffset >= ghostLen) continue;
                                 float nx = (float)gx + (float)(note.beatOffset * pixelsPerBeat);
                                 float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
                                 float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
-                                g.setColour(fillCol.brighter(0.4f).withAlpha(0.25f));
+                                float velNorm = juce::jlimit(0.0f, 1.0f, note.velocity / 127.0f);
+                                auto noteCol = base.darker(0.4f)
+                                                   .interpolatedWith(base, velNorm)
+                                                   .withAlpha(0.18f + velNorm * 0.22f);
+                                g.setColour(noteCol);
                                 g.fillRect(nx, ny - noteH * 0.5f, nw, std::max(1.0f, noteH));
                             }
                         }
