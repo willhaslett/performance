@@ -1,48 +1,6 @@
 #include "gui/MorphEditor.h"
+#include "gui/ActionInstanceForm.h"
 #include "api/StateAPI.h"
-
-void showRemainingParamsDialog(const std::string& paramSchema, const juce::String& firstArg,
-                                std::function<void(const std::string&)> onComplete) {
-    auto schema = juce::JSON::parse(juce::String(paramSchema));
-    if (!schema.isArray() || schema.size() <= 1) {
-        juce::var args;
-        if (firstArg.isNotEmpty()) args.append(firstArg);
-        onComplete(juce::JSON::toString(args, true).toStdString());
-        return;
-    }
-
-    auto* dlg = new juce::AlertWindow("Parameters", "", juce::MessageBoxIconType::NoIcon);
-    std::vector<juce::String> paramNames;
-    for (int i = 1; i < schema.size(); ++i) {
-        auto p = schema[i];
-        auto name = p.getProperty("name", "").toString();
-        auto type = p.getProperty("type", "").toString();
-        juce::String defaultVal;
-        if (type == "float")
-            defaultVal = (name.containsIgnoreCase("duration") || name.containsIgnoreCase("dwell")) ? "3.0" : "1.0";
-        else if (type == "string")
-            defaultVal = name.containsIgnoreCase("easing") ? "ease-in" : "";
-        dlg->addTextEditor(name, defaultVal, name);
-        paramNames.push_back(name);
-    }
-    dlg->addButton("OK", 1);
-    dlg->addButton("Cancel", 0);
-
-    dlg->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dlg, firstArg, paramNames, schema, onComplete](int result) {
-            if (result != 1) { delete dlg; return; }
-            juce::var args;
-            if (firstArg.isNotEmpty()) args.append(firstArg);
-            for (int i = 0; i < (int)paramNames.size(); ++i) {
-                auto val = dlg->getTextEditorContents(paramNames[i]);
-                auto type = schema[i + 1].getProperty("type", "").toString();
-                if (type == "float") args.append(val.getDoubleValue());
-                else args.append(val);
-            }
-            onComplete(juce::JSON::toString(args, true).toStdString());
-            delete dlg;
-        }));
-}
 
 MorphEditor::MorphEditor(StateAPI& state) : state(state) {
     addAndMakeVisible(okButton);
@@ -280,10 +238,13 @@ void MorphEditor::showActionPickerForSlot(int slotIndex, juce::Point<int> screen
                 if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
             }
 
-            auto schema = actions[ai].paramSchema;
-            showRemainingParamsDialog(schema, firstArg,
-                [this, slotIndex](const std::string& argsJson) {
+            juce::var initialArgs;
+            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
+            ActionInstanceForm::launch(state, actions[ai], initialArgs,
+                [this, slotIndex](const juce::var& formArgs) {
+                    if (formArgs.isVoid()) return;
                     if (slotIndex >= (int)slots.size()) return;
+                    auto argsJson = juce::JSON::toString(formArgs, true).toStdString();
                     slots[slotIndex].argsJson = argsJson;
                     slots[slotIndex].argsSummary = summarizeArgs(
                         slots[slotIndex].actionName, argsJson).toStdString();

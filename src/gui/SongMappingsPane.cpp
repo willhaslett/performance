@@ -1,4 +1,5 @@
 #include "gui/SongMappingsPane.h"
+#include "gui/ActionInstanceForm.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -715,22 +716,26 @@ void SongMappingsPane::showActionMenu(const DeviceId& deviceId, const std::strin
                 if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
             }
 
-            juce::var args;
-            if (firstArg.isNotEmpty()) args.append(firstArg);
-            auto argsJson = juce::JSON::toString(args, true).toStdString();
-
             auto* song = state.currentSong();
             if (!song) return;
+            auto songId = song->id;
 
-            if (!capBindId.empty()) state.removeBinding(capBindId);
-
-            auto bindingId = state.addBinding(song->id, capCtrlType, channel, number,
-                                               actions[ai].id, argsJson, controlName, capDevId);
-            if (asScoreStep) {
-                int nextPos = (int)scoreRows.size() + 1;
-                state.setBindingAsScoreStep(bindingId, nextPos);
-            }
-            refresh();
+            juce::var initialArgs;
+            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
+            ActionInstanceForm::launch(state, actions[ai], initialArgs,
+                [this, songId, capCtrlType, channel, number, controlName,
+                 capBindId, capDevId, asScoreStep, ai, actions](const juce::var& formArgs) {
+                    if (formArgs.isVoid()) return;
+                    auto argsJson = juce::JSON::toString(formArgs, true).toStdString();
+                    if (!capBindId.empty()) state.removeBinding(capBindId);
+                    auto bindingId = state.addBinding(songId, capCtrlType, channel, number,
+                                                       actions[ai].id, argsJson, controlName, capDevId);
+                    if (asScoreStep) {
+                        int nextPos = (int)scoreRows.size() + 1;
+                        state.setBindingAsScoreStep(bindingId, nextPos);
+                    }
+                    refresh();
+                });
         });
 }
 

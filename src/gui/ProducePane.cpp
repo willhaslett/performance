@@ -1,5 +1,6 @@
 #include "gui/ProducePane.h"
 #include "gui/MorphEditor.h"
+#include "gui/ActionInstanceForm.h"
 #include "api/StateAPI.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
@@ -177,16 +178,18 @@ void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string
             }
 
             auto actionId = actions[ai].id;
-            auto schema = actions[ai].paramSchema;
-            showRemainingParamsDialog(schema, firstArg,
-                [this, trackId, beat, actionId](const std::string& argsJson) {
+            juce::var initialArgs;
+            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
+            ActionInstanceForm::launch(*state, actions[ai], initialArgs,
+                [this, trackId, beat, actionId](const juce::var& args) {
+                    if (args.isVoid()) return;  // cancelled
                     auto* ts = state ? state->findTrack(TrackId{trackId}) : nullptr;
                     if (!ts) return;
                     ActionEventData ae;
                     ae.id = ActionEventId{juce::Uuid().toString().toStdString()};
                     ae.beat = beat;
                     ae.actionId = actionId;
-                    ae.argsJson = argsJson;
+                    ae.argsJson = juce::JSON::toString(args, true).toStdString();
                     ts->actionData.push_back(std::move(ae));
                     state->markDirty();
                     repaint();
@@ -1533,14 +1536,18 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
                                 int ti = sub - 1;
                                 if (ti < (int)stateTracks.size()) firstArg = juce::String(stateTracks[ti].id.str());
                             }
-                            showRemainingParamsDialog(actions[ai].paramSchema, firstArg,
-                                [this, trkId, evId, ai, actions](const std::string& argsJson) {
+                            juce::var initialArgs;
+                            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
+                            ActionInstanceForm::launch(*state, actions[ai], initialArgs,
+                                [this, trkId, evId, ai, actions](const juce::var& args) {
+                                    if (args.isVoid()) return;
                                     auto* t2 = state ? state->findTrack(TrackId{trkId}) : nullptr;
                                     if (!t2) return;
                                     for (auto& ae : t2->actionData) {
                                         if (ae.id == evId) {
                                             ae.actionId = actions[ai].id;
-                                            ae.argsJson = argsJson; break;
+                                            ae.argsJson = juce::JSON::toString(args, true).toStdString();
+                                            break;
                                         }
                                     }
                                     state->markDirty(); repaint();

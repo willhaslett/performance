@@ -10,10 +10,6 @@ class StateAPI;
 // MorphEditor — slot-based editor for compound morph actions.
 // Shows a growing list of action slots, each clickable to assign an action.
 
-// Show a dialog for action params after the first (track/channel) has been selected.
-void showRemainingParamsDialog(const std::string& paramSchema, const juce::String& firstArg,
-                                std::function<void(const std::string&)> onComplete);
-
 class MorphEditor : public juce::Component {
 public:
     MorphEditor(StateAPI& state);
