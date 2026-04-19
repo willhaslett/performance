@@ -643,6 +643,59 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 }
 
+ProducePane::TrackRowVisuals ProducePane::trackRowVisuals(const TrackState& t) const {
+    TrackRowVisuals v;
+    v.audibility = t.muted ? Audibility::Muted : Audibility::Active;
+    v.type       = t.sourceType;
+    if (state) {
+        auto sel = state->selectedTrackIds();
+        v.selected = std::find(sel.begin(), sel.end(), t.id) != sel.end();
+    } else {
+        v.selected = false;
+    }
+    return v;
+}
+
+ProducePane::RegionVisuals ProducePane::regionVisuals(const TrackState& t,
+                                                      const RegionState& r) const {
+    RegionVisuals v;
+    v.audibility   = (t.muted || r.muted) ? Audibility::Muted : Audibility::Active;
+    v.selected     = selectedRegionIds.count(r.id) > 0;
+    v.beingDragged = draggingRegion && r.id == dragRegionId;
+    v.beingTrimmed = trimEdge != TrimEdge::None && r.id == trimRegionId;
+    return v;
+}
+
+void ProducePane::paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                const TrackRowVisuals& v) {
+    auto rowCol = (v.audibility == Audibility::Muted)
+                    ? Theme::color(Theme::Color::bgRowMuted)
+                    : Theme::color(Theme::Color::bgRowActive);
+    g.setColour(rowCol);
+    g.fillRect(bounds);
+
+    if (v.selected) {
+        g.setColour(Theme::color(Theme::Color::bgSelection));
+        g.fillRect(bounds);
+    }
+}
+
+juce::Colour ProducePane::regionFillColour(Audibility a) const {
+    auto base = Theme::color(Theme::Color::bgSurfaceRaised);
+    return a == Audibility::Muted ? base.darker(0.5f) : base;
+}
+
+void ProducePane::paintRegionShell(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                   const RegionVisuals& v) {
+    float baseAlpha = v.beingDragged ? 0.45f : 0.82f;
+    g.setColour(regionFillColour(v.audibility).withAlpha(baseAlpha));
+    g.fillRoundedRectangle(bounds.toFloat(), 5.0f);
+
+    g.setColour(v.selected ? Theme::color(Theme::Color::accent)
+                            : Theme::color(Theme::Color::border));
+    g.drawRoundedRectangle(bounds.toFloat(), 5.0f, v.selected ? 2.0f : 1.0f);
+}
+
 void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(area);
@@ -663,28 +716,18 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto& t = tracks[i];
         auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
+        if (!trackState) { y += trackRowHeight; continue; }
 
-        // Track header background — neutral for all types
-        bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
-        bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
+        auto vis = trackRowVisuals(*trackState);
+        paintTrackRow(g, row, vis);
 
-        // Full row background — lifted from empty space
-        g.setColour(Theme::color(Theme::Color::bgSurface));
-        g.fillRect(row);
-
-        // Type accent — 3px left-edge stripe. Action tracks get no stripe.
-        if (!isAction) {
-            auto accentColor = isAudioInput ? Theme::Color::typeAudio : Theme::Color::typeInstrument;
+        // Type accent — 3px left-edge stripe (header-only). Action tracks get no stripe.
+        if (vis.type != TrackSourceType::Action) {
+            auto accentColor = vis.type == TrackSourceType::AudioInput
+                                ? Theme::Color::typeAudio
+                                : Theme::Color::typeInstrument;
             g.setColour(Theme::color(accentColor));
             g.fillRect(row.getX(), row.getY(), 3, row.getHeight());
-        }
-
-        // Selection highlight
-        auto selIds = state->selectedTrackIds();
-        bool isSelected = std::find(selIds.begin(), selIds.end(), t.id) != selIds.end();
-        if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSelection));
-            g.fillRect(row);
         }
 
         // Row separators
@@ -730,30 +773,27 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             cx += Theme::pillSize + Theme::pillGap;
         };
 
-        bool isActionTrack = trackState && trackState->sourceType == TrackSourceType::Action;
+        bool isActionTrack = vis.type == TrackSourceType::Action;
         bool isHoveredRow = ((int)i == hoveredPillTrackIdx);
 
         muteBounds[i] = {};
         soloBounds[i] = {};
         if (!isActionTrack) {
-            bool isMuted = trackState ? trackState->muted : false;
-            bool isSoloed = trackState ? trackState->soloed : false;
-            drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMute,
+            drawPill(muteBounds[i], "M", trackState->muted, Theme::Color::pillMute,
                      isHoveredRow && hoveredPill == HoveredPill::Mute);
-            drawPill(soloBounds[i], "S", isSoloed, Theme::Color::pillSolo,
+            drawPill(soloBounds[i], "S", trackState->soloed, Theme::Color::pillSolo,
                      isHoveredRow && hoveredPill == HoveredPill::Solo);
             cx += Theme::pillGroupGap - Theme::pillGap;
         }
 
         armBounds[i] = {};
         if (!isActionTrack) {
-            bool isArmed = trackState ? trackState->armed : false;
-            drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArm,
+            drawPill(armBounds[i], "R", trackState->armed, Theme::Color::pillArm,
                      isHoveredRow && hoveredPill == HoveredPill::Arm);
         }
 
         inputMonitorBounds[i] = {};
-        if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
+        if (vis.type == TrackSourceType::AudioInput) {
             drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput,
                      isHoveredRow && hoveredPill == HoveredPill::Input);
         }
@@ -772,23 +812,16 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     double startBeat = scrollBeat;
     double endBeat = startBeat + gridWidth / pixelsPerBeat;
 
-    // Track lane backgrounds — lifted from empty space.
-    // Inset the left edge by 1px so the fills don't overdraw the track-header
+    // Track lane backgrounds — paintTrackRow owns row colour + selection.
+    // Inset the left edge by 1px so fills don't overdraw the track-header
     // column's right border (drawn earlier in paintTrackHeaders at x=area.getX()).
-    auto sel = state->selectedTrackIds();
     for (size_t i = 0; i < tracks.size(); ++i) {
+        auto* trkState = state->findTrack(tracks[i].id);
+        if (!trkState) continue;
         int rowY = area.getY() + (int)i * trackRowHeight;
-        bool isSelected = std::find(sel.begin(), sel.end(), tracks[i].id) != sel.end();
-
-        // Base lane fill
-        g.setColour(Theme::color(Theme::Color::bgSurface));
-        g.fillRect(area.getX() + 1, rowY, area.getWidth() - 1, trackRowHeight);
-
-        // Selection highlight — matches header
-        if (isSelected) {
-            g.setColour(Theme::color(Theme::Color::bgSelection));
-            g.fillRect(area.getX() + 1, rowY, area.getWidth() - 1, trackRowHeight);
-        }
+        auto laneBounds = juce::Rectangle<int>(area.getX() + 1, rowY,
+                                                area.getWidth() - 1, trackRowHeight);
+        paintTrackRow(g, laneBounds, trackRowVisuals(*trkState));
     }
 
     // Grid lines — bar lines darker, beat lines lighter.
@@ -862,22 +895,10 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 if (originalVisible)
                     regionHitRects.push_back({ r->id, tracks[ti].id, regionBounds });
 
-                // Region color — one level above lane background
-                auto fillCol = Theme::color(Theme::Color::bgSurfaceRaised);
-                bool selected = selectedRegionIds.count(r->id) > 0;
-                bool beingDragged = (draggingRegion && r->id == dragRegionId);
-                if (r->muted)
-                    fillCol = fillCol.darker(0.5f);
+                auto rvis = trkState ? regionVisuals(*trkState, *r) : RegionVisuals{};
+                auto fillCol = regionFillColour(rvis.audibility);
                 if (originalVisible) {
-                float baseAlpha = beingDragged ? 0.45f : 0.82f;
-                g.setColour(fillCol.withAlpha(baseAlpha));
-                g.fillRoundedRectangle(regionBounds.toFloat(), 5.0f);
-
-                // Border
-                g.setColour(selected ? Theme::color(Theme::Color::accent)
-                                      : Theme::color(Theme::Color::border));
-                g.drawRoundedRectangle(regionBounds.toFloat(), 5.0f,
-                                        selected ? 2.0f : 1.0f);
+                paintRegionShell(g, regionBounds, rvis);
 
                 // Region name
                 g.setColour(Theme::color(Theme::Color::textPrimary));

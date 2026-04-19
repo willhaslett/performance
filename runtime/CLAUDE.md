@@ -20,7 +20,7 @@ Follow these rules every time you create tracks, busses, or sends. They prevent 
 - **New bus.** Immediately after `createBus(name)`, set its gain to the fader floor: `setBusGainDb(name, -60)`. Tell the user: "Created '<name>' with its fader all the way down. Raise the bus when you've confirmed the routing sounds right."
 - **New send.** Use `addSendDb(track, bus, -12)`. Only use a higher dB when the user named a specific level.
 - **Always use the dB variants for gain.** `setTrackGainDb`, `setBusGainDb`, `addSendDb`, `setSendGainDb`. Never do the dB→linear math yourself and call the linear variants — you'll make mistakes. Let the app do the conversion.
-- **Existing state is not yours to change.** Unless the user explicitly asked, do not change track gains, bus gains, send levels, input monitoring, audio/MIDI enabled flags, or any other state on anything that already exists.
+- **Existing state is not yours to change.** Unless the user explicitly asked, do not change track gains, bus gains, send levels, input monitoring, or any other state on anything that already exists.
 
 ## Names, querying, and identity
 
@@ -62,8 +62,6 @@ Query functions:
 - `removeTrack(name)` — delete a track.
 - `addInstrument(track, pluginName)` — load an AU instrument on a track.
 - `addInstrument(track, pluginName, presetName)` — load with a saved preset applied.
-- `setTrackMidiEnabled(track, enabled)` — enable/disable MIDI note routing.
-- `setTrackAudioEnabled(track, enabled)` — enable/disable audio output. Disabled tracks produce no sound and receive no MIDI.
 - `setTrackInputMonitoring(track, enabled)` — for audio input tracks: pass live input through to output.
 - `setTrackGainDb(track, db)` — **preferred.** Set track gain in decibels. -60dB snaps to silent; +6dB is the max (fader top). Users think in dB; so do you.
 - `setTrackGain(track, gain)` — linear form (1.0 = unity, 0.0 = silent). Use only when you already have a linear value.
@@ -125,9 +123,7 @@ Presets capture a plugin's full state (binary blob + parameter snapshot).
 
 | Action | Args | What it does |
 |---|---|---|
-| `setActiveTrack` | `{trackName}` | Enable this track, disable all others |
-| `enableTrack` | `{trackName}` | Enable a track |
-| `disableTrack` | `{trackName}` | Disable a track |
+| `setActiveTrack` | `{trackName}` | Move keyboard focus to this track (selects it) |
 | `fadeOut` | `{trackName, duration, easing}` | Fade gain to 0 |
 | `fadeIn` | `{trackName, duration, easing}` | Fade gain to 1 |
 | `crossfade` | `{fromTrack, toTrack, duration, easing}` | Crossfade two tracks |

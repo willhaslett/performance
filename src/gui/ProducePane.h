@@ -68,6 +68,43 @@ private:
     void paintGrid(juce::Graphics& g, juce::Rectangle<int> area);
     void paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area);
 
+    // Visual model — derive once from raw state, then paint from this.
+    // Centralises composition rules so a new visual axis (e.g. recording)
+    // is one struct field + one branch in a paint helper.
+    enum class Audibility { Active, Muted };
+
+    struct TrackRowVisuals {
+        Audibility       audibility;
+        bool             selected;
+        TrackSourceType  type;
+    };
+
+    struct RegionVisuals {
+        Audibility audibility;
+        bool       selected;
+        bool       beingDragged;
+        bool       beingTrimmed;
+    };
+
+    TrackRowVisuals trackRowVisuals(const TrackState& t) const;
+    RegionVisuals   regionVisuals(const TrackState& t, const RegionState& r) const;
+
+    // Region fill colour given its audibility — single source of truth for
+    // muted-region tinting, shared by paintRegionShell and ghost-loop drawing.
+    juce::Colour    regionFillColour(Audibility a) const;
+
+    // Paint the row background (mute-aware) plus selection overlay. Used by
+    // both paintTrackHeaders (header column slice) and paintGrid (lane slice).
+    // Type stripe and pills are header-only and stay in paintTrackHeaders.
+    void paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
+                       const TrackRowVisuals& v);
+
+    // Paint a region's background, border, and selection. Content (notes,
+    // waveform, name) is drawn by the caller after this so the region's
+    // alpha-from-audibility flows through.
+    void paintRegionShell(juce::Graphics& g, juce::Rectangle<int> bounds,
+                          const RegionVisuals& v);
+
     // Click areas — transport buttons
     juce::Rectangle<int> rewindButtonBounds;
     juce::Rectangle<int> stopButtonBounds;

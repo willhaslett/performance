@@ -2,7 +2,7 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/LAMBDA_CHAT_PROXY.md`** is the design + implementation plan for the AI-for-testers Lambda — read before starting that work. **`docs/PRODUCE_PANE_REFACTOR.md`** is the design + step plan for the audibility-model + visual-layer rework that drops `audioEnabled` / `midiEnabled` and replaces ad-hoc paint code with a derived visual model — read before touching any track-row, region, or plugin-slot rendering. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
+> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/LAMBDA_CHAT_PROXY.md`** is the design + implementation plan for the AI-for-testers Lambda — read before starting that work. **`docs/PRODUCE_PANE_REFACTOR.md`** is the design + step-plan retro for the audibility-model + visual-layer rework (now shipped) — read before adding new visual axes to track-row or region rendering. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
 
 ## Version & Distribution
 
@@ -24,12 +24,11 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, **typed IDs are complete** (all 13 entity ID families are strongly-typed newtypes; the incident's root-cause bug class is now a compile error), and the **AI-for-testers chunk is done** end-to-end: chat proxy Lambda deployed, C++ client wired with SSE streaming, per-install monthly token caps live, bearer token migrated to Secrets Manager (no more silent rotation), Show Log + Export Logs UI shipped. What's left for 0.1.0:
+As of 2026-04-19, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, **typed IDs are complete** (all 13 entity ID families are strongly-typed newtypes; the incident's root-cause bug class is now a compile error), the **AI-for-testers chunk is done** end-to-end (chat proxy Lambda deployed, C++ client wired with SSE streaming, per-install monthly token caps live, bearer token migrated to Secrets Manager, Show Log + Export Logs UI shipped), and the **produce-pane refactor is done** — Phase 1 dropped redundant `audioEnabled` / `midiEnabled` / `masterAudioEnabled` state and the U power icon (Logic-style: mute is the only track-level silencer), Phase 2 replaced ad-hoc paint logic with a derived visual model (`Audibility` enum, `TrackRowVisuals` / `RegionVisuals` structs, two paint helpers). What's left for 0.1.0:
 
-1. **Produce-pane refactor** (~1 focused day). Drop track-level `audioEnabled` / `midiEnabled`, push the gate down to per-plugin bypass (Logic-style), and replace ad-hoc paint logic with a derived visual model (audibility + selection structs, two paint functions). Triggered by repeated paint regressions when adding region color / mute styling — root cause is mixed concerns. Full design + 7-step build sequence in `docs/PRODUCE_PANE_REFACTOR.md`.
-2. **perfuce.com rebuild** (several days). Includes the tester onboarding copy carry-over from §3 — example prompts, "chat is free for testers" line, no key-paste instructions. Mostly gated on video capture.
-3. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
-4. **Tag + release.**
+1. **perfuce.com rebuild** (several days). Includes the tester onboarding copy carry-over from §3 — example prompts, "chat is free for testers" line, no key-paste instructions. Mostly gated on video capture.
+2. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+3. **Tag + release.**
 
 ### 1. Distribution proof
 
@@ -115,7 +114,6 @@ Named so it's a decision, not a gap:
 - Background plugin state capture
 - Settings MIDI tab content
 - ⌘O Songs palette
-- Full ProducePane refactor
 
 ## Active Work
 
@@ -250,7 +248,7 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 ### Key state-model facts
 
 - **Track source types:** `Instrument` (MIDI→plugin→audio), `AudioInput` (physical input→fx→output, mono→stereo upmix), `Action` (beat-triggered, no audio, hidden from mixer).
-- `midiEnabled` + `audioEnabled` are distinct; **both** required for MIDI routing. The power icon controls `audioEnabled` and re-enables `midiEnabled` on power-on.
+- **No track-level on/off.** Logic-style: `muted` is the only track-level silencer. There is no `audioEnabled` / `midiEnabled` / `masterAudioEnabled`. `setActiveTrack` just selects.
 - `armed`, `muted`, `soloed`, `recordModeActive` — runtime, not persisted. Recording is explicit: armed tracks record only when record mode is active.
 - Regions are take folders. `MidiEventState` is raw events; notes derived via `buildNoteList()`.
 - Action track: one per song (auto-created), no regions — events stored directly with absolute beat positions.
@@ -263,7 +261,7 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 
 Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. Key constraints:
 
-- **MIDI gating:** disabled tracks receive no MIDI — `rebuildConnections` requires `audioEnabled=true` AND `midiEnabled=true`. Actions like `setActiveTrack` set both together so the UI reflects action-driven changes.
+- **No graph-level gating.** Every track and bus is wired into the graph. Mute lives at the per-track gain stage; nothing else gates routing.
 - **Audio device switching:** `AudioEngine` listens to `AudioDeviceManager`. On change, `rebuildGraph()` tears down IO nodes, reconfigures, recreates, rewires. Output and input devices are independent (CoreAudio); selection persists in `config["audio_output_device"]` / `["audio_input_device"]`.
 
 ### Subsystems (one-line index)
@@ -286,8 +284,8 @@ Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. 
 All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individual files.
 
 - **MainLayout** — toolbar + sidebar + dual-pane area + mixer.
-- **ProducePane** — DAW arrange view: transport bar with LCD position, two-row track headers (power+name / M/S/R/I pills), timeline grid, regions (MIDI piano roll or audio waveform), action track. Region ops via Cmd/Shift selection + drag/keyboard. Auto-scroll, two-finger horizontal scroll. Keyboard: space/r/return, h/l (step by div), Shift+H/L (step by measure), Cmd+h/l/j/k (zoom).
-- **MixerView** + **TrackStrip** / **BusStrip** / **OutputStrip** — 30Hz peak polling. Drag headers to reorder. Power icons toggle `audioEnabled`. M/S pills bottom row.
+- **ProducePane** — DAW arrange view: transport bar with LCD position, two-row track headers (name / M/S/R/I pills), timeline grid, regions (MIDI piano roll or audio waveform), action track. Paint flows through a derived visual model (`Audibility` enum + `TrackRowVisuals` / `RegionVisuals` structs + `paintTrackRow` / `paintRegionShell` helpers) — add new visual axes there, not in scattered conditionals. Region ops via Cmd/Shift selection + drag/keyboard. Auto-scroll, two-finger horizontal scroll. Keyboard: space/r/return, h/l (step by div), Shift+H/L (step by measure), Cmd+h/l/j/k (zoom).
+- **MixerView** + **TrackStrip** / **BusStrip** / **OutputStrip** — 30Hz peak polling. Drag headers to reorder. M/S pills bottom row.
 - **FaderMeter** — fader + L/R meters, IEC dB scale (-60 to +6), peak hold, click-to-jump, full range from handle center.
 - **MusicalTyping** — Cmd+Shift+K. Logic-style keyboard layout, octave/velocity, sustain. Injects via `audioEngine.injectMidi()`.
 - **MorphEditor** — slot-based compound morph editor.
@@ -335,7 +333,7 @@ Full articulation of principles in `docs/THEME.md`.
 
 Bindings map MIDI controls to named actions with arguments. Two scopes (song / global) merged via `effectiveBindings()` (song wins). Args stored as JSON arrays with track UUIDs. `paramSchema` on actions drives MappingPane input fields. `ActionInfo.durationParamIndex` identifies the duration arg for UI duration bars. `resolveTrack()` expects UUIDs only.
 
-Built-in actions: `setActiveTrack`, `enableTrack`, `disableTrack`, `fadeOut`, `fadeIn`, `crossfade`, `trackVolume`, `morphToPreset`, `morphChain`, `morph`. SongRuntime dispatches with wildcard fallback (exact → any device → any channel → any/any).
+Built-in actions: `setActiveTrack`, `fadeOut`, `fadeIn`, `crossfade`, `trackVolume`, `morphToPreset`, `morphChain`, `morph`. SongRuntime dispatches with wildcard fallback (exact → any device → any channel → any/any).
 
 ### Plugin State Presets
 

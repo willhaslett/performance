@@ -16,6 +16,8 @@ Rules and high-level usage guidance live in CLAUDE.md under
 | `bgApp` / `bgPanel` | `0xff161616` | App background, sidebar, pane headers |
 | `bgSurface` | `0xff1e1e1e` | Track lanes, mixer strips, track headers |
 | `bgSurfaceRaised` | `0xff333333` | Regions in the timeline — one step above the lane |
+| `bgRowActive` | `0xff1e1e1e` | ProducePane track row when unmuted — equals `bgSurface` initially |
+| `bgRowMuted` | `0xff1a1a1a` | ProducePane track row when muted — recedes toward `bgPanel` so muted tracks read as inactive at a glance |
 | `bgRecessed` | `0xff121212` | Deepest inset (candidate for removal; see Active Work) |
 
 ### Interactive controls (pills, plugin slots, LCD, pickers, text fields)

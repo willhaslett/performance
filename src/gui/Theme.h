@@ -15,6 +15,8 @@ namespace Theme {
         inline uint32_t bgPanel         = 0xff161616;  // panels, sidebars, pane headers
         inline uint32_t bgSurface       = 0xff1e1e1e;  // track lanes, mixer strips
         inline uint32_t bgSurfaceRaised = 0xff333333;  // region fills
+        inline uint32_t bgRowActive     = 0xff1e1e1e;  // ProducePane track row when unmuted (matches bgSurface initially)
+        inline uint32_t bgRowMuted      = 0xff1a1a1a;  // ProducePane track row when muted (recedes toward bgPanel)
         inline uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces
         inline uint32_t bgControl       = 0xff2d2d2d;  // interactive control base
         inline uint32_t bgControlHover  = 0xff333333;  // interactive control hover
