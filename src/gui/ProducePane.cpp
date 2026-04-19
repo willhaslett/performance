@@ -357,6 +357,121 @@ void ProducePane::paint(juce::Graphics& g) {
     g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
 }
 
+void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                        TransportGlyph glyph, bool active,
+                                        bool hovered, juce::Colour activeCol) {
+    const float cornerR = 4.0f;
+    auto boundsF = bounds.toFloat();
+
+    // Container — buttons live inside a shared group container, so at rest
+    // they paint nothing. Active gets a colored pill; hover gets a subtle
+    // brighten on top of the group bg.
+    if (active) {
+        g.setColour(hovered ? activeCol.brighter(0.15f) : activeCol);
+        g.fillRoundedRectangle(boundsF, cornerR);
+    } else if (hovered) {
+        g.setColour(Theme::color(Theme::Color::bgControlHover));
+        g.fillRoundedRectangle(boundsF, cornerR);
+    }
+
+    // Glyph colour
+    juce::Colour glyphCol;
+    if (active)
+        glyphCol = Theme::color(Theme::Color::textOnColor);
+    else
+        glyphCol = hovered ? Theme::color(Theme::Color::textPrimary)
+                            : Theme::color(Theme::Color::textSecondary);
+    g.setColour(glyphCol);
+
+    // Glyph — all filled shapes for uniform weight, except Cycle which is
+    // stroked to read as a flow/path symbol.
+    auto inner = boundsF.reduced(7.0f);
+
+    switch (glyph) {
+    case TransportGlyph::Rewind: {
+        // |◀◀  — bar on left, two left-pointing triangles
+        const float barW = 1.5f;
+        const float gap = 1.0f;
+        const float triW = (inner.getWidth() - barW - gap) * 0.5f;
+        g.fillRect(inner.getX(), inner.getY(), barW, inner.getHeight());
+        juce::Path tri1, tri2;
+        float t1X = inner.getX() + barW + gap;
+        tri1.addTriangle(t1X, inner.getCentreY(),
+                         t1X + triW, inner.getY(),
+                         t1X + triW, inner.getBottom());
+        float t2X = t1X + triW;
+        tri2.addTriangle(t2X, inner.getCentreY(),
+                         t2X + triW, inner.getY(),
+                         t2X + triW, inner.getBottom());
+        g.fillPath(tri1);
+        g.fillPath(tri2);
+        break;
+    }
+    case TransportGlyph::Stop:
+        g.fillRect(boundsF.reduced(8.0f));
+        break;
+    case TransportGlyph::Play: {
+        juce::Path tri;
+        tri.addTriangle(inner.getX(), inner.getY(),
+                        inner.getX(), inner.getBottom(),
+                        inner.getRight(), inner.getCentreY());
+        g.fillPath(tri);
+        break;
+    }
+    case TransportGlyph::Record:
+        g.fillEllipse(boundsF.reduced(7.0f));
+        break;
+    case TransportGlyph::Cycle: {
+        // Two interlocking arcs forming a loop (Logic-style), drawn as filled
+        // closed paths so they match the visual weight of the other glyphs.
+        // Each arc is a band (outer radius → inner radius) with a butt cap at
+        // the sweep start and a tapered arrowhead at the sweep end.
+        auto r = boundsF.reduced(4.0f);
+        float cx = r.getCentreX();
+        float cy = r.getCentreY();
+        float rx = r.getWidth() * 0.42f;
+        float ry = r.getHeight() * 0.32f;
+        constexpr float pi = juce::MathConstants<float>::pi;
+
+        const float thick   = 2.2f;   // band thickness
+        const float headLen = 4.0f;   // arrowhead projection beyond the arc end
+        const float gap     = 0.55f;  // half-gap angle between the two arcs
+
+        auto halfLoop = [&](float startA, float endA) {
+            float rxO = rx + thick * 0.5f, ryO = ry + thick * 0.5f;
+            float rxI = rx - thick * 0.5f, ryI = ry - thick * 0.5f;
+
+            juce::Path p;
+            // Outer-edge start (butt end)
+            p.startNewSubPath(cx + rxO * std::cos(startA),
+                              cy + ryO * std::sin(startA));
+            // Outer arc along the sweep
+            p.addCentredArc(cx, cy, rxO, ryO, 0.0f, startA, endA, false);
+            // Arrowhead tip — project along tangent direction of increasing angle
+            float tangX = -rx * std::sin(endA);
+            float tangY =  ry * std::cos(endA);
+            float tLen  = std::sqrt(tangX * tangX + tangY * tangY);
+            float dx = tangX / tLen, dy = tangY / tLen;
+            float tipX = cx + rx * std::cos(endA) + dx * headLen;
+            float tipY = cy + ry * std::sin(endA) + dy * headLen;
+            p.lineTo(tipX, tipY);
+            // Return to inner edge at the same angular endpoint
+            p.lineTo(cx + rxI * std::cos(endA),
+                     cy + ryI * std::sin(endA));
+            // Inner arc back
+            p.addCentredArc(cx, cy, rxI, ryI, 0.0f, endA, startA, false);
+            // Close across the butt
+            p.closeSubPath();
+            g.fillPath(p);
+        };
+
+        halfLoop(-pi + gap, -gap);   // top arc, arrowhead at right
+        halfLoop(gap, pi - gap);     // bottom arc, arrowhead at left
+        break;
+    }
+    }
+}
+
 void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(area);
@@ -370,99 +485,62 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     double bpm = sequencer->getTempo();
     double beat = sequencer->getBeatPosition();
 
-    // Layout: LCD centered on track area (excluding header column),
-    // transport buttons glued to the left of the LCD
+    // Layout: transport buttons left-aligned at the edge; LCD centered on
+    // the full pane width.
     int btnSize = 28;
     int btnGap = 4;
     int lcdWidth = 520;
-    int lcdGap = 12;
     int numButtons = 5;
     int totalButtonsW = numButtons * btnSize + (numButtons - 1) * btnGap;
 
-    // Center LCD on the grid area (trackHeaderWidth to right edge)
-    int gridCentre = trackHeaderWidth + (getWidth() - trackHeaderWidth) / 2;
-    int lcdLeft = gridCentre - lcdWidth / 2;
-    int btnX = lcdLeft - lcdGap - totalButtonsW;
+    const int groupPad = 4;
+    int btnX = Theme::spacingM + groupPad;              // left-align, leave the group container's own padding visible
+    int lcdLeft = (getWidth() - lcdWidth) / 2;          // center on full pane width
 
     int btnY = area.getCentreY() - btnSize / 2;
 
     // --- Transport buttons ---
 
-    // Rewind (|◀◀)
-    rewindButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
-    {
-        g.setColour(Theme::color(Theme::Color::textSecondary));
-        auto r = rewindButtonBounds.reduced(6).toFloat();
-        // Two small left-pointing triangles + bar
-        g.fillRect((int)r.getX(), (int)r.getY(), 2, (int)r.getHeight());
-        juce::Path tri;
-        tri.addTriangle(r.getX() + 4, r.getCentreY(), r.getRight() - 2, r.getY(),
-                         r.getRight() - 2, r.getBottom());
-        g.fillPath(tri);
-    }
-    btnX += btnSize + btnGap;
-
-    // Stop (■)
-    stopButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
-    {
-        g.setColour(Theme::color(Theme::Color::textSecondary));
-        g.fillRect(stopButtonBounds.reduced(8));
-    }
-    btnX += btnSize + btnGap;
-
-    // Play (▶) — green background when playing (Logic style)
-    playButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
-    {
-        if (playing) {
-            g.setColour(Theme::color(Theme::Color::transportPlay));
-            g.fillRoundedRectangle(playButtonBounds.toFloat(), 4.0f);
-            g.setColour(Theme::color(Theme::Color::textOnColor));
-        } else {
-            g.setColour(Theme::color(Theme::Color::textSecondary));
-        }
-        juce::Path tri;
-        auto r = playButtonBounds.reduced(7).toFloat();
-        tri.addTriangle(r.getX(), r.getY(), r.getX(), r.getBottom(), r.getRight(), r.getCentreY());
-        g.fillPath(tri);
-    }
-    btnX += btnSize + btnGap;
-
-    // Record (●) — red/brown background when recording (Logic style)
     bool inRecordMode = onIsRecordMode ? onIsRecordMode() : false;
+
+    // Group container — a single rounded-rect behind all five buttons,
+    // Logic-style. Individual buttons paint glyph-only at rest; active /
+    // hover paint their own colored pill inside this container.
+    auto groupBounds = juce::Rectangle<int>(
+        btnX - groupPad, btnY - groupPad,
+        totalButtonsW + 2 * groupPad + 4,  // +4 accounts for the cycle-button extra gap
+        btnSize + 2 * groupPad);
+    g.setColour(Theme::color(Theme::Color::bgControl));
+    g.fillRoundedRectangle(groupBounds.toFloat(), 6.0f);
+
+    rewindButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    paintTransportButton(g, rewindButtonBounds, TransportGlyph::Rewind,
+                         false, hoveredTransport == HoveredTransport::Rewind,
+                         juce::Colour());
+    btnX += btnSize + btnGap;
+
+    stopButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    paintTransportButton(g, stopButtonBounds, TransportGlyph::Stop,
+                         false, hoveredTransport == HoveredTransport::Stop,
+                         juce::Colour());
+    btnX += btnSize + btnGap;
+
+    playButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+    paintTransportButton(g, playButtonBounds, TransportGlyph::Play,
+                         playing, hoveredTransport == HoveredTransport::Play,
+                         Theme::color(Theme::Color::transportPlay));
+    btnX += btnSize + btnGap;
+
     recordButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
-    {
-        if (inRecordMode) {
-            g.setColour(Theme::color(Theme::Color::transportRec));
-            g.fillRoundedRectangle(recordButtonBounds.toFloat(), 4.0f);
-            g.setColour(Theme::color(Theme::Color::textOnColor));
-        } else {
-            g.setColour(Theme::color(Theme::Color::transportRecDot));
-        }
-        auto rb = recordButtonBounds.reduced(7).toFloat();
-        g.fillEllipse(rb);
-    }
+    paintTransportButton(g, recordButtonBounds, TransportGlyph::Record,
+                         inRecordMode, hoveredTransport == HoveredTransport::Record,
+                         Theme::color(Theme::Color::transportRec));
     btnX += btnSize + btnGap + 4;
 
-    // Cycle (⟳)
     cycleButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
-    {
-        auto col = looping ? Theme::color(Theme::Color::accent)
-                            : Theme::color(Theme::Color::textDim);
-        g.setColour(col);
-        auto r = cycleButtonBounds.reduced(5).toFloat();
-        juce::Path arc;
-        arc.addCentredArc(r.getCentreX(), r.getCentreY(),
-                           r.getWidth() * 0.4f, r.getHeight() * 0.4f,
-                           0.0f, 0.3f, juce::MathConstants<float>::twoPi - 0.5f, true);
-        g.strokePath(arc, juce::PathStrokeType(1.5f));
-        // Arrow head at end of arc
-        float endAngle = juce::MathConstants<float>::twoPi - 0.5f;
-        float ax = r.getCentreX() + r.getWidth() * 0.4f * std::cos(endAngle);
-        float ay = r.getCentreY() + r.getHeight() * 0.4f * std::sin(endAngle);
-        juce::Path arrow;
-        arrow.addTriangle(ax - 3, ay - 4, ax + 3, ay, ax - 1, ay + 4);
-        g.fillPath(arrow);
-    }
+    paintTransportButton(g, cycleButtonBounds, TransportGlyph::Cycle,
+                         looping, hoveredTransport == HoveredTransport::Cycle,
+                         Theme::color(Theme::Color::accent));
 
     // --- Position display (LCD centered on grid area) ---
     int lcdX = lcdLeft;
@@ -2235,6 +2313,18 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseMove(const juce::MouseEvent& event) {
+    auto mp = event.getPosition();
+    auto newHover = HoveredTransport::None;
+    if      (rewindButtonBounds.contains(mp)) newHover = HoveredTransport::Rewind;
+    else if (stopButtonBounds.contains(mp))   newHover = HoveredTransport::Stop;
+    else if (playButtonBounds.contains(mp))   newHover = HoveredTransport::Play;
+    else if (recordButtonBounds.contains(mp)) newHover = HoveredTransport::Record;
+    else if (cycleButtonBounds.contains(mp))  newHover = HoveredTransport::Cycle;
+    if (newHover != hoveredTransport) {
+        hoveredTransport = newHover;
+        repaint();
+    }
+
     // Cycle cursors in ruler
     if (sequencer && event.getPosition().getY() >= transportHeight
         && event.getPosition().getY() < transportHeight + rulerHeight
@@ -2304,11 +2394,17 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
 }
 
 void ProducePane::mouseExit(const juce::MouseEvent& /*event*/) {
+    bool dirty = false;
     if (hoveredPillTrackIdx != -1 || hoveredPill != HoveredPill::None) {
         hoveredPillTrackIdx = -1;
         hoveredPill = HoveredPill::None;
-        repaint();
+        dirty = true;
     }
+    if (hoveredTransport != HoveredTransport::None) {
+        hoveredTransport = HoveredTransport::None;
+        dirty = true;
+    }
+    if (dirty) repaint();
 }
 
 void ProducePane::mouseWheelMove(const juce::MouseEvent& event,

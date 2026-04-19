@@ -117,6 +117,18 @@ private:
     juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
 
+    // Transport button hover tracking
+    enum class TransportGlyph { Rewind, Stop, Play, Record, Cycle };
+    enum class HoveredTransport { None, Rewind, Stop, Play, Record, Cycle };
+    HoveredTransport hoveredTransport = HoveredTransport::None;
+
+    // Draws container (rest / hover / active) + glyph. activeCol is the fill
+    // when active=true. When active is false the button uses bgControl +
+    // bgControlHover. Glyph uses textSecondary / textPrimary / textOnColor.
+    void paintTransportButton(juce::Graphics& g, juce::Rectangle<int> bounds,
+                              TransportGlyph glyph, bool active, bool hovered,
+                              juce::Colour activeCol);
+
     // BPM and time sig click areas (in transport LCD)
     juce::Rectangle<int> bpmClickBounds;
     juce::Rectangle<int> timeSigClickBounds;
