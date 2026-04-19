@@ -197,6 +197,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
 - **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
+- **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
 
 **Longer-term:**
 - Refactor oversized GUI files (ProducePane ~2520 lines).

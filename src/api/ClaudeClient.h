@@ -48,16 +48,17 @@ private:
     LuaEngine& lua;
     Listener* listener = nullptr;
 
-    juce::String apiKey;
     juce::String systemPrompt;
-    juce::String model { "claude-sonnet-4-20250514" };
 
     std::vector<Message> conversationHistory;
     juce::String pendingUserText;
     std::mutex sendMutex;
 
     juce::String buildRequestJson();
-    Message parseResponse(const juce::String& responseBody);
+    // Streams an SSE response from the proxy and accumulates it into a
+    // Message. Returns false if the request failed (handler will have
+    // already called notifyError). On success, message is fully populated.
+    bool streamResponse(juce::InputStream& stream, Message& outMessage);
     juce::String executeLua(const juce::String& code);
 
     void notifyText(const juce::String& text);

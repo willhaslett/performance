@@ -1,12 +1,11 @@
 #include "api/ClaudeClient.h"
 #include "scripting/LuaEngine.h"
 #include "engine/Log.h"
+#include "telemetry/InstallId.h"
+#include "BuildConfig.h"
 
 ClaudeClient::ClaudeClient(LuaEngine& lua)
-    : Thread("ClaudeClient"), lua(lua) {
-    auto* key = getenv("ANTHROPIC_API_KEY");
-    if (key) apiKey = juce::String(key);
-}
+    : Thread("ClaudeClient"), lua(lua) {}
 
 ClaudeClient::~ClaudeClient() {
     stopThread(5000);
@@ -19,7 +18,6 @@ void ClaudeClient::setSystemPrompt(const juce::String& prompt) {
 void ClaudeClient::sendMessage(const juce::String& userText) {
     if (isThreadRunning()) return;
 
-    // Add user message to history
     Message userMsg;
     userMsg.role = "user";
     userMsg.content.push_back({ ContentBlock::Text, userText, {}, {}, {}, {}, false });
@@ -31,23 +29,21 @@ void ClaudeClient::sendMessage(const juce::String& userText) {
 void ClaudeClient::run() {
     notifyBusy(true);
 
-    if (apiKey.isEmpty()) {
-        notifyError("Set ANTHROPIC_API_KEY environment variable to use Claude");
+    if (juce::String(CHAT_PROXY_URL).isEmpty()) {
+        notifyError("Chat proxy not configured (run scripts/fetch-telemetry-config.sh and rebuild)");
         notifyBusy(false);
         return;
     }
 
-    // Agentic loop: call API, handle tool use, repeat
     while (!threadShouldExit()) {
         auto requestJson = buildRequestJson();
 
-        // Make HTTP request
-        juce::URL url("https://api.anthropic.com/v1/messages");
+        juce::URL url(CHAT_PROXY_URL);
         url = url.withPOSTData(requestJson);
 
         juce::String headers;
-        headers += "x-api-key: " + apiKey + "\r\n";
-        headers += "anthropic-version: 2023-06-01\r\n";
+        headers += "Authorization: Bearer " + juce::String(TELEMETRY_TOKEN) + "\r\n";
+        headers += "X-Install-Id: " + InstallId::id() + "\r\n";
         headers += "content-type: application/json";
 
         int statusCode = 0;
@@ -59,70 +55,75 @@ void ClaudeClient::run() {
         auto stream = url.createInputStream(options);
 
         if (!stream) {
-            notifyError("Failed to connect to Claude API");
+            notifyError("Failed to connect to chat proxy");
             break;
         }
 
-        auto responseBody = stream->readEntireStreamAsString();
-
+        if (statusCode == 401) {
+            notifyError("Chat auth failed — rebuild needed (token rotated?)");
+            break;
+        }
+        if (statusCode == 402) {
+            // Body has the human-readable message; surface it.
+            auto body = stream->readEntireStreamAsString();
+            auto parsed = juce::JSON::parse(body);
+            auto msg = parsed.getProperty("error", "Free chat budget exhausted").toString();
+            notifyError(msg);
+            break;
+        }
         if (statusCode == 429) {
             notifyError("Rate limited — try again in a moment");
             break;
         }
-
         if (statusCode != 200) {
-            // Try to extract error message
-            auto parsed = juce::JSON::parse(responseBody);
-            auto errorMsg = parsed.getProperty("error", juce::var())
-                                  .getProperty("message", responseBody).toString();
+            auto body = stream->readEntireStreamAsString();
+            auto parsed = juce::JSON::parse(body);
+            auto errorMsg = parsed.getProperty("error", body).toString();
+            perfLog("[Claude] HTTP %d: %s\n", statusCode, body.toRawUTF8());
             notifyError("API error (" + juce::String(statusCode) + "): " + errorMsg);
             break;
         }
 
-        // Parse response
-        auto assistantMsg = parseResponse(responseBody);
+        Message assistantMsg;
+        if (!streamResponse(*stream, assistantMsg)) break;
+
         conversationHistory.push_back(assistantMsg);
 
-        // Check for tool use
+        // Tool-use loop: if the assistant called any tools, run them and continue.
         bool hasToolUse = false;
         Message toolResultMsg;
         toolResultMsg.role = "user";
 
         for (auto& block : assistantMsg.content) {
-            if (block.type == ContentBlock::ToolUse) {
-                hasToolUse = true;
+            if (block.type != ContentBlock::ToolUse) continue;
+            hasToolUse = true;
 
-                // Extract code from input JSON
-                auto inputJson = juce::JSON::parse(block.toolInput);
-                auto code = inputJson.getProperty("code", "").toString();
+            auto inputJson = juce::JSON::parse(block.toolInput);
+            auto code = inputJson.getProperty("code", "").toString();
 
-                if (code.isEmpty()) {
-                    perfLog("[Claude] WARNING: Empty code from tool input: %s\n",
-                            block.toolInput.toRawUTF8());
-                } else {
-                    perfLog("[Claude] Tool call (%d chars): %s\n",
-                            code.length(), code.toRawUTF8());
-                }
-
-                // Execute on message thread
-                auto result = executeLua(code);
-
-                perfLog("[Claude] Tool result: %s\n", result.toRawUTF8());
-
-                bool isErr = result.startsWith("error:");
-                notifyToolUse(block.toolName, code, result, isErr);
-
-                ContentBlock resultBlock;
-                resultBlock.type = ContentBlock::ToolResult;
-                resultBlock.toolUseId = block.toolUseId;
-                resultBlock.toolOutput = result;
-                resultBlock.isError = isErr;
-                toolResultMsg.content.push_back(resultBlock);
+            if (code.isEmpty()) {
+                perfLog("[Claude] WARNING: Empty code from tool input: %s\n",
+                        block.toolInput.toRawUTF8());
+            } else {
+                perfLog("[Claude] Tool call (%d chars): %s\n",
+                        code.length(), code.toRawUTF8());
             }
+
+            auto result = executeLua(code);
+            perfLog("[Claude] Tool result: %s\n", result.toRawUTF8());
+
+            bool isErr = result.startsWith("error:");
+            notifyToolUse(block.toolName, code, result, isErr);
+
+            ContentBlock resultBlock;
+            resultBlock.type = ContentBlock::ToolResult;
+            resultBlock.toolUseId = block.toolUseId;
+            resultBlock.toolOutput = result;
+            resultBlock.isError = isErr;
+            toolResultMsg.content.push_back(resultBlock);
         }
 
         if (!hasToolUse) {
-            // Collect all text blocks and send to UI
             juce::String fullText;
             for (auto& block : assistantMsg.content)
                 if (block.type == ContentBlock::Text)
@@ -133,22 +134,122 @@ void ClaudeClient::run() {
             break;
         }
 
-        // Append tool results and loop
         conversationHistory.push_back(toolResultMsg);
     }
 
     notifyBusy(false);
 }
 
+bool ClaudeClient::streamResponse(juce::InputStream& stream, Message& msg) {
+    msg.role = "assistant";
+
+    // SSE parser. Anthropic emits events of the form:
+    //   event: <type>\n
+    //   data: <json>\n
+    //   \n
+    // Multiple data lines per event are possible; we concatenate them.
+    std::string buffer;
+    juce::String currentEvent;
+    juce::String currentData;
+
+    // Per-block accumulators. Keyed by content block index.
+    struct BlockState {
+        ContentBlock block;
+        juce::String inputJsonAccum;  // for tool_use input_json_delta
+    };
+    std::map<int, BlockState> blocks;
+
+    auto handleEvent = [&](const juce::String& evt, const juce::String& data) {
+        if (data.isEmpty() || data == "[DONE]") return;
+        auto parsed = juce::JSON::parse(data);
+
+        if (evt == "content_block_start") {
+            int idx = (int)parsed.getProperty("index", 0);
+            auto cb = parsed.getProperty("content_block", juce::var());
+            auto type = cb.getProperty("type", "").toString();
+            BlockState bs;
+            if (type == "text") {
+                bs.block.type = ContentBlock::Text;
+            } else if (type == "tool_use") {
+                bs.block.type = ContentBlock::ToolUse;
+                bs.block.toolUseId = cb.getProperty("id", "").toString();
+                bs.block.toolName = cb.getProperty("name", "").toString();
+            }
+            blocks[idx] = std::move(bs);
+        }
+        else if (evt == "content_block_delta") {
+            int idx = (int)parsed.getProperty("index", 0);
+            auto delta = parsed.getProperty("delta", juce::var());
+            auto deltaType = delta.getProperty("type", "").toString();
+            auto it = blocks.find(idx);
+            if (it == blocks.end()) return;
+
+            if (deltaType == "text_delta") {
+                it->second.block.text += delta.getProperty("text", "").toString();
+            } else if (deltaType == "input_json_delta") {
+                it->second.inputJsonAccum += delta.getProperty("partial_json", "").toString();
+            }
+        }
+        else if (evt == "content_block_stop") {
+            int idx = (int)parsed.getProperty("index", 0);
+            auto it = blocks.find(idx);
+            if (it == blocks.end()) return;
+            if (it->second.block.type == ContentBlock::ToolUse)
+                it->second.block.toolInput = it->second.inputJsonAccum;
+        }
+        // message_start / message_delta / message_stop / ping: ignored — we
+        // collect all blocks via content_block_* events and finalize below.
+    };
+
+    constexpr int chunkSize = 4096;
+    juce::HeapBlock<char> chunk(chunkSize);
+
+    while (!threadShouldExit() && !stream.isExhausted()) {
+        int read = stream.read(chunk.getData(), chunkSize);
+        if (read <= 0) break;
+        buffer.append(chunk.getData(), (size_t)read);
+
+        size_t nl;
+        while ((nl = buffer.find('\n')) != std::string::npos) {
+            std::string line = buffer.substr(0, nl);
+            buffer.erase(0, nl + 1);
+            // Strip trailing \r if present (some servers send CRLF)
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+
+            if (line.empty()) {
+                // Blank line = end of an SSE event
+                if (currentData.isNotEmpty())
+                    handleEvent(currentEvent, currentData);
+                currentEvent = "";
+                currentData = "";
+                continue;
+            }
+            if (line.rfind("event: ", 0) == 0) {
+                currentEvent = juce::String(line.substr(7));
+            } else if (line.rfind("data: ", 0) == 0) {
+                if (currentData.isNotEmpty()) currentData += "\n";
+                currentData += juce::String(line.substr(6));
+            }
+            // Other SSE fields (id:, retry:) are ignored.
+        }
+    }
+
+    // Finalize blocks in index order
+    for (auto& [idx, bs] : blocks)
+        msg.content.push_back(std::move(bs.block));
+
+    return true;
+}
+
 juce::String ClaudeClient::buildRequestJson() {
     auto* body = new juce::DynamicObject();
-    body->setProperty("model", model);
+    // model is supplied by the proxy from DEFAULT_MODEL env var; we don't pin it here.
     body->setProperty("max_tokens", 8192);
+    body->setProperty("stream", true);
 
     if (systemPrompt.isNotEmpty())
         body->setProperty("system", systemPrompt);
 
-    // Messages
     juce::Array<juce::var> messagesArr;
     for (auto& msg : conversationHistory) {
         auto* msgObj = new juce::DynamicObject();
@@ -179,7 +280,6 @@ juce::String ClaudeClient::buildRequestJson() {
     }
     body->setProperty("messages", messagesArr);
 
-    // Tool definition
     juce::Array<juce::var> toolsArr;
     {
         auto* tool = new juce::DynamicObject();
@@ -208,35 +308,6 @@ juce::String ClaudeClient::buildRequestJson() {
     body->setProperty("tools", toolsArr);
 
     return juce::JSON::toString(juce::var(body), true);
-}
-
-ClaudeClient::Message ClaudeClient::parseResponse(const juce::String& responseBody) {
-    Message msg;
-    msg.role = "assistant";
-
-    auto parsed = juce::JSON::parse(responseBody);
-    auto content = parsed.getProperty("content", juce::var());
-
-    if (auto* arr = content.getArray()) {
-        for (auto& item : *arr) {
-            auto type = item.getProperty("type", "").toString();
-            ContentBlock block;
-
-            if (type == "text") {
-                block.type = ContentBlock::Text;
-                block.text = item.getProperty("text", "").toString();
-            } else if (type == "tool_use") {
-                block.type = ContentBlock::ToolUse;
-                block.toolUseId = item.getProperty("id", "").toString();
-                block.toolName = item.getProperty("name", "").toString();
-                block.toolInput = juce::JSON::toString(item.getProperty("input", juce::var()));
-            }
-
-            msg.content.push_back(block);
-        }
-    }
-
-    return msg;
 }
 
 juce::String ClaudeClient::executeLua(const juce::String& code) {
