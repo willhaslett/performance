@@ -97,20 +97,7 @@ void BusStrip::paint(juce::Graphics& g) {
     // Power icon
     powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
                                             headerBounds.getCentreY() - 7, 14, 14);
-    {
-        auto iconColor = audioEnabled ? Theme::color(Theme::Color::textOnColor)
-                                       : Theme::color(Theme::Color::textDim);
-        g.setColour(iconColor);
-        juce::Path powerIcon;
-        auto iconArea = powerIconBounds.reduced(1).toFloat();
-        powerIcon.addCentredArc(iconArea.getCentreX(), iconArea.getCentreY(),
-                                 iconArea.getWidth() * 0.4f, iconArea.getHeight() * 0.4f,
-                                 0.0f, juce::MathConstants<float>::pi * 0.3f,
-                                 juce::MathConstants<float>::pi * 1.7f, true);
-        g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
-        g.drawLine(iconArea.getCentreX(), iconArea.getY() + 1.0f,
-                   iconArea.getCentreX(), iconArea.getCentreY(), 1.5f);
-    }
+    Theme::drawPowerButton(g, powerIconBounds, audioEnabled);
 
     g.setColour(Theme::color(Theme::Color::textOnColor));
     g.setFont(Theme::font(Theme::fontSizeLg));

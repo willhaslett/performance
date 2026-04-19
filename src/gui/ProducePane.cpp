@@ -644,19 +644,7 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled) {
-    auto iconColor = enabled ? Theme::color(Theme::Color::textOnColor)
-                              : Theme::color(Theme::Color::textDim);
-
-    g.setColour(iconColor);
-    juce::Path powerIcon;
-    auto a = iconArea.reduced(1).toFloat();
-    powerIcon.addCentredArc(a.getCentreX(), a.getCentreY(),
-                             a.getWidth() * 0.4f, a.getHeight() * 0.4f,
-                             0.0f, juce::MathConstants<float>::pi * 0.3f,
-                             juce::MathConstants<float>::pi * 1.7f, true);
-    g.strokePath(powerIcon, juce::PathStrokeType(1.5f));
-    g.drawLine(a.getCentreX(), a.getY() + 1.0f,
-               a.getCentreX(), a.getCentreY(), 1.5f);
+    Theme::drawPowerButton(g, iconArea, enabled);
 }
 
 void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area) {
