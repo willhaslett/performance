@@ -968,7 +968,6 @@ void PerformanceCoordinator::saveTrackPreset(const juce::String& trackId,
     body->setProperty("sends", sendsArr);
 
     body->setProperty("gain", stateAPI->getTrackGain(TrackId{TrackId{trackId.toStdString()}}));
-    body->setProperty("midiEnabled", stateAPI->isTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}));
 
     auto dir = getTrackPresetsDir();
     dir.createDirectory();
@@ -1020,7 +1019,6 @@ void PerformanceCoordinator::loadTrackPreset(const juce::String& trackId,
     }
 
     stateAPI->setTrackGain(TrackId{TrackId{trackId.toStdString()}}, (float)json.getProperty("gain", 1.0));
-    stateAPI->setTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}, (bool)json.getProperty("midiEnabled", true));
     stateAPI->renameTrack(TrackId{TrackId{trackId.toStdString()}}, presetName.toStdString());
 
     perfLog("[Coordinator] Loaded track preset \"%s\"\n", presetName.toRawUTF8());
@@ -1102,22 +1100,12 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     };
 
     if (actionName == "setActiveTrack") {
+        // Selecting an instrument track makes it the live keyboard target —
+        // selection is the single source of truth for "what's listening to
+        // the keys" (Logic-style focus). Foot-pedal bindings call this to
+        // switch instruments during performance.
         auto targetId = resolveTrack(getArg(0));
-        for (auto& t : stateAPI->listTracks()) {
-            bool active = (t.id == targetId);
-            stateAPI->setTrackMidiEnabled(t.id, active);
-            stateAPI->setTrackAudioEnabled(t.id, active);
-        }
-    }
-    else if (actionName == "enableTrack") {
-        auto id = resolveTrack(getArg(0));
-        stateAPI->setTrackMidiEnabled(id, true);
-        stateAPI->setTrackAudioEnabled(id, true);
-    }
-    else if (actionName == "disableTrack") {
-        auto id = resolveTrack(getArg(0));
-        stateAPI->setTrackMidiEnabled(id, false);
-        stateAPI->setTrackAudioEnabled(id, false);
+        stateAPI->selectTrack(targetId, false);
     }
     else if (actionName == "fadeOut") {
         auto track = resolveTrack(getArg(0));
@@ -1424,10 +1412,6 @@ void PerformanceCoordinator::populatePluginCatalog() {
 
 void PerformanceCoordinator::registerBuiltinActions() {
     stateAPI->registerAction("setActiveTrack", "Set active track",
-        R"([{"name":"trackName","type":"string"}])");
-    stateAPI->registerAction("enableTrack", "Enable track",
-        R"([{"name":"trackName","type":"string"}])");
-    stateAPI->registerAction("disableTrack", "Disable track",
         R"([{"name":"trackName","type":"string"}])");
     stateAPI->registerAction("fadeOut", "Fade out",
         R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 1);

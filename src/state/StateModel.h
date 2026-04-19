@@ -149,8 +149,6 @@ struct TrackState {
     PresetId presetId;
     uint32_t color = 0;        // track color (0 = use default for source type)
     float outputGain = 1.0f;
-    bool midiEnabled = true;   // receives MIDI notes (instrument tracks)
-    bool audioEnabled = true;  // passes audio signal (all tracks)
     bool armed = false;        // record-armed (records MIDI when playing)
     bool inputMonitoring = true; // pass live audio input to output (audio input tracks)
     bool muted = false;        // mute output (runtime, not persisted)
@@ -174,7 +172,6 @@ struct BusState {
     BusId id;
     std::string name;
     float outputGain = 1.0f;
-    bool audioEnabled = true;
     int position = 0;
     std::string outputTarget;  // "" = master, "none" = disconnected, UUID = another bus
     std::vector<EffectState> effects;
@@ -213,7 +210,6 @@ struct SongState {
     SongId id;
     std::string name;
     float masterGain = 1.0f;
-    bool masterAudioEnabled = true;
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;

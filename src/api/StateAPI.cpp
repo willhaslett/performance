@@ -260,19 +260,6 @@ float StateAPI::getMasterGain() const {
     return s ? s->masterGain : 1.0f;
 }
 
-void StateAPI::setMasterAudioEnabled(bool enabled) {
-    pushUndo();
-    auto& s = song();
-    s.masterAudioEnabled = enabled;
-    markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
-}
-
-bool StateAPI::isMasterAudioEnabled() const {
-    auto* s = currentSong();
-    return s ? s->masterAudioEnabled : true;
-}
-
 void StateAPI::setSongTempo(double bpm) {
     pushUndo();
     auto& s = song();
@@ -341,7 +328,6 @@ TrackId StateAPI::createAudioInputTrack(const std::string& name, int inputChanne
     t.channelMode = (inputChannelCount == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
     t.inputChannelStart = inputChannelStart;
     t.inputChannelCount = inputChannelCount;
-    t.midiEnabled = false;
     s.tracks.push_back(std::move(t));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
@@ -355,8 +341,6 @@ TrackId StateAPI::createActionTrack(const std::string& name) {
     t.name = name;
     t.position = (int)s.tracks.size();
     t.sourceType = TrackSourceType::Action;
-    t.midiEnabled = false;
-    t.audioEnabled = true;
     s.tracks.push_back(std::move(t));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
@@ -416,27 +400,6 @@ float StateAPI::getTrackGain(const TrackId& id) const {
     return track(id).outputGain;
 }
 
-void StateAPI::setTrackMidiEnabled(const TrackId& id, bool enabled) {
-    pushUndo();
-    track(id).midiEnabled = enabled;
-    markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
-}
-
-bool StateAPI::isTrackMidiEnabled(const TrackId& id) const {
-    return track(id).midiEnabled;
-}
-
-void StateAPI::setTrackAudioEnabled(const TrackId& id, bool enabled) {
-    pushUndo();
-    track(id).audioEnabled = enabled;
-    markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
-}
-
-bool StateAPI::isTrackAudioEnabled(const TrackId& id) const {
-    return track(id).audioEnabled;
-}
 
 void StateAPI::setTrackOutputTarget(const TrackId& id, const std::string& target) {
     pushUndo();
@@ -585,17 +548,6 @@ void StateAPI::setBusGain(const BusId& id, float gain) {
 
 float StateAPI::getBusGain(const BusId& id) const {
     return bus(id).outputGain;
-}
-
-void StateAPI::setBusAudioEnabled(const BusId& id, bool enabled) {
-    pushUndo();
-    bus(id).audioEnabled = enabled;
-    markDirty();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Bus, id.str(), "" });
-}
-
-bool StateAPI::isBusAudioEnabled(const BusId& id) const {
-    return bus(id).audioEnabled;
 }
 
 void StateAPI::setBusOutputTarget(const BusId& id, const std::string& target) {

@@ -20,13 +20,10 @@ public:
     void setPeakLevelStereo(float left, float right);
     void setGain(float gain);
 
-    void setAudioEnabled(bool enabled);
-
     int getMinimumHeight() const;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
-    void mouseUp(const juce::MouseEvent& event) override;
 
 private:
     StateAPI& state;
@@ -35,9 +32,7 @@ private:
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;
     FaderMeter faderMeter;
 
-    bool audioEnabled = true;
     juce::Rectangle<int> headerBounds;
-    juce::Rectangle<int> powerIconBounds;
 
     void rebuildEffectSlots();
     std::vector<EffectSlotInfo> currentEffects;

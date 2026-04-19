@@ -52,20 +52,6 @@ void TrackStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
     }
 }
 
-void TrackStrip::setMidiEnabled(bool enabled) {
-    if (midiEnabled != enabled) {
-        midiEnabled = enabled;
-        repaint();
-    }
-}
-
-void TrackStrip::setAudioEnabled(bool enabled) {
-    if (audioEnabled != enabled) {
-        audioEnabled = enabled;
-        repaint();
-    }
-}
-
 void TrackStrip::setArmed(bool a) {
     if (armed != a) {
         armed = a;
@@ -264,9 +250,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
 
-    auto headerColour = audioEnabled ? Theme::color(Theme::Color::bgSurface)
-                                      : Theme::color(Theme::Color::bgDisabled);
-    g.setColour(headerColour);
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(headerBounds);
 
     // Type accent — 2px top stripe. Action tracks get no stripe (they don't show in the mixer anyway).
@@ -277,18 +261,15 @@ void TrackStrip::paint(juce::Graphics& g) {
         g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
     }
 
-    // Header: power icon + track name + type indicator + menu dots
-    int cx = headerBounds.getX() + Theme::spacingM;
+    // Header: track name + type indicator + menu dots
     int cy = headerBounds.getCentreY();
 
-    midiDotBounds = juce::Rectangle<int>(cx, cy - 7, 14, 14);
-    Theme::drawPowerButton(g, midiDotBounds, audioEnabled);
+    midiDotBounds = {};
 
-    g.setColour(audioEnabled ? Theme::color(Theme::Color::textPrimary)
-                              : Theme::color(Theme::Color::textDim));
+    g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeLg));
-    g.drawText(trackName, headerBounds.getX() + 28, headerBounds.getY(),
-               headerBounds.getWidth() - 48, headerBounds.getHeight(),
+    g.drawText(trackName, headerBounds.getX() + Theme::spacingM, headerBounds.getY(),
+               headerBounds.getWidth() - Theme::spacingM - 24, headerBounds.getHeight(),
                juce::Justification::centredLeft);
 
     if (sourceType == TrackSourceType::AudioInput) {
@@ -329,7 +310,7 @@ void TrackStrip::paint(juce::Graphics& g) {
     bool isActionTrack = (sourceType == TrackSourceType::Action);
     muteBounds = {};
     soloBounds = {};
-    if (!isActionTrack && audioEnabled) {
+    if (!isActionTrack) {
         constexpr int fmw = 48;
         int contentLeft = bounds.getX() + Theme::trackPadding;
         int contentRight = bounds.getRight() - fmw - Theme::trackPadding * 2;
@@ -485,25 +466,10 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // Arm dot toggles recording arm (only when track is enabled)
-    if (audioEnabled && armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
+    // Arm dot toggles recording arm
+    if (armDotBounds.expanded(4).contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         armed = !armed;
         state.setTrackArmed(TrackId{TrackId{trackId.toStdString()}}, armed);
-        repaint();
-        return;
-    }
-
-    // Power icon toggles audioEnabled (all track types)
-    auto powerHitArea = midiDotBounds.expanded(6);
-    if (powerHitArea.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
-        audioEnabled = !audioEnabled;
-        state.setTrackAudioEnabled(TrackId{TrackId{trackId.toStdString()}}, audioEnabled);
-        if (audioEnabled && sourceType == TrackSourceType::Instrument)
-            state.setTrackMidiEnabled(TrackId{TrackId{trackId.toStdString()}}, true);
-        if (!audioEnabled && armed) {
-            armed = false;
-            state.setTrackArmed(TrackId{TrackId{trackId.toStdString()}}, false);
-        }
         repaint();
         return;
     }

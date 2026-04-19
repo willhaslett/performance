@@ -85,23 +85,16 @@ void BusStrip::paint(juce::Graphics& g) {
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgSurface)
-                                  : Theme::color(Theme::Color::bgDisabled);
-    g.setColour(headerCol);
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(headerBounds);
 
     // Type accent — 2px top stripe (bus).
     g.setColour(Theme::color(Theme::Color::typeBus));
     g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
 
-    // Power icon
-    powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
-                                            headerBounds.getCentreY() - 7, 14, 14);
-    Theme::drawPowerButton(g, powerIconBounds, audioEnabled);
-
     g.setColour(Theme::color(Theme::Color::textOnColor));
     g.setFont(Theme::font(Theme::fontSizeLg));
-    g.drawText(busName, headerBounds.withTrimmedLeft(26).reduced(4, 0),
+    g.drawText(busName, headerBounds.reduced(Theme::spacingM, 0),
                juce::Justification::centredLeft);
 
     // Output target label
@@ -125,13 +118,6 @@ int BusStrip::getMinimumHeight() const {
     h += (int)effectSlots.size() * (Theme::slotHeight + Theme::slotGap);
     h += Theme::trackPadding;
     return h;
-}
-
-void BusStrip::setAudioEnabled(bool enabled) {
-    if (audioEnabled != enabled) {
-        audioEnabled = enabled;
-        repaint();
-    }
 }
 
 void BusStrip::setOutputTarget(const juce::String& target, const juce::String& displayName) {
@@ -171,13 +157,6 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
         return;
     }
 
-    // Power icon toggle
-    if (!event.mods.isPopupMenu() && powerIconBounds.expanded(6).contains(event.getPosition())) {
-        audioEnabled = !audioEnabled;
-        state.setBusAudioEnabled(BusId{busId.toStdString()}, audioEnabled);
-        repaint();
-        return;
-    }
     if (event.mods.isPopupMenu() && headerBounds.contains(event.getPosition())) {
         juce::PopupMenu menu;
 

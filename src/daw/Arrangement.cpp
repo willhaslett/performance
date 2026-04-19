@@ -392,7 +392,7 @@ void Arrangement::scanActionEvents(double prevBeat, double currentBeat,
     if (prevBeat >= currentBeat || !songTracks) return;
 
     for (auto& t : *songTracks) {
-        if (t.sourceType != TrackSourceType::Action || !t.audioEnabled) continue;
+        if (t.sourceType != TrackSourceType::Action || t.muted) continue;
         for (auto& ae : t.actionData) {
             if (ae.beat >= prevBeat && ae.beat < currentBeat) {
                 SongState::ActionEvent ev;

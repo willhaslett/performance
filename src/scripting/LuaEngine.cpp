@@ -185,12 +185,6 @@ void LuaEngine::registerAPI() {
     lua.set_function("removeEffect", [&state](const std::string&, const std::string& effectId) {
         state.removeEffect(EffectId{effectId});
     });
-    lua.set_function("setTrackMidiEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
-        state.setTrackMidiEnabled(TrackId{resolveTrackId(track)}, enabled);
-    });
-    lua.set_function("setTrackAudioEnabled", [&state, resolveTrackId](const std::string& track, bool enabled) {
-        state.setTrackAudioEnabled(TrackId{resolveTrackId(track)}, enabled);
-    });
     lua.set_function("setTrackInputMonitoring", [&state, resolveTrackId](const std::string& track, bool enabled) {
         state.setTrackInputMonitoring(TrackId{resolveTrackId(track)}, enabled);
     });

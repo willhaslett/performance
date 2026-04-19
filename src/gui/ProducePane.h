@@ -84,7 +84,6 @@ private:
     juce::Label metronomeLabel;
 
     // Per-track icon bounds (rebuilt each paint)
-    std::vector<juce::Rectangle<int>> powerIconBounds;
     std::vector<juce::Rectangle<int>> armBounds;
     std::vector<juce::Rectangle<int>> inputMonitorBounds;
     std::vector<juce::Rectangle<int>> muteBounds;
@@ -102,7 +101,6 @@ private:
 
     // Inline name editing
     InlineEditor nameEditor;
-    void paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled);
 
     // Track selection (anchor for shift-range)
     TrackId selectionAnchorTrackId;

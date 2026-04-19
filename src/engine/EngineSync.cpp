@@ -95,7 +95,6 @@ void EngineSync::loadSong(const std::string& songId) {
     for (auto& fx : song->masterEffects) onEffectCreated(fx.id.str());
 
     engine.setMasterGain(song->masterGain);
-    engine.setMasterAudioEnabled(song->masterAudioEnabled);
 }
 
 // --- Entity handlers ---
@@ -118,8 +117,6 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
         engine.createAudioInputTrackWithId(juce::String(track->id.str()), juce::String(track->name),
                                             track->inputChannelStart, track->inputChannelCount);
         engine.setTrackGain(juce::String(track->id.str()), track->outputGain);
-        if (!track->audioEnabled)
-            engine.setTrackAudioEnabled(juce::String(track->id.str()), false);
         // Apply persisted input monitoring. The engine's default is true
         // (pass live input through), so we must apply state unconditionally
         // on creation — otherwise a persisted `false` silently reverts to
@@ -131,10 +128,6 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
 
     engine.createTrackWithId(juce::String(track->id.str()), juce::String(track->name));
     engine.setTrackGain(juce::String(track->id.str()), track->outputGain);
-    if (!track->midiEnabled)
-        engine.setTrackMidiEnabled(juce::String(track->id.str()), false);
-    if (!track->audioEnabled)
-        engine.setTrackAudioEnabled(juce::String(track->id.str()), false);
 
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
@@ -265,7 +258,6 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         PERF_ASSERT(t, "onEntityUpdated: track not found");
         if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
-        engine.setTrackAudioEnabled(id, t->audioEnabled);
         engine.setTrackInputMonitoring(id, t->inputMonitoring);
         engine.setTrackMuted(id, t->muted);
         engine.setTrackSoloed(id, t->soloed);
@@ -276,8 +268,6 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
             engine.setTrackInputChannels(id, t->inputChannelStart, t->inputChannelCount);
             return;
         }
-
-        engine.setTrackMidiEnabled(id, t->midiEnabled);
 
         // Detect instrument change (skip if currently loading to avoid re-trigger loop)
         if (t->instrumentLoadStatus == LoadStatus::Pending) return;
@@ -304,7 +294,6 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         auto* b = stateAPI.findBus(BusId{entityId});
         PERF_ASSERT(b, "onEntityUpdated: bus not found");
         engine.setBusGain(id, b->outputGain);
-        engine.setBusAudioEnabled(id, b->audioEnabled);
         engine.setBusOutputTarget(id, juce::String(b->outputTarget));
         engine.renameBus(id, juce::String(b->name));
     }
@@ -323,7 +312,6 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
             auto* song = stateAPI.findSong(SongId{activeSongId});
             PERF_ASSERT(song, "onEntityUpdated(song): active song not found");
             engine.setMasterGain(song->masterGain);
-            engine.setMasterAudioEnabled(song->masterAudioEnabled);
         }
     }
 }

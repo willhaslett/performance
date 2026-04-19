@@ -22,8 +22,6 @@ public:
 
     void setInstrumentName(const juce::String& name);
     void setEffects(const std::vector<EffectSlotInfo>& effects);
-    void setMidiEnabled(bool enabled);
-    void setAudioEnabled(bool enabled);
     void setArmed(bool armed);
     void setInputMonitoring(bool enabled);
     void setMuted(bool muted);
@@ -64,8 +62,6 @@ private:
     EngineAPI& engine;
     juce::String trackId;    // stable UUID from registry
     juce::String trackName;  // display name
-    bool midiEnabled = true;
-    bool audioEnabled = true;
     bool armed = false;
     bool inputMonitoring = true;
     bool muted = false;

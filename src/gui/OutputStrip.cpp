@@ -91,19 +91,12 @@ void OutputStrip::paint(juce::Graphics& g) {
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
-    auto headerCol = audioEnabled ? Theme::color(Theme::Color::bgSurface)
-                                  : Theme::color(Theme::Color::bgDisabled);
-    g.setColour(headerCol);
+    g.setColour(Theme::color(Theme::Color::bgSurface));
     g.fillRect(headerBounds);
-
-    // Power icon
-    powerIconBounds = juce::Rectangle<int>(headerBounds.getX() + 6,
-                                            headerBounds.getCentreY() - 7, 14, 14);
-    Theme::drawPowerButton(g, powerIconBounds, audioEnabled);
 
     g.setColour(Theme::color(Theme::Color::textOnColor));
     g.setFont(Theme::font(Theme::fontSizeLg));
-    g.drawText("Main", headerBounds.withTrimmedLeft(26).reduced(4, 0),
+    g.drawText("Main", headerBounds.reduced(Theme::spacingM, 0),
                juce::Justification::centredLeft);
 
     // Edge borders — drawn last
@@ -112,21 +105,6 @@ void OutputStrip::paint(juce::Graphics& g) {
                (float)bounds.getX(), (float)bounds.getBottom(), 1.0f);
     g.drawLine((float)bounds.getRight(), (float)bounds.getY(),
                (float)bounds.getRight(), (float)bounds.getBottom(), 1.0f);
-}
-
-void OutputStrip::setAudioEnabled(bool enabled) {
-    if (audioEnabled != enabled) {
-        audioEnabled = enabled;
-        repaint();
-    }
-}
-
-void OutputStrip::mouseUp(const juce::MouseEvent& event) {
-    if (!event.mods.isPopupMenu() && powerIconBounds.expanded(6).contains(event.getPosition())) {
-        audioEnabled = !audioEnabled;
-        state.setMasterAudioEnabled(audioEnabled);
-        repaint();
-    }
 }
 
 void OutputStrip::resized() {

@@ -135,8 +135,6 @@ void MixerView::timerCallback() {
                 effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
             trackStrips[i]->setEffects(effects);
 
-            trackStrips[i]->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{id.toStdString()}}));
-            trackStrips[i]->setAudioEnabled(state.isTrackAudioEnabled(TrackId{TrackId{id.toStdString()}}));
             trackStrips[i]->setArmed(state.isTrackArmed(TrackId{TrackId{id.toStdString()}}));
             trackStrips[i]->setInputMonitoring(state.isTrackInputMonitoring(TrackId{TrackId{id.toStdString()}}));
             trackStrips[i]->setMuted(state.isTrackMuted(TrackId{TrackId{id.toStdString()}}));
@@ -173,7 +171,6 @@ void MixerView::timerCallback() {
             busStrips[i]->setEffects(effects);
 
             busStrips[i]->setGain(state.getBusGain(BusId{BusId{id.toStdString()}}));
-            busStrips[i]->setAudioEnabled(state.isBusAudioEnabled(BusId{BusId{id.toStdString()}}));
             {
                 auto target = state.getBusOutputTarget(BusId{BusId{id.toStdString()}});
                 juce::String displayName = "Main";
@@ -195,7 +192,6 @@ void MixerView::timerCallback() {
         masterEffects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
     outputStrip.setEffects(masterEffects);
     outputStrip.setGain(state.getMasterGain());
-    outputStrip.setAudioEnabled(state.isMasterAudioEnabled());
     { auto [l, r] = engine.getMasterPeakLevelStereo(); outputStrip.setPeakLevelStereo(l, r); }
 
     // If desired height changed, trigger parent re-layout
@@ -234,8 +230,6 @@ void MixerView::rebuildStrips() {
             effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
         strip->setEffects(effects);
 
-        strip->setMidiEnabled(state.isTrackMidiEnabled(TrackId{TrackId{t.id.toStdString()}}));
-        strip->setAudioEnabled(state.isTrackAudioEnabled(TrackId{TrackId{t.id.toStdString()}}));
         strip->setAvailableBusses(busOptions);
 
         auto stateSends = state.getTrackSends(TrackId{TrackId{t.id.toStdString()}});

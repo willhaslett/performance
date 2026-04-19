@@ -108,16 +108,6 @@ public:
             expectWithinAbsoluteError(s.getTrackGain(id), 0.42f, 0.001f);
         }
 
-        beginTest("Track MIDI enabled");
-        {
-            StateAPI s;
-            s.setCurrentSong(s.createSong("S"));
-            auto id = s.createTrack("T");
-            expect(s.isTrackMidiEnabled(id) == true);
-            s.setTrackMidiEnabled(id, false);
-            expect(s.isTrackMidiEnabled(id) == false);
-        }
-
         beginTest("Track plugin assignment");
         {
             StateAPI s;
@@ -320,11 +310,8 @@ public:
             auto t2 = s.createTrack("Bass");
             s.setTrackGain(t1, 0.8f);
             s.setTrackGain(t2, 0.3f);
-            s.setTrackMidiEnabled(t1, false);
             expectWithinAbsoluteError(s.getTrackGain(t1), 0.8f, 0.01f);
             expectWithinAbsoluteError(s.getTrackGain(t2), 0.3f, 0.01f);
-            expect(s.isTrackMidiEnabled(t1) == false);
-            expect(s.isTrackMidiEnabled(t2) == true);
         }
 
         beginTest("Delete song cascades");
@@ -583,7 +570,6 @@ public:
             expect(track->channelMode == ChannelMode::Mono);
             expectEquals(track->inputChannelStart, 0);
             expectEquals(track->inputChannelCount, 1);
-            expect(track->midiEnabled == false);
         }
 
         beginTest("Audio input track stereo");
@@ -683,28 +669,6 @@ public:
         }
 
     // --- New coverage: audioEnabled, custom actions, score steps, device groups ---
-
-        beginTest("Track audioEnabled independent of midiEnabled");
-        {
-            StateAPI s;
-            auto songId = s.createSong("S");
-            s.setCurrentSong(songId);
-            auto id = s.createTrack("T");
-            expect(s.isTrackAudioEnabled(id) == true);
-            expect(s.isTrackMidiEnabled(id) == true);
-
-            s.setTrackAudioEnabled(id, false);
-            expect(s.isTrackAudioEnabled(id) == false);
-            expect(s.isTrackMidiEnabled(id) == true);  // independent
-
-            s.setTrackMidiEnabled(id, false);
-            expect(s.isTrackMidiEnabled(id) == false);
-            expect(s.isTrackAudioEnabled(id) == false);  // still off
-
-            s.setTrackAudioEnabled(id, true);
-            expect(s.isTrackAudioEnabled(id) == true);
-            expect(s.isTrackMidiEnabled(id) == false);  // still off
-        }
 
         beginTest("Custom action create and remove");
         {
@@ -869,7 +833,6 @@ public:
 
             auto t1 = original.createTrack("Keys");
             original.setTrackGain(t1, 0.6f);
-            original.setTrackMidiEnabled(t1, false);
             original.setTrackPlugin(t1, pluginId);
 
             auto t2 = original.createTrack("Bass");
@@ -921,7 +884,6 @@ public:
             }
             expect(keys != nullptr);
             expectWithinAbsoluteError(keys->outputGain, 0.6f, 0.001f);
-            expect(keys->midiEnabled == false);
             expect(!keys->pluginId.empty());
 
             // Bus
@@ -1306,15 +1268,6 @@ public:
             expectWithinAbsoluteError(tc.state().getTrackGain(tc.state().listTracks()[1].id), 0.25f, 0.01f);
         }
 
-        beginTest("MIDI enabled state");
-        {
-            TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            expect(tc.state().isTrackMidiEnabled(trackId) == true);
-            tc.state().setTrackMidiEnabled(trackId, false);
-            expect(tc.state().isTrackMidiEnabled(trackId) == false);
-        }
-
         beginTest("Multiple tracks independent");
         {
             TestCoordinator tc;
@@ -1322,11 +1275,8 @@ public:
             auto t2 = tc.state().createTrack("Bass");
             tc.state().setTrackGain(t1, 0.8f);
             tc.state().setTrackGain(t2, 0.3f);
-            tc.state().setTrackMidiEnabled(t1, false);
             expectWithinAbsoluteError(tc.state().getTrackGain(t1), 0.8f, 0.01f);
             expectWithinAbsoluteError(tc.state().getTrackGain(t2), 0.3f, 0.01f);
-            expect(tc.state().isTrackMidiEnabled(t1) == false);
-            expect(tc.state().isTrackMidiEnabled(t2) == true);
         }
 
         beginTest("Persistence round-trip through coordinator");
@@ -1749,26 +1699,6 @@ public:
             expectEquals(mock.countCalls("createTrackWithId"), 0);
         }
 
-        beginTest("Disabled track propagates audioEnabled on creation");
-        {
-            StateAPI state;
-            MockAudioEngine mock;
-
-            auto songId = state.createSong("S");
-            state.setCurrentSong(songId);
-            auto trackId = state.createTrack("T");
-            state.setTrackAudioEnabled(trackId, false);  // disable before sync
-
-            state.setCurrentSong(SongId{});
-            EngineSync sync(mock, state);
-            state.setCurrentSong(songId);  // triggers loadSong
-
-            // The engine should get setTrackAudioEnabled(false)
-            auto* call = mock.findCall("setTrackAudioEnabled");
-            expect(call != nullptr);
-            if (call) expect(call->boolArg == false);
-        }
-
         beginTest("Binding changes trigger restoreBindings via state event");
         {
             StateAPI state;
@@ -1838,49 +1768,6 @@ public:
             }
         }
 
-        beginTest("EngineSync forwards audioEnabled to engine");
-        {
-            StateAPI state;
-            MockAudioEngine mock;
-
-            auto songId = state.createSong("S");
-            state.setCurrentSong(songId);
-            auto trackId = state.createTrack("T1");
-            state.setCurrentSong(SongId{});
-
-            EngineSync sync(mock, state);
-            state.setCurrentSong(songId);
-
-            mock.clear();
-            state.setTrackAudioEnabled(trackId, false);
-
-            auto* call = mock.findCall("setTrackAudioEnabled");
-            expect(call != nullptr);
-            if (call) expect(call->boolArg == false);
-        }
-
-        beginTest("audioEnabled persists through save/load cycle");
-        {
-            TempDB db;
-            TrackId trackId;
-            {
-                PerformanceCoordinator coord;
-                coord.initialise(db.path());
-                coord.createSong("S");
-                trackId = coord.state().createTrack("T1");
-                coord.state().setTrackAudioEnabled(trackId, false);
-                expect(coord.state().isTrackAudioEnabled(trackId) == false);
-                coord.save();
-                coord.shutdown();
-            }
-            {
-                PerformanceCoordinator coord;
-                coord.initialise(db.path());
-                coord.restoreSession();
-                expect(coord.state().isTrackAudioEnabled(trackId) == false);
-                coord.shutdown();
-            }
-        }
     }
 };
 

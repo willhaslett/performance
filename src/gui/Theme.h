@@ -186,28 +186,4 @@ namespace Theme {
     void loadDefaultTheme();                          // restores compile-time defaults
     juce::String currentThemeName();
     void ensureDefaultThemeFile();                    // creates user themes dir if missing
-
-    // Shared widget: track / bus / output power button. A subtle bgControl
-    // disc behind the power glyph reads as "interactive control" against the
-    // lighter track header background. Used by ProducePane track headers,
-    // TrackStrip, BusStrip, OutputStrip — keep all four in sync via this
-    // helper rather than copy-pasting per call site.
-    inline void drawPowerButton(juce::Graphics& g, juce::Rectangle<int> bounds, bool enabled) {
-        auto disc = bounds.toFloat();
-        g.setColour(color(Color::bgListActive));
-        g.fillEllipse(disc);
-        g.setColour(color(Color::borderSubtle));
-        g.drawEllipse(disc, 1.0f);
-
-        auto a = bounds.reduced(1).toFloat();
-        g.setColour(enabled ? color(Color::textOnColor) : color(Color::textDim));
-        juce::Path icon;
-        icon.addCentredArc(a.getCentreX(), a.getCentreY(),
-                            a.getWidth() * 0.4f, a.getHeight() * 0.4f,
-                            0.0f, juce::MathConstants<float>::pi * 0.3f,
-                            juce::MathConstants<float>::pi * 1.7f, true);
-        g.strokePath(icon, juce::PathStrokeType(1.5f));
-        g.drawLine(a.getCentreX(), a.getY() + 1.0f,
-                   a.getCentreX(), a.getCentreY(), 1.5f);
-    }
 }

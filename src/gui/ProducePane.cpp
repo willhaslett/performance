@@ -643,10 +643,6 @@ void ProducePane::paintRuler(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 }
 
-void ProducePane::paintPowerIcon(juce::Graphics& g, juce::Rectangle<int> iconArea, bool enabled) {
-    Theme::drawPowerButton(g, iconArea, enabled);
-}
-
 void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(area);
@@ -659,7 +655,6 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
     int y = area.getY();
 
     auto tracks = state->listTracks();
-    powerIconBounds.resize(tracks.size());
     muteBounds.resize(tracks.size());
     soloBounds.resize(tracks.size());
     armBounds.resize(tracks.size());
@@ -670,15 +665,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto* trackState = state->findTrack(t.id);
 
         // Track header background — neutral for all types
-        bool enabled = trackState ? trackState->audioEnabled : true;
         bool isAudioInput = trackState && trackState->sourceType == TrackSourceType::AudioInput;
         bool isAction = trackState && trackState->sourceType == TrackSourceType::Action;
 
-        auto headerCol = enabled ? Theme::color(Theme::Color::bgSurface)
-                                 : Theme::color(Theme::Color::bgDisabled);
-
         // Full row background — lifted from empty space
-        g.setColour(headerCol);
+        g.setColour(Theme::color(Theme::Color::bgSurface));
         g.fillRect(row);
 
         // Type accent — 3px left-edge stripe. Action tracks get no stripe.
@@ -704,22 +695,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
                    (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
 
-        // Row 1: power icon + track name
+        // Row 1: track name
         // Uses Theme::headerHeight so the name block matches mixer strip headers.
         int row1Y = y + 4;
         int row1H = Theme::headerHeight;
         int cx = area.getX() + 8;
-        int cy1 = row1Y + row1H / 2;
 
-        auto iconBounds = juce::Rectangle<int>(cx, cy1 - 7, 14, 14);
-        powerIconBounds[i] = iconBounds;
-        paintPowerIcon(g, iconBounds, enabled);
-
-        g.setColour(enabled ? Theme::color(Theme::Color::textPrimary)
-                             : Theme::color(Theme::Color::textDim));
+        g.setColour(Theme::color(Theme::Color::textPrimary));
         g.setFont(Theme::font(Theme::fontSizeLg));
         int nameRight = area.getRight() - 4;
-        g.drawText(juce::String(t.name), area.getX() + 28, row1Y, nameRight - (area.getX() + 28), row1H,
+        g.drawText(juce::String(t.name), area.getX() + Theme::spacingM, row1Y, nameRight - (area.getX() + Theme::spacingM), row1H,
                    juce::Justification::centredLeft);
 
         // Row 2: pill buttons (M S R I) — 10px gap below name row
@@ -750,7 +735,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         muteBounds[i] = {};
         soloBounds[i] = {};
-        if (!isActionTrack && enabled) {
+        if (!isActionTrack) {
             bool isMuted = trackState ? trackState->muted : false;
             bool isSoloed = trackState ? trackState->soloed : false;
             drawPill(muteBounds[i], "M", isMuted, Theme::Color::pillMute,
@@ -761,14 +746,14 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         }
 
         armBounds[i] = {};
-        if (!isActionTrack && enabled) {
+        if (!isActionTrack) {
             bool isArmed = trackState ? trackState->armed : false;
             drawPill(armBounds[i], "R", isArmed, Theme::Color::pillArm,
                      isHoveredRow && hoveredPill == HoveredPill::Arm);
         }
 
         inputMonitorBounds[i] = {};
-        if (trackState && trackState->sourceType == TrackSourceType::AudioInput && enabled) {
+        if (trackState && trackState->sourceType == TrackSourceType::AudioInput) {
             drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput,
                      isHoveredRow && hoveredPill == HoveredPill::Input);
         }
@@ -846,10 +831,9 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                       [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
             int rowY = area.getY() + (int)ti * trackRowHeight;
 
-            // Resolve track color — matches header color
+            // Resolve track type for region rendering
             auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
             bool isAudioTrk = trkState && trkState->sourceType == TrackSourceType::AudioInput;
-            bool trackEnabled = trkState ? trkState->audioEnabled : true;
             // Regions use neutral bgSurface (no per-track color)
 
             for (auto* r : regions) {
@@ -882,7 +866,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 auto fillCol = Theme::color(Theme::Color::bgSurfaceRaised);
                 bool selected = selectedRegionIds.count(r->id) > 0;
                 bool beingDragged = (draggingRegion && r->id == dragRegionId);
-                if (!trackEnabled || r->muted)
+                if (r->muted)
                     fillCol = fillCol.darker(0.5f);
                 if (originalVisible) {
                 float baseAlpha = beingDragged ? 0.45f : 0.82f;
@@ -1835,23 +1819,8 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         if (idx >= 0 && idx < (int)tracks.size()) {
             auto* trackState = state->findTrack(tracks[idx].id);
 
-            // Power icon
-            if (idx < (int)powerIconBounds.size()
-                && powerIconBounds[idx].expanded(6).contains(event.getPosition())) {
-                if (trackState) {
-                    bool newEnabled = !trackState->audioEnabled;
-                    state->setTrackAudioEnabled(tracks[idx].id, newEnabled);
-                    if (newEnabled && trackState->sourceType == TrackSourceType::Instrument)
-                        state->setTrackMidiEnabled(tracks[idx].id, true);
-                    if (!newEnabled && trackState->armed)
-                        state->setTrackArmed(tracks[idx].id, false);
-                }
-                repaint();
-                return;
-            }
-
             // Mute "M"
-            if (trackState && trackState->audioEnabled
+            if (trackState
                 && idx < (int)muteBounds.size()
                 && !muteBounds[idx].isEmpty()
                 && muteBounds[idx].expanded(4).contains(event.getPosition())) {
@@ -1861,7 +1830,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
             }
 
             // Solo "S"
-            if (trackState && trackState->audioEnabled
+            if (trackState
                 && idx < (int)soloBounds.size()
                 && !soloBounds[idx].isEmpty()
                 && soloBounds[idx].expanded(4).contains(event.getPosition())) {
@@ -1870,8 +1839,8 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 return;
             }
 
-            // Arm "R" — only when track is enabled
-            if (trackState && trackState->audioEnabled
+            // Arm "R"
+            if (trackState
                 && idx < (int)armBounds.size()
                 && !armBounds[idx].isEmpty()
                 && armBounds[idx].expanded(4).contains(event.getPosition())) {
@@ -1881,7 +1850,7 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
             }
 
             // Input monitoring "I" — only for audio input tracks
-            if (trackState && trackState->audioEnabled
+            if (trackState
                 && trackState->sourceType == TrackSourceType::AudioInput
                 && idx < (int)inputMonitorBounds.size()
                 && !inputMonitorBounds[idx].isEmpty()
@@ -2177,10 +2146,6 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
 
     int idx = getTrackIndexAtY(event.getPosition().getY());
     if (idx < 0) return;
-
-    // Don't trigger on power icon double-click
-    if (idx < (int)powerIconBounds.size() && powerIconBounds[idx].expanded(6).contains(event.getPosition()))
-        return;
 
     auto tracks = state->listTracks();
     if (idx >= (int)tracks.size()) return;

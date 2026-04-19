@@ -28,8 +28,6 @@ public:
     double getSongTempo() const;
     void setSongTimeSignature(int numerator, int denominator);
     std::pair<int,int> getSongTimeSignature() const;
-    void setMasterAudioEnabled(bool enabled);
-    bool isMasterAudioEnabled() const;
     std::string getMasterOutputId() const;
 
     // --- Tracks ---
@@ -42,10 +40,6 @@ public:
     void moveTrack(const TrackId& id, int newPosition);  // reorder within song
     void setTrackGain(const TrackId& id, float gain);
     float getTrackGain(const TrackId& id) const;
-    void setTrackMidiEnabled(const TrackId& id, bool enabled);
-    bool isTrackMidiEnabled(const TrackId& id) const;
-    void setTrackAudioEnabled(const TrackId& id, bool enabled);
-    bool isTrackAudioEnabled(const TrackId& id) const;
     void setTrackArmed(const TrackId& id, bool armed);
     bool isTrackArmed(const TrackId& id) const;
     void setTrackInputMonitoring(const TrackId& id, bool enabled);
@@ -72,8 +66,6 @@ public:
     void renameBus(const BusId& id, const std::string& name);
     void setBusGain(const BusId& id, float gain);
     float getBusGain(const BusId& id) const;
-    void setBusAudioEnabled(const BusId& id, bool enabled);
-    bool isBusAudioEnabled(const BusId& id) const;
     void setBusOutputTarget(const BusId& id, const std::string& target);
     std::string getBusOutputTarget(const BusId& id) const;
     BusState* findBus(const BusId& id);
