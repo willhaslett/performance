@@ -2,7 +2,7 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/LAMBDA_CHAT_PROXY.md`** is the design + implementation plan for the AI-for-testers Lambda — read before starting that work. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
+> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/LAMBDA_CHAT_PROXY.md`** is the design + implementation plan for the AI-for-testers Lambda — read before starting that work. **`docs/PRODUCE_PANE_REFACTOR.md`** is the design + step plan for the audibility-model + visual-layer rework that drops `audioEnabled` / `midiEnabled` and replaces ad-hoc paint code with a derived visual model — read before touching any track-row, region, or plugin-slot rendering. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
 
 ## Version & Distribution
 
@@ -26,9 +26,10 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, **typed IDs are complete** (all 13 entity ID families are strongly-typed newtypes; the incident's root-cause bug class is now a compile error), and the **AI-for-testers chunk is done** end-to-end: chat proxy Lambda deployed, C++ client wired with SSE streaming, per-install monthly token caps live, bearer token migrated to Secrets Manager (no more silent rotation), Show Log + Export Logs UI shipped. What's left for 0.1.0:
 
-1. **perfuce.com rebuild** (several days). Includes the tester onboarding copy carry-over from §3 — example prompts, "chat is free for testers" line, no key-paste instructions. Mostly gated on video capture.
-2. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
-3. **Tag + release.**
+1. **Produce-pane refactor** (~1 focused day). Drop track-level `audioEnabled` / `midiEnabled`, push the gate down to per-plugin bypass (Logic-style), and replace ad-hoc paint logic with a derived visual model (audibility + selection structs, two paint functions). Triggered by repeated paint regressions when adding region color / mute styling — root cause is mixed concerns. Full design + 7-step build sequence in `docs/PRODUCE_PANE_REFACTOR.md`.
+2. **perfuce.com rebuild** (several days). Includes the tester onboarding copy carry-over from §3 — example prompts, "chat is free for testers" line, no key-paste instructions. Mostly gated on video capture.
+3. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+4. **Tag + release.**
 
 ### 1. Distribution proof
 
