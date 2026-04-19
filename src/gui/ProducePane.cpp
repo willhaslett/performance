@@ -316,19 +316,28 @@ void ProducePane::paint(juce::Graphics& g) {
     }
 
     // Drag reorder indicator
-    if (dragTrackIndex >= 0 && dragTargetIndex >= 0 && dragTrackIndex != dragTargetIndex) {
+    if (state && dragTrackIndex >= 0 && dragTargetIndex >= 0
+        && dragTrackIndex != dragTargetIndex) {
         int gridTop = transportHeight + rulerHeight;
-        int indicatorY = gridTop + dragTargetIndex * trackRowHeight;
-        if (dragTargetIndex > dragTrackIndex) indicatorY += trackRowHeight;
+        auto tracks = state->listTracks();
+        auto heightAt = [&](int idx) {
+            if (idx < 0 || idx >= (int)tracks.size()) return trackRowHeight;
+            auto* ts = state->findTrack(tracks[idx].id);
+            return ts ? rowHeightFor(*ts) : trackRowHeight;
+        };
+
+        int indicatorY = gridTop + rowYFor((size_t)dragTargetIndex);
+        if (dragTargetIndex > dragTrackIndex)
+            indicatorY += heightAt(dragTargetIndex);
 
         // Full-width indicator line
         g.setColour(Theme::color(Theme::Color::accent));
         g.fillRect(0, indicatorY - 2, getWidth(), 5);
 
         // Dim the source track row
-        int srcY = gridTop + dragTrackIndex * trackRowHeight;
+        int srcY = gridTop + rowYFor((size_t)dragTrackIndex);
         g.setColour(Theme::color(Theme::Color::overlayDim));
-        g.fillRect(0, srcY, getWidth(), trackRowHeight);
+        g.fillRect(0, srcY, getWidth(), heightAt(dragTrackIndex));
     }
 
     // Playhead overlaid
@@ -680,6 +689,23 @@ void ProducePane::paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
     }
 }
 
+int ProducePane::rowHeightFor(const TrackState& t) const {
+    return t.sourceType == TrackSourceType::Action
+            ? std::max(16, trackRowHeight / 2)
+            : trackRowHeight;
+}
+
+int ProducePane::rowYFor(size_t trackIndex) const {
+    if (!state) return 0;
+    auto tracks = state->listTracks();
+    int y = 0;
+    for (size_t i = 0; i < trackIndex && i < tracks.size(); ++i) {
+        auto* ts = state->findTrack(tracks[i].id);
+        y += ts ? rowHeightFor(*ts) : trackRowHeight;
+    }
+    return y;
+}
+
 juce::Colour ProducePane::regionFillColour(Audibility a) const {
     auto base = Theme::color(Theme::Color::bgSurfaceRaised);
     return a == Audibility::Muted ? base.darker(0.5f) : base;
@@ -714,9 +740,11 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
     inputMonitorBounds.resize(tracks.size());
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto& t = tracks[i];
-        auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), trackRowHeight);
         auto* trackState = state->findTrack(t.id);
         if (!trackState) { y += trackRowHeight; continue; }
+
+        int rowH = rowHeightFor(*trackState);
+        auto row = juce::Rectangle<int>(area.getX(), y, area.getWidth(), rowH);
 
         auto vis = trackRowVisuals(*trackState);
         paintTrackRow(g, row, vis);
@@ -735,8 +763,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         if (i == 0)
             g.drawLine((float)area.getX(), (float)y,
                        (float)area.getRight(), (float)y, 0.5f);
-        g.drawLine((float)area.getX(), (float)(y + trackRowHeight),
-                   (float)area.getRight(), (float)(y + trackRowHeight), 0.5f);
+        g.drawLine((float)area.getX(), (float)(y + rowH),
+                   (float)area.getRight(), (float)(y + rowH), 0.5f);
 
         // Row 1: track name
         // Uses Theme::headerHeight so the name block matches mixer strip headers.
@@ -798,7 +826,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
                      isHoveredRow && hoveredPill == HoveredPill::Input);
         }
 
-        y += trackRowHeight;
+        y += rowH;
     }
 }
 
@@ -815,20 +843,22 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Track lane backgrounds — paintTrackRow owns row colour + selection.
     // Inset the left edge by 1px so fills don't overdraw the track-header
     // column's right border (drawn earlier in paintTrackHeaders at x=area.getX()).
+    int laneY = area.getY();
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto* trkState = state->findTrack(tracks[i].id);
-        if (!trkState) continue;
-        int rowY = area.getY() + (int)i * trackRowHeight;
-        auto laneBounds = juce::Rectangle<int>(area.getX() + 1, rowY,
-                                                area.getWidth() - 1, trackRowHeight);
+        if (!trkState) { laneY += trackRowHeight; continue; }
+        int rowH = rowHeightFor(*trkState);
+        auto laneBounds = juce::Rectangle<int>(area.getX() + 1, laneY,
+                                                area.getWidth() - 1, rowH);
         paintTrackRow(g, laneBounds, trackRowVisuals(*trkState));
+        laneY += rowH;
     }
 
     // Grid lines — bar lines darker, beat lines lighter.
     // Clip vertically to the track-content region so gridlines don't bleed
     // into the empty area below the last track.
     int gridLinesBottom = std::min(area.getBottom(),
-                                   area.getY() + (int)tracks.size() * trackRowHeight);
+                                   area.getY() + rowYFor(tracks.size()));
     int startBar = (int)(startBeat / beatsPerBar());
     int endBar = (int)(endBeat / beatsPerBar()) + 1;
 
@@ -847,7 +877,8 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Track row separators
     int y = area.getY();
     for (size_t i = 0; i < tracks.size(); ++i) {
-        y += trackRowHeight;
+        auto* trkState = state->findTrack(tracks[i].id);
+        y += trkState ? rowHeightFor(*trkState) : trackRowHeight;
         g.setColour(Theme::color(Theme::Color::borderSubtle));
         g.drawLine((float)area.getX(), (float)y, (float)area.getRight(), (float)y, 0.5f);
     }
@@ -858,21 +889,24 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     actionHitRects.clear();
     ghostEdgeRects.clear();
     if (arrangement) {
+        int regionRowY = area.getY();
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
             std::sort(regions.begin(), regions.end(),
                       [](auto* a, auto* b) { return a->startBeat < b->startBeat; });
-            int rowY = area.getY() + (int)ti * trackRowHeight;
 
             // Resolve track type for region rendering
             auto* trkState = state ? state->findTrack(tracks[ti].id) : nullptr;
             bool isAudioTrk = trkState && trkState->sourceType == TrackSourceType::AudioInput;
+            int rowH = trkState ? rowHeightFor(*trkState) : trackRowHeight;
+            int rowY = regionRowY;
+            regionRowY += rowH;
             // Regions use neutral bgSurface (no per-track color)
 
             for (auto* r : regions) {
                 int rx = beatToX(r->startBeat);
                 int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
-                auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, trackRowHeight - 4);
+                auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, rowH - 4);
 
                 // Compute full visual extent including ghost loops
                 double visualEnd = r->startBeat + r->lengthBeats;
@@ -1020,7 +1054,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         double ghostLen = std::min(r->lengthBeats, loopEnd - ghostStart);
                         int gx = beatToX(ghostStart);
                         int gw = std::max(4, (int)(ghostLen * pixelsPerBeat));
-                        auto ghostBounds = juce::Rectangle<int>(gx, rowY + 2, gw, trackRowHeight - 4);
+                        auto ghostBounds = juce::Rectangle<int>(gx, rowY + 2, gw, rowH - 4);
 
                         if (ghostBounds.getRight() < area.getX() || ghostBounds.getX() > area.getRight())
                             continue;
@@ -1072,9 +1106,10 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             if (!trkState || trkState->sourceType != TrackSourceType::Action) continue;
             if (trkState->actionData.empty()) continue;
 
-            int rowY = area.getY() + (int)ti * trackRowHeight;
-            float centreY = (float)(rowY + trackRowHeight / 2);
-            float sphereR = std::min(5.0f, (float)trackRowHeight * 0.25f);
+            int rowY = area.getY() + rowYFor(ti);
+            int rowH = rowHeightFor(*trkState);
+            float centreY = (float)(rowY + rowH / 2);
+            float sphereR = std::min(5.0f, (float)rowH * 0.25f);
 
             bool isAct = true;
             auto sphereCol = Theme::color(Theme::Color::textSecondary);
@@ -1166,8 +1201,13 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             if (srcRegion) {
                 int gx = beatToX(dragCurrentBeat);
                 int gw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
-                int drawY = area.getY() + dragCurrentTrackIdx * trackRowHeight;
-                auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, trackRowHeight - 4);
+                int drawY = area.getY() + rowYFor((size_t)std::max(0, dragCurrentTrackIdx));
+                int targetH = trackRowHeight;
+                if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
+                    auto* tgt = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
+                    if (tgt) targetH = rowHeightFor(*tgt);
+                }
+                auto ghostBounds = juce::Rectangle<int>(gx, drawY + 2, gw, targetH - 4);
                 // Use target track's color for ghost
                 uint32_t ghostTrackCol = Theme::Color::bgSurface;
                 if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
@@ -1249,12 +1289,16 @@ void ProducePane::resized() {
 
 int ProducePane::getTrackIndexAtY(int y) const {
     int gridTop = transportHeight + rulerHeight;
-    if (y < gridTop) return -1;
-    int idx = (y - gridTop) / trackRowHeight;
-    if (!state) return -1;
+    if (y < gridTop || !state) return -1;
     auto tracks = state->listTracks();
-    if (idx >= (int)tracks.size()) return -1;
-    return idx;
+    int cursor = gridTop;
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        auto* ts = state->findTrack(tracks[i].id);
+        int h = ts ? rowHeightFor(*ts) : trackRowHeight;
+        if (y < cursor + h) return (int)i;
+        cursor += h;
+    }
+    return -1;
 }
 
 void ProducePane::mouseDown(const juce::MouseEvent& event) {
@@ -1490,8 +1534,10 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
             }
         }
 
-        // Right-click or double-click empty grid on action track → create action event
-        if (event.mods.isPopupMenu() && state) {
+        // Click on empty area of an action track → open action picker.
+        // Any button, no modifier needed: action tracks have no drag-select or
+        // playhead semantics in the grid, so plain click is free for this.
+        if (state) {
             int trkIdx = getTrackIndexAtY(event.getPosition().getY());
             if (trkIdx >= 0) {
                 auto trkList = state->listTracks();
@@ -2172,8 +2218,10 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
     if (idx >= (int)tracks.size()) return;
 
     int gridTop = transportHeight + rulerHeight;
-    auto editBounds = juce::Rectangle<int>(28, gridTop + idx * trackRowHeight + 4,
-                                            trackHeaderWidth - 32, trackRowHeight - 8);
+    auto* ts = state->findTrack(tracks[idx].id);
+    int rowH = ts ? rowHeightFor(*ts) : trackRowHeight;
+    auto editBounds = juce::Rectangle<int>(28, gridTop + rowYFor((size_t)idx) + 4,
+                                            trackHeaderWidth - 32, rowH - 8);
     auto trackId = tracks[idx].id;
     nameEditor.onCommit = [this, trackId](const juce::String& newName) {
         if (state) {

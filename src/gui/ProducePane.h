@@ -89,6 +89,11 @@ private:
     TrackRowVisuals trackRowVisuals(const TrackState& t) const;
     RegionVisuals   regionVisuals(const TrackState& t, const RegionState& r) const;
 
+    // Track-row geometry. Action tracks render at half height to keep the
+    // timeline compact — event spheres don't need the vertical real estate.
+    int rowHeightFor(const TrackState& t) const;
+    int rowYFor(size_t trackIndex) const;  // y offset from top of track area
+
     // Region fill colour given its audibility — single source of truth for
     // muted-region tinting, shared by paintRegionShell and ghost-loop drawing.
     juce::Colour    regionFillColour(Audibility a) const;
