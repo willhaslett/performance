@@ -1411,22 +1411,71 @@ void PerformanceCoordinator::populatePluginCatalog() {
 }
 
 void PerformanceCoordinator::registerBuiltinActions() {
+    // Typed schema builders (see docs/ACTION_INSTANCES_REFACTOR.md).
+    auto track = [](const std::string& name,
+                    std::vector<std::string> sourceTypes = {}) {
+        ParamSchema p;
+        p.name = name;
+        p.type = ParamType::ChannelRef;
+        p.scope = { "track" };
+        p.sourceTypes = std::move(sourceTypes);
+        return p;
+    };
+    auto channel = [](const std::string& name) {
+        ParamSchema p;
+        p.name = name;
+        p.type = ParamType::ChannelRef;  // scope empty = any channel (track / bus / master)
+        return p;
+    };
+    auto preset = [](const std::string& name) {
+        ParamSchema p;
+        p.name = name;
+        p.type = ParamType::PresetRef;
+        return p;
+    };
+    auto duration = [](const std::string& name, double defaultSec = 3.0) {
+        ParamSchema p;
+        p.name = name;
+        p.type = ParamType::Float;
+        p.minValue = 0.0;
+        p.defaultValue = std::to_string(defaultSec);
+        return p;
+    };
+    auto easing = []() {
+        ParamSchema p;
+        p.name = "easing";
+        p.type = ParamType::Enum;
+        p.enumValues = { "linear", "easein", "easeout", "cosine", "scurve" };
+        p.defaultValue = "easein";
+        p.required = false;
+        return p;
+    };
+    auto morph = []() {
+        ParamSchema p;
+        p.name = "mode";
+        p.type = ParamType::Morph;
+        return p;
+    };
+
     stateAPI->registerAction("setActiveTrack", "Set active track",
-        R"([{"name":"trackName","type":"string"}])");
+        std::vector<ParamSchema>{ track("trackName", { "Instrument" }) });
     stateAPI->registerAction("fadeOut", "Fade out",
-        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 1);
+        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() }, 1);
     stateAPI->registerAction("fadeIn", "Fade in",
-        R"([{"name":"trackName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 1);
+        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() }, 1);
     stateAPI->registerAction("crossfade", "Crossfade",
-        R"([{"name":"fromTrack","type":"string"},{"name":"toTrack","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 2);
+        std::vector<ParamSchema>{ track("fromTrack"), track("toTrack"), duration("duration"), easing() }, 2);
     stateAPI->registerAction("trackVolume", "Track Volume",
-        R"([{"name":"channel","type":"channel"}])");
+        std::vector<ParamSchema>{ channel("channel") });
     stateAPI->registerAction("morphToPreset", "Morph to preset",
-        R"([{"name":"trackName","type":"string"},{"name":"presetName","type":"string"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 2);
+        std::vector<ParamSchema>{ track("trackName", { "Instrument" }), preset("presetName"),
+                                  duration("duration"), easing() }, 2);
     stateAPI->registerAction("morphChain", "Morph chain (A \xe2\x86\x92 dwell \xe2\x86\x92 B)",
-        R"([{"name":"trackName","type":"string"},{"name":"presetA","type":"string"},{"name":"presetB","type":"string"},{"name":"dwell","type":"float"},{"name":"duration","type":"float"},{"name":"easing","type":"string"}])", 4);
+        std::vector<ParamSchema>{ track("trackName", { "Instrument" }), preset("presetA"),
+                                  preset("presetB"), duration("dwell"),
+                                  duration("duration"), easing() }, 4);
     stateAPI->registerAction("morph", "Morph",
-        R"([{"name":"mode","type":"morph"}])");
+        std::vector<ParamSchema>{ morph() });
 
     perfLog("[Coordinator] Registered %d built-in actions\n", (int)stateAPI->allActions().size());
 }

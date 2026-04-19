@@ -2,6 +2,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <optional>
 #include "state/Id.h"
 
 // In-memory state model — pure C++ structs, no JUCE dependency.
@@ -27,14 +28,46 @@ struct PresetInfo {
     PresetKind kind = PresetKind::Instrument;
 };
 
+// ParamType — primitive kinds an action argument can be.
+// See docs/ACTION_INSTANCES_REFACTOR.md for the grammar rationale.
+enum class ParamType {
+    ChannelRef,  // UUID of a track / bus / "Main" (master)
+    PresetRef,   // UUID of a preset (app-wide; picker groups by plugin)
+    Enum,        // one of enumValues
+    Float,       // number with optional minValue/maxValue/default
+    Morph,       // compound sub-action blob (escape hatch; edited by MorphEditor)
+};
+
+struct ParamSchema {
+    std::string name;
+    ParamType   type = ParamType::Float;
+    bool        required = true;
+    std::string defaultValue;  // type-interpreted as string; form parses
+
+    // ChannelRef filters (empty means "any").
+    // `scope` restricts to "track" / "bus" / "master".
+    // `sourceTypes` further restricts track scope to source type names
+    //   ("Instrument" / "AudioInput" / "Action").
+    std::vector<std::string> scope;
+    std::vector<std::string> sourceTypes;
+
+    // Enum candidate values.
+    std::vector<std::string> enumValues;
+
+    // Float bounds (std::nullopt = unbounded).
+    std::optional<double> minValue;
+    std::optional<double> maxValue;
+};
+
 struct ActionInfo {
     ActionId id;
     std::string name;
     std::string label;
-    std::string paramSchema;  // JSON
-    std::string luaCode;      // custom action body (empty for built-in)
-    SongId songId;            // empty = global, non-empty = song-scoped
-    int durationParamIndex = -1;  // which arg index is the duration (-1 = none)
+    std::vector<ParamSchema> params;   // typed schema — the source of truth
+    std::string paramSchema;           // legacy JSON-string view; kept during migration
+    std::string luaCode;               // custom action body (empty for built-in)
+    SongId songId;                     // empty = global, non-empty = song-scoped
+    int durationParamIndex = -1;       // which arg index is the duration (-1 = none)
 };
 
 // --- Devices (registered physical controllers) ---
