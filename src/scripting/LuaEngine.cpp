@@ -79,12 +79,33 @@ void LuaEngine::registerAPI() {
     lua.set_function("createTrack", [&state](const std::string& name) -> std::string {
         return state.createTrack(name).str();
     });
-    lua.set_function("createAudioInputTrack", [&state](const std::string& name,
+    // Validates an input channel selection against the current device. Accepts
+    // the "no live input" sentinel (start=-1, count=0). Throws a Lua error
+    // (which surfaces in the Claude tool result, prompting self-correction)
+    // when the selection is out of range — otherwise the engine silently
+    // accepts an invalid config and the track ends up routed to a non-existent
+    // channel.
+    auto validateInputChannels = [&engine](int start, int count) {
+        if (start == -1 && count == 0) return;  // sentinel: no live input
+        int available = (int)engine.getInputChannelNames().size();
+        if (count <= 0)
+            throw std::runtime_error("input channel count must be positive (got " +
+                                     std::to_string(count) + ")");
+        if (start < 0 || start + count > available)
+            throw std::runtime_error("input channels [" + std::to_string(start) + ".." +
+                                     std::to_string(start + count - 1) +
+                                     "] out of range; device has " + std::to_string(available) +
+                                     " channel(s) (0-indexed). Call listInputChannels() to see what's available.");
+    };
+
+    lua.set_function("createAudioInputTrack", [&state, validateInputChannels](const std::string& name,
                                                           int inputStart, int inputCount) -> std::string {
+        validateInputChannels(inputStart, inputCount);
         return state.createAudioInputTrack(name, inputStart, inputCount).str();
     });
-    lua.set_function("setTrackInputChannels", [&state, resolveTrackId](const std::string& track,
+    lua.set_function("setTrackInputChannels", [&state, resolveTrackId, validateInputChannels](const std::string& track,
                                                 int start, int count) {
+        validateInputChannels(start, count);
         state.setTrackInputChannels(TrackId{resolveTrackId(track)}, start, count);
     });
     lua.set_function("listInputChannels", [this, &engine]() -> sol::table {
