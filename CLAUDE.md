@@ -26,12 +26,11 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, and **typed IDs are complete**: all 13 entity ID families (`PluginId`, `PresetId`, `TrackId`, `BusId`, `SongId`, `EffectId`, `SendId`, `RegionId`, `TakeId`, `DeviceId`, `ActionId`, `BindingId`, `ActionEventId`) live in the state model as strongly-typed newtypes; no entity ID remains as bare `std::string`. The incident's root-cause bug class — passing an ID of the wrong family where another was expected — is now a compile error. What's left for 0.1.0, in the order to tackle it:
 
-1. **Model bump** (~10 min). Stale `claude-sonnet-4-20250514` in `ClaudeClient.h:53` → current default (Sonnet 4.6). Cheap, tidy, independent of Lambda.
-2. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
-3. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Requires a decision on streaming and default model before starting.
-4. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
-5. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
-6. **Tag + release.**
+1. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
+2. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Model selection (currently pinned to stale `claude-sonnet-4-20250514` in `ClaudeClient.h:53`) moves here — tried `claude-sonnet-4-6` inline and saw slow responses + rate-limits on the personal key, so the bump lives in the proxy where we can pick model + pool across testers. Requires a decision on streaming and default model before starting.
+3. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
+4. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+5. **Tag + release.**
 
 Total rough estimate: 3–5 days of focused work on the app + ~several days of site work in parallel.
 
