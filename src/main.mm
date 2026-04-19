@@ -285,6 +285,8 @@ public:
             menu.addItem(shortcut(CommandIDs::viewZoomOut, "Zoom Out", "view.zoomOut"));
             menu.addItem(shortcut(CommandIDs::viewZoomTaller, "Zoom Tracks Taller", "view.zoomTaller"));
             menu.addItem(shortcut(CommandIDs::viewZoomShorter, "Zoom Tracks Shorter", "view.zoomShorter"));
+            menu.addSeparator();
+            menu.addItem(54, "Reveal Log in Finder");
         }
         else if (index == 4) {  // Transport
             menu.addItem(shortcut(CommandIDs::transportPlayStop, "Play/Stop", "transport.playStop"));
@@ -431,6 +433,7 @@ public:
         case 51: if (kb) layout.handleGlobalKey(kb->getKey("view.mappings")); break;
         case 52: if (kb) layout.handleGlobalKey(kb->getKey("view.chat")); break;
         case 53: if (kb) layout.handleGlobalKey(kb->getKey("view.logs")); break;
+        case 54: juce::File("/tmp/performance.log").revealToUser(); break;
         case CommandIDs::viewMusicalTyping: layout.handleGlobalKey(KeyBindings::musicalTyping); break;
         case CommandIDs::viewZoomIn:
             layout.producePane.keyPressed(juce::KeyPress('l', juce::ModifierKeys::commandModifier, 0));

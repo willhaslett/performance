@@ -16,9 +16,12 @@ public:
 
 private:
     void timerCallback() override;
+    void exportLogs();
 
     juce::CodeDocument document;
     juce::CodeEditorComponent codeEditor;
+    juce::TextButton exportButton { "Export Logs" };
+    std::unique_ptr<juce::FileChooser> fileChooser;
     FILE* logFile = nullptr;
     bool active = false;
     int lineCount = 0;

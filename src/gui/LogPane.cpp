@@ -50,6 +50,9 @@ LogPane::LogPane()
     codeEditor.setColour(juce::CodeEditorComponent::lineNumberTextId, juce::Colours::transparentBlack);
     codeEditor.setLineNumbersShown(false);
     addAndMakeVisible(codeEditor);
+
+    exportButton.onClick = [this] { exportLogs(); };
+    addAndMakeVisible(exportButton);
 }
 
 LogPane::~LogPane() {
@@ -108,5 +111,50 @@ void LogPane::timerCallback() {
 }
 
 void LogPane::resized() {
-    codeEditor.setBounds(getLocalBounds());
+    auto area = getLocalBounds();
+    auto bar = area.removeFromTop(28).reduced(6, 4);
+    exportButton.setBounds(bar.removeFromRight(110));
+    codeEditor.setBounds(area);
+}
+
+void LogPane::exportLogs() {
+    auto stamp = juce::Time::getCurrentTime().formatted("%Y-%m-%dT%H-%M-%S");
+    auto suggested = juce::File::getSpecialLocation(juce::File::userDesktopDirectory)
+                         .getChildFile("performance-logs-" + stamp + ".txt");
+
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Export Logs", suggested, "*.txt");
+
+    fileChooser->launchAsync(juce::FileBrowserComponent::saveMode
+                             | juce::FileBrowserComponent::canSelectFiles
+                             | juce::FileBrowserComponent::warnAboutOverwriting,
+        [](const juce::FileChooser& fc) {
+            auto out = fc.getResult();
+            if (out == juce::File{}) return;
+
+            juce::String content;
+
+            // Rescued .prev logs first (oldest first by epoch in filename)
+            auto tmpDir = juce::File("/tmp");
+            auto prevs = tmpDir.findChildFiles(juce::File::findFiles, false,
+                                                "performance.log.*.prev");
+            std::sort(prevs.begin(), prevs.end(),
+                [](const juce::File& a, const juce::File& b) {
+                    return a.getFileName() < b.getFileName();
+                });
+            for (auto& f : prevs) {
+                content += "===== " + f.getFileName() + " =====\n";
+                content += f.loadFileAsString();
+                content += "\n\n";
+            }
+
+            // Current log last
+            auto current = juce::File("/tmp/performance.log");
+            if (current.existsAsFile()) {
+                content += "===== performance.log (current session) =====\n";
+                content += current.loadFileAsString();
+            }
+
+            out.replaceWithText(content);
+        });
 }
