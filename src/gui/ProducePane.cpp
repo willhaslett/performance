@@ -1587,8 +1587,10 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
                 dragStartY = event.getPosition().getY();
                 return;
             }
-            // Check if inside the cycle body
-            if (beat >= loopStart && beat < loopEnd) {
+            // Check if inside the cycle body — only a drag target when cycle
+            // mode is actually on. With cycle off the region is visual-only;
+            // a click in it should set the playhead like any ruler click.
+            if (sequencer->isLoopEnabled() && beat >= loopStart && beat < loopEnd) {
                 draggingCycleBody = true;
                 cycleBodyDragOffset = beat - loopStart;
                 dragStartY = event.getPosition().getY();
@@ -2246,7 +2248,8 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
                 setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
                 return;
             }
-            if (mx > startX + cycleEdgeThreshold && mx < endX - cycleEdgeThreshold) {
+            if (sequencer->isLoopEnabled()
+                && mx > startX + cycleEdgeThreshold && mx < endX - cycleEdgeThreshold) {
                 setMouseCursor(juce::MouseCursor::DraggingHandCursor);
                 return;
             }
