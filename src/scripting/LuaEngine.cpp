@@ -486,30 +486,29 @@ void LuaEngine::registerAPI() {
         if (songId.empty())
             throw std::runtime_error("no active song; cannot bind.");
 
-        // Resolve track-name args to UUIDs at bind-time using paramSchema
+        // Resolve track-name args to UUIDs at bind time. The typed ParamSchema
+        // tells us exactly which arg slots are track references.
         auto argsVar = juce::JSON::parse(juce::String(argsJson));
         if (auto* argsArr = argsVar.getArray()) {
-            auto schema = juce::JSON::parse(juce::String(action->paramSchema));
-            if (auto* params = schema.getArray()) {
-                for (int i = 0; i < std::min(argsArr->size(), params->size()); ++i) {
-                    auto paramName = (*params)[i].getProperty("name", "").toString();
-                    if (paramName.containsIgnoreCase("track") && (*argsArr)[i].isString()) {
-                        auto trackName = (*argsArr)[i].toString();
-                        // Resolve: try exact, then case-insensitive
-                        std::string resolved;
-                        for (auto& t : state.listTracks()) {
-                            if (juce::String(t.name) == trackName) { resolved = t.id.str(); break; }
-                        }
-                        if (resolved.empty()) {
-                            auto lower = trackName.toLowerCase();
-                            for (auto& t : state.listTracks()) {
-                                if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id.str(); break; }
-                            }
-                        }
-                        if (resolved.empty())
-                            throw std::runtime_error(std::string("bind: track '") + trackName.toStdString() + "' not found. Run registryList('track') to see available names.");
-                        argsArr->set(i, juce::var(juce::String(resolved)));
+            for (int i = 0; i < std::min((int)argsArr->size(), (int)action->params.size()); ++i) {
+                const auto& p = action->params[i];
+                bool isTrackOnly = p.type == ParamType::ChannelRef
+                    && !p.scope.empty()
+                    && std::all_of(p.scope.begin(), p.scope.end(),
+                                   [](const std::string& s) { return s == "track"; });
+                if (isTrackOnly && (*argsArr)[i].isString()) {
+                    auto trackName = (*argsArr)[i].toString();
+                    std::string resolved;
+                    for (auto& t : state.listTracks())
+                        if (juce::String(t.name) == trackName) { resolved = t.id.str(); break; }
+                    if (resolved.empty()) {
+                        auto lower = trackName.toLowerCase();
+                        for (auto& t : state.listTracks())
+                            if (juce::String(t.name).toLowerCase() == lower) { resolved = t.id.str(); break; }
                     }
+                    if (resolved.empty())
+                        throw std::runtime_error(std::string("bind: track '") + trackName.toStdString() + "' not found. Run registryList('track') to see available names.");
+                    argsArr->set(i, juce::var(juce::String(resolved)));
                 }
             }
             argsJson = juce::JSON::toString(argsVar, true).toStdString();

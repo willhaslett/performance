@@ -109,18 +109,17 @@ void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string
         // Skip "morph" — it goes at the bottom
         if (act.name == "morph") { morphIdx = ai; continue; }
 
-        auto schema = juce::JSON::parse(juce::String(act.paramSchema));
-
-        if (!schema.isArray() || schema.size() == 0) {
+        if (act.params.empty()) {
             menu.addItem(baseId + ai * 1000, juce::String(act.label));
             continue;
         }
 
-        auto firstParam = schema[0];
-        auto paramType = firstParam.getProperty("type", "").toString();
-        auto paramName = firstParam.getProperty("name", "").toString();
-        bool isTrackParam = (paramName.containsIgnoreCase("track") || paramName == "channel")
-                            && (paramType == "string" || paramType == "channel");
+        const auto& firstParam = act.params[0];
+        bool isTrackParam = firstParam.type == ParamType::ChannelRef;
+        // "channel" here = ref admits bus/master too (either scope empty or includes non-track).
+        bool isChannelParam = isTrackParam && (firstParam.scope.empty()
+            || std::any_of(firstParam.scope.begin(), firstParam.scope.end(),
+                           [](const std::string& s) { return s != "track"; }));
 
         if (isTrackParam) {
             juce::PopupMenu trackMenu;
@@ -129,7 +128,7 @@ void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string
                 if (ts && ts->sourceType == TrackSourceType::Action) continue;
                 trackMenu.addItem(baseId + ai * 1000 + ti + 1, juce::String(stateTracks[ti].name));
             }
-            if (paramType == "channel" || paramName == "channel") {
+            if (isChannelParam) {
                 auto busses = state->listBusses();
                 if (!busses.empty()) trackMenu.addSeparator();
                 for (int bi = 0; bi < (int)busses.size(); ++bi)
@@ -1500,14 +1499,8 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
                     int baseId = 100;
                     for (int ai = 0; ai < (int)actions.size(); ++ai) {
                         if (actions[ai].name == "morph") continue;
-                        auto schema = juce::JSON::parse(juce::String(actions[ai].paramSchema));
-                        bool isTrackParam = false;
-                        if (schema.isArray() && schema.size() > 0) {
-                            auto pn = schema[0].getProperty("name", "").toString();
-                            auto pt = schema[0].getProperty("type", "").toString();
-                            isTrackParam = (pn.containsIgnoreCase("track") || pn == "channel")
-                                            && (pt == "string" || pt == "channel");
-                        }
+                        bool isTrackParam = !actions[ai].params.empty()
+                            && actions[ai].params[0].type == ParamType::ChannelRef;
                         if (isTrackParam) {
                             juce::PopupMenu sub;
                             for (int ti = 0; ti < (int)stateTracks.size(); ++ti) {

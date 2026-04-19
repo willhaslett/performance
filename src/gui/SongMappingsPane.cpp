@@ -681,14 +681,8 @@ void SongMappingsPane::showActionMenu(const DeviceId& deviceId, const std::strin
 
     for (int ai = 0; ai < (int)actions.size(); ++ai) {
         if (actions[ai].name == "morph") continue;
-        auto schema = juce::JSON::parse(juce::String(actions[ai].paramSchema));
-        bool isTrackParam = false;
-        if (schema.isArray() && schema.size() > 0) {
-            auto pn = schema[0].getProperty("name", "").toString();
-            auto pt = schema[0].getProperty("type", "").toString();
-            isTrackParam = (pn.containsIgnoreCase("track") || pn == "channel")
-                            && (pt == "string" || pt == "channel");
-        }
+        bool isTrackParam = !actions[ai].params.empty()
+            && actions[ai].params[0].type == ParamType::ChannelRef;
         if (isTrackParam) {
             juce::PopupMenu sub;
             for (int ti = 0; ti < (int)tracks.size(); ++ti) {

@@ -215,16 +215,16 @@ void MorphEditor::showActionPickerForSlot(int slotIndex, juce::Point<int> screen
     for (int ai = 0; ai < (int)actions.size(); ++ai) {
         if (actions[ai].name == "morph") continue;  // no nested morphs
 
-        auto schema = juce::JSON::parse(juce::String(actions[ai].paramSchema));
-        if (!schema.isArray() || schema.size() == 0) {
+        if (actions[ai].params.empty()) {
             menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
             continue;
         }
 
-        auto paramName = schema[0].getProperty("name", "").toString();
-        auto paramType = schema[0].getProperty("type", "").toString();
-        bool isTrackParam = (paramName.containsIgnoreCase("track") || paramName == "channel")
-                            && (paramType == "string" || paramType == "channel");
+        const auto& firstParam = actions[ai].params[0];
+        bool isTrackParam = firstParam.type == ParamType::ChannelRef;
+        bool isChannelParam = isTrackParam && (firstParam.scope.empty()
+            || std::any_of(firstParam.scope.begin(), firstParam.scope.end(),
+                           [](const std::string& s) { return s != "track"; }));
 
         if (isTrackParam) {
             juce::PopupMenu sub;
@@ -233,7 +233,7 @@ void MorphEditor::showActionPickerForSlot(int slotIndex, juce::Point<int> screen
                 if (ts && ts->sourceType == TrackSourceType::Action) continue;
                 sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(tracks[ti].name));
             }
-            if (paramType == "channel" || paramName == "channel") {
+            if (isChannelParam) {
                 auto busses = state.listBusses();
                 if (!busses.empty()) sub.addSeparator();
                 for (int bi = 0; bi < (int)busses.size(); ++bi)
