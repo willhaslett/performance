@@ -24,15 +24,11 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, and **typed IDs are complete**: all 13 entity ID families (`PluginId`, `PresetId`, `TrackId`, `BusId`, `SongId`, `EffectId`, `SendId`, `RegionId`, `TakeId`, `DeviceId`, `ActionId`, `BindingId`, `ActionEventId`) live in the state model as strongly-typed newtypes; no entity ID remains as bare `std::string`. The incident's root-cause bug class — passing an ID of the wrong family where another was expected — is now a compile error. What's left for 0.1.0, in the order to tackle it:
+As of 2026-04-18, the persistence data-loss incident is resolved (see `docs/INCIDENT_2026-04-18_PERSISTENCE.md`), bounce shipped end-to-end, **typed IDs are complete** (all 13 entity ID families are strongly-typed newtypes; the incident's root-cause bug class is now a compile error), and the **AI-for-testers chunk is done** end-to-end: chat proxy Lambda deployed, C++ client wired with SSE streaming, per-install monthly token caps live, bearer token migrated to Secrets Manager (no more silent rotation), Show Log + Export Logs UI shipped. What's left for 0.1.0:
 
-1. **"Show Log File" menu item** (~10 min). Closes out §2. View → Reveal Log in Finder for `/tmp/performance.log`. Handy for tester triage.
-2. **Lambda proxy + cost guardrails + tester onboarding copy** (§3 to-do items, ~1–2 days). The AI-for-testers chunk. Full design + implementation plan in `docs/LAMBDA_CHAT_PROXY.md` — read that before starting. Includes cost model, per-install caps, sequencing, and the open decisions (streaming, default model). Model selection (currently pinned to stale `claude-sonnet-4-20250514`) moves into the proxy.
-3. **perfuce.com rebuild** (several days, parallelizable with anything above — but mostly gated on video capture).
-4. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
-5. **Tag + release.**
-
-Total rough estimate: 3–5 days of focused work on the app + ~several days of site work in parallel.
+1. **perfuce.com rebuild** (several days). Includes the tester onboarding copy carry-over from §3 — example prompts, "chat is free for testers" line, no key-paste instructions. Mostly gated on video capture.
+2. **Distribution proof** (second-machine install, §1, ~1 hour). Penultimate step before ship.
+3. **Tag + release.**
 
 ### 1. Distribution proof
 
@@ -63,34 +59,33 @@ Carry-over from pre-beta:
 - [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
 - [x] **Persistence integrity** (2026-04-18) — data-loss regression fixed: first-session recordings now actually persist through quit/relaunch. Saves are error-checked and roll back cleanly on any constraint violation; WAL-mode backup works; `createDefaultSong` no longer poisons `tracks.preset_id` with a plugin name; `onTrackCreated` applies `inputMonitoring` on load; `loadSong` hydrates audio region WAV files + waveforms. See `DEV_HISTORY.md` for the full list of fixes. Tests: 143/143. *Ship blocker resolved.*
 - [ ] **perfuce.com rebuilt as the single docs/reference surface.** Three featured sections (AI / sequencer / perform), each with a looping UI demo video. New `/docs` route with step-by-step guides per pane (Producer / Chat / Mixer / Perform / Settings). See `../performance-testing/rounds/01-v0.1.0-first-friends/02-materials/perfuce-site-plan.md` for the checklist. No in-repo getting-started doc — the site replaces it.
-- [ ] "Show Log File" menu item (View → Reveal Log in Finder). Less critical now that telemetry auto-ships, but handy for live tester triage.
+- [x] "Show Log File" menu item (View → Reveal Log in Finder) + Export Logs button on the LogPane (bundles all rescued `.prev` logs + current session into a Save As dialog) as a manual-fallback if telemetry shipping ever fails.
 - [x] Feedback channel — resolved: individual outreach per tester (text / email / iMessage). Documented in `performance-testing/.../welcome.md`.
 
 ### 3. Built-in AI for testers
 
-Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat pane and gets meaningful help — "add a reverb to track 2," "why isn't my MIDI working." If scope balloons past ~3 days, back out and ship without.
+Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat pane and gets meaningful help — "add a reverb to track 2," "why isn't my MIDI working." Full design + implementation history in `docs/LAMBDA_CHAT_PROXY.md`.
 
-**Decided:**
-- **API-key provisioning: Lambda proxy only.** The app sends chat requests to our Lambda (existing telemetry stack), which adds the Anthropic key and forwards. Per-install rate-limit + monthly cap via DynamoDB. No key ever on tester machines. For Will's local dev until the Lambda is built: keep the current `getenv("ANTHROPIC_API_KEY")` path as a temporary hack; delete once the proxy is live. "Bring your own key" Settings field is deferred to 0.2.x.
+**Decided + shipped:**
+- **API-key provisioning: Lambda proxy only.** The app POSTs chat requests to our chat-proxy Lambda which adds the Anthropic key and forwards. Per-install monthly token cap (100k input / 25k output) tracked in DynamoDB; 402 surfaced to the chat UI when exhausted. No key on tester machines. The dev-only `getenv("ANTHROPIC_API_KEY")` path is gone. "Bring your own key" Settings field deferred to 0.2.x.
 - **Tool-call visibility: hidden.** `ChatView::onToolUse` is a no-op — no raw Lua, no raw errors in chat. Users see only assistant bubbles. Tool activity still goes to `/tmp/performance.log` for debugging.
 - **Safety + dB API.** All gain setters clamp to [0.0, 2.0] (matches fader floor = true silence, fader top = +6dB). dB-native Lua bindings (`setTrackGainDb`, `setBusGainDb`, `addSendDb`, `setSendGainDb`) so Claude never does dB↔linear math. Prompt codifies safe defaults for new tracks / busses / sends (audio-input tracks have no input + monitoring off; new busses silent; new sends -12dB).
-
-**Open:**
-- **Streaming.** `ClaudeClient` is fully non-streaming today (`readEntireStreamAsString()` blocks for the whole response, then one `notifyText`). Evaluate locally first — if "thinking…" then wall-of-text feels acceptable for chat, ship non-streaming; if it feels sluggish, do SSE end-to-end (Lambda already streams cleanly; C++ side is bounded SSE plumbing, ~4 hours).
-- **Default model.** Currently pinned to stale `claude-sonnet-4-20250514` (`ClaudeClient.h:53`). Bump to current — Sonnet 4.6 (cheap, smart enough) or Opus 4.7 (~5× cost). Decide alongside cost guardrails.
+- **Streaming: yes.** SSE end-to-end. Lambda forwards Anthropic's stream, parses `message_delta.usage` for token counting; C++ client (`ClaudeClient::streamResponse`) consumes events incrementally and accumulates content blocks before invoking the listener.
+- **Default model: server-controlled.** `DEFAULT_MODEL` env var on the chat Lambda (currently `claude-sonnet-4-5`). Bump server-side without an app rebuild. App-level `model` field removed from request body.
+- **Bearer token storage.** Migrated from a CDK-managed SSM Parameter (which silently rotated on every redeploy) to AWS Secrets Manager with native auto-generation. Stable across redeploys.
 
 **To do:**
 
 - [x] **Refresh `runtime/CLAUDE.md`** — embedded system prompt rewritten, bundled as BinaryData so it ships with the binary, clarifies safe defaults + dB API. Continues to be tuned through self-test.
-- [x] **Silent-failure surface** — resolver helpers and plugin lookups now throw with actionable errors (`"plugin 'X' not found. Run listPlugins() for available names."`). Claude self-corrects instead of claiming success on no-ops.
+- [x] **Silent-failure surface** — resolver helpers and plugin lookups now throw with actionable errors. Claude self-corrects instead of claiming success on no-ops.
 - [x] **ChatView typing indicator** — three pulsing dots while Claude is working; appears instantly on send.
-- [ ] **Tool-use surface** — full audit of what Claude can call through `perf` (list / mutate / plugins / bindings). Safe-default rules cover the biggest risks; destructive-op gating (confirm / dry-run) still open.
-- [ ] **ChatView UX tail** — error states (rate-limit / network / auth), history persistence, clear chat, cancel in-flight.
-- [ ] **Lambda proxy** — extend the telemetry Lambda with a `/chat` route. Auth via existing bearer + install-ID. Per-install rate + monthly cap in DynamoDB. Streaming or not depending on §3 Open decision. Delete the `getenv()` key path once this is live.
-- [ ] **Cost guardrails** — per-install monthly cap enforced in Lambda; graceful error in Chat.
-- [ ] **Model bump** — apply chosen default model (still pinned to stale `claude-sonnet-4-20250514`).
+- [x] **Lambda proxy** — `infra/lambda/chat.ts`; deployed as `ChatProxy` Lambda + function URL with response streaming.
+- [x] **Cost guardrails** — per-install monthly token cap in Lambda; 402 + friendly message; CloudWatch billing alarm at $50/mo.
+- [x] **Streaming end-to-end.** SSE wire path top to bottom.
+- [ ] **Tool-use surface** — full audit of what Claude can call through `perf`. Safe-default rules cover the biggest risks; destructive-op gating (confirm / dry-run) still open.
+- [ ] **ChatView UX tail** — error states polish, history persistence, clear chat, cancel in-flight, auto-focus input on pane reveal.
 - [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try. Ongoing through local use.
-- [ ] **Tester onboarding copy** — 3–4 example prompts shown on perfuce.com (not a repo doc).
+- [ ] **Tester onboarding copy** — 3–4 example prompts shown on perfuce.com (not a repo doc). Carry-over to §1 above.
 
 ### 4. Nice-to-haves considered
 
