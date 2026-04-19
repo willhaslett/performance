@@ -1,13 +1,14 @@
 #!/bin/bash
-# Fetch telemetry endpoint + bearer token from AWS and write
-# keys/telemetry.json so the CMake build can bake them into the app.
+# Fetch telemetry endpoint, chat-proxy endpoint, and bearer token from
+# AWS and write keys/telemetry.json so the CMake build can bake them
+# into the app.
 #
-# Run this once per machine, or after rotating the token (delete the
-# SSM parameter and redeploy the CDK stack, then re-run this).
+# Run this once per machine, or after rotating the bearer token (delete
+# the secret in Secrets Manager and redeploy the CDK stack, then re-run
+# this).
 #
 # If this machine has no AWS access, skip running this — the build will
-# emit empty TELEMETRY_URL / TELEMETRY_TOKEN and the shipper becomes a
-# no-op.
+# emit empty values and the shipper / chat client become no-ops.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,14 +19,20 @@ URL=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`IngestUrl`].OutputValue' \
     --output text)
 
-TOKEN=$(aws ssm get-parameter --with-decryption \
-    --name /performance/telemetry/bearer-token \
-    --query 'Parameter.Value' --output text)
+CHAT_URL=$(aws cloudformation describe-stacks \
+    --stack-name PerformanceTelemetry \
+    --query 'Stacks[0].Outputs[?OutputKey==`ChatProxyUrl`].OutputValue' \
+    --output text)
+
+TOKEN=$(aws secretsmanager get-secret-value \
+    --secret-id performance/telemetry/bearer-token \
+    --query 'SecretString' --output text)
 
 umask 077
 cat > keys/telemetry.json <<EOF
 {
   "url": "$URL",
+  "chatUrl": "$CHAT_URL",
   "token": "$TOKEN"
 }
 EOF

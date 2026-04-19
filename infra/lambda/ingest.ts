@@ -1,27 +1,26 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 const s3 = new S3Client({});
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const ssm = new SSMClient({});
+const secrets = new SecretsManagerClient({});
 
 const BUCKET = process.env.BUCKET!;
 const TABLE = process.env.TABLE!;
-const BEARER_TOKEN_PARAM = process.env.BEARER_TOKEN_PARAM!;
+const BEARER_TOKEN_SECRET = process.env.BEARER_TOKEN_SECRET!;
 
 // Cached at cold start. Never rotated within a container's lifetime —
-// rotate by redeploying the stack (which creates a new container).
+// rotate by changing the secret value and creating a new container.
 let cachedToken: string | undefined;
 
 async function bearerToken(): Promise<string> {
   if (cachedToken) return cachedToken;
-  const res = await ssm.send(new GetParameterCommand({
-    Name: BEARER_TOKEN_PARAM,
-    WithDecryption: true,
+  const res = await secrets.send(new GetSecretValueCommand({
+    SecretId: BEARER_TOKEN_SECRET,
   }));
-  cachedToken = res.Parameter?.Value ?? '';
+  cachedToken = res.SecretString ?? '';
   return cachedToken;
 }
 
