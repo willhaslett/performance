@@ -6,7 +6,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 ## Version & Distribution
 
-**Current version: `0.0.2`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.2)`. `0.1.0` will be the first beta. `0.0.2` marks the post-refactor checkpoint after four deep architectural passes (typed IDs, persistence integrity, produce-pane visual model, action-instances + action-algebra refactors) — each a change we're not going back on.
+**Current version: `0.0.3`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.3)`. `0.1.0` will be the first beta. `0.0.3` adds the bundled-plugin install pack (15 curated free AU plugins via private S3 + presigned Lambda, first-launch prompt, Settings → Plugins install/uninstall) on top of `0.0.2`'s architectural settlement.
 
 **Build pipeline:** `scripts/build-release.sh [version]` — one command for Release build → code sign → DMG → notarize → staple. Version defaults to the CMake version. Output: `dist/Performance-<version>.dmg`. Requires Apple Developer ID certificate (William Haslett, H25TK2U8FA) + keychain-stored notarization credentials (`AC_PASSWORD` profile). First successful end-to-end run completed.
 
