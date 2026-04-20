@@ -232,6 +232,14 @@ time.
 Each step a commit; app builds + tests pass at every step. Roll back
 rather than patch-forward.
 
+**Status as of 2026-04-20**: steps 1–8 landed on branch
+`action-algebra`. Step 9 (bounce + virtual clock) deferred to
+post-0.1.0 — the core refactor goal (kill the dispatch ladder, unify
+execution) is done without it. Bounce continues to run with frozen
+automation until step 9 lands; no regression from the pre-refactor
+baseline. `state.db` reset is required because the actions table
+gained a `body_json` column.
+
 1. **`ActionNode` + `Target` + `Value` types.** Header-only. Include a
    `toJson` / `fromJson` round-trip (mirrors `ParamSchemaJson`). Unit
    tests for round-trip and placeholder substitution.
