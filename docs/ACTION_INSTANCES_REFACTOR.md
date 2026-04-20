@@ -212,6 +212,12 @@ so the embedded Claude generates schemas the form can render.
 Each step a commit; app builds + tests pass at every step. Roll back
 rather than patch-forward.
 
+**Status as of 2026-04-20**: steps 1–6 landed on branch
+`action-instances-refactor`. Remaining: step 2b (drop legacy
+`paramSchema` string + migrate persistence), step 7 (cascade-delete
+with confirmation + load-time repair dialog), step 8 (`runtime/CLAUDE.md`
+schema grammar update). Then merge to main.
+
 1. **Typed schema in state model.** Introduce `ParamSchema` +
    `ActionInfo.params`. Keep `paramSchema` as a deprecated fallback
    temporarily while call sites migrate. Rewrite the eight built-in
