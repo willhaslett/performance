@@ -134,9 +134,53 @@ Presets capture a plugin's full state (binary blob + parameter snapshot).
 
 Only create a custom action when a single built-in action can't express the user's intent — e.g. parallel fades, delayed triggers, conditional logic.
 
-- `createAction(name, label, luaCode, songId?)` — `songId` optional; omit for a global action.
+- `createAction(name, label, luaCode, paramSchemaJson?, songId?)` — both optional; omit `paramSchemaJson` for a zero-arg macro, omit `songId` for a global action.
 - `removeAction(id)`
 - `triggerAction(actionName)` — run an action immediately.
+
+### Param schema grammar
+
+The app's action-creation UI renders typed widgets from `paramSchemaJson`. Getting this right means the user can bind the action to a MIDI control or drop it on an action track and the form will pick the right refs, validate required fields, etc. Getting it wrong means free-text fields with no validation.
+
+The schema is a JSON array of param objects. Each param has:
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `name` | string | required | `camelCase` or `snake_case`; the UI humanizes it ("fromTrack" → "From Track") |
+| `type` | string | required | one of `channelRef` / `presetRef` / `enum` / `float` / `morph` |
+| `required` | bool | `true` | set `false` for optional params |
+| `default` | string | `""` | type-interpreted (for floats, the numeric string) |
+| `scope` | `[string]` | `[]` = any | **`channelRef` only**: subset of `["track", "bus", "master"]` |
+| `sourceTypes` | `[string]` | `[]` = any | **`channelRef` with track scope**: subset of `["Instrument", "AudioInput", "Action"]` |
+| `enumValues` | `[string]` | `[]` | **`enum` only**: the listed choices |
+| `min`, `max` | number | unbounded | **`float` only** |
+
+Within the action's Lua code, args are in `args[1]`, `args[2]`, etc., in schema order. Refs are already resolved to UUIDs by the binding layer — just pass them through to the API functions that expect track/bus/preset IDs.
+
+**Example — a "fade in then out" custom action:**
+
+```lua
+createAction(
+  "fadeInOut",
+  "Fade in then out",
+  [[
+    local track, hold, fadeSecs = args[1], args[2], args[3]
+    interpolate(0.0, 1.0, fadeSecs, function(v) setTrackGain(track, v) end)
+    delay(hold + fadeSecs, function()
+      interpolate(1.0, 0.0, fadeSecs, function(v) setTrackGain(track, v) end)
+    end)
+  ]],
+  [[
+    [
+      {"name":"track","type":"channelRef","scope":["track"]},
+      {"name":"hold","type":"float","default":"4.0","min":0},
+      {"name":"fadeSecs","type":"float","default":"1.0","min":0}
+    ]
+  ]]
+)
+```
+
+After this runs, the user can right-click the action track and pick "Fade in then out" — the form will show a track dropdown and two numeric fields with the defaults prefilled.
 
 ## Songs
 

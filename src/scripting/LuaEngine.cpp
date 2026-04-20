@@ -3,6 +3,7 @@
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
 #include "automation/AutomationEngine.h"
+#include "state/ParamSchemaJson.h"
 #include "engine/Log.h"
 #include <juce_events/juce_events.h>
 #include <filesystem>
@@ -550,13 +551,20 @@ void LuaEngine::registerAPI() {
         else if (state.findSong(SongId{id})) state.deleteSong(SongId{id});
     });
 
-    // Custom actions
+    // Custom actions. paramSchemaJson is the same typed grammar documented
+    // in runtime/CLAUDE.md — e.g. '[{"name":"track","type":"channelRef","scope":["track"]}]'.
+    // Omit for a zero-arg action (just a macro).
     lua.set_function("createAction", [&state](const std::string& name, const std::string& label,
                                                const std::string& luaCode,
+                                               sol::optional<std::string> paramSchemaJson,
                                                sol::optional<std::string> songId) -> std::string {
+        std::vector<ParamSchema> params;
+        if (paramSchemaJson.has_value() && !paramSchemaJson.value().empty())
+            params = ParamSchemaJson::fromJson(paramSchemaJson.value());
         SongId sid = songId.has_value() ? SongId{songId.value()} : SongId{};
-        auto id = state.createCustomAction(name, label, luaCode, sid);
-        perfLog("[Lua] Created custom action: %s (id=%s)\n", name.c_str(), id.c_str());
+        auto id = state.createCustomAction(name, label, luaCode, std::move(params), sid);
+        perfLog("[Lua] Created custom action: %s (id=%s, %d params)\n",
+                name.c_str(), id.c_str(), (int)params.size());
         return id.str();
     });
     lua.set_function("removeAction", [&state](const std::string& id) {

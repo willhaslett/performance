@@ -1093,11 +1093,14 @@ ActionId StateAPI::registerAction(const std::string& name, const std::string& la
 }
 
 ActionId StateAPI::createCustomAction(const std::string& name, const std::string& label,
-                                       const std::string& luaCode, const SongId& songId) {
+                                       const std::string& luaCode,
+                                       std::vector<ParamSchema> params,
+                                       const SongId& songId) {
     for (auto& a : state.actions) {
         if (a.name == name) {
             a.label = label;
             a.luaCode = luaCode;
+            a.params = std::move(params);
             a.songId = songId;
             markDirty();
             return a.id;
@@ -1108,6 +1111,7 @@ ActionId StateAPI::createCustomAction(const std::string& name, const std::string
     action.name = name;
     action.label = label;
     action.luaCode = luaCode;
+    action.params = std::move(params);
     action.songId = songId;
     state.actions.push_back(std::move(action));
     markDirty();

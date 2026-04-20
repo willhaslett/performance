@@ -675,7 +675,7 @@ public:
         {
             StateAPI s;
             auto id = s.createCustomAction("myAction", "My Action",
-                                            "log('hello')", SongId{});
+                                            "log('hello')", {}, SongId{});
             expect(!id.empty());
 
             auto* action = s.findActionByName("myAction");
@@ -685,7 +685,7 @@ public:
             expect(action->songId.empty());  // global
 
             // Update existing by same name
-            auto id2 = s.createCustomAction("myAction", "Updated", "log('bye')", SongId{"song1"});
+            auto id2 = s.createCustomAction("myAction", "Updated", "log('bye')", {}, SongId{"song1"});
             expectEquals(id.str(), id2.str());  // same ID
             action = s.findActionByName("myAction");
             expectEquals(action->label, std::string("Updated"));
@@ -1101,8 +1101,8 @@ public:
             StateAPI original;
             original.createSong("S");
             original.registerAction("builtIn", "Built-in");  // no lua_code
-            original.createCustomAction("custom1", "Custom One", "log('hi')", SongId{});
-            original.createCustomAction("custom2", "Custom Two", "fadeOut()", SongId{"song123"});
+            original.createCustomAction("custom1", "Custom One", "log('hi')", {}, SongId{});
+            original.createCustomAction("custom2", "Custom Two", "fadeOut()", {}, SongId{"song123"});
 
             { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
 

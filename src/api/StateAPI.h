@@ -150,7 +150,9 @@ public:
                              std::vector<ParamSchema> params = {},
                              int durationParamIndex = -1);
     ActionId createCustomAction(const std::string& name, const std::string& label,
-                                 const std::string& luaCode, const SongId& songId = {});
+                                 const std::string& luaCode,
+                                 std::vector<ParamSchema> params = {},
+                                 const SongId& songId = {});
     void removeAction(const ActionId& id);
     const ActionInfo* findActionByName(const std::string& name) const;
     const ActionInfo* findActionById(const ActionId& id) const;
