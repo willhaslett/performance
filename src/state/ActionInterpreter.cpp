@@ -5,8 +5,8 @@
 
 namespace ActionAlgebra {
 
-ActionInterpreter::ActionInterpreter(Scheduler& s, TargetIO& i)
-    : scheduler(s), io(i) {}
+ActionInterpreter::ActionInterpreter(Scheduler& s, TargetIO& i, TemplateResolver* r)
+    : scheduler(s), io(i), resolver(r) {}
 
 float ActionInterpreter::resolveValue(const Value& v, const Target* captureTarget) {
     switch (v.kind) {
@@ -79,13 +79,42 @@ void ActionInterpreter::run(const ActionNode& node,
             return;
 
         case ActionNode::Op::Invoke:
+            // Expand the named action with the invoke's args, recursively.
+            // $value is not threaded — nested Invokes don't currently use
+            // it. Add propagation if a case emerges.
+            trigger(node.invokeName, node.invokeArgs, 1.0f, std::move(onComplete));
+            return;
+
         case ActionNode::Op::Lua:
-            // Not handled in step 2 — step 3 wires Invoke with template
-            // expansion, step 7 wires Lua. For now, log + no-op complete.
-            perfLog("[ActionInterpreter] Op %d not yet implemented\n", (int)node.op);
+            // Wired in step 7. Log + complete so Sequence still advances.
+            perfLog("[ActionInterpreter] Lua op not yet implemented\n");
             fire(onComplete);
             return;
     }
+}
+
+void ActionInterpreter::trigger(const std::string& actionName,
+                                 const std::vector<Value>& args,
+                                 float midiValue,
+                                 std::function<void()> onComplete) {
+    if (!resolver) {
+        perfLog("[ActionInterpreter] trigger('%s') with no resolver\n", actionName.c_str());
+        fire(onComplete);
+        return;
+    }
+    auto* tmpl = resolver->lookup(actionName);
+    if (!tmpl) {
+        perfLog("[ActionInterpreter] Unknown action: %s\n", actionName.c_str());
+        fire(onComplete);
+        return;
+    }
+    std::unordered_map<std::string, Value> bindings;
+    for (size_t i = 0; i < tmpl->paramNames.size() && i < args.size(); ++i)
+        bindings[tmpl->paramNames[i]] = args[i];
+    bindings["value"] = num((double)midiValue);
+
+    auto concrete = substitute(tmpl->body, bindings);
+    run(concrete, std::move(onComplete));
 }
 
 void ActionInterpreter::runSequence(const std::vector<ActionNode>& children,

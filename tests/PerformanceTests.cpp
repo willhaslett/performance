@@ -3086,6 +3086,15 @@ public:
         }
     };
 
+    // Mock template resolver for testing Invoke/trigger.
+    struct MockResolver : ActionAlgebra::ActionInterpreter::TemplateResolver {
+        std::map<std::string, Template> templates;
+        const Template* lookup(const std::string& name) override {
+            auto it = templates.find(name);
+            return it != templates.end() ? &it->second : nullptr;
+        }
+    };
+
     void runTest() override {
         using namespace ActionAlgebra;
 
@@ -3191,6 +3200,93 @@ public:
             interp.run(sequence({}), [&]() { ++completions; });
             expect(completions == 2);
             expect(s.calls.empty());
+        }
+
+        beginTest("trigger binds positional args and $value into template");
+        {
+            MockScheduler s; MockIO io;
+            // A fadeOut-shaped template: interpolate(track.gain, current,
+            // 0, duration, easing). Params named "track" and "duration".
+            MockResolver r;
+            r.templates["fadeOut"] = {
+                interpolate({ Target::Kind::TrackGain, "PLACEHOLDER", -1 },
+                            captureCurrent(), num(0),
+                            placeholder("duration"), "easein"),
+                { "track", "duration" }
+            };
+            // Note: the template's target.entityId would normally be a
+            // placeholder too. For step 3 we only test Value-slot
+            // substitution; target-entity substitution lands when we
+            // move the real built-ins over in step 4. Here we verify the
+            // duration placeholder gets bound.
+
+            ActionInterpreter interp(s, io, &r);
+            Target target { Target::Kind::TrackGain, "PLACEHOLDER", -1 };
+            io.values[MockIO::key(target)] = 0.8f;
+
+            interp.trigger("fadeOut",
+                { num(0 /*ignored — no target-entity substitution yet*/),
+                  num(5.0 /*duration*/) },
+                1.0f);
+
+            expect((int)s.calls.size() == 1);
+            expect(s.calls[0].kind == MockScheduler::Call::Kind::Interpolate);
+            expectWithinAbsoluteError(s.calls[0].duration, 5.0f, 0.0001f);
+            expectWithinAbsoluteError(s.calls[0].from, 0.8f, 0.0001f);
+            expectWithinAbsoluteError(s.calls[0].to, 0.0f, 0.0001f);
+        }
+
+        beginTest("Invoke inside tree expands recursively");
+        {
+            MockScheduler s; MockIO io;
+            MockResolver r;
+            // fadeOut template: one interpolate with duration placeholder
+            r.templates["fadeOut"] = {
+                interpolate({ Target::Kind::TrackGain, "X", -1 },
+                            captureCurrent(), num(0),
+                            placeholder("duration"), "linear"),
+                { "duration" }
+            };
+            ActionInterpreter interp(s, io, &r);
+
+            // Sequence containing one Invoke — should expand and schedule
+            bool done = false;
+            interp.run(sequence({ invoke("fadeOut", { num(2.0) }) }),
+                       [&]() { done = true; });
+            expect((int)s.calls.size() == 1);
+            expectWithinAbsoluteError(s.calls[0].duration, 2.0f, 0.0001f);
+            expect(!done);
+            s.complete(0);
+            expect(done);
+        }
+
+        beginTest("Unknown action invocation completes without crash");
+        {
+            MockScheduler s; MockIO io;
+            MockResolver r;  // empty
+            ActionInterpreter interp(s, io, &r);
+            bool done = false;
+            interp.trigger("nonexistent", {}, 1.0f, [&]() { done = true; });
+            expect(done);
+            expect(s.calls.empty());
+        }
+
+        beginTest("$value is bound as a placeholder during trigger");
+        {
+            MockScheduler s; MockIO io;
+            // trackVolume-shaped template: Set(MasterGain, $value * ... )
+            // Simplified: Set(MasterGain, $value). We should observe the
+            // MIDI value written to MasterGain.
+            MockResolver r;
+            r.templates["trackVolume"] = {
+                set({ Target::Kind::MasterGain, {}, -1 }, placeholder("value")),
+                {}  // no schema args
+            };
+            ActionInterpreter interp(s, io, &r);
+            interp.trigger("trackVolume", {}, 0.42f);
+            expectWithinAbsoluteError(
+                io.values[MockIO::key({ Target::Kind::MasterGain, {}, -1 })],
+                0.42f, 0.0001f);
         }
     }
 };

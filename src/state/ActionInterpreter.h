@@ -34,7 +34,21 @@ public:
         virtual void  write(const Target& t, float value) = 0;
     };
 
-    ActionInterpreter(Scheduler& scheduler, TargetIO& io);
+    // Resolves a named action to its template body + param-name list (for
+    // positional → named binding). Real impl wraps StateAPI's action
+    // catalog; mock impl in tests is a map.
+    struct TemplateResolver {
+        struct Template {
+            ActionNode body;
+            std::vector<std::string> paramNames;
+        };
+        virtual ~TemplateResolver() = default;
+        virtual const Template* lookup(const std::string& name) = 0;
+    };
+
+    // Resolver may be null if the tree has no Invoke nodes.
+    ActionInterpreter(Scheduler& scheduler, TargetIO& io,
+                      TemplateResolver* resolver = nullptr);
 
     // Run a tree. `onComplete` (optional) fires when the entire tree
     // finishes (every Interpolate ended, every Delay elapsed, every
@@ -43,9 +57,18 @@ public:
     // a single Set) it fires before run() returns.
     void run(const ActionNode& node, std::function<void()> onComplete = {});
 
+    // Top-level entry: invoke a named action with positional args + MIDI
+    // value. Binds args to param names, binds `$value` → midiValue,
+    // substitutes the template body, runs the concrete tree.
+    void trigger(const std::string& actionName,
+                 const std::vector<Value>& args,
+                 float midiValue = 1.0f,
+                 std::function<void()> onComplete = {});
+
 private:
-    Scheduler& scheduler;
-    TargetIO&  io;
+    Scheduler&        scheduler;
+    TargetIO&         io;
+    TemplateResolver* resolver;
 
     // Helpers
     float resolveValue(const Value& v, const Target* captureTarget);
