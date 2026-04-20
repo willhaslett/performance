@@ -11,6 +11,7 @@
 #include "gui/SettingsWindow.h"
 #include "gui/KeyBindingManager.h"
 #include "gui/KeyBindingEditor.h"
+#include "gui/PluginInstallDialog.h"
 #include "engine/Log.h"
 #include "telemetry/InstallId.h"
 #include "telemetry/TelemetryShipper.h"
@@ -194,6 +195,8 @@ enum CommandIDs {
     transportCycle = 43, transportMetronome = 44,
     transportStepFwd = 45, transportStepBack = 46,
     transportStepFwdBar = 47, transportStepBackBar = 48,
+    // Help
+    helpInstallPlugins = 60,
     // Other
     openSettings = 99,
 };
@@ -219,7 +222,7 @@ public:
     void setKeyBindingManager(KeyBindingManager* mgr) { kb = mgr; }
 
     juce::StringArray getMenuBarNames() override {
-        return { "File", "Edit", "Track", "View", "Transport" };
+        return { "File", "Edit", "Track", "View", "Transport", "Help" };
     }
 
     juce::PopupMenu getMenuForIndex(int index, const juce::String&) override {
@@ -300,6 +303,10 @@ public:
             menu.addItem(shortcut(CommandIDs::transportStepBack, "Step Back", "transport.stepBack"));
             menu.addItem(shortcut(CommandIDs::transportStepFwdBar, "Step Forward Bar", "transport.stepFwdBar"));
             menu.addItem(shortcut(CommandIDs::transportStepBackBar, "Step Back Bar", "transport.stepBackBar"));
+        }
+        else if (index == 5) {  // Help
+            menu.addItem(CommandIDs::helpInstallPlugins,
+                         juce::String::fromUTF8("Install Plugin Pack\xe2\x80\xa6"));
         }
         return menu;
     }
@@ -476,6 +483,9 @@ public:
         case CommandIDs::transportStepBackBar:
             layout.producePane.keyPressed(juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
             break;
+
+        // Help
+        case CommandIDs::helpInstallPlugins: PluginInstallDialog::show(); break;
 
         // Settings
         case CommandIDs::openSettings: layout.handleGlobalKey(KeyBindings::settings); break;

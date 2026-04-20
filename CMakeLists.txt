@@ -103,6 +103,8 @@ target_sources(Performance PRIVATE
     src/gui/PerformPane.cpp
     src/telemetry/InstallId.cpp
     src/telemetry/TelemetryShipper.cpp
+    src/install/BundledPluginInstaller.cpp
+    src/gui/PluginInstallDialog.cpp
     src/gui/LogPane.cpp
     src/gui/ChatView.cpp
     src/gui/PerformanceLookAndFeel.cpp
