@@ -8,6 +8,7 @@
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
+#include "state/ActionRefs.h"
 
 MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
@@ -24,6 +25,40 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onStopRecordMode = [&coordinator]() { coordinator.stopRecordMode(); };
     producePane.onIsRecordMode = [&coordinator]() { return coordinator.isInRecordMode(); };
     producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
+
+    // After a song loads, scan its bindings + action events for refs that
+    // don't resolve anymore (e.g. a track got deleted in a past session and
+    // left stale bindings). Per doc: show the user a one-time dialog rather
+    // than silently pruning or letting the assertion fire at trigger time.
+    coordinator.onSongLoaded = [this]() {
+        auto stale = ActionRefs::findStaleRefs(this->state);
+        if (stale.empty()) return;
+
+        juce::String body;
+        body << "This song has " << (int)stale.size()
+             << (stale.size() == 1 ? " binding or action event" : " bindings or action events")
+             << " referencing entities that no longer exist:\n\n";
+        int shown = 0;
+        for (auto& s : stale) {
+            if (shown++ >= 6) { body << "  ...and more\n"; break; }
+            body << "  • " << juce::String(s.summary) << "\n";
+        }
+        body << "\nDelete them? (Keeping them will crash when triggered.)";
+
+        // Move the removes into a shared lambda-owned vector so the callback
+        // can fire them all after the modal closes.
+        auto removesPtr = std::make_shared<std::vector<std::function<void()>>>();
+        for (auto& s : stale) removesPtr->push_back(std::move(s.remove));
+
+        juce::AlertWindow::showOkCancelBox(
+            juce::MessageBoxIconType::WarningIcon,
+            "Stale references found", body,
+            "Delete", "Keep", nullptr,
+            juce::ModalCallbackFunction::create([removesPtr](int ok) {
+                if (ok != 1) return;
+                for (auto& r : *removesPtr) r();
+            }));
+    };
 
     // All components start hidden — setPaneContent will show the right ones
     sidebar.setVisible(false);

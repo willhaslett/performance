@@ -4,6 +4,7 @@
 #include "gui/PluginSlot.h"
 #include "gui/FaderMeter.h"
 #include "gui/InlineEditor.h"
+#include "state/Id.h"
 #include <vector>
 #include <memory>
 
@@ -37,6 +38,10 @@ public:
     std::function<std::vector<juce::String>()> onListBusPresets;
 
 private:
+    // Remove a bus with a confirmation dialog when it has dependent action
+    // events / bindings. Cascades their removal on confirm.
+    void confirmAndRemoveBus(const BusId& id);
+
     StateAPI& state;
     EngineAPI& engine;
     juce::String busId;    // stable UUID from registry

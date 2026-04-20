@@ -622,6 +622,7 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     loadAudioFilesIntoEngine();
 
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
+    if (onSongLoaded) onSongLoaded();
 }
 
 std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {

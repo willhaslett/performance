@@ -1,6 +1,7 @@
 #include "gui/BusStrip.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
+#include "state/ActionRefs.h"
 
 BusStrip::BusStrip(const juce::String& id, const juce::String& name,
                    StateAPI& state, EngineAPI& engine)
@@ -16,6 +17,37 @@ BusStrip::BusStrip(const juce::String& id, const juce::String& name,
 
     // Start with one empty effect slot
     rebuildEffectSlots();
+}
+
+void BusStrip::confirmAndRemoveBus(const BusId& id) {
+    auto deps = ActionRefs::countDependents(state, id.str());
+    if (deps.actionEvents == 0 && deps.bindings == 0) {
+        state.removeBus(id);
+        return;
+    }
+
+    auto* bus = state.findBus(id);
+    juce::String name = bus ? juce::String(bus->name) : juce::String("bus");
+
+    juce::String parts;
+    if (deps.actionEvents > 0)
+        parts << deps.actionEvents << " action event" << (deps.actionEvents == 1 ? "" : "s");
+    if (deps.bindings > 0) {
+        if (parts.isNotEmpty()) parts << " and ";
+        parts << deps.bindings << " MIDI binding" << (deps.bindings == 1 ? "" : "s");
+    }
+
+    juce::AlertWindow::showOkCancelBox(
+        juce::MessageBoxIconType::WarningIcon,
+        "Delete bus",
+        "Deleting \"" + name + "\" will also remove " + parts + " that reference it.",
+        "Delete", "Cancel", nullptr,
+        juce::ModalCallbackFunction::create([this, id](int ok) {
+            if (ok == 1) {
+                ActionRefs::removeDependents(state, id.str());
+                state.removeBus(id);
+            }
+        }));
 }
 
 void BusStrip::setEffects(const std::vector<EffectSlotInfo>& effects) {
@@ -179,7 +211,7 @@ void BusStrip::mouseUp(const juce::MouseEvent& event) {
             juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
             [this](int result) {
                 if (result == 1)
-                    state.removeBus(BusId{busId.toStdString()});
+                    confirmAndRemoveBus(BusId{busId.toStdString()});
                 else if (result == 10 && onSaveBusPreset) {
                     auto* dlg = new juce::AlertWindow("Save Bus Preset", "", juce::MessageBoxIconType::NoIcon);
                     dlg->addTextEditor("name", busName, "Preset Name");

@@ -40,6 +40,10 @@ public:
     // Lua execution callback (set by main after LuaEngine is created)
     std::function<std::string(const std::string& code)> luaExecutor;
 
+    // Fired once per song-load completion. Used by the GUI for side effects
+    // that shouldn't live in the coordinator (e.g. the stale-ref repair dialog).
+    std::function<void()> onSongLoaded;
+
     // --- Song lifecycle ---
     std::string createSong(const juce::String& name);
     std::string createDefaultSong(const std::string& name);  // DLS Electric Piano + Audio In template

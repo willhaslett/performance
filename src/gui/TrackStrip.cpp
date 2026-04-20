@@ -1,6 +1,7 @@
 #include "gui/TrackStrip.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
+#include "state/ActionRefs.h"
 
 TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
                        StateAPI& state, EngineAPI& engine)
@@ -19,6 +20,37 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     faderMeter.onDragEnd = [&]() { state.endTransaction(); };
 
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
+}
+
+void TrackStrip::confirmAndRemoveTrack(const TrackId& id) {
+    auto deps = ActionRefs::countDependents(state, id.str());
+    if (deps.actionEvents == 0 && deps.bindings == 0) {
+        state.removeTrack(id);
+        return;
+    }
+
+    auto* trk = state.findTrack(id);
+    juce::String name = trk ? juce::String(trk->name) : juce::String("track");
+
+    juce::String parts;
+    if (deps.actionEvents > 0)
+        parts << deps.actionEvents << " action event" << (deps.actionEvents == 1 ? "" : "s");
+    if (deps.bindings > 0) {
+        if (parts.isNotEmpty()) parts << " and ";
+        parts << deps.bindings << " MIDI binding" << (deps.bindings == 1 ? "" : "s");
+    }
+
+    juce::AlertWindow::showOkCancelBox(
+        juce::MessageBoxIconType::WarningIcon,
+        "Delete track",
+        "Deleting \"" + name + "\" will also remove " + parts + " that reference it.",
+        "Delete", "Cancel", nullptr,
+        juce::ModalCallbackFunction::create([this, id](int ok) {
+            if (ok == 1) {
+                ActionRefs::removeDependents(state, id.str());
+                state.removeTrack(id);
+            }
+        }));
 }
 
 void TrackStrip::setInstrumentName(const juce::String& name) {
@@ -524,7 +556,7 @@ void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
                     onLoadTrackPreset(trackId, presets[result - 100]);
             }
             else if (result == 10) {
-                state.removeTrack(TrackId{TrackId{trackId.toStdString()}});
+                confirmAndRemoveTrack(TrackId{trackId.toStdString()});
             }
         });
 }
