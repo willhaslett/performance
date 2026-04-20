@@ -24,9 +24,9 @@
 
 namespace UiTerms {
 
-inline juce::String docSingular      = "Song";
-inline juce::String docPlural        = "Songs";
-inline juce::String docSingularLower = "song";
-inline juce::String docPluralLower   = "songs";
+inline juce::String docSingular      = "Project";
+inline juce::String docPlural        = "Projects";
+inline juce::String docSingularLower = "project";
+inline juce::String docPluralLower   = "projects";
 
 }  // namespace UiTerms
