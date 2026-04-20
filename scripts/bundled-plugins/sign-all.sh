@@ -8,12 +8,12 @@
 # Gatekeeper checks bundle-level signatures at load time; re-signing
 # with our cert keeps us in a single-signing-chain for notarization.
 #
-# Usage:   scripts/sign-bundled-plugins.sh
+# Usage:   scripts/bundled-plugins/sign-all.sh
 # Requires: a Developer ID signing identity in the login keychain.
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DIR="$REPO_ROOT/runtime/bundled-plugins/components"
 DEVELOPER_ID="Developer ID Application: William Haslett (H25TK2U8FA)"
 

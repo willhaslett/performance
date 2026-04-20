@@ -8,14 +8,14 @@
 #   are pre-notarization (2020). Rebuilding against the modernized
 #   hollance fork gives us signed, arm64-native, notarizable bundles.
 #
-# Usage:   scripts/build-bundled-mda.sh
+# Usage:   scripts/bundled-plugins/build-mda.sh
 # Result:  11 mda*.component bundles in runtime/bundled-plugins/components/
 # Requires: Xcode command-line tools, cmake, a Developer ID signing
 #           identity in the login keychain (we use Apple Team ID H25TK2U8FA).
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DEST_DIR="$REPO_ROOT/runtime/bundled-plugins/components"
 SCRATCH_DIR="${SCRATCH_DIR:-$REPO_ROOT/.cache/mda-build}"
 MDA_REPO="https://github.com/hollance/mda-plugins-juce.git"
