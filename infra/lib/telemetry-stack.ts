@@ -1,6 +1,6 @@
 import { Stack, StackProps, Duration, RemovalPolicy, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { Bucket, BlockPublicAccess, BucketEncryption } from 'aws-cdk-lib/aws-s3';
+import { Bucket, IBucket, BlockPublicAccess, BucketEncryption } from 'aws-cdk-lib/aws-s3';
 import { Table, AttributeType, BillingMode } from 'aws-cdk-lib/aws-dynamodb';
 import { Runtime, FunctionUrlAuthType, HttpMethod, InvokeMode } from 'aws-cdk-lib/aws-lambda';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
@@ -9,6 +9,13 @@ import { RetentionDays } from 'aws-cdk-lib/aws-logs';
 import { CfnBudget } from 'aws-cdk-lib/aws-budgets';
 import { Secret } from 'aws-cdk-lib/aws-secretsmanager';
 import * as path from 'path';
+
+interface TelemetryStackProps extends StackProps {
+  // The private plugin-hosting bucket (owned by PluginsStack). This
+  // stack's Plugins Lambda reads manifest.json from it and hands out
+  // presigned download URLs; the bucket itself stays BlockPublicAccess.
+  pluginsBucket: IBucket;
+}
 
 // Telemetry ingest for the Performance app.
 //
@@ -26,7 +33,7 @@ import * as path from 'path';
 //   - CORS origin is wide open since the client is a macOS app (no browser).
 //   - Monthly budget alarm at $5 with email notification at 80%.
 export class TelemetryStack extends Stack {
-  constructor(scope: Construct, id: string, props?: StackProps) {
+  constructor(scope: Construct, id: string, props: TelemetryStackProps) {
     super(scope, id, props);
 
     const notificationEmail = this.node.tryGetContext('notificationEmail') as string;
@@ -141,6 +148,47 @@ export class TelemetryStack extends Stack {
       },
     });
 
+    // ---- Plugins proxy (bundled-plugin download fronting) -----------------
+    //
+    // Fronts the private plugins S3 bucket. App calls this with its bearer
+    // token, gets back manifest.json with short-lived presigned S3 GET URLs
+    // filled in, then downloads each archive directly from S3. See
+    // docs/BUNDLED_PLUGINS.md and infra/lambda/plugins.ts.
+    const plugins = new NodejsFunction(this, 'PluginsProxy', {
+      entry: path.join(__dirname, '..', 'lambda', 'plugins.ts'),
+      handler: 'handler',
+      runtime: Runtime.NODEJS_20_X,
+      timeout: Duration.seconds(30),
+      memorySize: 256,
+      logRetention: RetentionDays.ONE_MONTH,
+      environment: {
+        PLUGINS_BUCKET: props.pluginsBucket.bucketName,
+        BEARER_TOKEN_SECRET: tokenSecret.secretArn,
+        PRESIGN_EXPIRY_SECONDS: '3600',
+      },
+      bundling: {
+        // @aws-sdk/s3-request-presigner is NOT in the Node 20 Lambda
+        // runtime, so it must be bundled. Everything else under
+        // @aws-sdk/* is provided by the runtime and stays external.
+        externalModules: [
+          '@aws-sdk/client-s3',
+          '@aws-sdk/client-secrets-manager',
+        ],
+      },
+    });
+
+    props.pluginsBucket.grantRead(plugins);
+    tokenSecret.grantRead(plugins);
+
+    const pluginsUrl = plugins.addFunctionUrl({
+      authType: FunctionUrlAuthType.NONE,
+      cors: {
+        allowedOrigins: ['*'],
+        allowedMethods: [HttpMethod.GET, HttpMethod.POST],
+        allowedHeaders: ['authorization', 'content-type', 'x-install-id'],
+      },
+    });
+
     // ------------------------------------------------------------------------
 
     // Cost alarm — email at 80% of $50/month. Headroom for chat traffic at
@@ -178,6 +226,10 @@ export class TelemetryStack extends Stack {
     new CfnOutput(this, 'ChatProxyUrl', {
       value: chatUrl.url,
       description: 'Endpoint the app POSTs chat requests to (Anthropic proxy)',
+    });
+    new CfnOutput(this, 'PluginsProxyUrl', {
+      value: pluginsUrl.url,
+      description: 'Endpoint the app GETs to receive manifest + presigned plugin URLs',
     });
     new CfnOutput(this, 'BearerTokenSecretName', {
       value: tokenSecret.secretName,

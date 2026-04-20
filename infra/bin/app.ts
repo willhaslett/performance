@@ -11,12 +11,17 @@ const env = {
   region: process.env.CDK_DEFAULT_REGION ?? 'us-east-1',
 };
 
-new TelemetryStack(app, 'PerformanceTelemetry', {
+// Plugins bucket first — TelemetryStack's PluginsProxy Lambda needs a
+// reference to it so it can read manifest.json and issue presigned
+// URLs. The bucket itself is fully private (BlockPublicAccess.BLOCK_ALL);
+// all external access is brokered by the Lambda.
+const pluginsStack = new PluginsStack(app, 'PerformancePlugins', {
   env,
-  description: 'Session-log ingest for the Performance macOS app',
+  description: 'Private S3 bucket hosting bundled plugin archives + manifest',
 });
 
-new PluginsStack(app, 'PerformancePlugins', {
+new TelemetryStack(app, 'PerformanceTelemetry', {
   env,
-  description: 'S3 hosting for bundled plugin archives + manifest',
+  description: 'Session-log ingest, chat proxy, and plugins proxy for the Performance macOS app',
+  pluginsBucket: pluginsStack.bucket,
 });

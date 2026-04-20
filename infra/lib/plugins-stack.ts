@@ -2,72 +2,44 @@ import { Stack, StackProps, RemovalPolicy, CfnOutput, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import {
   Bucket,
+  IBucket,
   BlockPublicAccess,
   BucketEncryption,
-  HttpMethods,
 } from 'aws-cdk-lib/aws-s3';
-import { PolicyStatement, Effect, AnyPrincipal } from 'aws-cdk-lib/aws-iam';
 
 // Bundled-plugin hosting for the Performance app.
 //
 // Shape:
-//   App (first launch) → HTTPS GET → S3 bucket `performance-plugins-<acct>`
-//   Bucket is public-read but NOT public-write/list. Objects:
-//     manifest.json                       short TTL, mutable
-//     plugins/<slug>-<version>-macos.zip  long TTL, immutable
+//   App → PerformanceTelemetry.ChatProxy-style Lambda (plugins handler) →
+//     returns manifest.json with presigned S3 GET URLs →
+//     App downloads each archive directly from S3 via the presigned URL.
 //
-// Rationale:
-//   - No CloudFront: tester population is small, direct S3 URLs are fine
-//     for a first pass. The bucket policy allows cheap future migration
-//     to an OAC-fronted distribution without URL-scheme change.
-//   - Tagged Project=Performance so it rolls up into the $50/mo budget
-//     defined on the telemetry stack.
-//   - Versioned immutable URLs (version + sha256 in the path) let the
-//     client cache aggressively; manifest.json is the only indirection
-//     we need to update when a plugin bumps.
+// The bucket itself is fully private — no public read, no public ACLs.
+// The Lambda in the telemetry stack is granted read access and issues
+// short-lived (1h) presigned URLs scoped to the archives the app needs.
+// That makes hotlinking and drive-by scraping a non-issue without
+// putting any AWS credentials in the app.
+//
+// Tagged Project=Performance so traffic rolls up into the $50/mo budget
+// defined on the telemetry stack.
 export class PluginsStack extends Stack {
+  readonly bucket: IBucket;
+
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
-    const bucket = new Bucket(this, 'PluginsBucket', {
+    this.bucket = new Bucket(this, 'PluginsBucket', {
       bucketName: `performance-plugins-${this.account}`,
-      // Allow public-read bucket policy; keep ACL / public listing blocked.
-      blockPublicAccess: new BlockPublicAccess({
-        blockPublicAcls: true,
-        blockPublicPolicy: false,
-        ignorePublicAcls: true,
-        restrictPublicBuckets: false,
-      }),
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
       encryption: BucketEncryption.S3_MANAGED,
       removalPolicy: RemovalPolicy.RETAIN,
-      cors: [
-        {
-          allowedMethods: [HttpMethods.GET, HttpMethods.HEAD],
-          allowedOrigins: ['*'],
-          allowedHeaders: ['*'],
-          maxAge: 300,
-        },
-      ],
     });
-
-    bucket.addToResourcePolicy(
-      new PolicyStatement({
-        effect: Effect.ALLOW,
-        principals: [new AnyPrincipal()],
-        actions: ['s3:GetObject'],
-        resources: [`${bucket.bucketArn}/*`],
-      })
-    );
 
     Tags.of(this).add('Project', 'Performance');
 
     new CfnOutput(this, 'BucketName', {
-      value: bucket.bucketName,
-      description: 'S3 bucket hosting bundled plugin archives + manifest.json',
-    });
-    new CfnOutput(this, 'BucketBaseUrl', {
-      value: `https://${bucket.bucketName}.s3.${this.region}.amazonaws.com`,
-      description: 'Base URL used by the app to fetch manifest.json + archives',
+      value: this.bucket.bucketName,
+      description: 'S3 bucket hosting bundled plugin archives + manifest.json (private)',
     });
   }
 }
