@@ -103,7 +103,8 @@ void PersistenceLayer::createSchema() {
             label TEXT,
             param_schema TEXT,
             lua_code TEXT,
-            song_id TEXT
+            song_id TEXT,
+            body_json TEXT
         );
 
         CREATE TABLE IF NOT EXISTS songs (
@@ -350,7 +351,7 @@ void PersistenceLayer::readPresets(AppState& out) {
 }
 
 void PersistenceLayer::readActions(AppState& out) {
-    auto* stmt = prepare("SELECT id, name, label, param_schema, lua_code, song_id FROM actions");
+    auto* stmt = prepare("SELECT id, name, label, param_schema, lua_code, song_id, body_json FROM actions");
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         ActionInfo a;
         a.id = ActionId{col_str(stmt, 0)};
@@ -359,6 +360,11 @@ void PersistenceLayer::readActions(AppState& out) {
         a.params = ParamSchemaJson::fromJson(col_str(stmt, 3));
         a.luaCode = col_str(stmt, 4);
         a.songId = SongId{col_str(stmt, 5)};
+        auto bodyJson = col_str(stmt, 6);
+        if (!bodyJson.empty()) {
+            a.body = ActionAlgebra::fromJson(bodyJson);
+            a.hasBody = true;
+        }
         out.actions.push_back(std::move(a));
     }
     sqlite3_finalize(stmt);
@@ -724,13 +730,15 @@ void PersistenceLayer::savePresets(const StateAPI& state) {
 void PersistenceLayer::saveActions(const StateAPI& state) {
     for (auto& a : state.allActions()) {
         auto paramsJson = ParamSchemaJson::toJson(a.params);
-        auto* stmt = prepare("INSERT INTO actions (id, name, label, param_schema, lua_code, song_id) VALUES (?, ?, ?, ?, ?, ?)");
+        std::string bodyJson = a.hasBody ? ActionAlgebra::toJson(a.body) : std::string{};
+        auto* stmt = prepare("INSERT INTO actions (id, name, label, param_schema, lua_code, song_id, body_json) VALUES (?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, a.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, a.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 3, a.label.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 4, paramsJson.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 5, a.luaCode.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 6, a.songId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 7, bodyJson.c_str(), -1, SQLITE_TRANSIENT);
         stepWrite(stmt, "save");
     }
 }
