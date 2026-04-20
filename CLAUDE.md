@@ -38,7 +38,7 @@ Peripheral work also landed: the **AI-for-testers chunk** (chat proxy Lambda dep
 Remaining sequence:
 
 1. **Bundled plugin install pack.** 20 plugins (7 instruments, 13 effects) shipped in the app bundle; first-launch prompt copies them to `~/Library/Audio/Plug-Ins/Components/`; uninstall UX in Settings → Plugins. 7-step build sequence in `docs/BUNDLED_PLUGINS.md`.
-2. **One more major feature** — TBD, to be scoped next. Without it 0.1.0 isn't "enough there" for the friends round.
+2. **Composer integration.** Bring the most recent "Claude writes MIDI" standalone composer into this DAW as an in-app feature. Previous standalone iterations produced toy/child-like output and were abandoned ("polishing a stone and hoping for a ruby") partly because a written-once-listened-once surface has no escape hatch — weak output = finished product. In a DAW the composer's output becomes a *seed* that the session's tools can evolve (layer, morph, edit, re-perform), lowering the bar from "how good is this take" to "how good a starting point did it give the user." Synergistic with #1: toy melodies through DLSMusicDevice sound toy; through Dexed or Surge XT they sound like they mean something. Scope: evaluate the latest composer implementation first, then design the integration touchpoint (chat command emitting MIDI into a track? dedicated pane? compose-then-edit flow?). Out of scope until plugin pack is in — without decent sound, the composer's output can't prove itself.
 3. **perfuce.com rebuild** (several days). Tester onboarding copy, example prompts, "chat is free for testers" line. Mostly gated on video capture.
 4. **Distribution proof** (second-machine install, ~1 hour).
 5. **Tag + release.**
