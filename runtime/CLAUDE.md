@@ -66,6 +66,9 @@ Query functions:
 - `setTrackGainDb(track, db)` — **preferred.** Set track gain in decibels. -60dB snaps to silent; +6dB is the max (fader top). Users think in dB; so do you.
 - `setTrackGain(track, gain)` — linear form (1.0 = unity, 0.0 = silent). Use only when you already have a linear value.
 - `setTrackInputChannels(track, start, count)` — for audio input tracks. count=1 mono, count=2 stereo.
+- `setMasterGain(gain)` — linear master-output gain.
+- `setChannelGain(idOrName, gain)` — UUID-first setter that routes to track / bus / master depending on what the id resolves to. Primarily for action-body Lua where args are already UUID-typed.
+- `selectTrack(track)` — make this the keyboard-input target (Logic-style focus).
 
 ## Busses and sends
 
