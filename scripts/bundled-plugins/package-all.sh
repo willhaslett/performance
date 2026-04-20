@@ -24,6 +24,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STAGING="$REPO_ROOT/.cache/staging/components"
+SUPPORT_ROOT="$REPO_ROOT/.cache/staging/support"
 ARCHIVES="$REPO_ROOT/.cache/staging/archives"
 MANIFEST="$ARCHIVES/manifest-draft.json"
 
@@ -37,20 +38,37 @@ rm -f "$ARCHIVES"/*.zip "$MANIFEST"
 
 MANIFEST_ENTRIES=()
 
-# package <slug> <version> <component> [<component> ...]
+# package <slug> <version> <components...> [-- <supportPaths...>]
 #
 # Emits an archive named <slug>-<version>-macos.zip containing the
-# listed stapled components, appends one manifest entry to
-# MANIFEST_ENTRIES (JSON object string), and verifies the staple on
-# each component before sealing — a missing staple would mean the
-# archive can't pass first-launch Gatekeeper on a user's machine.
+# listed stapled components at the top level. If `--` appears, the
+# remaining args name support-tree directories that live at
+# .cache/staging/support/<slug>/<name>/ — they get dropped into the
+# archive alongside the components. The app installer extracts them
+# to ~/Library/Application Support/ (one level up from what's packaged).
+#
+# Appends one manifest entry to MANIFEST_ENTRIES (JSON object string).
+# Verifies the staple on each component before sealing — a missing
+# staple would mean the archive can't pass first-launch Gatekeeper.
 package() {
     local slug="$1" version="$2"; shift 2
-    local components=("$@")
+    local components=()
+    local supports=()
+    local parsing_support=0
+    local arg
+    for arg in "$@"; do
+        if [ "$arg" = "--" ]; then parsing_support=1; continue; fi
+        if [ "$parsing_support" -eq 1 ]; then
+            supports+=("$arg")
+        else
+            components+=("$arg")
+        fi
+    done
+
     local archive_name="${slug}-${version}-macos.zip"
     local archive_path="$ARCHIVES/$archive_name"
 
-    echo "==> $archive_name (${#components[@]} bundle(s))"
+    echo "==> $archive_name (${#components[@]} bundle(s), ${#supports[@]} support dir(s))"
 
     local c
     for c in "${components[@]}"; do
@@ -65,12 +83,36 @@ package() {
         fi
     done
 
-    # `ditto` only accepts one source, so for multi-bundle archives we
-    # use `zip -r -y` instead. The notarization staple is stored as a
-    # regular file inside each .component bundle's Contents/, so a
-    # standard recursive zip preserves it. `-y` preserves symlinks.
-    (cd "$STAGING" && /usr/bin/zip -r -q -y "$archive_path" \
-        "${components[@]}")
+    if [ "${#supports[@]}" -gt 0 ]; then
+        local s
+        for s in "${supports[@]}"; do
+            local src="$SUPPORT_ROOT/$slug/$s"
+            if [ ! -d "$src" ]; then
+                echo "!! missing support dir: $src" >&2
+                exit 1
+            fi
+        done
+    fi
+
+    # Stage components + support into one scratch dir so we can zip
+    # everything at the top level with a single `zip -r` call.
+    local stage="$ARCHIVES/.build-$slug"
+    rm -rf "$stage"; mkdir -p "$stage"
+    for c in "${components[@]}"; do
+        cp -R "$STAGING/$c" "$stage/"
+    done
+    if [ "${#supports[@]}" -gt 0 ]; then
+        local s
+        for s in "${supports[@]}"; do
+            cp -R "$SUPPORT_ROOT/$slug/$s" "$stage/"
+        done
+    fi
+
+    # `zip -r -y` preserves symlinks + the staple-as-file in each
+    # bundle's Contents/. -X strips file metadata timestamps that
+    # would churn the SHA-256 across re-runs.
+    (cd "$stage" && /usr/bin/zip -r -q -y -X "$archive_path" .)
+    rm -rf "$stage"
 
     local size sha
     size=$(/usr/bin/stat -f%z "$archive_path")
@@ -82,6 +124,13 @@ package() {
         [ -n "$components_json" ] && components_json+=", "
         components_json+="\"$c\""
     done
+    local supports_json=""
+    if [ "${#supports[@]}" -gt 0 ]; then
+        for s in "${supports[@]}"; do
+            [ -n "$supports_json" ] && supports_json+=", "
+            supports_json+="\"$s\""
+        done
+    fi
 
     MANIFEST_ENTRIES+=("$(cat <<EOF
     {
@@ -91,7 +140,8 @@ package() {
       "archiveUrl": null,
       "archiveSize": $size,
       "archiveSha256": "$sha",
-      "components": [$components_json]
+      "components": [$components_json],
+      "supportPaths": [$supports_json]
     }
 EOF
 )")
@@ -118,7 +168,9 @@ package "dexed" "1.0.1" \
 
 package "surge-xt" "1.3.4" \
     "Surge XT.component" \
-    "Surge XT Effects.component"
+    "Surge XT Effects.component" \
+    -- \
+    "Surge XT"
 
 package "airwindows-consolidated" "2026-04-19-7f5a66c" \
     "Airwindows Consolidated.component"

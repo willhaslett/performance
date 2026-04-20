@@ -36,7 +36,10 @@ public:
         std::string archiveUrl;            // presigned S3 GET URL (1h TTL)
         juce::int64 archiveSize = 0;
         std::string archiveSha256;
-        std::vector<std::string> components;  // bundle names the archive contains
+        std::vector<std::string> components;    // .component bundles in the archive
+        std::vector<std::string> supportPaths;  // top-level dirs that go to
+                                                 // ~/Library/Application Support/
+                                                 // (e.g. "Surge XT" → factory content)
     };
 
     struct Progress {
@@ -116,9 +119,13 @@ private:
                        const std::string& expectedSha,
                        std::string& err);
     bool extractAndInstall(const juce::File& archive,
-                           const std::vector<std::string>& expectedComponents,
+                           const ArchiveInfo& info,
                            std::vector<juce::File>& installedOut,
                            std::string& err);
+
+    // ~/Library/Application Support/ (where Surge XT / Dexed / etc.
+    // expect to find their factory content).
+    static juce::File applicationSupportDirectory();
     void writeInstallManifest(const std::vector<ArchiveInfo>& archives,
                               const std::vector<std::vector<juce::File>>& installedPerArchive);
 

@@ -66,6 +66,13 @@ bool parseManifest(const juce::String& body,
             }
         }
 
+        auto supports = a.getProperty("supportPaths", juce::var());
+        if (supports.isArray()) {
+            for (int j = 0; j < supports.size(); ++j) {
+                info.supportPaths.push_back(supports[j].toString().toStdString());
+            }
+        }
+
         if (info.archiveName.empty() || info.archiveUrl.empty()
             || info.archiveSha256.empty() || info.components.empty()) {
             err = "manifest entry " + std::to_string(i) + " is incomplete";
@@ -113,6 +120,11 @@ juce::File BundledPluginInstaller::componentsDirectory() {
     auto lib = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                   .getChildFile("Library/Audio/Plug-Ins/Components");
     return lib;
+}
+
+juce::File BundledPluginInstaller::applicationSupportDirectory() {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+               .getChildFile("Application Support");
 }
 
 // -----------------------------------------------------------------------------
@@ -208,7 +220,7 @@ void BundledPluginInstaller::run() {
 
         setState(Progress::Extracting);
         std::vector<juce::File> installed;
-        if (!extractAndInstall(zipFile, archive.components, installed, err)) {
+        if (!extractAndInstall(zipFile, archive, installed, err)) {
             setError("install failed for " + archive.slug + ": " + err);
             setState(Progress::Error);
             scratch.deleteRecursively();
@@ -337,7 +349,7 @@ bool BundledPluginInstaller::verifyArchive(const juce::File& archive,
 
 bool BundledPluginInstaller::extractAndInstall(
     const juce::File& archive,
-    const std::vector<std::string>& expectedComponents,
+    const ArchiveInfo& info,
     std::vector<juce::File>& installedOut,
     std::string& err) {
 
@@ -361,7 +373,7 @@ bool BundledPluginInstaller::extractAndInstall(
     }
 
     auto components = componentsDirectory();
-    for (auto& compName : expectedComponents) {
+    for (auto& compName : info.components) {
         auto src = extractDir.getChildFile(juce::String(compName));
         if (!src.isDirectory()) {
             err = "archive missing expected component " + compName;
@@ -374,13 +386,34 @@ bool BundledPluginInstaller::extractAndInstall(
             // version, and the bundle names we ship are distinctive
             // enough that a collision with a user-installed plugin
             // of the same name is unlikely. (If we ever ship a bundle
-            // whose name *could* collide — e.g. we bundle Surge XT and
-            // the user installed their own copy — revisit this with
-            // a slug-matching check against plugins-installed.json.)
+            // whose name *could* collide with an upstream-installed
+            // copy, revisit this with a slug-matching check against
+            // plugins-installed.json.)
             dest.deleteRecursively();
         }
         if (!src.copyDirectoryTo(dest)) {
             err = "copy failed: " + compName;
+            return false;
+        }
+        installedOut.push_back(dest);
+    }
+
+    // Support dirs (factory patches, wavetables, etc.) that live
+    // under ~/Library/Application Support/. If the user already has
+    // an upstream-installed copy, we overwrite — our content matches
+    // upstream's exactly (we extracted from the same installer pkg).
+    auto appSupport = applicationSupportDirectory();
+    appSupport.createDirectory();
+    for (auto& supportName : info.supportPaths) {
+        auto src = extractDir.getChildFile(juce::String(supportName));
+        if (!src.isDirectory()) {
+            err = "archive missing expected support dir " + supportName;
+            return false;
+        }
+        auto dest = appSupport.getChildFile(juce::String(supportName));
+        if (dest.exists()) dest.deleteRecursively();
+        if (!src.copyDirectoryTo(dest)) {
+            err = "copy failed: " + supportName;
             return false;
         }
         installedOut.push_back(dest);
