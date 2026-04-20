@@ -146,15 +146,8 @@ public:
     std::vector<const PresetInfo*> presetsForPlugin(const PluginId& pluginId) const;
 
     // --- Catalog: Actions ---
-    // Typed registration (preferred). Populates ActionInfo.params and, for
-    // backward-compat with readers that still parse the JSON string, also
-    // emits the equivalent legacy paramSchema JSON.
-    ActionId registerAction(const std::string& name, const std::string& label,
-                             std::vector<ParamSchema> params,
-                             int durationParamIndex = -1);
-    // Legacy JSON-string registration. Remove once all readers consume .params.
     ActionId registerAction(const std::string& name, const std::string& label = "",
-                             const std::string& paramSchema = "",
+                             std::vector<ParamSchema> params = {},
                              int durationParamIndex = -1);
     ActionId createCustomAction(const std::string& name, const std::string& label,
                                  const std::string& luaCode, const SongId& songId = {});

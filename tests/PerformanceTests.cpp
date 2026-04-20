@@ -370,7 +370,8 @@ public:
         beginTest("Action catalog");
         {
             StateAPI s;
-            auto id = s.registerAction("fadeOut", "Fade out", "[{\"name\":\"track\"}]");
+            ParamSchema p; p.name = "track"; p.type = ParamType::ChannelRef; p.scope = { "track" };
+            auto id = s.registerAction("fadeOut", "Fade out", { p });
             expect(!id.empty());
             expect(s.findActionByName("fadeOut") != nullptr);
             expectEquals((int)s.allActions().size(), 1);
@@ -825,7 +826,8 @@ public:
             auto pluginId = original.registerPlugin("DLS", "Apple", "au-id", true);
             auto fxPluginId = original.registerPlugin("AUDelay", "Apple", "au-delay", false);
             original.createPreset(pluginId, "Warm", "/tmp/warm.state", PresetKind::Instrument);
-            original.registerAction("fadeOut", "Fade out", "[{\"name\":\"track\"}]");
+            ParamSchema tp; tp.name = "track"; tp.type = ParamType::ChannelRef; tp.scope = { "track" };
+            original.registerAction("fadeOut", "Fade out", { tp });
 
             auto songId = original.createSong("My Song");
             original.setCurrentSong(songId);

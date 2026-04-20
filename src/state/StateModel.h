@@ -64,7 +64,6 @@ struct ActionInfo {
     std::string name;
     std::string label;
     std::vector<ParamSchema> params;   // typed schema — the source of truth
-    std::string paramSchema;           // legacy JSON-string view; kept during migration
     std::string luaCode;               // custom action body (empty for built-in)
     SongId songId;                     // empty = global, non-empty = song-scoped
     int durationParamIndex = -1;       // which arg index is the duration (-1 = none)

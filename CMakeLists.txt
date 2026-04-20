@@ -65,6 +65,7 @@ target_sources(Performance PRIVATE
     src/api/StateAPI.cpp
     src/api/EngineAPI.cpp
     src/api/PerformanceCoordinator.cpp
+    src/state/ParamSchemaJson.cpp
     src/persistence/PersistenceLayer.cpp
     src/gui/Theme.cpp
     src/gui/MainLayout.cpp
@@ -188,6 +189,7 @@ target_sources(PerformanceTests PRIVATE
     src/api/StateAPI.cpp
     src/api/EngineAPI.cpp
     src/api/PerformanceCoordinator.cpp
+    src/state/ParamSchemaJson.cpp
     src/persistence/PersistenceLayer.cpp
     src/engine/EngineSync.cpp
     src/engine/AudioEngine.mm

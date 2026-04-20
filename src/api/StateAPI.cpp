@@ -1071,46 +1071,13 @@ std::vector<const PresetInfo*> StateAPI::presetsForPlugin(const PluginId& plugin
 
 // --- Catalog: Actions ---
 
-// Emit the legacy paramSchema JSON for a typed schema, so existing readers
-// (ProducePane/SongMappingsPane/MorphEditor/persistence) continue to work
-// while they migrate to consuming ActionInfo.params directly.
-static std::string legacyParamSchemaJson(const std::vector<ParamSchema>& params) {
-    auto legacyType = [](const ParamSchema& p) -> std::string {
-        switch (p.type) {
-            case ParamType::ChannelRef: {
-                // Preserve the old "channel" vs "string" distinction: "channel"
-                // when the ref admits bus/master, "string" (track-only) otherwise.
-                if (p.scope.empty()) return "channel";
-                for (auto& s : p.scope) if (s != "track") return "channel";
-                return "string";
-            }
-            case ParamType::PresetRef: return "string";
-            case ParamType::Enum:      return "string";
-            case ParamType::Float:     return "float";
-            case ParamType::Morph:     return "morph";
-        }
-        return "string";
-    };
-
-    juce::var arr;
-    for (auto& p : params) {
-        auto* obj = new juce::DynamicObject();
-        obj->setProperty("name", juce::String(p.name));
-        obj->setProperty("type", juce::String(legacyType(p)));
-        arr.append(juce::var(obj));
-    }
-    return juce::JSON::toString(arr, true).toStdString();
-}
-
 ActionId StateAPI::registerAction(const std::string& name, const std::string& label,
                                    std::vector<ParamSchema> params,
                                    int durationParamIndex) {
-    auto legacyJson = legacyParamSchemaJson(params);
     for (auto& a : state.actions) {
         if (a.name == name) {
             a.label = label;
             a.params = std::move(params);
-            a.paramSchema = legacyJson;
             a.durationParamIndex = durationParamIndex;
             return a.id;
         }
@@ -1120,28 +1087,6 @@ ActionId StateAPI::registerAction(const std::string& name, const std::string& la
     action.name = name;
     action.label = label;
     action.params = std::move(params);
-    action.paramSchema = std::move(legacyJson);
-    action.durationParamIndex = durationParamIndex;
-    state.actions.push_back(std::move(action));
-    return state.actions.back().id;
-}
-
-ActionId StateAPI::registerAction(const std::string& name, const std::string& label,
-                                   const std::string& paramSchema, int durationParamIndex) {
-    for (auto& a : state.actions) {
-        if (a.name == name) {
-            a.label = label;
-            a.paramSchema = paramSchema;
-            a.params.clear();  // legacy path — no typed schema
-            a.durationParamIndex = durationParamIndex;
-            return a.id;
-        }
-    }
-    ActionInfo action;
-    action.id = ActionId{generateId()};
-    action.name = name;
-    action.label = label;
-    action.paramSchema = paramSchema;
     action.durationParamIndex = durationParamIndex;
     state.actions.push_back(std::move(action));
     return state.actions.back().id;
