@@ -148,3 +148,83 @@ Don't write code yet. Have a conversation with Will about:
 4. Whether to treat a Performance song as the piece document, or add a parallel piece concept.
 
 Then pick an option (A / B / C), scope it into steps, add a second section to this doc titled `Design` with the actual plan, and execute.
+
+---
+
+# Design
+
+*Decisions made 2026-04-20 after the conversation the investigation recommended. Values here are load-bearing; the phased plan below follows from them.*
+
+## Decisions
+
+**1. Shape — an A+B hybrid.** Single ChatView with a **latching "compose" mode**. When the toggle is on: the Lambda swaps in the composer system prompt and exposes a `compose` tool; output lands directly on the Project's tracks via the normal StateAPI write path. When off: back to the general `perf` chat. Not a separate pane — one UI, two modes, reusing all the existing chat plumbing (chat-proxy Lambda, bearer, token caps, SSE streaming).
+
+**2. No MIDI file intermediate.** dawai's pipeline goes notation → MIDI → FluidSynth → .wav. Ours goes **notation → StateAPI writer → Project region**. The app plays the result directly because it's already native state. This halves the compiler port (parse-to-MidiFile is the heavier half) and collapses "compose / hear" into one step — there's no separate render to wait on.
+
+**3. Keep the v2 notation format — but abstract it.** The notation format (bar-grouped multitrack, fixed duration vocabulary) is dawai's most settled asset, tuned over months for LLM training fit and token efficiency (`beat 1 q mf` is ~4 tokens vs. ~20 for the equivalent `addNote(...)` Lua call). But we're not sure it's optimal, so the parser is pluggable — one `NotationParser` interface, a V2 implementation as first subclass, swap-in-place for future experiments.
+
+**4. "Provisional" = the existing undo machinery.** Composed output lands as a normal region on a track. ⌘Z removes it. No special "accept / reject" visual mode for MVP; that's a polish question for after we see how the loop feels.
+
+**5. A Project *is* the piece document — but with a small side file.** dawai's Narrative / Concepts / Decisions / Processes are conversation context, not music. They live in `~/.config/performance/projects/<projectId>/piece.md` alongside the Project. The audio / MIDI regions continue to live in our SQLite state. The composer chat reads + writes that `piece.md` as the persistent context across sessions. If quality is fine without it, we drop it — but the investigation suggests rich context is what elevates output from "kindergarten-level" to coherent.
+
+**6. Quality floor for 0.1.0 — TBD.** Picked pragmatically by testing, not pre-specified. The goal is "tester opens compose mode, describes what they want, gets something worth iterating on."
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ChatView  [latching Compose toggle in header]         │
+└─────────────────┬───────────────────────────────────────┘
+                  │ POST (mode: "compose" | "perf")
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│  Chat Lambda — selects system prompt based on mode:    │
+│    "perf"    → existing prompt                          │
+│    "compose" → composer prompt (bundled as BinaryData)  │
+└─────────────────┬───────────────────────────────────────┘
+                  │ SSE stream with tool_use: compose(...)
+                  ▼
+┌─────────────────────────────────────────────────────────┐
+│  ClaudeClient → LuaEngine.compose(tracks, beat, text)  │
+│                                                         │
+│  Lua binding → NotationParser.parse(text)              │
+│              → ComposerWriter.apply(output, state)     │
+│                                                         │
+│  src/composer/                                          │
+│    ComposerOutput.h     — canonical struct              │
+│    NotationParser.h     — interface                     │
+│    V2NotationParser.*   — first impl (dawai v2)         │
+│    ComposerWriter.*     — writes canonical to state     │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Phased plan
+
+Each phase builds cleanly on its own. Intended as small-enough-to-ship commits.
+
+**Phase 1 — Abstraction scaffold (no behavior).**
+Create `src/composer/` with `ComposerOutput.h`, `NotationParser.h` (interface), `V2NotationParser.{h,cpp}` (stub returning `not_implemented` error), `ComposerWriter.{h,cpp}` (stub). Wire into `CMakeLists.txt`. Build cleanly. Nothing user-visible yet; the point is a foundation that's trivially extensible.
+
+**Phase 2 — V2 parser + Writer implementation.**
+Port dawai's notation grammar to C++: parse header (tempo / time sig / tracks), parse bar blocks (`bar N | Chord | track lines`), emit `ComposerOutput`. Writer takes the output and, given a start beat + target tracks, creates a region on each track and populates MidiEventState. Tested via the existing unit-test suite with fixtures drawn from dawai's own test cases.
+
+**Phase 3 — Lua `compose()` binding.**
+One new Lua function: `compose(trackNames, startBeat, notation)`. Calls parser → writer. Errors surface via the existing silent-failure-fixed error path. Testable from `bin/perf` before any UI exists.
+
+**Phase 4 — Lambda composer-mode prompt.**
+Bundle dawai's `runtime/CLAUDE.md` (possibly trimmed) as a BinaryData resource in the app, sent in the chat request alongside a `mode: "compose"` field. Lambda picks the system prompt based on mode. Existing bearer / token-cap plumbing unchanged. Consider: separate token budget for compose mode, or shared — probably shared for v1.
+
+**Phase 5 — ChatView compose toggle.**
+A small latching toggle in the chat header (e.g. "Compose" button that stays pressed). Flipping it updates the mode field on subsequent requests. Visual affordance that the chat is now in composer mode. No other UI changes.
+
+**Out of scope for this sprint:**
+- piece.md side file + persistent compositional context (adds meaningful value but phase 1–5 are already a lot; try it without first).
+- "Provisional" visual mode (colored notes, accept/reject buttons). Undo is the MVP safety net.
+- Dexed / Surge XT preset selection by the composer. Default to whatever the track already has.
+- Stem export / MIDI export. Can be added via existing bounce flow later.
+
+## Open questions to revisit during implementation
+
+- **Token budget**: compose sessions are heavier than regular chat. We may need to raise the monthly cap (currently 100k input / 25k output per install) or carve off a separate compose budget. Decide when we see real usage.
+- **piece.md or not**: dawai's own phase 8 validated the piece document as load-bearing for quality. We're deferring it — if early tests produce kindergarten-level output with the same prompt, the piece document is the next lever.
+- **Compose-mode tool surface**: for MVP, compose-mode has only the `compose` tool. Longer-term, it should probably also be able to read existing regions (to iterate on what the user already has), rename regions, move regions, etc. Scope after the write path works.
