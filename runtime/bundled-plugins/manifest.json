@@ -4,11 +4,12 @@
     {
       "name": "mda ePiano",
       "category": "instrument",
-      "description": "Classic electric piano — lightweight, always-works fallback.",
+      "description": "Classic electric piano \u2014 lightweight, always-works fallback.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda ePiano.component"
+      "auFile": "mda ePiano.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda JX10",
@@ -17,55 +18,61 @@
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda JX10.component"
+      "auFile": "mda JX10.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda DX10",
       "category": "instrument",
-      "description": "FM synth — pads and basses, lighter than Dexed.",
+      "description": "FM synth \u2014 pads and basses, lighter than Dexed.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda DX10.component"
+      "auFile": "mda DX10.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Piano",
       "category": "instrument",
-      "description": "Acoustic piano — basic but always there.",
+      "description": "Acoustic piano \u2014 basic but always there.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Piano.component"
+      "auFile": "mda Piano.component",
+      "archive": "mda-suite"
     },
     {
       "name": "Dexed",
       "category": "instrument",
-      "description": "DX7 emulator — loads original DX7 patches; huge preset ecosystem.",
+      "description": "DX7 emulator \u2014 loads original DX7 patches; huge preset ecosystem.",
       "license": "GPL-3.0",
       "licenseFile": "NOTICE-Dexed.txt",
       "sourceUrl": "https://github.com/asb2m10/dexed",
       "releaseUrl": "https://github.com/asb2m10/dexed/releases",
-      "auFile": "Dexed.component"
+      "auFile": "Dexed.component",
+      "archive": "dexed"
     },
     {
       "name": "Surge XT",
       "category": "instrument",
-      "description": "Flagship open-source synth — wavetable, FM, subtractive, with factory patches.",
+      "description": "Flagship open-source synth \u2014 wavetable, FM, subtractive, with factory patches.",
       "license": "GPL-3.0",
       "licenseFile": "NOTICE-Surge-XT.txt",
       "sourceUrl": "https://github.com/surge-synthesizer/surge",
       "releaseUrl": "https://github.com/surge-synthesizer/releases-xt/releases",
-      "auFile": "Surge XT.component"
+      "auFile": "Surge XT.component",
+      "archive": "surge-xt"
     },
     {
       "name": "Surge XT Effects",
       "category": "effect",
-      "description": "FX rack — reverb, delay, distortion, chorus, flanger, rotary, EQ, vocoder.",
+      "description": "FX rack \u2014 reverb, delay, distortion, chorus, flanger, rotary, EQ, vocoder.",
       "license": "GPL-3.0",
       "licenseFile": "NOTICE-Surge-XT.txt",
       "sourceUrl": "https://github.com/surge-synthesizer/surge",
       "releaseUrl": "https://github.com/surge-synthesizer/releases-xt/releases",
-      "auFile": "Surge XT Effects.component"
+      "auFile": "Surge XT Effects.component",
+      "archive": "surge-xt"
     },
     {
       "name": "mda Delay",
@@ -74,43 +81,48 @@
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Delay.component"
+      "auFile": "mda Delay.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Overdrive",
       "category": "effect",
-      "description": "Soft overdrive — adds warmth and grit.",
+      "description": "Soft overdrive \u2014 adds warmth and grit.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Overdrive.component"
+      "auFile": "mda Overdrive.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Dynamics",
       "category": "effect",
-      "description": "Compressor, limiter, and gate in one — essential dynamics control.",
+      "description": "Compressor, limiter, and gate in one \u2014 essential dynamics control.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Dynamics.component"
+      "auFile": "mda Dynamics.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Ambience",
       "category": "effect",
-      "description": "Small-space reverb — rooms, chambers, early reflections.",
+      "description": "Small-space reverb \u2014 rooms, chambers, early reflections.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Ambience.component"
+      "auFile": "mda Ambience.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda RingMod",
       "category": "effect",
-      "description": "Ring modulator — creative FX, metallic character.",
+      "description": "Ring modulator \u2014 creative FX, metallic character.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda RingMod.component"
+      "auFile": "mda RingMod.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Stereo",
@@ -119,7 +131,8 @@
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Stereo.component"
+      "auFile": "mda Stereo.component",
+      "archive": "mda-suite"
     },
     {
       "name": "mda Bandisto",
@@ -128,17 +141,19 @@
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Bandisto.component"
+      "auFile": "mda Bandisto.component",
+      "archive": "mda-suite"
     },
     {
       "name": "Airwindows Consolidated",
       "category": "effect",
-      "description": "200+ Chris Johnson character FX in one plugin — saturation, reverb, console, compression.",
+      "description": "200+ Chris Johnson character FX in one plugin \u2014 saturation, reverb, console, compression.",
       "license": "MIT",
       "licenseFile": "NOTICE-Airwindows.txt",
       "sourceUrl": "https://github.com/airwindows/airwindows",
       "releaseUrl": "https://www.airwindows.com/",
-      "auFile": "Airwindows Consolidated.component"
+      "auFile": "Airwindows Consolidated.component",
+      "archive": "airwindows-consolidated"
     }
   ]
 }

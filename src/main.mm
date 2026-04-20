@@ -624,7 +624,8 @@ public:
         layout->onOpenSettings = [this]() {
             if (!settingsWindow)
                 settingsWindow = std::make_unique<SettingsWindow>(
-                    coordinator->state(), coordinator->engine());
+                    coordinator->state(), coordinator->engine(),
+                    [this]() { coordinator->syncPluginCatalog(); });
             settingsWindow->setVisible(true);
             settingsWindow->toFront(true);
         };

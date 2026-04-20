@@ -1,4 +1,8 @@
 #include "gui/SettingsWindow.h"
+#include "gui/PluginInstallDialog.h"
+#include "install/BundledPluginInstaller.h"
+#include "api/EngineAPI.h"
+#include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "engine/Log.h"
@@ -9,11 +13,13 @@
 
 // --- SettingsWindow ---
 
-SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
+SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine,
+                                std::function<void()> syncPluginCatalog)
     : DocumentWindow("Settings", Theme::color(Theme::Color::bgPanel),
                       DocumentWindow::closeButton),
       audioPage(state, engine),
-      aboutPage(state) {
+      aboutPage(state),
+      pluginsPage(&engine, std::move(syncPluginCatalog)) {
 
     tabs.setLookAndFeel(&tabLF);
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
@@ -306,11 +312,24 @@ void SettingsWindow::AboutPage::resized() {
 
 // --- PluginsPage ---
 
-SettingsWindow::PluginsPage::PluginsPage() {
+SettingsWindow::PluginsPage::PluginsPage(EngineAPI* engineIn,
+                                          std::function<void()> syncCatalogIn)
+    : engine(engineIn), syncPluginCatalog(std::move(syncCatalogIn)) {
     buildEntries();
+    refreshInstallState();
+
+    list = std::make_unique<List>(entries, installedArchives,
+        [this](const juce::String& slug) { triggerRemoveArchive(slug); });
+
     addAndMakeVisible(viewport);
-    viewport.setViewedComponent(&list, false);
+    viewport.setViewedComponent(list.get(), false);
     viewport.setScrollBarsShown(true, false);
+
+    addAndMakeVisible(actionButton);
+    actionButton.onClick = [this]() {
+        if (installedArchives.empty()) triggerInstall();
+        else                           triggerRemoveAll();
+    };
 }
 
 void SettingsWindow::PluginsPage::buildEntries() {
@@ -326,8 +345,83 @@ void SettingsWindow::PluginsPage::buildEntries() {
         e.description = v.getProperty("description", "").toString();
         e.license     = v.getProperty("license", "").toString();
         e.sourceUrl   = v.getProperty("sourceUrl", "").toString();
+        e.archive     = v.getProperty("archive", "").toString();
         entries.push_back(std::move(e));
     }
+}
+
+void SettingsWindow::PluginsPage::refreshInstallState() {
+    installedArchives.clear();
+    for (auto& a : BundledPluginInstaller::readInstalledManifest()) {
+        installedArchives.insert(juce::String(a.slug));
+    }
+    actionButton.setButtonText(installedArchives.empty()
+        ? juce::String::fromUTF8("Install plugin pack\xe2\x80\xa6")
+        : juce::String::fromUTF8("Remove all plugins\xe2\x80\xa6"));
+    if (auto* l = list.get()) l->repaint();
+    repaint();
+}
+
+void SettingsWindow::PluginsPage::triggerInstall() {
+    auto* eng = engine;
+    auto sync = syncPluginCatalog;
+    PluginInstallDialog::show([eng, sync, this]() {
+        if (eng) eng->rescanPlugins();
+        juce::MessageManager::callAsync([sync, this]() {
+            if (sync) sync();
+            refreshInstallState();
+        });
+    });
+}
+
+void SettingsWindow::PluginsPage::triggerRemoveAll() {
+    int total = 0;
+    for (auto& a : BundledPluginInstaller::readInstalledManifest()) {
+        total += (int) a.installedPaths.size();
+    }
+    auto opts = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::WarningIcon)
+        .withTitle("Remove all bundled plugins?")
+        .withMessage("This will delete " + juce::String(total)
+                     + juce::String::fromUTF8(" AU plugin bundles from\n")
+                     + BundledPluginInstaller::componentsDirectory().getFullPathName()
+                     + ".\n\nYou can reinstall anytime from Help.")
+        .withButton("Remove all")
+        .withButton("Cancel");
+    juce::AlertWindow::showAsync(opts, [this](int r) {
+        if (r != 1) return;
+        int removed = BundledPluginInstaller::uninstallAll();
+        perfLog("[PluginInstall] removed all (%d bundles)\n", removed);
+        if (engine) engine->pruneMissingPlugins();
+        if (syncPluginCatalog) syncPluginCatalog();
+        refreshInstallState();
+    });
+}
+
+void SettingsWindow::PluginsPage::triggerRemoveArchive(const juce::String& slug) {
+    // Find the archive's plugin names for the confirmation dialog.
+    juce::StringArray affected;
+    for (auto& e : entries) {
+        if (e.archive == slug) affected.add(e.name);
+    }
+    auto opts = juce::MessageBoxOptions()
+        .withIconType(juce::MessageBoxIconType::WarningIcon)
+        .withTitle(juce::String::fromUTF8("Remove ") + slug + "?")
+        .withMessage(juce::String("This will remove ")
+                     + juce::String(affected.size()) + " plugin"
+                     + (affected.size() == 1 ? "" : "s") + ":\n\n"
+                     + affected.joinIntoString("\n")
+                     + "\n\nYou can reinstall anytime from Help.")
+        .withButton("Remove")
+        .withButton("Cancel");
+    juce::AlertWindow::showAsync(opts, [this, slug](int r) {
+        if (r != 1) return;
+        int removed = BundledPluginInstaller::uninstallArchive(slug.toStdString());
+        perfLog("[PluginInstall] removed %s (%d bundles)\n", slug.toRawUTF8(), removed);
+        if (engine) engine->pruneMissingPlugins();
+        if (syncPluginCatalog) syncPluginCatalog();
+        refreshInstallState();
+    });
 }
 
 void SettingsWindow::PluginsPage::paint(juce::Graphics& g) {
@@ -335,27 +429,45 @@ void SettingsWindow::PluginsPage::paint(juce::Graphics& g) {
 
     auto bounds = getLocalBounds();
     auto header = bounds.removeFromTop(40).reduced(16, 6);
+
+    // Reserve right side for the action button (resized() places it).
+    auto headerText = header.withTrimmedRight(180);
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeLg));
     g.drawText(juce::String((int)entries.size()) + " free plugins bundled with Performance",
-               header, juce::Justification::centredLeft);
+               headerText, juce::Justification::centredLeft);
 
     auto subtitle = bounds.removeFromTop(22).reduced(16, 0);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText("Installed automatically on first launch. Remove any you don't want.",
+    int installedCount = 0;
+    for (auto& e : entries)
+        if (installedArchives.count(e.archive)) ++installedCount;
+    g.drawText(juce::String(installedCount) + " of " + juce::String(entries.size())
+                   + " installed",
                subtitle, juce::Justification::centredLeft);
 }
 
 void SettingsWindow::PluginsPage::resized() {
     auto bounds = getLocalBounds();
-    bounds.removeFromTop(70);  // header + subtitle
+    auto headerRow = bounds.removeFromTop(40).reduced(16, 6);
+    auto btn = headerRow.removeFromRight(170).reduced(0, 0);
+    actionButton.setBounds(btn);
+    bounds.removeFromTop(22);  // subtitle
     bounds.reduce(12, 8);
 
     viewport.setBounds(bounds);
-    // Subtract scrollbar width so text doesn't land under it.
     int listWidth = bounds.getWidth() - 12;
-    list.setSize(listWidth, list.desiredHeight());
+    if (list) list->setSize(listWidth, list->desiredHeight());
+}
+
+// ----- List (rows) -----
+
+juce::Rectangle<int> SettingsWindow::PluginsPage::List::removeButtonBounds(int rowIndex) const {
+    // Button sits flush to the right edge of the row, centered vertically.
+    int btnW = 70, btnH = 22;
+    int y = rowIndex * rowHeight + (rowHeight - btnH) / 2;
+    return { getWidth() - btnW - 12, y, btnW, btnH };
 }
 
 void SettingsWindow::PluginsPage::List::paint(juce::Graphics& g) {
@@ -368,9 +480,15 @@ void SettingsWindow::PluginsPage::List::paint(juce::Graphics& g) {
                                 : Theme::color(Theme::Color::bgStripe));
         g.fillRect(row);
 
-        auto inner = row.reduced(12, 6);
+        bool installed = installedArchives.count(e.archive) > 0;
 
-        // Row 1: name (big) + category (small, right).
+        // Leave room on the right for either the install badge (when
+        // installed, no button) or a Remove button (when installed and
+        // this row is hovered). Fixed 80px reserve keeps the layout
+        // stable either way.
+        auto inner = row.reduced(12, 6).withTrimmedRight(82);
+
+        // Row 1: name (big) + category/license (small, right of inner).
         auto row1 = inner.removeFromTop(22);
         g.setColour(Theme::color(Theme::Color::textPrimary));
         g.setFont(Theme::font(Theme::fontSizeLg));
@@ -378,12 +496,58 @@ void SettingsWindow::PluginsPage::List::paint(juce::Graphics& g) {
 
         g.setColour(Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(e.category + "  ·  " + e.license, row1,
+        g.drawText(e.category + "  \xc2\xb7  " + e.license, row1,
                    juce::Justification::centredRight);
 
         // Row 2: description.
         g.setColour(Theme::color(Theme::Color::textSecondary));
         g.setFont(Theme::font(Theme::fontSizeSm));
         g.drawText(e.description, inner, juce::Justification::centredLeft);
+
+        // Right edge: either a Remove button (on hover, if installed)
+        // or a small "Installed" text label (no hover, if installed).
+        if (installed) {
+            if ((int) i == hoverRow) {
+                auto btn = removeButtonBounds((int) i);
+                g.setColour(Theme::color(Theme::Color::bgControl));
+                g.fillRoundedRectangle(btn.toFloat(), 4.0f);
+                g.setColour(Theme::color(Theme::Color::border));
+                g.drawRoundedRectangle(btn.toFloat(), 4.0f, 1.0f);
+                g.setColour(Theme::color(Theme::Color::textPrimary));
+                g.setFont(Theme::font(Theme::fontSizeSm));
+                g.drawText("Remove", btn, juce::Justification::centred);
+            } else {
+                auto badge = juce::Rectangle<int>(
+                    getWidth() - 82, (int) i * rowHeight, 70, rowHeight);
+                g.setColour(Theme::color(Theme::Color::accentDim));
+                g.setFont(Theme::font(Theme::fontSizeSm));
+                g.drawText("Installed", badge, juce::Justification::centredRight);
+            }
+        } else {
+            auto badge = juce::Rectangle<int>(
+                getWidth() - 82, (int) i * rowHeight, 70, rowHeight);
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(Theme::font(Theme::fontSizeSm));
+            g.drawText("Not installed", badge, juce::Justification::centredRight);
+        }
+    }
+}
+
+void SettingsWindow::PluginsPage::List::mouseDown(const juce::MouseEvent& e) {
+    int idx = e.y / rowHeight;
+    if (idx < 0 || idx >= (int) entries.size()) return;
+    auto& entry = entries[(size_t) idx];
+    if (!installedArchives.count(entry.archive)) return;
+    auto btn = removeButtonBounds(idx);
+    if (btn.contains(e.getPosition()) && onRemove) {
+        onRemove(entry.archive);
+    }
+}
+
+void SettingsWindow::PluginsPage::List::mouseMove(const juce::MouseEvent& e) {
+    int idx = e.y / rowHeight;
+    if (idx != hoverRow) {
+        hoverRow = idx;
+        repaint();
     }
 }

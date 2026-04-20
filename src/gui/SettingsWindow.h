@@ -2,13 +2,20 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "gui/Theme.h"
+#include <set>
+#include <functional>
 
 class StateAPI;
 class EngineAPI;
 
 class SettingsWindow : public juce::DocumentWindow {
 public:
-    SettingsWindow(StateAPI& state, EngineAPI& engine);
+    // syncPluginCatalog is called after an install / uninstall from the
+    // Plugins tab so the coordinator's plugin catalog re-reads from
+    // knownPlugins. Optional — pass {} if not wiring the Plugins tab
+    // to a catalog owner.
+    SettingsWindow(StateAPI& state, EngineAPI& engine,
+                   std::function<void()> syncPluginCatalog = {});
 
     void closeButtonPressed() override { setVisible(false); }
 
@@ -73,34 +80,54 @@ private:
     AboutPage aboutPage;
 
     // Plugins page — shows the bundled-plugin pack listed in
-    // runtime/bundled-plugins/manifest.json. Read-only for now (step 1 of
-    // docs/BUNDLED_PLUGINS.md); per-plugin Remove + "Remove all" land in
-    // step 5 once the actual .component bundles ship.
+    // runtime/bundled-plugins/manifest.json. Header bar has a single
+    // action button: "Install plugin pack…" when nothing is installed,
+    // "Remove all plugins…" when something is. Per-archive Remove
+    // lives in the list rows.
     class PluginsPage : public juce::Component {
     public:
-        PluginsPage();
+        explicit PluginsPage(EngineAPI* engine = nullptr,
+                             std::function<void()> syncPluginCatalog = {});
         void paint(juce::Graphics& g) override;
         void resized() override;
 
     private:
         struct Entry {
-            juce::String name, category, description, license, sourceUrl;
+            juce::String name, category, description, license, sourceUrl, archive;
         };
         std::vector<Entry> entries;
         void buildEntries();
+        void refreshInstallState();
+        void triggerInstall();
+        void triggerRemoveAll();
+        void triggerRemoveArchive(const juce::String& slug);
+
+        EngineAPI* engine = nullptr;
+        std::function<void()> syncPluginCatalog;
+        std::set<juce::String> installedArchives;  // archive slugs currently installed
+
+        juce::TextButton actionButton;
 
         // Inner list component — paints all rows itself, sized large enough
         // to need scrolling inside the viewport.
         class List : public juce::Component {
         public:
-            explicit List(const std::vector<Entry>& e) : entries(e) {}
+            List(const std::vector<Entry>& e, const std::set<juce::String>& i,
+                 std::function<void(const juce::String&)> onRemoveSlug)
+                : entries(e), installedArchives(i), onRemove(std::move(onRemoveSlug)) {}
             void paint(juce::Graphics& g) override;
+            void mouseDown(const juce::MouseEvent& e) override;
+            void mouseMove(const juce::MouseEvent& e) override;
             static constexpr int rowHeight = 60;
             int desiredHeight() const { return (int)entries.size() * rowHeight; }
         private:
+            juce::Rectangle<int> removeButtonBounds(int rowIndex) const;
             const std::vector<Entry>& entries;
+            const std::set<juce::String>& installedArchives;
+            std::function<void(const juce::String&)> onRemove;
+            int hoverRow = -1;
         };
-        List list { entries };
+        std::unique_ptr<List> list;
         juce::Viewport viewport;
     };
     PluginsPage pluginsPage;

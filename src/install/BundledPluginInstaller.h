@@ -85,6 +85,26 @@ public:
     // User Components directory: ~/Library/Audio/Plug-Ins/Components/.
     static juce::File componentsDirectory();
 
+    // One entry per archive group in the install manifest. Read from
+    // disk each call; cheap (~1 KB JSON).
+    struct InstalledArchive {
+        std::string slug;
+        std::string version;
+        std::vector<juce::File> installedPaths;
+    };
+    static std::vector<InstalledArchive> readInstalledManifest();
+
+    // Uninstall one archive group: deletes each installedPath, then
+    // rewrites the manifest without this entry. If this was the last
+    // entry, the manifest file is deleted so isInstalled() → false.
+    // Returns number of bundles actually removed.
+    static int uninstallArchive(const std::string& slug);
+
+    // Uninstall everything the installer placed: deletes every
+    // installedPath across every archive, then deletes the manifest.
+    // Returns number of bundles removed.
+    static int uninstallAll();
+
     void run() override;
 
 private:

@@ -430,6 +430,116 @@ void BundledPluginInstaller::writeInstallManifest(
 }
 
 // -----------------------------------------------------------------------------
+// Read + uninstall
+// -----------------------------------------------------------------------------
+
+std::vector<BundledPluginInstaller::InstalledArchive>
+BundledPluginInstaller::readInstalledManifest() {
+    std::vector<InstalledArchive> result;
+    auto file = installManifestFile();
+    if (!file.existsAsFile()) return result;
+
+    auto root = juce::JSON::parse(file.loadFileAsString());
+    auto archives = root.getProperty("archives", juce::var());
+    if (!archives.isArray()) return result;
+
+    for (int i = 0; i < archives.size(); ++i) {
+        auto a = archives[i];
+        InstalledArchive entry;
+        entry.slug    = a.getProperty("slug", "").toString().toStdString();
+        entry.version = a.getProperty("version", "").toString().toStdString();
+        auto paths = a.getProperty("installedPaths", juce::var());
+        if (paths.isArray()) {
+            for (int j = 0; j < paths.size(); ++j) {
+                entry.installedPaths.emplace_back(paths[j].toString());
+            }
+        }
+        result.push_back(std::move(entry));
+    }
+    return result;
+}
+
+namespace {
+
+int deleteComponentPaths(const std::vector<juce::File>& paths) {
+    int removed = 0;
+    for (auto& f : paths) {
+        if (!f.exists()) continue;
+        // .component is a directory bundle, so recursive delete.
+        if (f.deleteRecursively()) {
+            ++removed;
+        } else {
+            perfLog("[PluginInstall] uninstall: failed to remove %s\n",
+                    f.getFullPathName().toRawUTF8());
+        }
+    }
+    return removed;
+}
+
+void rewriteManifest(const std::vector<BundledPluginInstaller::InstalledArchive>& entries) {
+    auto file = BundledPluginInstaller::installManifestFile();
+    if (entries.empty()) {
+        file.deleteFile();
+        return;
+    }
+
+    juce::DynamicObject::Ptr root(new juce::DynamicObject());
+    root->setProperty("version", 1);
+    root->setProperty("updatedAt", juce::Time::getCurrentTime().toISO8601(true));
+
+    juce::Array<juce::var> archiveArray;
+    for (auto& e : entries) {
+        juce::DynamicObject::Ptr obj(new juce::DynamicObject());
+        obj->setProperty("slug", juce::String(e.slug));
+        obj->setProperty("version", juce::String(e.version));
+        juce::Array<juce::var> paths;
+        for (auto& f : e.installedPaths) {
+            paths.add(f.getFullPathName());
+        }
+        obj->setProperty("installedPaths", paths);
+        archiveArray.add(juce::var(obj.get()));
+    }
+    root->setProperty("archives", archiveArray);
+
+    file.replaceWithText(juce::JSON::toString(juce::var(root.get()), true));
+}
+
+}  // namespace
+
+int BundledPluginInstaller::uninstallArchive(const std::string& slug) {
+    auto entries = readInstalledManifest();
+    int removed = 0;
+    std::vector<InstalledArchive> remaining;
+    for (auto& e : entries) {
+        if (e.slug == slug) {
+            removed += deleteComponentPaths(e.installedPaths);
+        } else {
+            remaining.push_back(e);
+        }
+    }
+    if (removed == 0 && entries.size() == remaining.size()) {
+        perfLog("[PluginInstall] uninstall: slug '%s' not in manifest\n", slug.c_str());
+        return 0;
+    }
+    rewriteManifest(remaining);
+    perfLog("[PluginInstall] uninstalled %d bundle(s) for slug '%s'\n",
+            removed, slug.c_str());
+    return removed;
+}
+
+int BundledPluginInstaller::uninstallAll() {
+    auto entries = readInstalledManifest();
+    int removed = 0;
+    for (auto& e : entries) {
+        removed += deleteComponentPaths(e.installedPaths);
+    }
+    rewriteManifest({});
+    perfLog("[PluginInstall] uninstalled all: %d bundle(s) across %d archive(s)\n",
+            removed, (int)entries.size());
+    return removed;
+}
+
+// -----------------------------------------------------------------------------
 // Progress helpers
 // -----------------------------------------------------------------------------
 
