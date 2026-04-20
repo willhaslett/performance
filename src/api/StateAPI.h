@@ -154,6 +154,11 @@ public:
                              std::vector<ParamSchema> params,
                              ActionAlgebra::ActionNode body,
                              int durationParamIndex = -1);
+    // Set (or replace) an expander on a previously registered action.
+    // Expanders build the tree dynamically from runtime state — used by
+    // built-ins whose shape depends on plugin param counts, etc.
+    void setActionExpander(const ActionId& id,
+        std::function<ActionAlgebra::ActionNode(const std::vector<ActionAlgebra::Value>&)> expander);
     ActionId createCustomAction(const std::string& name, const std::string& label,
                                  const std::string& luaCode,
                                  std::vector<ParamSchema> params = {},

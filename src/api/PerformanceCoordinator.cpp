@@ -41,14 +41,26 @@ struct PerformanceCoordinator::AlgebraAdapters {
 
     struct TargetIO : ActionAlgebra::ActionInterpreter::TargetIO {
         StateAPI& state;
-        TargetIO(StateAPI& s) : state(s) {}
+        AudioEngine& audio;
+        TargetIO(StateAPI& s, AudioEngine& a) : state(s), audio(a) {}
+
+        juce::AudioProcessor* procFor(const std::string& trackId) const {
+            return audio.getTrackInstrumentProcessor(juce::String(trackId));
+        }
+
         float read(const ActionAlgebra::Target& t) override {
             using K = ActionAlgebra::Target::Kind;
             switch (t.kind) {
                 case K::TrackGain:  return state.getTrackGain(TrackId{t.entityId});
                 case K::BusGain:    return state.getBusGain(BusId{t.entityId});
                 case K::MasterGain: return state.getMasterGain();
-                case K::TrackParam: return 0.0f;  // TODO: wire via EngineAPI in step 5/6
+                case K::TrackParam: {
+                    auto* proc = procFor(t.entityId);
+                    if (!proc || t.paramIndex < 0) return 0.0f;
+                    auto& params = proc->getParameters();
+                    if (t.paramIndex >= params.size()) return 0.0f;
+                    return params[t.paramIndex]->getValue();
+                }
                 case K::Selection:  return 0.0f;  // string target; numeric read meaningless
             }
             return 0.0f;
@@ -59,8 +71,15 @@ struct PerformanceCoordinator::AlgebraAdapters {
                 case K::TrackGain:  state.setTrackGain(TrackId{t.entityId}, v); break;
                 case K::BusGain:    state.setBusGain(BusId{t.entityId}, v);     break;
                 case K::MasterGain: state.setMasterGain(v);                     break;
-                case K::TrackParam: break;  // step 5/6
-                case K::Selection:  break;  // step 5
+                case K::TrackParam: {
+                    auto* proc = procFor(t.entityId);
+                    if (!proc || t.paramIndex < 0) break;
+                    auto& params = proc->getParameters();
+                    if (t.paramIndex >= params.size()) break;
+                    params[t.paramIndex]->setValue(v);
+                    break;
+                }
+                case K::Selection:  break;
             }
         }
     };
@@ -72,10 +91,11 @@ struct PerformanceCoordinator::AlgebraAdapters {
         const Template* lookup(const std::string& name) override {
             for (auto& a : state.allActions()) {
                 if (a.name != name) continue;
-                if (!a.hasBody) return nullptr;
+                if (!a.hasBody && !a.expander) return nullptr;
                 cached.body = a.body;
                 cached.paramNames.clear();
                 for (auto& p : a.params) cached.paramNames.push_back(p.name);
+                cached.expander = a.expander;
                 return &cached;
             }
             return nullptr;
@@ -87,8 +107,8 @@ struct PerformanceCoordinator::AlgebraAdapters {
     Resolver  resolver;
     ActionAlgebra::ActionInterpreter interpreter;
 
-    AlgebraAdapters(AutomationEngine& eng, StateAPI& s)
-        : scheduler(eng), io(s), resolver(s),
+    AlgebraAdapters(AutomationEngine& eng, StateAPI& s, AudioEngine& audio)
+        : scheduler(eng), io(s, audio), resolver(s),
           interpreter(scheduler, io, &resolver) {}
 };
 
@@ -224,7 +244,7 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     registerBuiltinActions();
 
     automationEngine = std::make_unique<AutomationEngine>();
-    algebraAdapters = std::make_unique<AlgebraAdapters>(*automationEngine, *stateAPI);
+    algebraAdapters = std::make_unique<AlgebraAdapters>(*automationEngine, *stateAPI, *audioEngine);
     songRuntime = std::make_unique<SongRuntime>();
     sequencerImpl = std::make_unique<InternalSequencer>();
     lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
@@ -1158,8 +1178,8 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return;
     }
 
-    // Algebra path — action has a tree body; let the interpreter handle it.
-    if (actionInfo && actionInfo->hasBody && algebraAdapters) {
+    // Algebra path — action has a tree body or an expander.
+    if (actionInfo && (actionInfo->hasBody || actionInfo->expander) && algebraAdapters) {
         std::vector<ActionAlgebra::Value> argValues;
         if (auto* arr = args.getArray()) {
             for (int i = 0; i < arr->size(); ++i) {
@@ -1169,6 +1189,12 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
                 else
                     argValues.push_back(ActionAlgebra::text(v.toString().toStdString()));
             }
+        } else if (!args.isVoid() && !args.isUndefined()) {
+            // Non-array args (e.g. morph's compound object) — pass the whole
+            // thing as one Text value (JSON-stringified). Expanders that want
+            // the structure parse it themselves.
+            argValues.push_back(ActionAlgebra::text(
+                juce::JSON::toString(args, true).toStdString()));
         }
         algebraAdapters->interpreter.trigger(actionName, argValues, value);
         return;
@@ -1215,126 +1241,11 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
             stateAPI->setBusGain(BusId{channelId}, gain);
         }
     }
-    else if (actionName == "morphToPreset") {
-        auto trackId = resolveTrack(getArg(0));
-        auto presetName = getArg(1);
-        auto dur = getArgFloat(2, 3.0f);
-        auto easing = AutomationEngine::easingByName(getArg(3).toStdString());
-
-        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId.str()));
-        if (!proc) {
-            perfLog("[Action] morphToPreset: no processor for track %s\n", trackId.c_str());
-        } else {
-            auto pluginName = proc->getName();
-            auto target = engineAPI->getPresetParams(pluginName, presetName);
-            if (target.values.empty()) {
-                perfLog("[Action] morphToPreset: no params for preset %s\n", presetName.toRawUTF8());
-            } else {
-                auto from = EngineAPI::captureParams(proc);
-                automationEngine->interpolate(0.0f, 1.0f, dur,
-                    [proc, from, target](float t) {
-                        EngineAPI::applyParams(proc, target, t, from);
-                    }, easing);
-                perfLog("[Action] Morphing %s → %s over %.1fs (%d params)\n",
-                        pluginName.toRawUTF8(), presetName.toRawUTF8(), dur, (int)target.values.size());
-            }
-        }
-    }
-    else if (actionName == "morphChain") {
-        // morphChain(track, presetA, presetB, dwell, morphDuration, easing)
-        // Load presetA instantly, wait dwell seconds, then morph to presetB
-        auto trackId = resolveTrack(getArg(0));
-        auto presetA = getArg(1);
-        auto presetB = getArg(2);
-        auto dwell = getArgFloat(3, 1.0f);
-        auto morphDur = getArgFloat(4, 3.0f);
-        auto easingName = getArg(5).toStdString();
-
-        auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackId.str()));
-        if (!proc) {
-            perfLog("[Action] morphChain: no processor for track %s\n", trackId.c_str());
-        } else {
-            auto pluginName = proc->getName();
-            // Load preset A state blob immediately
-            engineAPI->loadPreset(juce::String(trackId.str()), "", presetA);
-            perfLog("[Action] morphChain: loaded %s, dwell %.1fs then morph to %s over %.1fs\n",
-                    presetA.toRawUTF8(), dwell, presetB.toRawUTF8(), morphDur);
-
-            // After dwell, morph to B
-            auto* eng = engineAPI.get();
-            auto* ae = automationEngine.get();
-            automationEngine->delay(dwell, [proc, pluginName, presetB, morphDur, easingName, eng, ae]() {
-                auto target = eng->getPresetParams(pluginName, presetB);
-                if (target.values.empty()) return;
-                auto from = EngineAPI::captureParams(proc);
-                auto easing = AutomationEngine::easingByName(easingName);
-                ae->interpolate(0.0f, 1.0f, morphDur,
-                    [proc, from, target](float t) {
-                        EngineAPI::applyParams(proc, target, t, from);
-                    }, easing);
-            });
-        }
-    }
-    else if (actionName == "morph") {
-        auto mode = args.getProperty("mode", "parallel").toString();
-        auto subActions = args.getProperty("actions", juce::var());
-        if (!subActions.isArray()) {
-            perfLog("[Action] morph: 'actions' is not an array\n");
-        } else {
-            bool sequential = (mode == "sequential");
-            perfLog("[Action] Morph: %d sub-actions (%s)\n",
-                    subActions.size(), mode.toRawUTF8());
-
-            if (!sequential) {
-                for (int i = 0; i < subActions.size(); ++i) {
-                    auto sub = subActions[i];
-                    auto subName = sub.getProperty("action", "").toString().toStdString();
-                    if (subName == "morph") continue;  // no nested morphs
-                    auto subArgs = sub.getProperty("args", juce::var());
-                    executeAction(subName, subArgs, 1.0f);
-                }
-            } else {
-                // Sequential: chain via completion callbacks
-                // Build a list and execute recursively via delay
-                struct ChainStep { std::string name; juce::var args; };
-                auto steps = std::make_shared<std::vector<ChainStep>>();
-                for (int i = 0; i < subActions.size(); ++i) {
-                    auto sub = subActions[i];
-                    auto subName = sub.getProperty("action", "").toString().toStdString();
-                    if (subName == "morph") continue;  // no nested morphs
-                    steps->push_back({ subName, sub.getProperty("args", juce::var()) });
-                }
-
-                // For sequential mode, we need to know when each action completes.
-                // Estimate duration from args (duration field), default 0 = instant.
-                auto runChain = std::make_shared<std::function<void(int)>>();
-                *runChain = [this, steps, runChain](int idx) {
-                    if (idx >= (int)steps->size()) return;
-                    auto& step = (*steps)[idx];
-                    executeAction(step.name, step.args, 1.0f);
-                    // Get duration from args for delay to next
-                    float dur = 0.0f;
-                    if (step.args.isArray() && step.args.size() >= 3)
-                        dur = (float)step.args[2];
-                    else if (step.args.hasProperty("duration"))
-                        dur = (float)step.args.getProperty("duration", 0.0f);
-                    if (dur > 0.01f && idx + 1 < (int)steps->size()) {
-                        automationEngine->delay(dur, [runChain, idx]() {
-                            (*runChain)(idx + 1);
-                        });
-                    } else {
-                        // Instant action — fire next immediately
-                        if (idx + 1 < (int)steps->size())
-                            (*runChain)(idx + 1);
-                    }
-                };
-                (*runChain)(0);
-            }
-        }
-    }
     else {
         perfLog("[Action] Unknown action: %s\n", actionName.c_str());
     }
+    // morphToPreset, morphChain, morph are now expander-driven algebra actions
+    // and handled by the interpreter path above. See registerBuiltinActions().
 }
 
 void PerformanceCoordinator::refreshMidiDevices() {
@@ -1569,15 +1480,99 @@ void PerformanceCoordinator::registerBuiltinActions() {
         2);
     stateAPI->registerAction("trackVolume", "Track Volume",
         std::vector<ParamSchema>{ channel("channel") });
-    stateAPI->registerAction("morphToPreset", "Morph to preset",
+
+    // morphToPreset — dynamic Parallel of per-param Interpolates. Plugin param
+    // count isn't knowable statically, so we use an expander.
+    auto morphToPresetId = stateAPI->registerAction("morphToPreset", "Morph to preset",
         std::vector<ParamSchema>{ track("trackName", { "Instrument" }), preset("presetName"),
                                   duration("duration"), easing() }, 2);
-    stateAPI->registerAction("morphChain", "Morph chain (A \xe2\x86\x92 dwell \xe2\x86\x92 B)",
+    stateAPI->setActionExpander(morphToPresetId,
+        [this](const std::vector<AA::Value>& args) -> AA::ActionNode {
+            if (args.size() < 4) return {};
+            auto trackIdStr = args[0].kind == AA::Value::Kind::Text ? args[0].text : std::string{};
+            auto presetName = args[1].kind == AA::Value::Kind::Text ? args[1].text : std::string{};
+            double dur = args[2].kind == AA::Value::Kind::Number ? args[2].number : 3.0;
+            auto easingStr  = args[3].kind == AA::Value::Kind::Text ? args[3].text : std::string("easein");
+            auto* proc = audioEngine->getTrackInstrumentProcessor(juce::String(trackIdStr));
+            if (!proc) {
+                perfLog("[Action] morphToPreset: no processor for track %s\n", trackIdStr.c_str());
+                return {};
+            }
+            auto target = engineAPI->getPresetParams(proc->getName(), juce::String(presetName));
+            if (target.values.empty()) {
+                perfLog("[Action] morphToPreset: preset '%s' has no params\n", presetName.c_str());
+                return {};
+            }
+            auto from = EngineAPI::captureParams(proc);
+            std::vector<AA::ActionNode> children;
+            int n = std::min((int)from.values.size(), (int)target.values.size());
+            for (int i = 0; i < n; ++i) {
+                AA::Target t { AA::Target::Kind::TrackParam, trackIdStr, i };
+                children.push_back(AA::interpolate(t,
+                                                    AA::num(from.values[i]),
+                                                    AA::num(target.values[i]),
+                                                    AA::num(dur), easingStr));
+            }
+            return AA::parallel(std::move(children));
+        });
+
+    // morphChain — Sequence of [morphToPreset(A), Delay(dwell), morphToPreset(B)].
+    // Delegates to morphToPreset's expander via Invoke.
+    auto morphChainId = stateAPI->registerAction(
+        "morphChain", "Morph chain (A \xe2\x86\x92 dwell \xe2\x86\x92 B)",
         std::vector<ParamSchema>{ track("trackName", { "Instrument" }), preset("presetA"),
                                   preset("presetB"), duration("dwell"),
                                   duration("duration"), easing() }, 4);
-    stateAPI->registerAction("morph", "Morph",
+    stateAPI->setActionExpander(morphChainId,
+        [](const std::vector<AA::Value>& args) -> AA::ActionNode {
+            if (args.size() < 6) return {};
+            auto trackName = args[0];
+            auto presetA   = args[1];
+            auto presetB   = args[2];
+            auto dwell     = args[3];
+            auto dur       = args[4];
+            auto easingV   = args[5];
+            return AA::sequence({
+                AA::invoke("morphToPreset", { trackName, presetA, dur, easingV }),
+                AA::delay(dwell,
+                    AA::invoke("morphToPreset", { trackName, presetB, dur, easingV })),
+            });
+        });
+
+    // morph — compound action. args[0] is a Text JSON blob with
+    // {mode, actions: [{action, args}, ...]}. Expands to Parallel or
+    // Sequence of Invokes.
+    auto morphId = stateAPI->registerAction("morph", "Morph",
         std::vector<ParamSchema>{ morph() });
+    stateAPI->setActionExpander(morphId,
+        [](const std::vector<AA::Value>& args) -> AA::ActionNode {
+            if (args.empty() || args[0].kind != AA::Value::Kind::Text) return {};
+            auto parsed = juce::JSON::parse(juce::String(args[0].text));
+            auto modeStr = parsed.getProperty("mode", "parallel").toString();
+            auto subActions = parsed.getProperty("actions", juce::var());
+            if (!subActions.isArray()) return {};
+
+            std::vector<AA::ActionNode> children;
+            for (int i = 0; i < subActions.size(); ++i) {
+                auto sub = subActions[i];
+                auto subName = sub.getProperty("action", "").toString().toStdString();
+                if (subName.empty() || subName == "morph") continue;
+                auto subArgs = sub.getProperty("args", juce::var());
+                std::vector<AA::Value> subArgValues;
+                if (auto* arr = subArgs.getArray()) {
+                    for (int j = 0; j < arr->size(); ++j) {
+                        auto v = (*arr)[j];
+                        if (v.isDouble() || v.isInt() || v.isInt64())
+                            subArgValues.push_back(AA::num((double)v));
+                        else
+                            subArgValues.push_back(AA::text(v.toString().toStdString()));
+                    }
+                }
+                children.push_back(AA::invoke(subName, std::move(subArgValues)));
+            }
+            return (modeStr == "sequential") ? AA::sequence(std::move(children))
+                                              : AA::parallel(std::move(children));
+        });
 
     perfLog("[Coordinator] Registered %d built-in actions\n", (int)stateAPI->allActions().size());
 }

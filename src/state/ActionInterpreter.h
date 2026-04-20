@@ -41,6 +41,11 @@ public:
         struct Template {
             ActionNode body;
             std::vector<std::string> paramNames;
+            // Optional — when set, the interpreter calls this with the
+            // invoke's args and runs the returned tree, bypassing static
+            // substitution. Used by built-ins whose shape depends on
+            // runtime state (morphToPreset, etc.).
+            std::function<ActionNode(const std::vector<Value>&)> expander;
         };
         virtual ~TemplateResolver() = default;
         virtual const Template* lookup(const std::string& name) = 0;

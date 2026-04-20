@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <functional>
 #include "state/ActionAlgebra.h"
 #include "state/Id.h"
 
@@ -74,7 +75,16 @@ struct ActionInfo {
     // one at a time; customs land here in step 7.
     // Note: body is in-memory only today; persistence lands in step 8.
     ActionAlgebra::ActionNode body;
-    bool hasBody = false;              // true iff body has been set via the typed registerAction
+    bool hasBody = false;
+
+    // Optional expander for dynamic trees — used by built-ins whose body
+    // shape depends on runtime state (e.g., morphToPreset expands to a
+    // Parallel of Interpolates over the plugin's live parameter count).
+    // If set, the interpreter calls the expander with the positional arg
+    // values at trigger time and runs the returned concrete tree. Static
+    // bodies (above) are only used when no expander is present.
+    // Not serialized — expanders are registered in code, not data.
+    std::function<ActionAlgebra::ActionNode(const std::vector<ActionAlgebra::Value>&)> expander;
 };
 
 // --- Devices (registered physical controllers) ---

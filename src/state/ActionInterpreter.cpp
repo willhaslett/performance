@@ -110,6 +110,12 @@ void ActionInterpreter::trigger(const std::string& actionName,
         fire(onComplete);
         return;
     }
+    // Dynamic expansion takes precedence — bypasses static substitution.
+    if (tmpl->expander) {
+        auto concrete = tmpl->expander(args);
+        run(concrete, std::move(onComplete));
+        return;
+    }
     std::unordered_map<std::string, Value> bindings;
     for (size_t i = 0; i < tmpl->paramNames.size() && i < args.size(); ++i)
         bindings[tmpl->paramNames[i]] = args[i];

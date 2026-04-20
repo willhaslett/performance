@@ -1092,6 +1092,13 @@ ActionId StateAPI::registerAction(const std::string& name, const std::string& la
     return state.actions.back().id;
 }
 
+void StateAPI::setActionExpander(const ActionId& id,
+    std::function<ActionAlgebra::ActionNode(const std::vector<ActionAlgebra::Value>&)> expander) {
+    for (auto& a : state.actions) {
+        if (a.id == id) { a.expander = std::move(expander); return; }
+    }
+}
+
 ActionId StateAPI::registerAction(const std::string& name, const std::string& label,
                                    std::vector<ParamSchema> params,
                                    ActionAlgebra::ActionNode body,
