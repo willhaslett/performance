@@ -45,12 +45,13 @@ public:
     int getDesiredHeight() const;
     static constexpr int panelWidth = 420;
 
-    // Convenience: launch the form in a themed floating window with OK/Cancel
-    // already wired. onComplete receives the args on accept; receives an
-    // undefined var on cancel.
-    static void launch(StateAPI& state, const ActionInfo& action,
-                       const juce::var& initialArgs,
-                       std::function<void(const juce::var&)> onComplete);
+    // True iff every required param of `a` has at least one valid candidate
+    // in the current state (e.g. fadeOut requires at least one track).
+    static bool actionCanInstantiate(const ActionInfo& a, const StateAPI& state);
+
+    // Convert a camelCase or snake_case identifier to Title Case for display.
+    // "fromTrack" -> "From Track", "presetA" -> "Preset A", "easing" -> "Easing".
+    static juce::String humanizeLabel(const std::string& s);
 
 private:
     StateAPI& state;
@@ -72,10 +73,11 @@ private:
     juce::TextButton okButton     { "OK" };
     juce::TextButton cancelButton { "Cancel" };
 
-    static constexpr int rowHeight    = 52;
-    static constexpr int headerHeight = 48;
-    static constexpr int footerHeight = 56;
-    static constexpr int rowLabelW    = 110;
+    static constexpr int rowHeight       = 52;
+    static constexpr int headerHeight    = 48;
+    static constexpr int footerHeight    = 56;
+    static constexpr int paramsBottomPad = 16;  // breathing room between last row and footer divider
+    static constexpr int rowLabelW       = 110;
 
     void buildWidgets();
     void refreshValidation();

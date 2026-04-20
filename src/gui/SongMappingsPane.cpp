@@ -1,5 +1,6 @@
 #include "gui/SongMappingsPane.h"
 #include "gui/ActionInstanceForm.h"
+#include "gui/ActionPicker.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -78,7 +79,7 @@ void SongMappingsPane::buildRows() {
                 sr.number = ctrl.number;
                 sr.bindingId = binding->id;
                 sr.actionLabel = label;
-                sr.argsDisplay = formatArgs(binding->args);
+                sr.argsDisplay = formatArgs(action, binding->args);
                 sr.scorePosition = binding->scorePosition;
                 scoreRows.push_back(sr);
             } else {
@@ -93,7 +94,7 @@ void SongMappingsPane::buildRows() {
                 mr.controlIndex = ci;
                 mr.bindingId = binding->id;
                 mr.actionLabel = label;
-                mr.argsDisplay = formatArgs(binding->args);
+                mr.argsDisplay = formatArgs(action, binding->args);
                 mappingRows.push_back(mr);
             }
         }
@@ -126,18 +127,32 @@ bool SongMappingsPane::isDeviceConnected(const std::string& deviceId) const {
     return false;
 }
 
-std::string SongMappingsPane::formatArgs(const std::string& argsJson) const {
+std::string SongMappingsPane::formatArgs(const ActionInfo* action,
+                                          const std::string& argsJson) const {
     auto args = juce::JSON::parse(juce::String(argsJson));
     if (!args.isArray() || args.size() == 0) return "";
     juce::String result;
-    for (int i = 0; i < std::min(args.size(), 2); ++i) {
+    int n = std::min((int)args.size(), 2);  // show first two args
+    for (int i = 0; i < n; ++i) {
         if (i > 0) result += ", ";
-        auto val = args[i].toString();
-        if (val.length() > 20) {
-            auto* track = state.findTrack(TrackId{val.toStdString()});
-            if (track) val = juce::String(track->name);
+        auto raw = args[i].toString();
+        juce::String display = raw;
+
+        // Resolve UUIDs to display names using the typed schema.
+        if (action && i < (int)action->params.size()) {
+            const auto& p = action->params[i];
+            auto uuid = raw.toStdString();
+            if (p.type == ParamType::ChannelRef) {
+                if (uuid == "Main") display = "Main";
+                else if (auto* t = state.findTrack(TrackId{uuid})) display = juce::String(t->name);
+                else if (auto* b = state.findBus(BusId{uuid})) display = juce::String(b->name);
+            } else if (p.type == ParamType::PresetRef) {
+                if (auto* pr = state.findPresetById(PresetId{uuid}))
+                    display = juce::String(pr->name);
+            }
+            // Enum / Float / Morph: use raw as-is.
         }
-        result += val;
+        result += display;
     }
     return result.toStdString();
 }
@@ -674,68 +689,24 @@ void SongMappingsPane::showActionMenu(const DeviceId& deviceId, const std::strin
                                        int channel, int number, const std::string& controlName,
                                        const BindingId& existingBindingId,
                                        juce::Point<int> screenPos, bool asScoreStep) {
-    auto actions = state.allActions();
-    auto tracks = state.listTracks();
+    auto* song = state.currentSong();
+    if (!song) return;
+    auto songId = song->id;
 
-    juce::PopupMenu menu;
-    int baseId = 1;
-
-    for (int ai = 0; ai < (int)actions.size(); ++ai) {
-        if (actions[ai].name == "morph") continue;
-        bool isTrackParam = !actions[ai].params.empty()
-            && actions[ai].params[0].type == ParamType::ChannelRef;
-        if (isTrackParam) {
-            juce::PopupMenu sub;
-            for (int ti = 0; ti < (int)tracks.size(); ++ti) {
-                auto* ts = state.findTrack(tracks[ti].id);
-                if (ts && ts->sourceType == TrackSourceType::Action) continue;
-                sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(tracks[ti].name));
+    // Bindings can't host morph compounds.
+    auto noMorph = [](const ActionInfo& a) { return a.name != "morph"; };
+    ActionPicker::launch(state, screenPos, noMorph,
+        [this, songId, ctrlType, channel, number, controlName,
+         existingBindingId, deviceId, asScoreStep](const ActionInfo& action, const juce::var& args) {
+            auto argsJson = juce::JSON::toString(args, true).toStdString();
+            if (!existingBindingId.empty()) state.removeBinding(existingBindingId);
+            auto bindingId = state.addBinding(songId, ctrlType, channel, number,
+                                               action.id, argsJson, controlName, deviceId);
+            if (asScoreStep) {
+                int nextPos = (int)scoreRows.size() + 1;
+                state.setBindingAsScoreStep(bindingId, nextPos);
             }
-            menu.addSubMenu(juce::String(actions[ai].label), sub);
-        } else {
-            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
-        }
-    }
-
-    auto capDevId = deviceId;
-    auto capCtrlType = ctrlType;
-    auto capBindId = existingBindingId;
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetScreenArea(
-            juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, capDevId, capCtrlType, channel, number, controlName,
-         capBindId, asScoreStep, actions, tracks, baseId](int result) {
-            if (result <= 0) return;
-            int ai = (result - baseId) / 1000;
-            int sub = (result - baseId) % 1000;
-            if (ai < 0 || ai >= (int)actions.size()) return;
-
-            juce::String firstArg;
-            if (sub > 0) {
-                int ti = sub - 1;
-                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
-            }
-
-            auto* song = state.currentSong();
-            if (!song) return;
-            auto songId = song->id;
-
-            juce::var initialArgs;
-            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
-            ActionInstanceForm::launch(state, actions[ai], initialArgs,
-                [this, songId, capCtrlType, channel, number, controlName,
-                 capBindId, capDevId, asScoreStep, ai, actions](const juce::var& formArgs) {
-                    if (formArgs.isVoid()) return;
-                    auto argsJson = juce::JSON::toString(formArgs, true).toStdString();
-                    if (!capBindId.empty()) state.removeBinding(capBindId);
-                    auto bindingId = state.addBinding(songId, capCtrlType, channel, number,
-                                                       actions[ai].id, argsJson, controlName, capDevId);
-                    if (asScoreStep) {
-                        int nextPos = (int)scoreRows.size() + 1;
-                        state.setBindingAsScoreStep(bindingId, nextPos);
-                    }
-                    refresh();
-                });
+            refresh();
         });
 }
 

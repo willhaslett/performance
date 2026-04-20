@@ -2,6 +2,82 @@
 #include "gui/MorphEditor.h"
 #include "api/StateAPI.h"
 #include <algorithm>
+#include <cctype>
+
+juce::String ActionInstanceForm::humanizeLabel(const std::string& s) {
+    juce::String out;
+    bool capitalizeNext = true;
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        if (c == '_' || c == '-' || c == ' ') {
+            if (!out.isEmpty()) out += ' ';
+            capitalizeNext = true;
+        } else if (capitalizeNext && std::isalpha((unsigned char)c)) {
+            out += (juce::juce_wchar)std::toupper((unsigned char)c);
+            capitalizeNext = false;
+        } else if (std::isupper((unsigned char)c) && i > 0
+                   && std::isalpha((unsigned char)s[i - 1])
+                   && !std::isupper((unsigned char)s[i - 1])) {
+            // camelCase boundary: lowercase followed by uppercase
+            out += ' ';
+            out += (juce::juce_wchar)c;
+        } else {
+            out += (juce::juce_wchar)c;
+        }
+    }
+    return out;
+}
+
+bool ActionInstanceForm::actionCanInstantiate(const ActionInfo& a, const StateAPI& state) {
+    auto channelHasCandidate = [&](const ParamSchema& p) {
+        bool any = p.scope.empty();
+        auto allows = [&](const std::string& s) {
+            return any || std::find(p.scope.begin(), p.scope.end(), s) != p.scope.end();
+        };
+        if (allows("master")) return true;  // always available
+        if (allows("bus") && !state.listBusses().empty()) return true;
+        if (allows("track")) {
+            for (auto& t : state.listTracks()) {
+                auto* ts = state.findTrack(t.id);
+                if (!ts || ts->sourceType == TrackSourceType::Action) continue;
+                if (p.sourceTypes.empty()) return true;
+                std::string st;
+                switch (ts->sourceType) {
+                    case TrackSourceType::Instrument: st = "Instrument"; break;
+                    case TrackSourceType::AudioInput: st = "AudioInput"; break;
+                    case TrackSourceType::Action:     st = "Action"; break;
+                }
+                if (std::find(p.sourceTypes.begin(), p.sourceTypes.end(), st)
+                    != p.sourceTypes.end()) return true;
+            }
+        }
+        return false;
+    };
+
+    for (const auto& p : a.params) {
+        if (!p.required) continue;
+        switch (p.type) {
+        case ParamType::ChannelRef:
+            if (!channelHasCandidate(p)) return false;
+            break;
+        case ParamType::PresetRef: {
+            bool any = false;
+            for (auto& plugin : state.allPlugins()) {
+                if (!state.presetsForPlugin(plugin.id).empty()) { any = true; break; }
+            }
+            if (!any) return false;
+            break;
+        }
+        case ParamType::Enum:
+            if (p.enumValues.empty()) return false;
+            break;
+        case ParamType::Float:
+        case ParamType::Morph:
+            break;  // always satisfiable
+        }
+    }
+    return true;
+}
 
 ActionInstanceForm::ActionInstanceForm(StateAPI& s, const ActionInfo& a)
     : state(s), action(a) {
@@ -25,7 +101,7 @@ void ActionInstanceForm::buildWidgets() {
         w.schema = &p;
 
         w.label = std::make_unique<juce::Label>();
-        w.label->setText(juce::String(p.name) + (p.required ? "" : " (optional)"),
+        w.label->setText(humanizeLabel(p.name) + (p.required ? "" : " (optional)"),
                          juce::dontSendNotification);
         w.label->setColour(juce::Label::textColourId,
                            Theme::color(Theme::Color::textSecondary));
@@ -296,7 +372,7 @@ bool ActionInstanceForm::valid() const {
 }
 
 int ActionInstanceForm::getDesiredHeight() const {
-    return headerHeight + (int)widgets.size() * rowHeight + footerHeight;
+    return headerHeight + (int)widgets.size() * rowHeight + paramsBottomPad + footerHeight;
 }
 
 void ActionInstanceForm::paint(juce::Graphics& g) {
@@ -338,37 +414,3 @@ void ActionInstanceForm::resized() {
     okButton.setBounds(cancelButton.getX() - Theme::spacingS - btnW, btnY, btnW, 32);
 }
 
-void ActionInstanceForm::launch(StateAPI& state, const ActionInfo& action,
-                                 const juce::var& initialArgs,
-                                 std::function<void(const juce::var&)> onComplete) {
-    auto* form = new ActionInstanceForm(state, action);
-    if (!initialArgs.isVoid()) form->setInitialArgs(initialArgs);
-
-    struct FormWindow : public juce::DocumentWindow {
-        std::function<void()> onClose;
-        FormWindow() : DocumentWindow("Action",
-                                       Theme::color(Theme::Color::bgOverlay),
-                                       closeButton) {}
-        void closeButtonPressed() override { if (onClose) onClose(); }
-    };
-    auto* window = new FormWindow();
-    window->setContentOwned(form, true);
-    window->centreWithSize(form->getWidth(), form->getHeight());
-    window->setUsingNativeTitleBar(false);
-    window->setVisible(true);
-    window->setAlwaysOnTop(true);
-
-    form->onAccept = [form, window, onComplete]() {
-        auto args = form->getArgs();
-        delete window;
-        if (onComplete) onComplete(args);
-    };
-    form->onCancel = [window, onComplete]() {
-        delete window;
-        if (onComplete) onComplete(juce::var());
-    };
-    window->onClose = [window, onComplete]() {
-        delete window;
-        if (onComplete) onComplete(juce::var());
-    };
-}

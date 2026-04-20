@@ -108,7 +108,7 @@ private:
                         juce::Point<int> screenPos, bool asScoreStep);
     void showControlPicker(bool forScore, juce::Point<int> screenPos);
 
-    std::string formatArgs(const std::string& argsJson) const;
+    std::string formatArgs(const ActionInfo* action, const std::string& argsJson) const;
     bool isDeviceConnected(const std::string& deviceId) const;
 
     static constexpr int sectionTitleHeight = 38;

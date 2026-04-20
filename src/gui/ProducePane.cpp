@@ -1,6 +1,7 @@
 #include "gui/ProducePane.h"
 #include "gui/MorphEditor.h"
 #include "gui/ActionInstanceForm.h"
+#include "gui/ActionPicker.h"
 #include "api/StateAPI.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
@@ -97,103 +98,34 @@ double ProducePane::xToBeat(int x) const {
 
 void ProducePane::showActionPicker(juce::Point<int> screenPos, const std::string& trackId, double beat) {
     if (!state) return;
-    auto actions = state->allActions();
-    auto stateTracks = state->listTracks();
-
-    juce::PopupMenu menu;
-    int baseId = 1;
-    int morphIdx = -1;
-
-    for (int ai = 0; ai < (int)actions.size(); ++ai) {
-        auto& act = actions[ai];
-
-        // Skip "morph" — it goes at the bottom
-        if (act.name == "morph") { morphIdx = ai; continue; }
-
-        if (act.params.empty()) {
-            menu.addItem(baseId + ai * 1000, juce::String(act.label));
-            continue;
-        }
-
-        const auto& firstParam = act.params[0];
-        bool isTrackParam = firstParam.type == ParamType::ChannelRef;
-        // "channel" here = ref admits bus/master too (either scope empty or includes non-track).
-        bool isChannelParam = isTrackParam && (firstParam.scope.empty()
-            || std::any_of(firstParam.scope.begin(), firstParam.scope.end(),
-                           [](const std::string& s) { return s != "track"; }));
-
-        if (isTrackParam) {
-            juce::PopupMenu trackMenu;
-            for (int ti = 0; ti < (int)stateTracks.size(); ++ti) {
-                auto* ts = state->findTrack(stateTracks[ti].id);
-                if (ts && ts->sourceType == TrackSourceType::Action) continue;
-                trackMenu.addItem(baseId + ai * 1000 + ti + 1, juce::String(stateTracks[ti].name));
-            }
-            if (isChannelParam) {
-                auto busses = state->listBusses();
-                if (!busses.empty()) trackMenu.addSeparator();
-                for (int bi = 0; bi < (int)busses.size(); ++bi)
-                    trackMenu.addItem(baseId + ai * 1000 + 500 + bi, juce::String(busses[bi].name));
-                trackMenu.addSeparator();
-                trackMenu.addItem(baseId + ai * 1000 + 999, "Main");
-            }
-            menu.addSubMenu(juce::String(act.label), trackMenu);
-        } else {
-            menu.addItem(baseId + ai * 1000, juce::String(act.label));
-        }
-    }
-
-    // Morph at the bottom
-    if (morphIdx >= 0) {
-        menu.addSeparator();
-        menu.addItem(baseId + morphIdx * 1000, "Morph");
-    }
-
-    menu.showMenuAsync(
-        juce::PopupMenu::Options()
-            .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, trackId, beat, actions, stateTracks, baseId](int result) {
-            if (result <= 0) return;
-            int encoded = result - baseId;
-            int ai = encoded / 1000;
-            int sub = encoded % 1000;
-            if (ai < 0 || ai >= (int)actions.size()) return;
-
-            // Morph: open the morph editor
-            if (actions[ai].name == "morph") {
-                showMorphEditor(trackId, beat);
+    auto trkId = trackId;
+    auto evBeat = beat;
+    ActionPicker::launch(*state, screenPos, /*filter*/ {},
+        [this, trkId, evBeat](const ActionInfo& action, const juce::var& args) {
+            // Morph: route to the dedicated MorphEditor (richer compound UI).
+            // The form's morph button would open the same editor, but our
+            // legacy path stores the morph blob unwrapped — keep that path
+            // until we unify the storage format.
+            if (action.name == "morph") {
+                showMorphEditor(trkId, evBeat);
                 return;
             }
-
-            // Resolve first arg (track/channel ID)
-            juce::String firstArg;
-            if (sub == 999) firstArg = "Main";
-            else if (sub >= 500) {
-                auto busses = state->listBusses();
-                int bi = sub - 500;
-                if (bi < (int)busses.size()) firstArg = juce::String(busses[bi].id.str());
-            } else if (sub > 0) {
-                int ti = sub - 1;
-                if (ti < (int)stateTracks.size()) firstArg = juce::String(stateTracks[ti].id.str());
+            auto* ts = state ? state->findTrack(TrackId{trkId}) : nullptr;
+            if (!ts) {
+                perfLog("[ProducePane] action create: track '%s' not found\n", trkId.c_str());
+                return;
             }
-
-            auto actionId = actions[ai].id;
-            juce::var initialArgs;
-            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
-            ActionInstanceForm::launch(*state, actions[ai], initialArgs,
-                [this, trackId, beat, actionId](const juce::var& args) {
-                    if (args.isVoid()) return;  // cancelled
-                    auto* ts = state ? state->findTrack(TrackId{trackId}) : nullptr;
-                    if (!ts) return;
-                    ActionEventData ae;
-                    ae.id = ActionEventId{juce::Uuid().toString().toStdString()};
-                    ae.beat = beat;
-                    ae.actionId = actionId;
-                    ae.argsJson = juce::JSON::toString(args, true).toStdString();
-                    ts->actionData.push_back(std::move(ae));
-                    state->markDirty();
-                    repaint();
-                });
+            ActionEventData ae;
+            ae.id = ActionEventId{juce::Uuid().toString().toStdString()};
+            ae.beat = evBeat;
+            ae.actionId = action.id;
+            ae.argsJson = juce::JSON::toString(args, true).toStdString();
+            perfLog("[ProducePane] action created: track='%s' beat=%.3f action='%s' args=%s (now %d events on track)\n",
+                    trkId.c_str(), evBeat, action.name.c_str(),
+                    ae.argsJson.c_str(), (int)ts->actionData.size() + 1);
+            ts->actionData.push_back(std::move(ae));
+            state->markDirty();
+            repaint();
         });
 }
 
@@ -1484,41 +1416,16 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
         for (auto& hit : actionHitRects) {
             if (hit.bounds.contains(event.getPosition())) {
                 if (event.mods.isPopupMenu()) {
-                    // Right-click: find event beat and show action picker to replace/delete
-                    double evBeat = 0;
-                    auto* t = state ? state->findTrack(TrackId{hit.trackId}) : nullptr;
-                    if (t) {
-                        for (auto& ae : t->actionData)
-                            if (ae.id == hit.eventId) { evBeat = ae.beat; break; }
-                    }
+                    // Right-click: small menu with Delete + Replace.
                     auto trkId = hit.trackId;
                     auto evId = hit.eventId;
+                    auto screenPos = event.getScreenPosition();
                     juce::PopupMenu menu;
                     menu.addItem(1, "Delete");
-                    menu.addSeparator();
-                    // Reuse the action picker inline
-                    auto actions = state->allActions();
-                    auto stateTracks = state->listTracks();
-                    int baseId = 100;
-                    for (int ai = 0; ai < (int)actions.size(); ++ai) {
-                        if (actions[ai].name == "morph") continue;
-                        bool isTrackParam = !actions[ai].params.empty()
-                            && actions[ai].params[0].type == ParamType::ChannelRef;
-                        if (isTrackParam) {
-                            juce::PopupMenu sub;
-                            for (int ti = 0; ti < (int)stateTracks.size(); ++ti) {
-                                auto* ts2 = state->findTrack(stateTracks[ti].id);
-                                if (ts2 && ts2->sourceType == TrackSourceType::Action) continue;
-                                sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(stateTracks[ti].name));
-                            }
-                            menu.addSubMenu(juce::String(actions[ai].label), sub);
-                        } else {
-                            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
-                        }
-                    }
+                    menu.addItem(2, "Replace action...");
                     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                        juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
-                        [this, trkId, evId, actions, stateTracks, baseId](int result) {
+                        juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
+                        [this, trkId, evId, screenPos](int result) {
                             if (result <= 0) return;
                             auto* t = state ? state->findTrack(TrackId{trkId}) : nullptr;
                             if (!t) return;
@@ -1528,24 +1435,14 @@ void ProducePane::mouseDown(const juce::MouseEvent& event) {
                                         [&](auto& e) { return e.id == evId; }), t->actionData.end());
                                 state->markDirty(); repaint(); return;
                             }
-                            int encoded = result - baseId;
-                            int ai = encoded / 1000, sub = encoded % 1000;
-                            if (ai < 0 || ai >= (int)actions.size()) return;
-                            juce::String firstArg;
-                            if (sub > 0 && sub < 500) {
-                                int ti = sub - 1;
-                                if (ti < (int)stateTracks.size()) firstArg = juce::String(stateTracks[ti].id.str());
-                            }
-                            juce::var initialArgs;
-                            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
-                            ActionInstanceForm::launch(*state, actions[ai], initialArgs,
-                                [this, trkId, evId, ai, actions](const juce::var& args) {
-                                    if (args.isVoid()) return;
+                            // Replace: open the picker; on accept, swap the existing event.
+                            ActionPicker::launch(*state, screenPos, /*filter*/ {},
+                                [this, trkId, evId](const ActionInfo& action, const juce::var& args) {
                                     auto* t2 = state ? state->findTrack(TrackId{trkId}) : nullptr;
                                     if (!t2) return;
                                     for (auto& ae : t2->actionData) {
                                         if (ae.id == evId) {
-                                            ae.actionId = actions[ai].id;
+                                            ae.actionId = action.id;
                                             ae.argsJson = juce::JSON::toString(args, true).toStdString();
                                             break;
                                         }

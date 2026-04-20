@@ -1,5 +1,6 @@
 #include "gui/MorphEditor.h"
 #include "gui/ActionInstanceForm.h"
+#include "gui/ActionPicker.h"
 #include "api/StateAPI.h"
 
 MorphEditor::MorphEditor(StateAPI& state) : state(state) {
@@ -164,91 +165,16 @@ void MorphEditor::mouseUp(const juce::MouseEvent& event) {
 }
 
 void MorphEditor::showActionPickerForSlot(int slotIndex, juce::Point<int> screenPos) {
-    auto actions = state.allActions();
-    auto tracks = state.listTracks();
-
-    juce::PopupMenu menu;
-    int baseId = 1;
-
-    for (int ai = 0; ai < (int)actions.size(); ++ai) {
-        if (actions[ai].name == "morph") continue;  // no nested morphs
-
-        if (actions[ai].params.empty()) {
-            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
-            continue;
-        }
-
-        const auto& firstParam = actions[ai].params[0];
-        bool isTrackParam = firstParam.type == ParamType::ChannelRef;
-        bool isChannelParam = isTrackParam && (firstParam.scope.empty()
-            || std::any_of(firstParam.scope.begin(), firstParam.scope.end(),
-                           [](const std::string& s) { return s != "track"; }));
-
-        if (isTrackParam) {
-            juce::PopupMenu sub;
-            for (int ti = 0; ti < (int)tracks.size(); ++ti) {
-                auto* ts = state.findTrack(tracks[ti].id);
-                if (ts && ts->sourceType == TrackSourceType::Action) continue;
-                sub.addItem(baseId + ai * 1000 + ti + 1, juce::String(tracks[ti].name));
-            }
-            if (isChannelParam) {
-                auto busses = state.listBusses();
-                if (!busses.empty()) sub.addSeparator();
-                for (int bi = 0; bi < (int)busses.size(); ++bi)
-                    sub.addItem(baseId + ai * 1000 + 500 + bi, juce::String(busses[bi].name));
-                sub.addSeparator();
-                sub.addItem(baseId + ai * 1000 + 999, "Main");
-            }
-            menu.addSubMenu(juce::String(actions[ai].label), sub);
-        } else {
-            menu.addItem(baseId + ai * 1000, juce::String(actions[ai].label));
-        }
-    }
-
-    menu.showMenuAsync(
-        juce::PopupMenu::Options()
-            .withTargetScreenArea(juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, slotIndex, actions, tracks, baseId](int result) {
+    // Filter out morph itself — no nested morphs.
+    auto noMorph = [](const ActionInfo& a) { return a.name != "morph"; };
+    ActionPicker::launch(state, screenPos, noMorph,
+        [this, slotIndex](const ActionInfo& action, const juce::var& args) {
             if (slotIndex >= (int)slots.size()) return;
-            if (result <= 0) {
-                // Cancelled — remove the slot if it's unassigned
-                if (slots[slotIndex].actionName.empty() || slots[slotIndex].actionName == "...") {
-                    slots.erase(slots.begin() + slotIndex);
-                    setSize(panelWidth, getDesiredHeight());
-                    repaint();
-                }
-                return;
-            }
-            int encoded = result - baseId;
-            int ai = encoded / 1000;
-            int sub = encoded % 1000;
-            if (ai < 0 || ai >= (int)actions.size()) return;
-
-            slots[slotIndex].actionName = actions[ai].name;
-            slots[slotIndex].actionLabel = actions[ai].label;
-
-            juce::String firstArg;
-            if (sub == 999) firstArg = "Main";
-            else if (sub >= 500) {
-                auto busses = state.listBusses();
-                int bi = sub - 500;
-                if (bi < (int)busses.size()) firstArg = juce::String(busses[bi].id.str());
-            } else if (sub > 0) {
-                int ti = sub - 1;
-                if (ti < (int)tracks.size()) firstArg = juce::String(tracks[ti].id.str());
-            }
-
-            juce::var initialArgs;
-            if (firstArg.isNotEmpty()) initialArgs.append(firstArg);
-            ActionInstanceForm::launch(state, actions[ai], initialArgs,
-                [this, slotIndex](const juce::var& formArgs) {
-                    if (formArgs.isVoid()) return;
-                    if (slotIndex >= (int)slots.size()) return;
-                    auto argsJson = juce::JSON::toString(formArgs, true).toStdString();
-                    slots[slotIndex].argsJson = argsJson;
-                    slots[slotIndex].argsSummary = summarizeArgs(
-                        slots[slotIndex].actionName, argsJson).toStdString();
-                    repaint();
-                });
+            slots[slotIndex].actionName = action.name;
+            slots[slotIndex].actionLabel = action.label;
+            auto argsJson = juce::JSON::toString(args, true).toStdString();
+            slots[slotIndex].argsJson = argsJson;
+            slots[slotIndex].argsSummary = summarizeArgs(action.name, argsJson).toStdString();
+            repaint();
         });
 }
