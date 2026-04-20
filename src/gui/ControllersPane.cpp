@@ -1,4 +1,5 @@
 #include "gui/ControllersPane.h"
+#include "gui/UiTerms.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -135,7 +136,7 @@ void ControllersPane::paint(juce::Graphics& g) {
     int inSongHeaderY = area.getY() + leftHeaderHeight + 2;
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText("In Song", area.getRight() - 58, inSongHeaderY, 50, 16, juce::Justification::centredRight);
+    g.drawText("In " + UiTerms::docSingular, area.getRight() - 58, inSongHeaderY, 50, 16, juce::Justification::centredRight);
 
     int contentTop = area.getY() + leftHeaderHeight;
 

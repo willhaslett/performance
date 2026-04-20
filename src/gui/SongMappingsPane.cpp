@@ -1,6 +1,7 @@
 #include "gui/SongMappingsPane.h"
 #include "gui/ActionInstanceForm.h"
 #include "gui/ActionPicker.h"
+#include "gui/UiTerms.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -199,7 +200,9 @@ void SongMappingsPane::paintAtemporalSection(juce::Graphics& g) {
     auto* song = state.currentSong();
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeTitle));
-    juce::String mainTitle = song ? "Song Mappings: " + juce::String(song->name) : "Song Mappings";
+    juce::String mainTitle = song
+        ? UiTerms::docSingular + " Mappings: " + juce::String(song->name)
+        : UiTerms::docSingular + " Mappings";
     g.drawText(mainTitle, area.getX() + panelPadding, area.getY() + 10, 400, 22,
                juce::Justification::centredLeft);
 
@@ -213,7 +216,8 @@ void SongMappingsPane::paintAtemporalSection(juce::Graphics& g) {
                juce::Justification::centredLeft);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeMd));
-    g.drawText("Mappings active throughout the song", area.getX() + panelPadding,
+    g.drawText("Mappings active throughout the " + UiTerms::docSingularLower,
+               area.getX() + panelPadding,
                area.getY() + rightHeaderHeight + 20, 300, 14, juce::Justification::centredLeft);
 
     g.setColour(Theme::color(Theme::Color::textSecondary));
@@ -286,7 +290,7 @@ void SongMappingsPane::paintScoreSection(juce::Graphics& g) {
                juce::Justification::centredLeft);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeMd));
-    g.drawText("Ordered one-time actions performed during this song",
+    g.drawText("Ordered one-time actions performed during this " + UiTerms::docSingularLower,
                area.getX() + panelPadding, area.getY() + 20, area.getWidth() - 40, 14,
                juce::Justification::centredLeft);
 

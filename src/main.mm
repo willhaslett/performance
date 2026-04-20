@@ -12,6 +12,7 @@
 #include "gui/KeyBindingManager.h"
 #include "gui/KeyBindingEditor.h"
 #include "gui/PluginInstallDialog.h"
+#include "gui/UiTerms.h"
 #include "engine/Log.h"
 #include "telemetry/InstallId.h"
 #include "telemetry/TelemetryShipper.h"
@@ -19,7 +20,7 @@
 #import <AppKit/AppKit.h>
 
 static juce::String uniqueSongName(StateAPI& state) {
-    const juce::String base = "New Song";
+    const juce::String base = "New " + UiTerms::docSingular;
     auto taken = [&](const juce::String& name) {
         for (auto& s : state.allSongs())
             if (juce::String(s.name) == name) return true;
@@ -238,7 +239,7 @@ public:
         };
 
         if (index == 0) {  // File
-            menu.addItem(shortcut(CommandIDs::newSong, "New Song", "file.newSong"));
+            menu.addItem(shortcut(CommandIDs::newSong, "New " + UiTerms::docSingular, "file.newSong"));
 
             // Open Song submenu — lists all songs, ticks the current one
             juce::PopupMenu openSubmenu;
@@ -250,7 +251,7 @@ public:
                 bool isCurrent = (songs[i].id == currentSongId);
                 openSubmenu.addItem(100 + i, juce::String(songs[i].name), true, isCurrent);
             }
-            menu.addSubMenu("Open Song", openSubmenu, !songs.empty());
+            menu.addSubMenu("Open " + UiTerms::docSingular, openSubmenu, !songs.empty());
 
             menu.addItem(shortcut(CommandIDs::saveSong, "Save", "file.save"));
             menu.addSeparator();
@@ -258,7 +259,7 @@ public:
                          juce::String::fromUTF8("Bounce\xe2\x80\xa6"),
                          coord.state().currentSong() != nullptr);
             menu.addSeparator();
-            menu.addItem(CommandIDs::closeSong, "Close Song");
+            menu.addItem(CommandIDs::closeSong, "Close " + UiTerms::docSingular);
         }
         else if (index == 1) {  // Edit
             menu.addItem(shortcut(CommandIDs::menuUndo, "Undo", "edit.undo", coord.state().canUndo()));
@@ -670,7 +671,7 @@ public:
 
         // Wire sidebar song loading
         layout->getSidebar().onLoadSong = [this, layout](const std::string& songId) {
-            layout->showOverlay("Loading song...");
+            layout->showOverlay("Loading " + UiTerms::docSingularLower + "...");
             juce::MessageManager::callAsync([this, layout, songId]() {
                 coordinator->loadSong(songId);
                 layout->hideOverlay();
@@ -873,7 +874,7 @@ private:
 
         chooser.onLoadSong = [this, layout](const std::string& songId) {
             layout->removeChildComponent(&layout->startupChooser);
-            layout->showOverlay("Loading song...");
+            layout->showOverlay("Loading " + UiTerms::docSingularLower + "...");
             juce::MessageManager::callAsync([this, layout, songId] {
                 coordinator->loadSong(songId);
                 layout->hideOverlay();
@@ -893,9 +894,9 @@ private:
         auto noKey = juce::KeyPress();  // unbound by default
 
         // File
-        k.registerCommand("file.newSong", "File", "New Song", noKey);
+        k.registerCommand("file.newSong", "File", ("New " + UiTerms::docSingular).toStdString(), noKey);
         k.registerCommand("file.save", "File", "Save", KB::save);
-        k.registerCommand("file.closeSong", "File", "Close Song", noKey);
+        k.registerCommand("file.closeSong", "File", ("Close " + UiTerms::docSingular).toStdString(), noKey);
         k.registerCommand("file.settings", "File", "Settings", KB::settings);
 
         // Edit

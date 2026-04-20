@@ -1,6 +1,7 @@
 #include "gui/MainLayout.h"
 #include "gui/KeyBindings.h"
 #include "gui/Theme.h"
+#include "gui/UiTerms.h"
 #include "BuildVersion.h"
 #include "BinaryData.h"
 #include <set>
@@ -35,7 +36,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         if (stale.empty()) return;
 
         juce::String body;
-        body << "This song has " << (int)stale.size()
+        body << "This " << UiTerms::docSingularLower << " has " << (int)stale.size()
              << (stale.size() == 1 ? " binding or action event" : " bindings or action events")
              << " referencing entities that no longer exist:\n\n";
         int shown = 0;
@@ -685,7 +686,7 @@ void MainLayout::StartupChooser::paint(juce::Graphics& g) {
     // Title
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeTitle));
-    g.drawText("Choose a Song", cardBounds.getX(), cardBounds.getY(),
+    g.drawText("Choose a " + UiTerms::docSingular, cardBounds.getX(), cardBounds.getY(),
                cardBounds.getWidth(), titleH, juce::Justification::centred);
 
     // Song list container — Finder-like inset pane
@@ -723,7 +724,7 @@ void MainLayout::StartupChooser::paint(juce::Graphics& g) {
     if (songs.empty()) {
         g.setColour(Theme::color(Theme::Color::textDim));
         g.setFont(Theme::font(Theme::fontSizeMd));
-        g.drawText("No songs yet", listBounds, juce::Justification::centred);
+        g.drawText("No " + UiTerms::docPluralLower + " yet", listBounds, juce::Justification::centred);
     }
 
     // "Create New Song" button — visually distinct from the list
@@ -738,7 +739,7 @@ void MainLayout::StartupChooser::paint(juce::Graphics& g) {
         g.setColour(Theme::color(Theme::Color::accent));
     }
     g.setFont(Theme::font(Theme::fontSizeLg));
-    g.drawText("Create New Song", newSongBounds, juce::Justification::centred);
+    g.drawText("Create New " + UiTerms::docSingular, newSongBounds, juce::Justification::centred);
 }
 
 void MainLayout::StartupChooser::mouseUp(const juce::MouseEvent& event) {

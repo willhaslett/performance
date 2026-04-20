@@ -1,4 +1,5 @@
 #include "gui/Sidebar.h"
+#include "gui/UiTerms.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "state/StateEvents.h"
@@ -56,7 +57,7 @@ void Sidebar::rebuild() {
     y += sectionGap;
 
     // --- Songs ---
-    items.push_back({ Item::SectionHeader, "Songs", "", {} });
+    items.push_back({ Item::SectionHeader, UiTerms::docPlural, "", {} });
     items.back().bounds = { 0, y, getWidth(), sectionHeight };
     y += sectionHeight;
 
@@ -70,7 +71,7 @@ void Sidebar::rebuild() {
     }
 
     // + New Song
-    items.push_back({ Item::ActionButton, "+ New Song", "new_song", {} });
+    items.push_back({ Item::ActionButton, "+ New " + UiTerms::docSingular, "new_song", {} });
     items.back().bounds = { 0, y, getWidth(), itemHeight };
     y += itemHeight;
 }
@@ -169,7 +170,7 @@ void Sidebar::mouseUp(const juce::MouseEvent& event) {
         if (item.kind == Item::SongEntry && event.mods.isPopupMenu() && onDeleteSong) {
             auto songId = item.id;
             juce::PopupMenu menu;
-            menu.addItem(1, "Delete Song");
+            menu.addItem(1, "Delete " + UiTerms::docSingular);
             menu.showMenuAsync(juce::PopupMenu::Options(),
                 [this, songId](int result) {
                     if (result == 1 && onDeleteSong)
