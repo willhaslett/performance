@@ -2902,6 +2902,134 @@ public:
 static PersistenceExtTests persistenceExtTests;
 
 // ============================================================================
+// Action algebra tests
+// ============================================================================
+
+#include "state/ActionAlgebra.h"
+
+class ActionAlgebraTests : public juce::UnitTest {
+public:
+    ActionAlgebraTests() : UnitTest("ActionAlgebra", "Performance") {}
+
+    void runTest() override {
+        using namespace ActionAlgebra;
+
+        beginTest("Builders construct expected nodes");
+        {
+            auto n = set({ Target::Kind::MasterGain, {}, -1 }, num(0.5));
+            expect(n.op == ActionNode::Op::Set);
+            expect(n.target.kind == Target::Kind::MasterGain);
+            expect(n.to == num(0.5));
+
+            auto i = interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                 captureCurrent(), num(0), num(3.0), "easein");
+            expect(i.op == ActionNode::Op::Interpolate);
+            expect(i.from == captureCurrent());
+            expect(i.easing == "easein");
+        }
+
+        beginTest("Round-trip — flat ops");
+        auto roundTrip = [this](const ActionNode& n) {
+            auto json = toJson(n);
+            auto back = fromJson(json);
+            expect(n == back);
+        };
+        {
+            roundTrip(set({ Target::Kind::MasterGain, {}, -1 }, num(0.5)));
+            roundTrip(interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                   captureCurrent(), num(0), num(3.0), "easein"));
+            roundTrip(delay(num(2.5), set({ Target::Kind::TrackGain, "T", -1 }, num(0))));
+            roundTrip(lua("setTrackGain(args[1], 0)"));
+        }
+
+        beginTest("Round-trip — nested composites");
+        {
+            auto fade = interpolate({ Target::Kind::TrackGain, "A", -1 },
+                                     captureCurrent(), num(0), num(3.0), "easein");
+            auto fadeUp = interpolate({ Target::Kind::TrackGain, "B", -1 },
+                                       captureCurrent(), num(1), num(3.0), "easein");
+            roundTrip(parallel({ fade, fadeUp }));
+            roundTrip(sequence({ fade, delay(num(1.0), fadeUp) }));
+        }
+
+        beginTest("Round-trip — placeholders");
+        {
+            auto t = interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                 captureCurrent(), num(0),
+                                 placeholder("duration"),
+                                 "easein");
+            roundTrip(t);
+            auto json = toJson(t);
+            // Placeholder must stringify as the {"$": name} object form, not a bare string.
+            expect(json.find("\"$\": \"duration\"") != std::string::npos);
+        }
+
+        beginTest("Round-trip — invoke");
+        {
+            auto inv = invoke("fadeOut", { placeholder("track"), num(3.0), placeholder("easing") });
+            roundTrip(inv);
+        }
+
+        beginTest("Substitution replaces placeholders in all slots");
+        {
+            auto tree = interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                    captureCurrent(), num(0),
+                                    placeholder("dur"), "easein");
+            std::unordered_map<std::string, Value> bindings {
+                { "dur", num(5.0) }
+            };
+            auto result = substitute(tree, bindings);
+            expect(result.duration == num(5.0));
+            // Other fields untouched
+            expect(result.from == captureCurrent());
+        }
+
+        beginTest("Substitution recurses into children");
+        {
+            auto child = interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                     captureCurrent(), num(0),
+                                     placeholder("dur"), "easein");
+            auto tree = delay(placeholder("wait"), child);
+            std::unordered_map<std::string, Value> bindings {
+                { "wait", num(2.0) },
+                { "dur",  num(4.0) }
+            };
+            auto result = substitute(tree, bindings);
+            expect(result.duration == num(2.0));
+            expect(result.children.size() == 1);
+            expect(result.children[0].duration == num(4.0));
+        }
+
+        beginTest("Substitution replaces invoke args");
+        {
+            auto tree = invoke("fadeOut", { placeholder("t"), num(1), placeholder("e") });
+            std::unordered_map<std::string, Value> bindings {
+                { "t", num(42.0) },
+                { "e", num(7.0) }
+            };
+            auto result = substitute(tree, bindings);
+            expect(result.invokeArgs.size() == 3);
+            expect(result.invokeArgs[0] == num(42.0));
+            expect(result.invokeArgs[1] == num(1));
+            expect(result.invokeArgs[2] == num(7.0));
+        }
+
+        beginTest("Unbound placeholder passes through unchanged");
+        {
+            auto tree = interpolate({ Target::Kind::TrackGain, "T", -1 },
+                                    captureCurrent(), num(0),
+                                    placeholder("dur"), "easein");
+            std::unordered_map<std::string, Value> empty;
+            auto result = substitute(tree, empty);
+            expect(result.duration.kind == Value::Kind::Placeholder);
+            expect(result.duration.placeholder == "dur");
+        }
+    }
+};
+
+static ActionAlgebraTests actionAlgebraTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 
