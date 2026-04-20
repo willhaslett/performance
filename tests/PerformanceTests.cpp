@@ -3030,6 +3030,174 @@ public:
 static ActionAlgebraTests actionAlgebraTests;
 
 // ============================================================================
+// Action interpreter tests (MockScheduler + MockTargetIO)
+// ============================================================================
+
+#include "state/ActionInterpreter.h"
+
+class ActionInterpreterTests : public juce::UnitTest {
+public:
+    ActionInterpreterTests() : UnitTest("ActionInterpreter", "Performance") {}
+
+    // A scheduler that never ticks on its own — the test calls complete()
+    // explicitly to advance. Records what was scheduled in order.
+    struct MockScheduler : ActionAlgebra::ActionInterpreter::Scheduler {
+        struct Call {
+            enum class Kind { Interpolate, Delay };
+            Kind kind;
+            float from, to, duration;
+            std::string easing;
+            std::function<void(float)> onTick;
+            std::function<void()> onComplete;
+        };
+        std::vector<Call> calls;
+
+        void interpolate(float from, float to, float dur,
+                         std::function<void(float)> onTick,
+                         std::function<void()> onComplete,
+                         const std::string& easing) override {
+            calls.push_back({ Call::Kind::Interpolate, from, to, dur, easing,
+                              std::move(onTick), std::move(onComplete) });
+        }
+        void delay(float dur, std::function<void()> onComplete) override {
+            calls.push_back({ Call::Kind::Delay, 0, 0, dur, {}, {}, std::move(onComplete) });
+        }
+
+        void complete(size_t idx) {
+            if (idx >= calls.size()) return;
+            auto& c = calls[idx];
+            if (c.kind == Call::Kind::Interpolate && c.onTick) c.onTick(c.to);
+            if (c.onComplete) c.onComplete();
+        }
+    };
+
+    struct MockIO : ActionAlgebra::ActionInterpreter::TargetIO {
+        std::map<std::string, float> values;
+        static std::string key(const ActionAlgebra::Target& t) {
+            return std::to_string((int)t.kind) + ":" + t.entityId + ":"
+                 + std::to_string(t.paramIndex);
+        }
+        float read(const ActionAlgebra::Target& t) override {
+            auto it = values.find(key(t));
+            return it != values.end() ? it->second : 0.0f;
+        }
+        void write(const ActionAlgebra::Target& t, float v) override {
+            values[key(t)] = v;
+        }
+    };
+
+    void runTest() override {
+        using namespace ActionAlgebra;
+
+        beginTest("Set writes immediately and fires onComplete synchronously");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            bool done = false;
+            interp.run(set({ Target::Kind::MasterGain, {}, -1 }, num(0.5f)),
+                       [&]() { done = true; });
+            expect(done);
+            expect(s.calls.empty());
+            expectWithinAbsoluteError(
+                io.values[MockIO::key({ Target::Kind::MasterGain, {}, -1 })], 0.5f, 0.0001f);
+        }
+
+        beginTest("Interpolate schedules with scheduler, onComplete fires on completion");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            // Pre-seed the current value so CaptureCurrent reads 0.8
+            Target target { Target::Kind::TrackGain, "T", -1 };
+            io.values[MockIO::key(target)] = 0.8f;
+
+            bool done = false;
+            interp.run(interpolate(target, captureCurrent(), num(0.0f), num(3.0f), "easein"),
+                       [&]() { done = true; });
+            expect((int)s.calls.size() == 1);
+            expect(s.calls[0].kind == MockScheduler::Call::Kind::Interpolate);
+            expectWithinAbsoluteError(s.calls[0].from, 0.8f, 0.0001f);
+            expectWithinAbsoluteError(s.calls[0].to, 0.0f, 0.0001f);
+            expectWithinAbsoluteError(s.calls[0].duration, 3.0f, 0.0001f);
+            expect(s.calls[0].easing == "easein");
+            expect(!done);
+            s.complete(0);
+            expect(done);
+            // Last tick wrote 'to' to the target
+            expectWithinAbsoluteError(io.values[MockIO::key(target)], 0.0f, 0.0001f);
+        }
+
+        beginTest("Delay schedules, completes after child completes");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            Target target { Target::Kind::MasterGain, {}, -1 };
+            bool done = false;
+            interp.run(delay(num(2.0f), set(target, num(1.0f))),
+                       [&]() { done = true; });
+            expect((int)s.calls.size() == 1);
+            expect(s.calls[0].kind == MockScheduler::Call::Kind::Delay);
+            expect(!done);
+            // Firing the delay's completion runs the child (Set writes + completes).
+            s.complete(0);
+            expect(done);
+            expectWithinAbsoluteError(io.values[MockIO::key(target)], 1.0f, 0.0001f);
+        }
+
+        beginTest("Parallel runs all children, completes when all done");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            Target a { Target::Kind::TrackGain, "A", -1 };
+            Target b { Target::Kind::TrackGain, "B", -1 };
+            bool done = false;
+            interp.run(parallel({
+                interpolate(a, num(0), num(1), num(3), "linear"),
+                interpolate(b, num(1), num(0), num(3), "linear"),
+            }), [&]() { done = true; });
+            expect((int)s.calls.size() == 2);
+            expect(!done);
+            s.complete(0);
+            expect(!done);  // still waiting on second
+            s.complete(1);
+            expect(done);
+        }
+
+        beginTest("Sequence runs children one after another");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            Target a { Target::Kind::TrackGain, "A", -1 };
+            bool done = false;
+            interp.run(sequence({
+                interpolate(a, num(0), num(1), num(2), "linear"),
+                interpolate(a, num(1), num(0), num(2), "linear"),
+            }), [&]() { done = true; });
+            // Only the first interpolate should be scheduled initially.
+            expect((int)s.calls.size() == 1);
+            s.complete(0);
+            expect(!done);
+            // Completing the first triggers the second.
+            expect((int)s.calls.size() == 2);
+            s.complete(1);
+            expect(done);
+        }
+
+        beginTest("Empty Parallel + empty Sequence complete immediately");
+        {
+            MockScheduler s; MockIO io;
+            ActionInterpreter interp(s, io);
+            int completions = 0;
+            interp.run(parallel({}), [&]() { ++completions; });
+            interp.run(sequence({}), [&]() { ++completions; });
+            expect(completions == 2);
+            expect(s.calls.empty());
+        }
+    }
+};
+
+static ActionInterpreterTests actionInterpreterTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

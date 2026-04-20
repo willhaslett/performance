@@ -68,6 +68,7 @@ target_sources(Performance PRIVATE
     src/state/ParamSchemaJson.cpp
     src/state/ActionRefs.cpp
     src/state/ActionAlgebra.cpp
+    src/state/ActionInterpreter.cpp
     src/persistence/PersistenceLayer.cpp
     src/gui/Theme.cpp
     src/gui/MainLayout.cpp
@@ -194,6 +195,7 @@ target_sources(PerformanceTests PRIVATE
     src/state/ParamSchemaJson.cpp
     src/state/ActionRefs.cpp
     src/state/ActionAlgebra.cpp
+    src/state/ActionInterpreter.cpp
     src/persistence/PersistenceLayer.cpp
     src/engine/EngineSync.cpp
     src/engine/AudioEngine.mm

@@ -12,10 +12,12 @@ public:
     AutomationEngine();
     ~AutomationEngine() override;
 
-    // Interpolate from → to over durationSec, calling callback with each value.
+    // Interpolate from → to over durationSec, calling callback with each
+    // value. `onComplete` fires after the final value is delivered (optional).
     // Returns a handle for cancellation.
     int interpolate(float from, float to, float durationSec,
-                    Callback callback, EasingFn easing = nullptr);
+                    Callback callback, EasingFn easing = nullptr,
+                    std::function<void()> onComplete = {});
 
     // One-shot delay: call callback after delaySec seconds.
     int delay(float delaySec, std::function<void()> callback);
@@ -45,6 +47,7 @@ private:
         double duration;
         bool isDelay = false;
         std::function<void()> delayCallback;
+        std::function<void()> onComplete;  // interpolate: fires after final value
     };
 
     std::vector<ActiveAutomation> active;

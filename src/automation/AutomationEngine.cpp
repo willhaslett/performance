@@ -10,7 +10,8 @@ AutomationEngine::~AutomationEngine() {
 }
 
 int AutomationEngine::interpolate(float from, float to, float durationSec,
-                                    Callback callback, EasingFn easing) {
+                                    Callback callback, EasingFn easing,
+                                    std::function<void()> onComplete) {
     int id = nextId++;
     ActiveAutomation a;
     a.id = id;
@@ -20,6 +21,7 @@ int AutomationEngine::interpolate(float from, float to, float durationSec,
     a.easing = easing ? std::move(easing) : EasingFn(easeLinear);
     a.startTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
     a.duration = durationSec;
+    a.onComplete = std::move(onComplete);
     active.push_back(std::move(a));
     perfLog("[Automation] Started interpolation %d: %.2f -> %.2f over %.2fs\n",
             id, from, to, durationSec);
@@ -72,6 +74,7 @@ void AutomationEngine::timerCallback() {
                 if (it->delayCallback) it->delayCallback();
             } else {
                 if (it->callback) it->callback(it->to);
+                if (it->onComplete) it->onComplete();
             }
             it = active.erase(it);
         } else {
