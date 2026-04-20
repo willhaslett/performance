@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include "state/ActionAlgebra.h"
 #include "state/Id.h"
 
 // In-memory state model — pure C++ structs, no JUCE dependency.
@@ -64,9 +65,16 @@ struct ActionInfo {
     std::string name;
     std::string label;
     std::vector<ParamSchema> params;   // typed schema — the source of truth
-    std::string luaCode;               // custom action body (empty for built-in)
+    std::string luaCode;               // legacy Lua action body (migrating to body's Op::Lua)
     SongId songId;                     // empty = global, non-empty = song-scoped
     int durationParamIndex = -1;       // which arg index is the duration (-1 = none)
+    // Algebra tree body; see docs/ACTION_ALGEBRA.md. Empty op=Set with no
+    // target + no `to` is treated as "unset" and the caller falls back to
+    // the legacy C++ dispatch in executeAction. Built-ins migrate to bodies
+    // one at a time; customs land here in step 7.
+    // Note: body is in-memory only today; persistence lands in step 8.
+    ActionAlgebra::ActionNode body;
+    bool hasBody = false;              // true iff body has been set via the typed registerAction
 };
 
 // --- Devices (registered physical controllers) ---

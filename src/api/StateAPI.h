@@ -149,6 +149,11 @@ public:
     ActionId registerAction(const std::string& name, const std::string& label = "",
                              std::vector<ParamSchema> params = {},
                              int durationParamIndex = -1);
+    // Typed + body variant for actions migrated to the algebra.
+    ActionId registerAction(const std::string& name, const std::string& label,
+                             std::vector<ParamSchema> params,
+                             ActionAlgebra::ActionNode body,
+                             int durationParamIndex = -1);
     ActionId createCustomAction(const std::string& name, const std::string& label,
                                  const std::string& luaCode,
                                  std::vector<ParamSchema> params = {},

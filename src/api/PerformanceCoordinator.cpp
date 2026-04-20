@@ -11,9 +11,86 @@
 #include "daw/InternalSequencer.h"
 #include "gui/Theme.h"
 #include "rendering/OfflineRenderer.h"
+#include "state/ActionInterpreter.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <set>
+
+// ===== Algebra interpreter adapters ==========================================
+// Wire the abstract Scheduler / TargetIO / TemplateResolver to the real
+// AutomationEngine and StateAPI. Lives inside PerformanceCoordinator because
+// it holds references to those engines; declared in the header as an opaque
+// struct so the interpreter stays out of that header's includes.
+
+struct PerformanceCoordinator::AlgebraAdapters {
+    struct Scheduler : ActionAlgebra::ActionInterpreter::Scheduler {
+        AutomationEngine& eng;
+        Scheduler(AutomationEngine& e) : eng(e) {}
+        void interpolate(float from, float to, float dur,
+                         std::function<void(float)> onTick,
+                         std::function<void()> onComplete,
+                         const std::string& easing) override {
+            eng.interpolate(from, to, dur, std::move(onTick),
+                            AutomationEngine::easingByName(easing),
+                            std::move(onComplete));
+        }
+        void delay(float dur, std::function<void()> onComplete) override {
+            eng.delay(dur, std::move(onComplete));
+        }
+    };
+
+    struct TargetIO : ActionAlgebra::ActionInterpreter::TargetIO {
+        StateAPI& state;
+        TargetIO(StateAPI& s) : state(s) {}
+        float read(const ActionAlgebra::Target& t) override {
+            using K = ActionAlgebra::Target::Kind;
+            switch (t.kind) {
+                case K::TrackGain:  return state.getTrackGain(TrackId{t.entityId});
+                case K::BusGain:    return state.getBusGain(BusId{t.entityId});
+                case K::MasterGain: return state.getMasterGain();
+                case K::TrackParam: return 0.0f;  // TODO: wire via EngineAPI in step 5/6
+                case K::Selection:  return 0.0f;  // string target; numeric read meaningless
+            }
+            return 0.0f;
+        }
+        void write(const ActionAlgebra::Target& t, float v) override {
+            using K = ActionAlgebra::Target::Kind;
+            switch (t.kind) {
+                case K::TrackGain:  state.setTrackGain(TrackId{t.entityId}, v); break;
+                case K::BusGain:    state.setBusGain(BusId{t.entityId}, v);     break;
+                case K::MasterGain: state.setMasterGain(v);                     break;
+                case K::TrackParam: break;  // step 5/6
+                case K::Selection:  break;  // step 5
+            }
+        }
+    };
+
+    struct Resolver : ActionAlgebra::ActionInterpreter::TemplateResolver {
+        StateAPI& state;
+        mutable Template cached;  // scratch storage for lookup() returning a pointer
+        Resolver(StateAPI& s) : state(s) {}
+        const Template* lookup(const std::string& name) override {
+            for (auto& a : state.allActions()) {
+                if (a.name != name) continue;
+                if (!a.hasBody) return nullptr;
+                cached.body = a.body;
+                cached.paramNames.clear();
+                for (auto& p : a.params) cached.paramNames.push_back(p.name);
+                return &cached;
+            }
+            return nullptr;
+        }
+    };
+
+    Scheduler scheduler;
+    TargetIO  io;
+    Resolver  resolver;
+    ActionAlgebra::ActionInterpreter interpreter;
+
+    AlgebraAdapters(AutomationEngine& eng, StateAPI& s)
+        : scheduler(eng), io(s), resolver(s),
+          interpreter(scheduler, io, &resolver) {}
+};
 
 PerformanceCoordinator::PerformanceCoordinator() {}
 
@@ -147,6 +224,7 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
     registerBuiltinActions();
 
     automationEngine = std::make_unique<AutomationEngine>();
+    algebraAdapters = std::make_unique<AlgebraAdapters>(*automationEngine, *stateAPI);
     songRuntime = std::make_unique<SongRuntime>();
     sequencerImpl = std::make_unique<InternalSequencer>();
     lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
@@ -1080,6 +1158,22 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return;
     }
 
+    // Algebra path — action has a tree body; let the interpreter handle it.
+    if (actionInfo && actionInfo->hasBody && algebraAdapters) {
+        std::vector<ActionAlgebra::Value> argValues;
+        if (auto* arr = args.getArray()) {
+            for (int i = 0; i < arr->size(); ++i) {
+                auto v = (*arr)[i];
+                if (v.isDouble() || v.isInt() || v.isInt64())
+                    argValues.push_back(ActionAlgebra::num((double)v));
+                else
+                    argValues.push_back(ActionAlgebra::text(v.toString().toStdString()));
+            }
+        }
+        algebraAdapters->interpreter.trigger(actionName, argValues, value);
+        return;
+    }
+
     auto getArg = [&](int index) -> juce::String {
         if (auto* arr = args.getArray())
             if (index < arr->size())
@@ -1108,32 +1202,8 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         auto targetId = resolveTrack(getArg(0));
         stateAPI->selectTrack(targetId, false);
     }
-    else if (actionName == "fadeOut") {
-        auto track = resolveTrack(getArg(0));
-        auto dur = getArgFloat(1, 3.0f);
-        float current = stateAPI->getTrackGain(track);
-        automationEngine->interpolate(current, 0.0f, dur,
-            [this, track](float v) { stateAPI->setTrackGain(track, v); },
-            AutomationEngine::easingByName(getArg(2).toStdString()));
-    }
-    else if (actionName == "fadeIn") {
-        auto track = resolveTrack(getArg(0));
-        auto dur = getArgFloat(1, 3.0f);
-        float current = stateAPI->getTrackGain(track);
-        automationEngine->interpolate(current, 1.0f, dur,
-            [this, track](float v) { stateAPI->setTrackGain(track, v); },
-            AutomationEngine::easingByName(getArg(2).toStdString()));
-    }
-    else if (actionName == "crossfade") {
-        auto from = resolveTrack(getArg(0));
-        auto to = resolveTrack(getArg(1));
-        auto dur = getArgFloat(2, 3.0f);
-        auto easing = AutomationEngine::easingByName(getArg(3).toStdString());
-        automationEngine->interpolate(1.0f, 0.0f, dur,
-            [this, from](float v) { stateAPI->setTrackGain(from, v); }, easing);
-        automationEngine->interpolate(0.0f, 1.0f, dur,
-            [this, to](float v) { stateAPI->setTrackGain(to, v); }, easing);
-    }
+    // fadeOut / fadeIn / crossfade now have algebra bodies — handled above
+    // by the interpreter path. See registerBuiltinActions().
     else if (actionName == "trackVolume") {
         auto channelId = getArg(0).toStdString();
         float gain = value * value * value * 2.0f;  // cubic curve, +6dB max
@@ -1458,14 +1528,45 @@ void PerformanceCoordinator::registerBuiltinActions() {
         return p;
     };
 
+    // Algebra bodies for the gain-family built-ins. Param placeholders:
+    // - track/bus refs → Value::Text substituted into Target.entityId via "$name" sigil
+    // - duration / easing → substituted as Values directly
+    //
+    // Explicitly qualify ActionAlgebra::... — we already have local lambdas
+    // named `track`, `duration`, and `easing` above that shadow any
+    // unqualified use.
+    namespace AA = ActionAlgebra;
+    auto trackGainTarget = [](const std::string& entityPh) {
+        return AA::Target { AA::Target::Kind::TrackGain, "$" + entityPh, -1 };
+    };
+
     stateAPI->registerAction("setActiveTrack", "Set active track",
         std::vector<ParamSchema>{ track("trackName", { "Instrument" }) });
+
     stateAPI->registerAction("fadeOut", "Fade out",
-        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() }, 1);
+        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() },
+        AA::interpolate(trackGainTarget("trackName"),
+                         AA::captureCurrent(), AA::num(0),
+                         AA::placeholder("duration"), "easein"),
+        1);
     stateAPI->registerAction("fadeIn", "Fade in",
-        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() }, 1);
+        std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() },
+        AA::interpolate(trackGainTarget("trackName"),
+                         AA::captureCurrent(), AA::num(1),
+                         AA::placeholder("duration"), "easein"),
+        1);
     stateAPI->registerAction("crossfade", "Crossfade",
-        std::vector<ParamSchema>{ track("fromTrack"), track("toTrack"), duration("duration"), easing() }, 2);
+        std::vector<ParamSchema>{ track("fromTrack"), track("toTrack"),
+                                   duration("duration"), easing() },
+        AA::parallel({
+            AA::invoke("fadeOut", { AA::placeholder("fromTrack"),
+                                     AA::placeholder("duration"),
+                                     AA::placeholder("easing") }),
+            AA::invoke("fadeIn",  { AA::placeholder("toTrack"),
+                                     AA::placeholder("duration"),
+                                     AA::placeholder("easing") }),
+        }),
+        2);
     stateAPI->registerAction("trackVolume", "Track Volume",
         std::vector<ParamSchema>{ channel("channel") });
     stateAPI->registerAction("morphToPreset", "Morph to preset",

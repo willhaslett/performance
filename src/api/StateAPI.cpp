@@ -1092,6 +1092,32 @@ ActionId StateAPI::registerAction(const std::string& name, const std::string& la
     return state.actions.back().id;
 }
 
+ActionId StateAPI::registerAction(const std::string& name, const std::string& label,
+                                   std::vector<ParamSchema> params,
+                                   ActionAlgebra::ActionNode body,
+                                   int durationParamIndex) {
+    for (auto& a : state.actions) {
+        if (a.name == name) {
+            a.label = label;
+            a.params = std::move(params);
+            a.body = std::move(body);
+            a.hasBody = true;
+            a.durationParamIndex = durationParamIndex;
+            return a.id;
+        }
+    }
+    ActionInfo action;
+    action.id = ActionId{generateId()};
+    action.name = name;
+    action.label = label;
+    action.params = std::move(params);
+    action.body = std::move(body);
+    action.hasBody = true;
+    action.durationParamIndex = durationParamIndex;
+    state.actions.push_back(std::move(action));
+    return state.actions.back().id;
+}
+
 ActionId StateAPI::createCustomAction(const std::string& name, const std::string& label,
                                        const std::string& luaCode,
                                        std::vector<ParamSchema> params,

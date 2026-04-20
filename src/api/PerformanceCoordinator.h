@@ -144,6 +144,10 @@ private:
     std::unique_ptr<AudioEngine> audioEngine;
     std::unique_ptr<EngineSync> engineSync;
     std::unique_ptr<AutomationEngine> automationEngine;
+    // Algebra interpreter for actions with a body. Set up in initialise();
+    // adapters live in the .cpp (they hold references to the above engines).
+    struct AlgebraAdapters;
+    std::unique_ptr<AlgebraAdapters> algebraAdapters;
     std::unique_ptr<MIDIEngine> midiEngine;
     std::unique_ptr<SongRuntime> songRuntime;
     std::unique_ptr<SequencerAPI> sequencerImpl;
