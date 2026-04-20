@@ -710,6 +710,11 @@ std::string PerformanceCoordinator::createSong(const juce::String& name) {
     stateAPI->setCurrentSong(songId);
     // Every song gets an Actions track
     stateAPI->createActionTrack("Actions");
+    // Point arrangement at the new song's tracks — without this, any
+    // later addMidiRegion / startRecording / etc. on the new song
+    // would hit the PERF_ASSERT in Arrangement for songTracks not set.
+    if (auto* song = stateAPI->findSong(songId))
+        arrangementImpl.setTracks(&song->tracks);
     perfLog("[Coordinator] Created song \"%s\" (id: %s)\n", name.toRawUTF8(), songId.str().c_str());
     return songId.str();
 }
