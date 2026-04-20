@@ -5,8 +5,12 @@
 #include "automation/AutomationEngine.h"
 #include "state/ParamSchemaJson.h"
 #include "engine/Log.h"
+#include "composer/ComposerOutput.h"
+#include "composer/NotationParser.h"
+#include "composer/ComposerWriter.h"
 #include <juce_events/juce_events.h>
 #include <filesystem>
+#include <set>
 #include <stdexcept>
 
 namespace fs = std::filesystem;
@@ -389,6 +393,53 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("saveInitialState", [&coord]() { coord.saveInitialState(); });
     lua.set_function("loadInitialState", [&coord]() { coord.loadInitialState(); });
+
+    // Composer: parse a notation string and drop the resulting notes
+    // into new regions on the current project's tracks. The notation
+    // itself declares which tracks it targets (via its `tracks:`
+    // block) — the caller only chooses *where* (startBeat) to place
+    // them. Defaults to beat 0 if startBeat is omitted.
+    //
+    // Returns a one-line status string on success; throws with an
+    // actionable message on parse or write failure so chat-side
+    // callers (Claude, dev console) self-correct instead of silently
+    // succeeding on no-ops.
+    //
+    // Example:
+    //   compose([[
+    //     tempo: 96
+    //     time_signature: 4/4
+    //     tracks:
+    //       Piano: 0
+    //     bar 1 | C
+    //       Piano: beat 1 C4 q mf | beat 3 E4 q mf
+    //   ]])
+    lua.set_function("compose", [&coord](const std::string& notation,
+                                          sol::optional<double> startBeat) -> std::string {
+        auto parser = makeDefaultNotationParser();
+        ComposerOutput out;
+        std::string err;
+        if (!parser->parse(juce::String(notation), out, err)) {
+            throw std::runtime_error(std::string("compose: parse error: ") + err);
+        }
+
+        ComposerWriter writer(coord);
+        if (!writer.apply(out, startBeat.value_or(0.0), err)) {
+            throw std::runtime_error(std::string("compose: write error: ") + err);
+        }
+
+        // Count per-track regions for a compact status line.
+        std::set<std::string> tracks;
+        for (auto& n : out.notes) tracks.insert(n.trackName);
+        char buf[192];
+        std::snprintf(buf, sizeof(buf),
+                      "ok: wrote %d note(s) across %d track(s) over %.2f beats at beat %.2f",
+                      (int) out.notes.size(),
+                      (int) tracks.size(),
+                      out.lengthBeats,
+                      startBeat.value_or(0.0));
+        return std::string(buf);
+    });
 
     // Devices
     lua.set_function("registerDevice", [&state, &coord](const std::string& name, const std::string& portName) -> std::string {
