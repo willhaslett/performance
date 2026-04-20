@@ -52,7 +52,6 @@ juce_add_binary_data(PerformanceResources
         runtime/bundled-plugins/LICENSES/NOTICE-Airwindows.txt
         runtime/bundled-plugins/LICENSES/NOTICE-Surge-XT.txt
         runtime/bundled-plugins/LICENSES/NOTICE-Dexed.txt
-        runtime/bundled-plugins/LICENSES/NOTICE-Dragonfly.txt
 )
 
 # --- Application ---

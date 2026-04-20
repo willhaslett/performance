@@ -68,46 +68,6 @@
       "auFile": "Surge XT Effects.component"
     },
     {
-      "name": "Dragonfly Hall Reverb",
-      "category": "effect",
-      "description": "Flagship hall reverb — vocals, guitars, anything wanting space.",
-      "license": "GPL-3.0",
-      "licenseFile": "NOTICE-Dragonfly.txt",
-      "sourceUrl": "https://github.com/michaelwillis/dragonfly-reverb",
-      "releaseUrl": "https://github.com/michaelwillis/dragonfly-reverb/releases",
-      "auFile": "DragonflyHallReverb.component"
-    },
-    {
-      "name": "Dragonfly Room Reverb",
-      "category": "effect",
-      "description": "Tighter-space reverb — drums, percussion, ambient rooms.",
-      "license": "GPL-3.0",
-      "licenseFile": "NOTICE-Dragonfly.txt",
-      "sourceUrl": "https://github.com/michaelwillis/dragonfly-reverb",
-      "releaseUrl": "https://github.com/michaelwillis/dragonfly-reverb/releases",
-      "auFile": "DragonflyRoomReverb.component"
-    },
-    {
-      "name": "Dragonfly Plate Reverb",
-      "category": "effect",
-      "description": "Classic plate reverb — go-to for vocals.",
-      "license": "GPL-3.0",
-      "licenseFile": "NOTICE-Dragonfly.txt",
-      "sourceUrl": "https://github.com/michaelwillis/dragonfly-reverb",
-      "releaseUrl": "https://github.com/michaelwillis/dragonfly-reverb/releases",
-      "auFile": "DragonflyPlateReverb.component"
-    },
-    {
-      "name": "Dragonfly Early Reflections",
-      "category": "effect",
-      "description": "Early reflections only — quick ambience without reverb tail.",
-      "license": "GPL-3.0",
-      "licenseFile": "NOTICE-Dragonfly.txt",
-      "sourceUrl": "https://github.com/michaelwillis/dragonfly-reverb",
-      "releaseUrl": "https://github.com/michaelwillis/dragonfly-reverb/releases",
-      "auFile": "DragonflyEarlyReflections.component"
-    },
-    {
       "name": "mda DubDelay",
       "category": "effect",
       "description": "Classic dub-style delay with saturation and filter.",
@@ -178,7 +138,7 @@
       "licenseFile": "NOTICE-Airwindows.txt",
       "sourceUrl": "https://github.com/airwindows/airwindows",
       "releaseUrl": "https://www.airwindows.com/",
-      "auFile": "Consolidated.component"
+      "auFile": "Airwindows Consolidated.component"
     }
   ]
 }

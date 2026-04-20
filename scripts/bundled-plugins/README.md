@@ -17,8 +17,7 @@ bundle design.
 | `build-mda.sh` | Clones `hollance/mda-plugins-juce` (MIT), builds AU format universal, places 11 mda plugins in staging. |
 | `download-surge-xt.sh` | Downloads Surge XT pluginsonly archive; extracts Surge XT + Surge XT Effects `.component` bundles. |
 | `download-dexed.sh` | Downloads Dexed macOS zip; extracts Dexed `.component`. |
-| `download-dragonfly.sh` | Downloads Dragonfly Reverb universal DMG; mounts and extracts 4 `.component` bundles (Hall, Room, Plate, Early Reflections). |
-| `download-airwindows.sh` | Downloads Airwindows Consolidated DMG from baconpaul/airwin2rack; mounts and extracts `Consolidated.component`. |
+| `download-airwindows.sh` | Downloads Airwindows Consolidated DMG from baconpaul/airwin2rack; mounts, expands the outer pkg, extracts the `_AU.pkg` sub-package's payload to get `Airwindows Consolidated.component`. |
 | `sign-all.sh` | Codesigns every `.component` in staging with our Developer ID. |
 | `notarize-all.sh` | *(planned)* Submits each signed `.component` to Apple notarytool, waits, staples the approval ticket in. |
 | `package-all.sh` | *(planned)* Zips each plugin's `.component` bundle(s) into versioned archives and records SHA-256 checksums. |

@@ -274,7 +274,7 @@ retrofit):
 
 ## The bundle
 
-19 plugins, ~280 MB uncompressed archives, ~200 MB compressed zips on
+15 plugins, ~250 MB uncompressed archives, ~180 MB compressed zips on
 S3. App DMG stays ~50 MB (unaffected). Biased toward "friend with a
 guitar, voice, or keyboard gets something surprising in the first 10
 minutes."
@@ -290,15 +290,11 @@ minutes."
 | **Dexed** | GPL-3.0 | [asb2m10/dexed](https://github.com/asb2m10/dexed) | Full DX7 patch compatibility; huge preset ecosystem |
 | **Surge XT** | GPL-3.0 | [surge-synthesizer/releases-xt](https://github.com/surge-synthesizer/releases-xt/releases) | Flagship synth; factory patches + wavetables |
 
-### Effects (13)
+### Effects (9)
 
 | Plugin | License | Source | Rationale |
 |---|---|---|---|
 | **Surge XT Effects** | GPL-3.0 | (bundled with Surge XT) | One rack covers most FX categories: reverb, delay, distortion, chorus, flanger, rotary, EQ, vocoder |
-| **Dragonfly Hall Reverb** | GPL-3.0 | [michaelwillis/dragonfly-reverb](https://github.com/michaelwillis/dragonfly-reverb) | Flagship reverb for guitars/vocals |
-| **Dragonfly Room Reverb** | GPL-3.0 | same | Tighter spaces |
-| **Dragonfly Plate Reverb** | GPL-3.0 | same | Vocal go-to |
-| **Dragonfly Early Reflections** | GPL-3.0 | same | Small-space/ambience |
 | **mda DubDelay** | MIT/GPL2+ | mda | Classic dub-style delay |
 | **mda Leslie** | MIT/GPL2+ | mda | Rotary speaker, makes any EP sound alive |
 | **mda RingMod** | MIT/GPL2+ | mda | Creative FX |
@@ -322,6 +318,7 @@ minutes."
 
 | Plugin | Why deferred |
 |---|---|
+| **Dragonfly Reverb family** (Hall / Room / Plate / Early Reflections) | Upstream dropped Audio Unit format in 3.2.10 — current release ships CLAP / LV2 / VST2 / VST3 only. Blocked until we add VST3 hosting (see `Open questions / future work` below). |
 | **Odin 2** | Only release is a 2020 `NightlyDevel` nightly, `.pkg`-only installer, stale for 5 years. Revisit if upstream releases a tagged universal build. |
 | **Vitalium** (MIT fork of Vital) | Ships without factory wavetables/presets — blank-canvas UX fails the "surprise in 10 min" test |
 | **Helm** | Last active build 2019; arm64 notarization risk |
@@ -440,3 +437,28 @@ Remaining:
   when the user creates their first instrument track." Leaner
   first-run, but more friction at creative moment. Lean toward
   first-launch for predictability.
+
+## Future work — VST3 support (0.2.x)
+
+The app currently hosts only Audio Unit plugins. Adding VST3 via
+JUCE's `VST3PluginFormat` unblocks:
+
+- **Dragonfly Reverb family** — upstream dropped AU in 3.2.10, ships
+  VST3 + CLAP + LV2 + VST2. Getting 4 reverbs back is the immediate
+  win.
+- **Many more free VST3 plugins** — most new GPL3 / MIT synths and
+  effects ship VST3 as their primary format. AU-only is increasingly
+  macOS-ghetto.
+- **Future-proofing.** The industry is converging on VST3 + CLAP.
+
+Rough scope: format registration is trivial (JUCE drop-in); the real
+work is generalizing plugin-scan paths, plugin-identifier storage
+(`format:uuid`), and any UI that assumes "AU" in copy. Probably 1–2
+focused days. Deferred behind the 0.1.0 ship gate.
+
+**Not** adding:
+
+- **VST2** — Steinberg SDK no longer distributed; every plugin that
+  ships VST2 also ships VST3.
+- **CLAP** — newer open standard; worth tracking. JUCE 8 is still
+  rolling out hosting support. Defer further.

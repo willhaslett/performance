@@ -3,6 +3,10 @@
 # effects in a single plugin. macOS universal AU from baconpaul's
 # airwin2rack release.
 #
+# Layout note: the DMG contains one outer .pkg which in turn contains
+# four sub-packages (APP, AU, CLAP, VST3). We extract only the AU
+# sub-package's Payload (a tar archive) to get the .component bundle.
+#
 # Upstream bumps:
 #   - the airwin2rack project uses a rolling "DAWPlugin" tag and rebuilds
 #     the DMG periodically. Update VERSION below to the dated filename of
@@ -10,7 +14,7 @@
 #     https://github.com/baconpaul/airwin2rack/releases/tag/DAWPlugin
 #
 # Usage:   scripts/bundled-plugins/download-airwindows.sh
-# Result:  Consolidated.component in .cache/staging/components/
+# Result:  Airwindows Consolidated.component in .cache/staging/components/
 
 set -euo pipefail
 
@@ -21,7 +25,10 @@ URL="https://github.com/baconpaul/airwin2rack/releases/download/DAWPlugin/${ARCH
 
 DOWNLOADS="$REPO_ROOT/.cache/downloads"
 STAGING="$REPO_ROOT/.cache/staging/components"
-MOUNT_POINT="$REPO_ROOT/.cache/airwindows-mount"
+SCRATCH="$REPO_ROOT/.cache/airwindows-scratch"
+MOUNT_POINT="$SCRATCH/mount"
+PKG_EXPAND="$SCRATCH/pkg-expand"
+AU_EXTRACT="$SCRATCH/au-extract"
 
 mkdir -p "$DOWNLOADS" "$STAGING"
 
@@ -35,25 +42,46 @@ else
     echo "    Using cached $ARCHIVE"
 fi
 
-echo "    Mounting DMG"
-rm -rf "$MOUNT_POINT"
+rm -rf "$SCRATCH"
 mkdir -p "$MOUNT_POINT"
+
+echo "    Mounting DMG"
 hdiutil attach -nobrowse -readonly -noautoopen \
     -mountpoint "$MOUNT_POINT" "$DOWNLOADS/$ARCHIVE" >/dev/null
-
 trap 'hdiutil detach "$MOUNT_POINT" -quiet 2>/dev/null || true' EXIT
 
-echo "    Copying Consolidated.component"
-src="$(find "$MOUNT_POINT" -type d -name "Consolidated.component" -print -quit)"
-if [ -z "$src" ]; then
-    echo "!! Could not find Consolidated.component in the mounted DMG"
-    echo "   Contents (*.component):"
-    find "$MOUNT_POINT" -maxdepth 4 -type d -name "*.component" | sed 's/^/     /'
+pkg="$(find "$MOUNT_POINT" -maxdepth 2 -name "*.pkg" -print -quit)"
+if [ -z "$pkg" ]; then
+    echo "!! No .pkg found in the mounted DMG"
     exit 1
 fi
-dest="$STAGING/Consolidated.component"
+
+echo "    Expanding outer pkg"
+pkgutil --expand "$pkg" "$PKG_EXPAND"
+
+au_pkg="$(find "$PKG_EXPAND" -maxdepth 2 -type d -name "*_AU.pkg" -print -quit)"
+if [ -z "$au_pkg" ]; then
+    echo "!! No _AU.pkg sub-package found"
+    echo "   Expanded contents:"
+    ls -la "$PKG_EXPAND" | sed 's/^/     /'
+    exit 1
+fi
+
+echo "    Extracting AU payload"
+mkdir -p "$AU_EXTRACT"
+(cd "$AU_EXTRACT" && tar xf "$au_pkg/Payload")
+
+src="$(find "$AU_EXTRACT" -type d -name "*.component" -print -quit)"
+if [ -z "$src" ]; then
+    echo "!! No .component found in AU payload"
+    find "$AU_EXTRACT" -maxdepth 4 -type d | sed 's/^/     /'
+    exit 1
+fi
+
+bundle_name="$(basename "$src")"  # "Airwindows Consolidated.component"
+dest="$STAGING/$bundle_name"
 rm -rf "$dest"
 cp -R "$src" "$dest"
-echo "    staged Consolidated.component"
+echo "    staged $bundle_name"
 
 echo "==> Done."
