@@ -58,16 +58,6 @@
       "auFile": "Surge XT.component"
     },
     {
-      "name": "Odin 2",
-      "category": "instrument",
-      "description": "Hybrid synth with 24-voice polyphony — different character from Surge.",
-      "license": "GPL-3.0",
-      "licenseFile": "NOTICE-Odin-2.txt",
-      "sourceUrl": "https://github.com/TheWaveWarden/odin2",
-      "releaseUrl": "https://github.com/TheWaveWarden/odin2/releases",
-      "auFile": "Odin 2.component"
-    },
-    {
       "name": "Surge XT Effects",
       "category": "effect",
       "description": "FX rack — reverb, delay, distortion, chorus, flanger, rotary, EQ, vocoder.",
