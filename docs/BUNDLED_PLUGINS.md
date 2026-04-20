@@ -295,14 +295,21 @@ minutes."
 | Plugin | License | Source | Rationale |
 |---|---|---|---|
 | **Surge XT Effects** | GPL-3.0 | (bundled with Surge XT) | One rack covers most FX categories: reverb, delay, distortion, chorus, flanger, rotary, EQ, vocoder |
-| **mda DubDelay** | MIT/GPL2+ | mda | Classic dub-style delay |
-| **mda Leslie** | MIT/GPL2+ | mda | Rotary speaker, makes any EP sound alive |
-| **mda RingMod** | MIT/GPL2+ | mda | Creative FX |
-| **mda Talkbox** | MIT/GPL2+ | mda | Obvious "surprise" for a guitar/voice tester |
-| **mda Stereo** | MIT/GPL2+ | mda | Width utility |
-| **mda Combo** | MIT/GPL2+ | mda | Small-amp simulator for DI guitar |
-| **mda Bandisto** | MIT/GPL2+ | mda | Multiband distortion |
+| **mda Delay** | MIT | mda | Simple stereo delay with feedback + tone |
+| **mda Overdrive** | MIT | mda | Soft overdrive; warmth and grit |
+| **mda Dynamics** | MIT | mda | Compressor + limiter + gate |
+| **mda Ambience** | MIT | mda | Small-space reverb (rooms, chambers) |
+| **mda RingMod** | MIT | mda | Creative FX, metallic character |
+| **mda Stereo** | MIT | mda | Width utility |
+| **mda Bandisto** | MIT | mda | Multiband distortion |
 | **Airwindows Consolidated** | MIT | [baconpaul/airwin2rack](https://github.com/baconpaul/airwin2rack/releases/tag/DAWPlugin) | 200+ Chris Johnson character FX in one `.component` — biggest variety-per-MB in the set |
+
+> **Note on mda picks.** `hollance/mda-plugins-juce` is a partial port of
+> the original mda VST2 suite to modern JUCE. DubDelay, Leslie, Talkbox,
+> and Combo were never ported there (README lists them under "Plug-ins
+> that have not been converted yet"), so they're not in the bundle.
+> Surge XT Effects covers the rotary and tape-delay slots those would
+> have filled.
 
 ### Ruled out (do not revisit without a license re-check)
 

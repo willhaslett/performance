@@ -68,22 +68,40 @@
       "auFile": "Surge XT Effects.component"
     },
     {
-      "name": "mda DubDelay",
+      "name": "mda Delay",
       "category": "effect",
-      "description": "Classic dub-style delay with saturation and filter.",
+      "description": "Simple stereo delay with feedback and tone control.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda DubDelay.component"
+      "auFile": "mda Delay.component"
     },
     {
-      "name": "mda Leslie",
+      "name": "mda Overdrive",
       "category": "effect",
-      "description": "Rotary speaker simulator — brings EPs and organs alive.",
+      "description": "Soft overdrive — adds warmth and grit.",
       "license": "MIT",
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Leslie.component"
+      "auFile": "mda Overdrive.component"
+    },
+    {
+      "name": "mda Dynamics",
+      "category": "effect",
+      "description": "Compressor, limiter, and gate in one — essential dynamics control.",
+      "license": "MIT",
+      "licenseFile": "NOTICE-mda.txt",
+      "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
+      "auFile": "mda Dynamics.component"
+    },
+    {
+      "name": "mda Ambience",
+      "category": "effect",
+      "description": "Small-space reverb — rooms, chambers, early reflections.",
+      "license": "MIT",
+      "licenseFile": "NOTICE-mda.txt",
+      "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
+      "auFile": "mda Ambience.component"
     },
     {
       "name": "mda RingMod",
@@ -95,15 +113,6 @@
       "auFile": "mda RingMod.component"
     },
     {
-      "name": "mda Talkbox",
-      "category": "effect",
-      "description": "Vocoder-style talkbox — instant surprise for a voice or guitar tester.",
-      "license": "MIT",
-      "licenseFile": "NOTICE-mda.txt",
-      "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Talkbox.component"
-    },
-    {
       "name": "mda Stereo",
       "category": "effect",
       "description": "Simple stereo width utility.",
@@ -111,15 +120,6 @@
       "licenseFile": "NOTICE-mda.txt",
       "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
       "auFile": "mda Stereo.component"
-    },
-    {
-      "name": "mda Combo",
-      "category": "effect",
-      "description": "Guitar combo amp simulator — for DI guitar.",
-      "license": "MIT",
-      "licenseFile": "NOTICE-mda.txt",
-      "sourceUrl": "https://github.com/hollance/mda-plugins-juce",
-      "auFile": "mda Combo.component"
     },
     {
       "name": "mda Bandisto",

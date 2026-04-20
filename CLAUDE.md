@@ -127,6 +127,7 @@ Named so it's a decision, not a gap:
 - Background plugin state capture
 - Settings MIDI tab content
 - ⌘O Songs palette
+- VST3 hosting (unblocks Dragonfly + many other free plugins where AU was dropped or never shipped; scope ~1–2 days for `JUCE_PLUGINHOST_VST3=1`, VST3 scanner wiring, and generalizing plugin identifiers across the registry). See `docs/BUNDLED_PLUGINS.md`.
 
 ## Active Work
 

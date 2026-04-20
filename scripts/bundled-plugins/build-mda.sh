@@ -1,40 +1,54 @@
 #!/usr/bin/env bash
-# Build the mda plugin suite from hollance/mda-plugins-juce (MIT) as AU
-# bundles, sign each with our Developer ID, and copy the 11 we ship into
-# runtime/bundled-plugins/components/.
+# Build the mda plugin suite from hollance/mda-plugins-juce (MIT) as
+# universal AU bundles and stage the 11 we ship for the later sign +
+# notarize steps.
 #
-# Why this script:
-#   Step 2 of docs/BUNDLED_PLUGINS.md. The mda AU binaries on SourceForge
-#   are pre-notarization (2020). Rebuilding against the modernized
-#   hollance fork gives us signed, arm64-native, notarizable bundles.
+# Upstream is a set of standalone Projucer (.jucer) projects, not CMake.
+# Rather than drag in Projucer, this script generates a single top-level
+# CMakeLists.txt on the fly that adds each plugin via juce_add_plugin(),
+# using our vendored JUCE from lib/JUCE/. We parse each .jucer only for
+# the synth / MIDI-in characteristic flags — bundle name, AU code, and
+# manufacturer are set by us to keep identity stable across upstream
+# changes.
+#
+# Signing is NOT done here — sign-all.sh re-signs every bundle in
+# staging with our Developer ID in one pass.
 #
 # Usage:   scripts/bundled-plugins/build-mda.sh
-# Result:  11 mda*.component bundles in runtime/bundled-plugins/components/
-# Requires: Xcode command-line tools, cmake, a Developer ID signing
-#           identity in the login keychain (we use Apple Team ID H25TK2U8FA).
+# Result:  11 "mda <Name>.component" bundles in .cache/staging/components/
+# Requires: Xcode command-line tools, cmake.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+JUCE_DIR="$REPO_ROOT/lib/JUCE"
 DEST_DIR="$REPO_ROOT/.cache/staging/components"
 SCRATCH_DIR="${SCRATCH_DIR:-$REPO_ROOT/.cache/mda-build}"
 MDA_REPO="https://github.com/hollance/mda-plugins-juce.git"
-MDA_REF="${MDA_REF:-main}"
-DEVELOPER_ID="Developer ID Application: William Haslett (H25TK2U8FA)"
+MDA_REF="${MDA_REF:-master}"
 
-# The 11 mda plugins we actually ship. Others are built but discarded.
-WANTED=(
-    "mda ePiano"
-    "mda JX10"
-    "mda DX10"
-    "mda Piano"
-    "mda DubDelay"
-    "mda Leslie"
-    "mda RingMod"
-    "mda Talkbox"
-    "mda Stereo"
-    "mda Combo"
-    "mda Bandisto"
+# One row per plugin we ship. Fields (tab-separated):
+#   plugin_dir       upstream directory
+#   target_name      CMake target (must be a valid C identifier)
+#   product_name     the .component bundle name the user sees
+#   plugin_code      4-char AU subtype (must be unique under our mfr)
+#   mfr_code         4-char AU manufacturer code (same for all)
+#
+# The synth / MIDI-in characteristic flags are read from each .jucer
+# below so we don't hand-maintain them.
+PLUGINS=$(cat <<'EOF'
+EPiano     mda_ePiano     mda ePiano     mdEP  Perf
+JX10       mda_JX10       mda JX10       mdJX  Perf
+DX10       mda_DX10       mda DX10       mdDX  Perf
+Piano      mda_Piano      mda Piano      mdPi  Perf
+Delay      mda_Delay      mda Delay      mdDl  Perf
+Overdrive  mda_Overdrive  mda Overdrive  mdOv  Perf
+Dynamics   mda_Dynamics   mda Dynamics   mdDy  Perf
+Ambience   mda_Ambience   mda Ambience   mdAm  Perf
+RingMod    mda_RingMod    mda RingMod    mdRi  Perf
+Stereo     mda_Stereo     mda Stereo     mdSt  Perf
+Bandisto   mda_Bandisto   mda Bandisto   mdBa  Perf
+EOF
 )
 
 mkdir -p "$DEST_DIR" "$SCRATCH_DIR"
@@ -48,61 +62,138 @@ else
     git clone --quiet --depth 1 --branch "$MDA_REF" "$MDA_REPO" \
         "$SCRATCH_DIR/mda-plugins-juce"
 fi
-cd "$SCRATCH_DIR/mda-plugins-juce"
 
-# Capture the exact commit for the LICENSES manifest (added by later steps).
-MDA_COMMIT="$(git rev-parse HEAD)"
+MDA_SRC="$SCRATCH_DIR/mda-plugins-juce"
+MDA_COMMIT="$(git -C "$MDA_SRC" rev-parse HEAD)"
 echo "==> Built from commit $MDA_COMMIT"
 
-echo "==> Configuring AU build"
-# The hollance fork is a JUCE CMake project. AU format is on by default on
-# macOS; other formats get disabled here to keep the build small.
-cmake -S . -B build-au \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-    -DBUILD_VST3=OFF -DBUILD_VST=OFF -DBUILD_LV2=OFF -DBUILD_CLAP=OFF \
-    > /dev/null
+BUILD_DIR="$SCRATCH_DIR/build-au"
+CMAKE_LISTS="$SCRATCH_DIR/CMakeLists.txt"
 
-echo "==> Building (this takes several minutes)"
-cmake --build build-au --parallel
+# Characteristic flags live in each .jucer as a comma-separated attr:
+#   pluginCharacteristicsValue="pluginIsSynth,pluginWantsMidiIn"
+# Return "TRUE" if the given substring appears, else "FALSE".
+jucer_has() {
+    local jucer="$1" needle="$2"
+    grep -o 'pluginCharacteristicsValue="[^"]*"' "$jucer" 2>/dev/null \
+        | grep -q "$needle" && echo "TRUE" || echo "FALSE"
+}
 
-echo "==> Locating built .component bundles"
-# JUCE's default output layout: <project>/<target>_artefacts/Release/AU/<name>.component
-mapfile -t BUILT < <(find build-au -type d -name "*.component" -path "*/AU/*" | sort)
-if [ "${#BUILT[@]}" -eq 0 ]; then
-    echo "!! No .component bundles found under build-au. Check the JUCE build output."
-    exit 1
-fi
-echo "   Found ${#BUILT[@]} .component bundles."
+echo "==> Generating CMakeLists.txt"
+{
+    cat <<EOF
+# Generated by scripts/bundled-plugins/build-mda.sh — do not edit.
+cmake_minimum_required(VERSION 3.24)
+project(MdaBundle VERSION 1.0.0)
 
-echo "==> Copying, signing, and placing the 11 we ship"
-for name in "${WANTED[@]}"; do
-    found=""
-    for b in "${BUILT[@]}"; do
-        base="$(basename "$b")"  # e.g. "mda ePiano.component"
-        if [ "$base" = "${name}.component" ]; then
-            found="$b"
-            break
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0")
+
+add_subdirectory("$JUCE_DIR" "\${CMAKE_BINARY_DIR}/JUCE")
+
+set(MDA_SRC "$MDA_SRC")
+
+EOF
+
+    while IFS= read -r row; do
+        [ -z "$row" ] && continue
+        read -r plugin_dir target_name_p1 target_name_p2 <<<"$row"
+        # The table is tab-ish but we used aligned spaces; re-split by awk.
+        plugin_dir=$(awk '{print $1}' <<<"$row")
+        target=$(awk '{print $2}' <<<"$row")
+        # product_name is everything from field 3 through last-minus-2
+        # (plugin_code + mfr_code are the final two fields).
+        product=$(awk '{
+            for (i=3; i<=NF-2; i++) printf "%s%s", $i, (i<NF-2 ? " " : "")
+        }' <<<"$row")
+        code=$(awk '{print $(NF-1)}' <<<"$row")
+        mfr=$(awk '{print $NF}' <<<"$row")
+
+        jucer="$(ls "$MDA_SRC/$plugin_dir"/*.jucer 2>/dev/null | head -1)"
+        if [ -z "$jucer" ] || [ ! -f "$jucer" ]; then
+            echo "!! No .jucer in $MDA_SRC/$plugin_dir" >&2
+            exit 1
         fi
-    done
-    if [ -z "$found" ]; then
-        echo "!! Missing expected plugin: $name"
-        exit 1
+        src="$MDA_SRC/$plugin_dir/Source/PluginProcessor.cpp"
+        if [ ! -f "$src" ]; then
+            echo "!! No PluginProcessor.cpp in $MDA_SRC/$plugin_dir/Source/" >&2
+            exit 1
+        fi
+
+        is_synth=$(jucer_has "$jucer" "pluginIsSynth")
+        wants_midi_in=$(jucer_has "$jucer" "pluginWantsMidiIn")
+        wants_midi_out=$(jucer_has "$jucer" "pluginProducesMidiOut")
+
+        cat <<EOF
+juce_add_plugin($target
+    PRODUCT_NAME                "$product"
+    COMPANY_NAME                "Performance"
+    BUNDLE_ID                   "com.performance.mda.$(echo "$target" | tr '[:upper:]' '[:lower:]')"
+    PLUGIN_MANUFACTURER_CODE    $mfr
+    PLUGIN_CODE                 $code
+    FORMATS                     AU
+    IS_SYNTH                    $is_synth
+    NEEDS_MIDI_INPUT            $wants_midi_in
+    NEEDS_MIDI_OUTPUT           $wants_midi_out
+    COPY_PLUGIN_AFTER_BUILD     FALSE)
+
+juce_generate_juce_header($target)
+
+target_sources($target PRIVATE "$src")
+target_include_directories($target PRIVATE "$MDA_SRC/$plugin_dir/Source")
+target_compile_definitions($target PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0)
+target_link_libraries($target PRIVATE
+    juce::juce_audio_utils
+    juce::juce_audio_plugin_client
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_lto_flags)
+
+EOF
+    done <<<"$PLUGINS"
+} >"$CMAKE_LISTS"
+
+echo "==> Configuring"
+cmake -S "$SCRATCH_DIR" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release >/dev/null
+
+echo "==> Building (takes several minutes — 11 plugins × universal)"
+# Cap parallelism: 22 compile units × arm64+x86_64 × huge JUCE headers
+# can swamp RAM on a laptop. Override with BUILD_JOBS=N if you have room.
+cmake --build "$BUILD_DIR" --config Release --parallel "${BUILD_JOBS:-4}"
+
+echo "==> Staging"
+missing=0
+while IFS= read -r row; do
+    [ -z "$row" ] && continue
+    target=$(awk '{print $2}' <<<"$row")
+    product=$(awk '{
+        for (i=3; i<=NF-2; i++) printf "%s%s", $i, (i<NF-2 ? " " : "")
+    }' <<<"$row")
+
+    src="$BUILD_DIR/${target}_artefacts/Release/AU/${product}.component"
+    if [ ! -d "$src" ]; then
+        echo "!! Missing build output: $src"
+        missing=$((missing + 1))
+        continue
     fi
 
-    dest="$DEST_DIR/${name}.component"
+    dest="$DEST_DIR/${product}.component"
     rm -rf "$dest"
-    cp -R "$found" "$dest"
+    cp -R "$src" "$dest"
+    echo "    staged ${product}.component"
+done <<<"$PLUGINS"
 
-    echo "   signing $(basename "$dest")"
-    codesign --force --timestamp --options runtime \
-        --sign "$DEVELOPER_ID" "$dest" 2>&1 | sed 's/^/     /'
-done
+if [ "$missing" -gt 0 ]; then
+    echo "!! $missing plugin(s) failed to build"
+    exit 1
+fi
 
 echo ""
-echo "==> Done. Placed ${#WANTED[@]} signed mda .component bundles in:"
+echo "==> Done. 11 mda .component bundles in:"
 echo "    $DEST_DIR"
 echo ""
 echo "Built from hollance/mda-plugins-juce commit $MDA_COMMIT"
-echo "Record that commit in runtime/bundled-plugins/manifest.json or a"
-echo "build-provenance file before committing the binaries."
