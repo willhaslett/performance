@@ -14,24 +14,28 @@ bundle design.
 
 | Script | Role |
 |---|---|
-| `build-mda.sh` | Clones `hollance/mda-plugins-juce` (MIT), builds AU format universal, signs, places 11 mda plugins. |
-| `download-surge-xt.sh` | *(planned)* Downloads Surge XT + Surge XT Effects from the upstream release, places the 2 `.component` bundles. |
-| `download-dexed.sh` | *(planned)* Downloads Dexed. |
-| `download-odin2.sh` | *(planned)* Downloads Odin 2. |
-| `download-dragonfly.sh` | *(planned)* Downloads the 4 Dragonfly reverb plugins. |
-| `download-airwindows.sh` | *(planned)* Downloads Airwindows Consolidated. |
-| `sign-all.sh` | Re-signs every `.component` in the output directory with our Developer ID. |
-| `fetch-all.sh` | *(planned)* One-shot driver: runs every acquisition script + `sign-all.sh`. |
+| `build-mda.sh` | Clones `hollance/mda-plugins-juce` (MIT), builds AU format universal, places 11 mda plugins in staging. |
+| `download-surge-xt.sh` | Downloads Surge XT pluginsonly archive; extracts Surge XT + Surge XT Effects `.component` bundles. |
+| `download-dexed.sh` | Downloads Dexed macOS zip; extracts Dexed `.component`. |
+| `download-dragonfly.sh` | Downloads Dragonfly Reverb universal DMG; mounts and extracts 4 `.component` bundles (Hall, Room, Plate, Early Reflections). |
+| `download-airwindows.sh` | Downloads Airwindows Consolidated DMG from baconpaul/airwin2rack; mounts and extracts `Consolidated.component`. |
+| `sign-all.sh` | Codesigns every `.component` in staging with our Developer ID. |
+| `notarize-all.sh` | *(planned)* Submits each signed `.component` to Apple notarytool, waits, staples the approval ticket in. |
+| `package-all.sh` | *(planned)* Zips each plugin's `.component` bundle(s) into versioned archives and records SHA-256 checksums. |
+| `publish.sh` | *(planned)* Uploads the staging archives to S3 `performance-plugins` and regenerates `manifest.json` with URLs + checksums + versions. |
+| `fetch-all.sh` | *(planned)* One-shot driver: runs every acquisition + sign + notarize + package + publish. |
 
-## Output
+## Output layout
 
-All scripts place their `.component` bundles into
-`runtime/bundled-plugins/components/`. That directory is the single
-source of truth for what ships in the install pack — `sign-all.sh`
-iterates it, and later build steps copy it into the app bundle.
+```
+.cache/
+  downloads/         # raw upstream files, cached across re-runs
+  staging/
+    components/      # all .component bundles, ready for signing
+    archives/        # per-plugin versioned .zip files for S3 upload
+```
 
-## Scratch dir
-
-Build scripts cache their working copies under `.cache/` at repo root
-(gitignored). Re-runs reuse the cache; delete the specific
-subdirectory to force a fresh clone.
+Everything under `.cache/` is gitignored. The `.component` binaries
+never land in-tree; they go from staging → S3 via the publish
+pipeline. The in-tree `runtime/bundled-plugins/` tree holds only the
+plugin manifest + license notices that get baked into the app.

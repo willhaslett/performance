@@ -16,7 +16,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DEST_DIR="$REPO_ROOT/runtime/bundled-plugins/components"
+DEST_DIR="$REPO_ROOT/.cache/staging/components"
 SCRATCH_DIR="${SCRATCH_DIR:-$REPO_ROOT/.cache/mda-build}"
 MDA_REPO="https://github.com/hollance/mda-plugins-juce.git"
 MDA_REF="${MDA_REF:-main}"

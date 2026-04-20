@@ -14,7 +14,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DIR="$REPO_ROOT/runtime/bundled-plugins/components"
+DIR="$REPO_ROOT/.cache/staging/components"
 DEVELOPER_ID="Developer ID Application: William Haslett (H25TK2U8FA)"
 
 if [ ! -d "$DIR" ]; then
