@@ -5,6 +5,7 @@
 #include "telemetry/InstallId.h"
 #include "telemetry/TelemetryShipper.h"
 #include "BuildVersion.h"
+#include "BinaryData.h"
 
 // --- SettingsWindow ---
 
@@ -17,6 +18,7 @@ SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine)
     tabs.setLookAndFeel(&tabLF);
     tabs.addTab("Audio", Theme::color(Theme::Color::bgApp), &audioPage, false);
     tabs.addTab("MIDI", Theme::color(Theme::Color::bgApp), &midiPage, false);
+    tabs.addTab("Plugins", Theme::color(Theme::Color::bgApp), &pluginsPage, false);
     tabs.addTab("About", Theme::color(Theme::Color::bgApp), &aboutPage, false);
     tabs.setTabBarDepth(36);
     tabs.setColour(juce::TabbedComponent::backgroundColourId, Theme::color(Theme::Color::bgPanel));
@@ -299,4 +301,89 @@ void SettingsWindow::AboutPage::resized() {
     // Diagnostics toggle — label + toggle stretched along row
     diagnosticsLabel.setBounds(x, y, labelWidth, rowHeight);
     diagnosticsToggle.setBounds(x + labelWidth + 8, y, valueWidth, rowHeight);
+}
+
+
+// --- PluginsPage ---
+
+SettingsWindow::PluginsPage::PluginsPage() {
+    buildEntries();
+    addAndMakeVisible(viewport);
+    viewport.setViewedComponent(&list, false);
+    viewport.setScrollBarsShown(true, false);
+}
+
+void SettingsWindow::PluginsPage::buildEntries() {
+    juce::String manifestText(juce::String::createStringFromData(
+        BinaryData::manifest_json, BinaryData::manifest_jsonSize));
+    auto parsed = juce::JSON::parse(manifestText);
+    auto* arr = parsed.getProperty("plugins", juce::var()).getArray();
+    if (!arr) return;
+    for (auto& v : *arr) {
+        Entry e;
+        e.name        = v.getProperty("name", "").toString();
+        e.category    = v.getProperty("category", "").toString();
+        e.description = v.getProperty("description", "").toString();
+        e.license     = v.getProperty("license", "").toString();
+        e.sourceUrl   = v.getProperty("sourceUrl", "").toString();
+        entries.push_back(std::move(e));
+    }
+}
+
+void SettingsWindow::PluginsPage::paint(juce::Graphics& g) {
+    g.fillAll(Theme::color(Theme::Color::bgApp));
+
+    auto bounds = getLocalBounds();
+    auto header = bounds.removeFromTop(40).reduced(16, 6);
+    g.setColour(Theme::color(Theme::Color::textPrimary));
+    g.setFont(Theme::font(Theme::fontSizeLg));
+    g.drawText(juce::String((int)entries.size()) + " free plugins bundled with Performance",
+               header, juce::Justification::centredLeft);
+
+    auto subtitle = bounds.removeFromTop(22).reduced(16, 0);
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeSm));
+    g.drawText("Installed automatically on first launch. Remove any you don't want.",
+               subtitle, juce::Justification::centredLeft);
+}
+
+void SettingsWindow::PluginsPage::resized() {
+    auto bounds = getLocalBounds();
+    bounds.removeFromTop(70);  // header + subtitle
+    bounds.reduce(12, 8);
+
+    viewport.setBounds(bounds);
+    // Subtract scrollbar width so text doesn't land under it.
+    int listWidth = bounds.getWidth() - 12;
+    list.setSize(listWidth, list.desiredHeight());
+}
+
+void SettingsWindow::PluginsPage::List::paint(juce::Graphics& g) {
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto& e = entries[i];
+        auto row = juce::Rectangle<int>(0, (int)i * rowHeight, getWidth(), rowHeight);
+
+        // Alternating row background for readability.
+        g.setColour(i % 2 == 0 ? Theme::color(Theme::Color::bgSurface)
+                                : Theme::color(Theme::Color::bgStripe));
+        g.fillRect(row);
+
+        auto inner = row.reduced(12, 6);
+
+        // Row 1: name (big) + category (small, right).
+        auto row1 = inner.removeFromTop(22);
+        g.setColour(Theme::color(Theme::Color::textPrimary));
+        g.setFont(Theme::font(Theme::fontSizeLg));
+        g.drawText(e.name, row1, juce::Justification::centredLeft);
+
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(Theme::fontSizeSm));
+        g.drawText(e.category + "  ·  " + e.license, row1,
+                   juce::Justification::centredRight);
+
+        // Row 2: description.
+        g.setColour(Theme::color(Theme::Color::textSecondary));
+        g.setFont(Theme::font(Theme::fontSizeSm));
+        g.drawText(e.description, inner, juce::Justification::centredLeft);
+    }
 }

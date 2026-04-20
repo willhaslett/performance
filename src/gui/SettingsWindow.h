@@ -72,6 +72,39 @@ private:
     };
     AboutPage aboutPage;
 
+    // Plugins page — shows the bundled-plugin pack listed in
+    // runtime/bundled-plugins/manifest.json. Read-only for now (step 1 of
+    // docs/BUNDLED_PLUGINS.md); per-plugin Remove + "Remove all" land in
+    // step 5 once the actual .component bundles ship.
+    class PluginsPage : public juce::Component {
+    public:
+        PluginsPage();
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+
+    private:
+        struct Entry {
+            juce::String name, category, description, license, sourceUrl;
+        };
+        std::vector<Entry> entries;
+        void buildEntries();
+
+        // Inner list component — paints all rows itself, sized large enough
+        // to need scrolling inside the viewport.
+        class List : public juce::Component {
+        public:
+            explicit List(const std::vector<Entry>& e) : entries(e) {}
+            void paint(juce::Graphics& g) override;
+            static constexpr int rowHeight = 60;
+            int desiredHeight() const { return (int)entries.size() * rowHeight; }
+        private:
+            const std::vector<Entry>& entries;
+        };
+        List list { entries };
+        juce::Viewport viewport;
+    };
+    PluginsPage pluginsPage;
+
     // Custom LookAndFeel to remove tab borders
     struct TabLookAndFeel : public juce::LookAndFeel_V4 {
         void drawTabButton(juce::TabBarButton& button, juce::Graphics& g,
