@@ -5,8 +5,9 @@
 
 namespace ActionAlgebra {
 
-ActionInterpreter::ActionInterpreter(Scheduler& s, TargetIO& i, TemplateResolver* r)
-    : scheduler(s), io(i), resolver(r) {}
+ActionInterpreter::ActionInterpreter(Scheduler& s, TargetIO& i,
+                                      TemplateResolver* r, LuaExecutor* l)
+    : scheduler(s), io(i), resolver(r), luaExecutor(l) {}
 
 float ActionInterpreter::resolveValue(const Value& v, const Target* captureTarget) {
     switch (v.kind) {
@@ -88,8 +89,10 @@ void ActionInterpreter::run(const ActionNode& node,
             return;
 
         case ActionNode::Op::Lua:
-            // Wired in step 7. Log + complete so Sequence still advances.
-            perfLog("[ActionInterpreter] Lua op not yet implemented\n");
+            if (luaExecutor)
+                luaExecutor->executeAction(node.luaCode, currentArgs, currentMidiValue);
+            else
+                perfLog("[ActionInterpreter] Op::Lua with no executor — skipping\n");
             fire(onComplete);
             return;
     }
@@ -104,6 +107,9 @@ void ActionInterpreter::trigger(const std::string& actionName,
         fire(onComplete);
         return;
     }
+    // Install context for Op::Lua nodes inside this trigger's body.
+    currentArgs = args;
+    currentMidiValue = midiValue;
     auto* tmpl = resolver->lookup(actionName);
     if (!tmpl) {
         perfLog("[ActionInterpreter] Unknown action: %s\n", actionName.c_str());

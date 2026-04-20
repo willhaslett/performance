@@ -1,5 +1,6 @@
 #pragma once
 #include <juce_core/juce_core.h>
+#include "state/ActionAlgebra.h"
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "state/StateEvents.h"
 #include "state/StateModel.h"
@@ -39,6 +40,13 @@ public:
 
     // Lua execution callback (set by main after LuaEngine is created)
     std::function<std::string(const std::string& code)> luaExecutor;
+
+    // Action-scoped Lua callback — sets `args` (1-based Lua table) and
+    // `value` (number) as globals before running the code. Used by the
+    // algebra interpreter for Op::Lua nodes.
+    std::function<void(const std::string& code,
+                       const std::vector<ActionAlgebra::Value>& args,
+                       float midiValue)> luaActionExecutor;
 
     // Fired once per song-load completion. Used by the GUI for side effects
     // that shouldn't live in the coordinator (e.g. the stale-ref repair dialog).

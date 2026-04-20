@@ -102,14 +102,29 @@ struct PerformanceCoordinator::AlgebraAdapters {
         }
     };
 
+    // LuaExecutor delegates back to PerformanceCoordinator::luaExecutor. The
+    // running Lua engine sets `args` and `value` as globals before executing.
+    // Filled in by PerformanceCoordinator after LuaEngine is available.
+    struct LuaShim : ActionAlgebra::ActionInterpreter::LuaExecutor {
+        std::function<void(const std::string&,
+                           const std::vector<ActionAlgebra::Value>&,
+                           float)> delegate;
+        void executeAction(const std::string& code,
+                           const std::vector<ActionAlgebra::Value>& args,
+                           float midiValue) override {
+            if (delegate) delegate(code, args, midiValue);
+        }
+    };
+
     Scheduler scheduler;
     TargetIO  io;
     Resolver  resolver;
+    LuaShim   luaShim;
     ActionAlgebra::ActionInterpreter interpreter;
 
     AlgebraAdapters(AutomationEngine& eng, StateAPI& s, AudioEngine& audio)
         : scheduler(eng), io(s, audio), resolver(s),
-          interpreter(scheduler, io, &resolver) {}
+          interpreter(scheduler, io, &resolver, &luaShim) {}
 };
 
 PerformanceCoordinator::PerformanceCoordinator() {}
@@ -245,6 +260,12 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
 
     automationEngine = std::make_unique<AutomationEngine>();
     algebraAdapters = std::make_unique<AlgebraAdapters>(*automationEngine, *stateAPI, *audioEngine);
+    // Route Op::Lua through the action-scoped executor set by main.
+    algebraAdapters->luaShim.delegate = [this](const std::string& code,
+                                                 const std::vector<ActionAlgebra::Value>& args,
+                                                 float midiValue) {
+        if (luaActionExecutor) luaActionExecutor(code, args, midiValue);
+    };
     songRuntime = std::make_unique<SongRuntime>();
     sequencerImpl = std::make_unique<InternalSequencer>();
     lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
@@ -1220,32 +1241,12 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
         return tid;
     };
 
-    if (actionName == "setActiveTrack") {
-        // Selecting an instrument track makes it the live keyboard target —
-        // selection is the single source of truth for "what's listening to
-        // the keys" (Logic-style focus). Foot-pedal bindings call this to
-        // switch instruments during performance.
-        auto targetId = resolveTrack(getArg(0));
-        stateAPI->selectTrack(targetId, false);
-    }
-    // fadeOut / fadeIn / crossfade now have algebra bodies — handled above
-    // by the interpreter path. See registerBuiltinActions().
-    else if (actionName == "trackVolume") {
-        auto channelId = getArg(0).toStdString();
-        float gain = value * value * value * 2.0f;  // cubic curve, +6dB max
-        if (channelId == "output") {
-            stateAPI->setMasterGain(gain);
-        } else if (stateAPI->findTrack(TrackId{channelId})) {
-            stateAPI->setTrackGain(TrackId{channelId}, gain);
-        } else if (stateAPI->findBus(BusId{channelId})) {
-            stateAPI->setBusGain(BusId{channelId}, gain);
-        }
-    }
-    else {
-        perfLog("[Action] Unknown action: %s\n", actionName.c_str());
-    }
-    // morphToPreset, morphChain, morph are now expander-driven algebra actions
-    // and handled by the interpreter path above. See registerBuiltinActions().
+    // The C++ dispatch ladder is empty. Every built-in action has either a
+    // static body (setActiveTrack, fadeOut, fadeIn, crossfade, trackVolume),
+    // an expander (morphToPreset, morphChain, morph), or a legacy Lua body.
+    // All three paths are handled above by the early-returns. Reaching here
+    // means we got an actionName with no registered mechanism.
+    perfLog("[Action] Unknown action: %s\n", actionName.c_str());
 }
 
 void PerformanceCoordinator::refreshMidiDevices() {
@@ -1452,7 +1453,8 @@ void PerformanceCoordinator::registerBuiltinActions() {
     };
 
     stateAPI->registerAction("setActiveTrack", "Set active track",
-        std::vector<ParamSchema>{ track("trackName", { "Instrument" }) });
+        std::vector<ParamSchema>{ track("trackName", { "Instrument" }) },
+        AA::lua("selectTrack(args[1])"));
 
     stateAPI->registerAction("fadeOut", "Fade out",
         std::vector<ParamSchema>{ track("trackName"), duration("duration"), easing() },
@@ -1478,8 +1480,12 @@ void PerformanceCoordinator::registerBuiltinActions() {
                                      AA::placeholder("easing") }),
         }),
         2);
+    // trackVolume: CC fader → cubic curve → target channel gain.
+    // Cubic gives more resolution at low gains (useful for subtle control).
+    // The channel arg can resolve to a track, bus, or master.
     stateAPI->registerAction("trackVolume", "Track Volume",
-        std::vector<ParamSchema>{ channel("channel") });
+        std::vector<ParamSchema>{ channel("channel") },
+        AA::lua("setChannelGain(args[1], value * value * value * 2.0)"));
 
     // morphToPreset — dynamic Parallel of per-param Interpolates. Plugin param
     // count isn't knowable statically, so we use an expander.

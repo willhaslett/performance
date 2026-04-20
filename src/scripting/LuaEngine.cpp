@@ -192,6 +192,19 @@ void LuaEngine::registerAPI() {
     lua.set_function("setTrackGain", [&state, resolveTrackId](const std::string& track, float gain) {
         state.setTrackGain(TrackId{resolveTrackId(track)}, gain);
     });
+    lua.set_function("setMasterGain", [&state](float gain) {
+        state.setMasterGain(gain);
+    });
+    lua.set_function("selectTrack", [&state, resolveTrackId](const std::string& track) {
+        state.selectTrack(TrackId{resolveTrackId(track)}, false);
+    });
+    // setChannelGain — UUID-first setter for track / bus / "Main"|"output".
+    // Used in action-body Lua where args are already UUID-typed refs.
+    lua.set_function("setChannelGain", [&state](const std::string& id, float gain) {
+        if (id == "Main" || id == "output") { state.setMasterGain(gain); return; }
+        if (state.findTrack(TrackId{id})) { state.setTrackGain(TrackId{id}, gain); return; }
+        if (state.findBus(BusId{id}))     { state.setBusGain(BusId{id}, gain); return; }
+    });
     lua.set_function("setTrackGainDb", [&state, resolveTrackId](const std::string& track, float db) {
         float linear = (db <= -60.0f) ? 0.0f : std::pow(10.0f, db / 20.0f);
         state.setTrackGain(TrackId{resolveTrackId(track)}, linear);
@@ -581,6 +594,35 @@ void LuaEngine::registerAPI() {
     // Utility
     lua.set_function("log", [](const std::string& msg) { perfLog("[Lua] %s\n", msg.c_str()); });
     lua.set_function("dB", [](float db) -> float { return std::pow(10.0f, db / 20.0f); });
+}
+
+void LuaEngine::executeActionCode(const std::string& code,
+                                    const std::vector<ActionAlgebra::Value>& args,
+                                    float midiValue) {
+    // Build a 1-based Lua table for args and set as global.
+    sol::table argsTable = lua.create_table();
+    for (size_t i = 0; i < args.size(); ++i) {
+        const auto& v = args[i];
+        switch (v.kind) {
+            case ActionAlgebra::Value::Kind::Number:
+                argsTable[i + 1] = v.number;
+                break;
+            case ActionAlgebra::Value::Kind::Text:
+                argsTable[i + 1] = v.text;
+                break;
+            default:
+                argsTable[i + 1] = sol::nil;
+                break;
+        }
+    }
+    lua["args"]  = argsTable;
+    lua["value"] = (double)midiValue;
+
+    auto result = lua.safe_script(code, sol::script_pass_on_error);
+    if (!result.valid()) {
+        sol::error err = result;
+        perfLog("[LuaAction] error: %s\n", err.what());
+    }
 }
 
 std::string LuaEngine::executeString(const std::string& code) {

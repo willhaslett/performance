@@ -34,6 +34,15 @@ public:
         virtual void  write(const Target& t, float value) = 0;
     };
 
+    // Runs Lua code for Op::Lua. `args` and `midiValue` are set as Lua
+    // globals before execution. Null = Op::Lua is a no-op.
+    struct LuaExecutor {
+        virtual ~LuaExecutor() = default;
+        virtual void executeAction(const std::string& code,
+                                    const std::vector<Value>& args,
+                                    float midiValue) = 0;
+    };
+
     // Resolves a named action to its template body + param-name list (for
     // positional → named binding). Real impl wraps StateAPI's action
     // catalog; mock impl in tests is a map.
@@ -52,8 +61,10 @@ public:
     };
 
     // Resolver may be null if the tree has no Invoke nodes.
+    // LuaExecutor may be null if no Op::Lua nodes will execute.
     ActionInterpreter(Scheduler& scheduler, TargetIO& io,
-                      TemplateResolver* resolver = nullptr);
+                      TemplateResolver* resolver = nullptr,
+                      LuaExecutor* luaExecutor = nullptr);
 
     // Run a tree. `onComplete` (optional) fires when the entire tree
     // finishes (every Interpolate ended, every Delay elapsed, every
@@ -74,6 +85,15 @@ private:
     Scheduler&        scheduler;
     TargetIO&         io;
     TemplateResolver* resolver;
+    LuaExecutor*      luaExecutor;
+
+    // Context for Op::Lua — set by trigger() before running the tree so the
+    // executor can inject args/value as Lua globals. LIMITATION: a nested
+    // Invoke inside a tree resets these, so an Op::Lua fired from a Sequence
+    // AFTER an Invoke sees the inner trigger's args, not the outer. Today
+    // no built-in uses that shape; revisit if a case emerges.
+    std::vector<Value> currentArgs;
+    float              currentMidiValue = 1.0f;
 
     // Helpers
     float resolveValue(const Value& v, const Target* captureTarget);

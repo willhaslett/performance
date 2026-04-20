@@ -577,6 +577,12 @@ public:
         coordinator->luaExecutor = [lua](const std::string& code) {
             return lua->executeString(code);
         };
+        // Action-scoped Lua executor — used by Op::Lua in algebra bodies.
+        coordinator->luaActionExecutor = [lua](const std::string& code,
+                                                 const std::vector<ActionAlgebra::Value>& args,
+                                                 float value) {
+            lua->executeActionCode(code, args, value);
+        };
 
         mainWindow = std::make_unique<MainWindow>(
             coordinator->state(), coordinator->engine(), *luaEngine, *coordinator);

@@ -1,5 +1,6 @@
 #pragma once
 #include <sol/sol.hpp>
+#include "state/ActionAlgebra.h"
 #include <string>
 #include <vector>
 
@@ -13,6 +14,13 @@ public:
 
     // Execute a Lua string, return result or error
     std::string executeString(const std::string& code);
+
+    // Execute action Lua with `args` and `value` in scope as globals.
+    // `args` becomes a 1-based Lua table; Text values → strings,
+    // Numbers → doubles. `value` becomes a global number.
+    void executeActionCode(const std::string& code,
+                            const std::vector<ActionAlgebra::Value>& args,
+                            float midiValue);
 
     // Load and execute a .lua song file. Unloads current song first.
     bool loadSong(const std::string& path);
