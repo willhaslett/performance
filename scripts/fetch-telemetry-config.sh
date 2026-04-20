@@ -24,6 +24,11 @@ CHAT_URL=$(aws cloudformation describe-stacks \
     --query 'Stacks[0].Outputs[?OutputKey==`ChatProxyUrl`].OutputValue' \
     --output text)
 
+PLUGINS_URL=$(aws cloudformation describe-stacks \
+    --stack-name PerformanceTelemetry \
+    --query 'Stacks[0].Outputs[?OutputKey==`PluginsProxyUrl`].OutputValue' \
+    --output text)
+
 TOKEN=$(aws secretsmanager get-secret-value \
     --secret-id performance/telemetry/bearer-token \
     --query 'SecretString' --output text)
@@ -33,6 +38,7 @@ cat > keys/telemetry.json <<EOF
 {
   "url": "$URL",
   "chatUrl": "$CHAT_URL",
+  "pluginsUrl": "$PLUGINS_URL",
   "token": "$TOKEN"
 }
 EOF
