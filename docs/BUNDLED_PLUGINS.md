@@ -62,16 +62,19 @@ updates don't require an app release.
 
 ### S3 bucket shape
 
-Single bucket `performance-plugins` in our existing CDK stack
-(alongside chat-proxy and telemetry resources). Public-read. Keys:
+Single bucket `performance-plugins` in its own `PerformancePlugins`
+CDK stack. **Private** — `BlockPublicAccess.BLOCK_ALL`. Access is
+brokered by a `PluginsProxy` Lambda (sibling to the telemetry + chat
+proxies in `PerformanceTelemetry`) that validates the app's shared
+bearer token and returns `manifest.json` with 1-hour presigned S3
+GET URLs filled in for each archive. Keys:
 
 ```
-manifest.json                                    # short TTL (5 min)
-plugins/surge-xt-1.3.4-macos.zip                 # immutable, long TTL
+manifest.json                                         # returned by Lambda
+plugins/surge-xt-1.3.4-macos.zip                      # versioned + immutable
 plugins/dexed-1.0.1-macos.zip
-plugins/dragonfly-reverb-3.2.10-macos.zip
-plugins/airwindows-consolidated-2026-04-19.zip
-plugins/mda-juce-<commit>-macos.zip
+plugins/airwindows-consolidated-2026-04-19-7f5a66c-macos.zip
+plugins/mda-suite-<date>-macos.zip
 ```
 
 Versioned URLs with `Cache-Control: public, max-age=31536000, immutable`
@@ -236,28 +239,35 @@ license trap in the landscape — noted below in the ruled-out list.
 
 ## Infra architecture (CDK)
 
-Adds to the existing CDK stack (chat-proxy + telemetry + secrets):
+Two stacks:
 
 ```
-S3 bucket  performance-plugins         public-read, versioned URLs
-  └─ manifest.json                     Cache-Control: max-age=300
-  └─ plugins/*.zip                     Cache-Control: max-age=31536000, immutable
+PerformancePlugins stack:
+  S3 bucket performance-plugins-<acct>   BlockPublicAccess.BLOCK_ALL,
+                                         RETAIN, tagged Project=Performance
+    └─ manifest.json                     short TTL
+    └─ plugins/*.zip                     immutable, versioned
 
-CloudWatch billing alarm               threshold $5/mo, email on breach
-Tags on all new resources              app=performance, env=prod
+PerformanceTelemetry stack (existing) adds:
+  PluginsProxy Lambda + function URL
+    validates bearer token, reads manifest.json from the private bucket,
+    issues 1-hour presigned S3 GET URLs for each archive, returns the
+    enriched manifest
 ```
 
-No Lambda, no CloudFront, no auth for v1. The plugins themselves aren't
-secret — they're freely available upstream — and at tester-round scale
-(4–100 installs) S3 direct is ~$0.50/mo.
+Private bucket prevents drive-by scraping of our S3 egress; the bearer
+token in the app binary is casual rate-limiting rather than a hardened
+access gate (the plugins themselves are freely available upstream).
+Project=Performance tag routes costs into the $50/mo budget alarm
+already defined on the telemetry stack.
 
 **Upgrade paths known-but-not-built:**
 
-- **S3 direct → CloudFront in front** when egress ≥ $20/mo or global
-  latency shows up in telemetry. Drop-in — same URL pattern, different
-  endpoint.
-- **Lambda URL for signed-URL access** only if we need per-install auth
-  or rate-limiting. Not before.
+- **OAC-fronted CloudFront distribution** when egress ≥ $20/mo or
+  global latency shows up in telemetry. The URL scheme the Lambda
+  hands out stays the same, CloudFront just sits in front.
+- **Per-install download quota** in DynamoDB (same table as chat)
+  only if a single install starts hammering us.
 - **Multi-region replication** only if a tester population outside
   North America complains. Not before.
 
@@ -340,11 +350,12 @@ Scripts under `scripts/bundled-plugins/`:
 ```
 build-mda.sh           → clones hollance/mda-plugins-juce, builds AU universal,
                          copies the 11 we ship to staging/
-download-surge-xt.sh   → fetches Surge XT macOS pluginsonly ZIP, extracts the
-                         2 .component bundles to staging/
+download-surge-xt.sh   → fetches Surge XT macOS full DMG, expands the outer
+                         pkg, extracts 2 .component bundles + the factory
+                         resources tree (Surge XT/ → patches_factory,
+                         wavetables, skins, …) to staging/ and
+                         staging/support/surge-xt/
 download-dexed.sh      → fetches Dexed macOS ZIP, extracts to staging/
-download-dragonfly.sh  → fetches Dragonfly macOS universal DMG, mounts,
-                         extracts the 4 .component bundles to staging/
 download-airwindows.sh → fetches Airwindows Consolidated macOS DMG, mounts,
                          extracts to staging/
 
