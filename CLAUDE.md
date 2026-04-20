@@ -385,4 +385,4 @@ On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/perform
 
 ## Tests
 
-Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, ~134 tests, all isolated. `MockAudioEngine` for EngineSync verification. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`.
+Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, 165 tests, all isolated. `MockAudioEngine` for EngineSync verification. BundledPluginInstaller tests use a file-path test hook (`setInstallManifestFileForTests`) to redirect the install-manifest path to a temp dir. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`.

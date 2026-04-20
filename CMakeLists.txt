@@ -216,9 +216,11 @@ target_sources(PerformanceTests PRIVATE
     src/daw/Arrangement.cpp
     src/gui/Theme.cpp
     src/rendering/OfflineRenderer.cpp
+    src/install/BundledPluginInstaller.cpp
+    src/telemetry/InstallId.cpp
 )
 
-target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include)
+target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include ${CMAKE_BINARY_DIR}/generated)
 
 target_compile_definitions(PerformanceTests PRIVATE
     JUCE_WEB_BROWSER=0
@@ -227,6 +229,8 @@ target_compile_definitions(PerformanceTests PRIVATE
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=0
 )
+
+add_dependencies(PerformanceTests generate_build_config generate_build_version)
 
 target_link_libraries(PerformanceTests PRIVATE
     juce::juce_audio_basics

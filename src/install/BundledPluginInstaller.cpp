@@ -107,8 +107,17 @@ BundledPluginInstaller::Progress BundledPluginInstaller::getProgress() const {
     return progress;
 }
 
+namespace {
+juce::File g_installManifestOverride;
+}
+
 juce::File BundledPluginInstaller::installManifestFile() {
+    if (g_installManifestOverride != juce::File()) return g_installManifestOverride;
     return appSupportDir().getChildFile(kInstallManifestName);
+}
+
+void BundledPluginInstaller::setInstallManifestFileForTests(juce::File override) {
+    g_installManifestOverride = std::move(override);
 }
 
 bool BundledPluginInstaller::isInstalled() {

@@ -108,6 +108,11 @@ public:
     // Returns number of bundles removed.
     static int uninstallAll();
 
+    // Test-only: redirect the install-manifest path (normally at
+    // ~/Library/Application Support/com.performance.app/plugins-installed.json).
+    // Passing an empty File restores the default.
+    static void setInstallManifestFileForTests(juce::File override);
+
     void run() override;
 
 private:

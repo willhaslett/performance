@@ -9,6 +9,7 @@
 #include "engine/Log.h"
 #include "state/UndoHistory.h"
 #include "song/SongRuntime.h"
+#include "install/BundledPluginInstaller.h"
 
 // ============================================================================
 // Test helpers
@@ -3313,6 +3314,200 @@ public:
 };
 
 static ActionInterpreterTests actionInterpreterTests;
+
+// ============================================================================
+// BundledPluginInstaller tests
+// ============================================================================
+//
+// The installer's network / zip / codesign paths need real integration
+// (live S3 bucket, Apple notarization, real .component bundles on disk)
+// and are covered by `scripts/bundled-plugins/*.sh` + manual install
+// verification. These tests cover the pure-ish local-manifest logic:
+// read / uninstallArchive / uninstallAll. The test hook
+// `setInstallManifestFileForTests` redirects the manifest path to a
+// temp file so we don't touch the real install state.
+
+class BundledPluginInstallerTests : public juce::UnitTest {
+public:
+    BundledPluginInstallerTests() : juce::UnitTest("BundledPluginInstaller") {}
+
+private:
+    struct TempManifest {
+        juce::File tempDir;
+        juce::File manifestFile;
+
+        TempManifest() {
+            tempDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                          .getChildFile("perf-installer-test-" + juce::Uuid().toString());
+            tempDir.createDirectory();
+            manifestFile = tempDir.getChildFile("plugins-installed.json");
+            BundledPluginInstaller::setInstallManifestFileForTests(manifestFile);
+        }
+        ~TempManifest() {
+            BundledPluginInstaller::setInstallManifestFileForTests({});
+            tempDir.deleteRecursively();
+        }
+    };
+
+    // Create a dummy .component-style directory at `path` so uninstall
+    // can actually delete something. Content doesn't matter — just need
+    // the path to exist.
+    static juce::File makeFakeBundle(const juce::File& parent, const juce::String& name) {
+        auto bundle = parent.getChildFile(name);
+        bundle.createDirectory();
+        bundle.getChildFile("Contents").createDirectory();
+        bundle.getChildFile("Contents/Info.plist").replaceWithText("<plist/>");
+        return bundle;
+    }
+
+    // Write a manifest that claims the given bundles are installed.
+    static void writeManifest(const juce::File& manifestFile,
+                               const std::vector<std::pair<juce::String, juce::StringArray>>& archiveToBundles) {
+        juce::DynamicObject::Ptr root(new juce::DynamicObject());
+        root->setProperty("version", 1);
+        root->setProperty("installedAt", juce::Time::getCurrentTime().toISO8601(true));
+
+        juce::Array<juce::var> archiveArray;
+        for (auto& [slug, paths] : archiveToBundles) {
+            juce::DynamicObject::Ptr obj(new juce::DynamicObject());
+            obj->setProperty("slug", slug);
+            obj->setProperty("version", "test-1.0");
+            juce::Array<juce::var> pathVars;
+            for (auto& p : paths) pathVars.add(p);
+            obj->setProperty("installedPaths", pathVars);
+            archiveArray.add(juce::var(obj.get()));
+        }
+        root->setProperty("archives", archiveArray);
+        manifestFile.replaceWithText(juce::JSON::toString(juce::var(root.get()), true));
+    }
+
+public:
+    void runTest() override {
+        beginTest("readInstalledManifest returns empty when no file exists");
+        {
+            TempManifest fx;
+            auto entries = BundledPluginInstaller::readInstalledManifest();
+            expect(entries.empty());
+            expect(!BundledPluginInstaller::isInstalled());
+        }
+
+        beginTest("readInstalledManifest round-trips archives and installed paths");
+        {
+            TempManifest fx;
+            auto mda1 = makeFakeBundle(fx.tempDir, "mda ePiano.component");
+            auto mda2 = makeFakeBundle(fx.tempDir, "mda JX10.component");
+            auto dex  = makeFakeBundle(fx.tempDir, "Dexed.component");
+
+            writeManifest(fx.manifestFile, {
+                {"mda-suite", { mda1.getFullPathName(), mda2.getFullPathName() }},
+                {"dexed",     { dex.getFullPathName() }},
+            });
+
+            auto entries = BundledPluginInstaller::readInstalledManifest();
+            expectEquals((int) entries.size(), 2);
+            expect(BundledPluginInstaller::isInstalled());
+
+            // Order is insertion order per writeManifest.
+            expectEquals(juce::String(entries[0].slug), juce::String("mda-suite"));
+            expectEquals((int) entries[0].installedPaths.size(), 2);
+            expectEquals(juce::String(entries[1].slug), juce::String("dexed"));
+            expectEquals((int) entries[1].installedPaths.size(), 1);
+        }
+
+        beginTest("uninstallArchive removes bundles + entry, leaves others");
+        {
+            TempManifest fx;
+            auto mda1 = makeFakeBundle(fx.tempDir, "mda ePiano.component");
+            auto mda2 = makeFakeBundle(fx.tempDir, "mda JX10.component");
+            auto dex  = makeFakeBundle(fx.tempDir, "Dexed.component");
+
+            writeManifest(fx.manifestFile, {
+                {"mda-suite", { mda1.getFullPathName(), mda2.getFullPathName() }},
+                {"dexed",     { dex.getFullPathName() }},
+            });
+
+            int removed = BundledPluginInstaller::uninstallArchive("mda-suite");
+            expectEquals(removed, 2);
+
+            // mda bundles gone, dexed still there.
+            expect(!mda1.exists());
+            expect(!mda2.exists());
+            expect(dex.exists());
+
+            // Manifest now only has dexed.
+            auto entries = BundledPluginInstaller::readInstalledManifest();
+            expectEquals((int) entries.size(), 1);
+            expectEquals(juce::String(entries[0].slug), juce::String("dexed"));
+        }
+
+        beginTest("uninstallArchive on last archive deletes the manifest file");
+        {
+            TempManifest fx;
+            auto dex = makeFakeBundle(fx.tempDir, "Dexed.component");
+            writeManifest(fx.manifestFile, { {"dexed", { dex.getFullPathName() }} });
+
+            expect(BundledPluginInstaller::isInstalled());
+            int removed = BundledPluginInstaller::uninstallArchive("dexed");
+            expectEquals(removed, 1);
+            expect(!dex.exists());
+            expect(!BundledPluginInstaller::isInstalled());
+            expect(!fx.manifestFile.existsAsFile());
+        }
+
+        beginTest("uninstallArchive with unknown slug is a no-op");
+        {
+            TempManifest fx;
+            auto dex = makeFakeBundle(fx.tempDir, "Dexed.component");
+            writeManifest(fx.manifestFile, { {"dexed", { dex.getFullPathName() }} });
+
+            int removed = BundledPluginInstaller::uninstallArchive("nonexistent");
+            expectEquals(removed, 0);
+            expect(dex.exists());
+            expect(fx.manifestFile.existsAsFile());
+            auto entries = BundledPluginInstaller::readInstalledManifest();
+            expectEquals((int) entries.size(), 1);
+        }
+
+        beginTest("uninstallAll removes every bundle and deletes the manifest");
+        {
+            TempManifest fx;
+            auto a = makeFakeBundle(fx.tempDir, "a.component");
+            auto b = makeFakeBundle(fx.tempDir, "b.component");
+            auto c = makeFakeBundle(fx.tempDir, "c.component");
+
+            writeManifest(fx.manifestFile, {
+                {"first",  { a.getFullPathName() }},
+                {"second", { b.getFullPathName(), c.getFullPathName() }},
+            });
+
+            int removed = BundledPluginInstaller::uninstallAll();
+            expectEquals(removed, 3);
+            expect(!a.exists());
+            expect(!b.exists());
+            expect(!c.exists());
+            expect(!BundledPluginInstaller::isInstalled());
+            expect(!fx.manifestFile.existsAsFile());
+        }
+
+        beginTest("uninstall tolerates missing on-disk paths");
+        {
+            TempManifest fx;
+            // Manifest claims these bundles are installed, but they
+            // don't actually exist on disk (user deleted them in Finder
+            // between sessions). Uninstall should still clear the
+            // manifest without error.
+            writeManifest(fx.manifestFile, {
+                {"ghost", { fx.tempDir.getChildFile("never-was.component").getFullPathName() }},
+            });
+
+            int removed = BundledPluginInstaller::uninstallArchive("ghost");
+            expectEquals(removed, 0);  // nothing actually deleted
+            expect(!BundledPluginInstaller::isInstalled());
+        }
+    }
+};
+
+static BundledPluginInstallerTests bundledPluginInstallerTests;
 
 // ============================================================================
 // Test runner — main()
