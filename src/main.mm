@@ -793,12 +793,69 @@ private:
     std::unique_ptr<juce::PopupMenu> appMenuItems;
     std::unique_ptr<SettingsWindow> settingsWindow;
     KeyBindingManager keyBindings;
+    bool pluginPromptShown = false;
 
     void continueStartup(MainLayout* layout) {
         coordinator->restoreSession();
         layout->hideOverlay();
         if (coordinator->needsStartupSongChooser())
             showStartupSongChooser(layout);
+        else
+            maybePromptPluginInstall();
+    }
+
+    // Called once per session after the first song is loaded. Offers
+    // the bundled-plugin install to users who haven't accepted or
+    // declined yet. Declining sets a config flag so we don't nag on
+    // future launches; the Help menu stays as the always-available path.
+    void maybePromptPluginInstall() {
+        if (pluginPromptShown) {
+            perfLog("[PluginPrompt] skip: already shown this session\n");
+            return;
+        }
+        pluginPromptShown = true;
+        if (BundledPluginInstaller::isInstalled()) {
+            perfLog("[PluginPrompt] skip: already installed\n");
+            return;
+        }
+        if (coordinator->state().getConfig("bundled_plugins_prompt_declined") == "1") {
+            perfLog("[PluginPrompt] skip: previously declined\n");
+            return;
+        }
+
+        perfLog("[PluginPrompt] scheduling prompt in 600ms\n");
+
+        // Delay so the prompt appears after the song's UI has painted —
+        // otherwise the alert can fight the startup overlay for focus.
+        juce::Timer::callAfterDelay(600, [this]() {
+            perfLog("[PluginPrompt] showing alert\n");
+            juce::AlertWindow::showAsync(
+                juce::MessageBoxOptions()
+                    .withIconType(juce::MessageBoxIconType::QuestionIcon)
+                    .withTitle("Free plugin pack")
+                    .withMessage(juce::String::fromUTF8(
+                        "Performance can install a curated set of 15 free AU plugins "
+                        "(synths, effects, reverbs) so you can start making sound right away."
+                        "\n\n"
+                        "\xe2\x89\x88""86 MB. Signed and notarized. "
+                        "Available anytime from Help \xe2\x86\x92 Install Plugin Pack."))
+                    .withButton("Install")
+                    .withButton("Not now"),
+                [this](int result) {
+                    perfLog("[PluginPrompt] user chose result=%d\n", result);
+                    if (result == 1) {
+                        PluginInstallDialog::show([this]() {
+                            coordinator->engine().rescanPlugins();
+                            juce::MessageManager::callAsync([this]() {
+                                coordinator->syncPluginCatalog();
+                            });
+                        });
+                    } else {
+                        coordinator->state().setConfig(
+                            "bundled_plugins_prompt_declined", "1");
+                    }
+                });
+        });
     }
 
     void showStartupSongChooser(MainLayout* layout) {
@@ -819,11 +876,13 @@ private:
             juce::MessageManager::callAsync([this, layout, songId] {
                 coordinator->loadSong(songId);
                 layout->hideOverlay();
+                maybePromptPluginInstall();
             });
         };
         chooser.onNewSong = [this, layout]() {
             layout->removeChildComponent(&layout->startupChooser);
             coordinator->createDefaultSong(uniqueSongName(coordinator->state()).toStdString());
+            maybePromptPluginInstall();
         };
     }
 

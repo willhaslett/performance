@@ -15,7 +15,11 @@ constexpr int kDownloadChunkBytes = 64 * 1024;
 constexpr int kHttpConnectionTimeoutMs = 15000;
 
 juce::File appSupportDir() {
+    // On macOS, JUCE's userApplicationDataDirectory is ~/Library —
+    // the "Application Support" segment is by convention appended by
+    // callers. See telemetry/InstallId.cpp for the matching pattern.
     auto dir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                  .getChildFile("Application Support")
                   .getChildFile("com.performance.app");
     dir.createDirectory();
     return dir;
@@ -420,7 +424,9 @@ void BundledPluginInstaller::writeInstallManifest(
     auto json = juce::JSON::toString(juce::var(root.get()), true);
     auto file = installManifestFile();
     file.getParentDirectory().createDirectory();
-    file.replaceWithText(json);
+    bool ok = file.replaceWithText(json);
+    perfLog("[PluginInstall] wrote install manifest to %s (%d bytes, ok=%d)\n",
+            file.getFullPathName().toRawUTF8(), (int)json.length(), (int)ok);
 }
 
 // -----------------------------------------------------------------------------
