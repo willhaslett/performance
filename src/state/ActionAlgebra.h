@@ -41,9 +41,10 @@ struct Target {
 //                     "fade from wherever we are now" without baking the
 //                     start value into the tree.
 struct Value {
-    enum class Kind { Number, Placeholder, CaptureCurrent };
+    enum class Kind { Number, Text, Placeholder, CaptureCurrent };
     Kind        kind = Kind::Number;
     double      number = 0.0;
+    std::string text;         // Kind::Text — UUID, enum value, "Main", etc.
     std::string placeholder;
 
     bool operator==(const Value&) const;
@@ -51,9 +52,10 @@ struct Value {
 };
 
 // Convenience Value constructors — make hand-built trees readable.
-inline Value num(double v)            { return { Value::Kind::Number, v, {} }; }
-inline Value placeholder(std::string name) { return { Value::Kind::Placeholder, 0.0, std::move(name) }; }
-inline Value captureCurrent()         { return { Value::Kind::CaptureCurrent, 0.0, {} }; }
+inline Value num(double v)                 { return { Value::Kind::Number, v, {}, {} }; }
+inline Value text(std::string s)           { return { Value::Kind::Text, 0.0, std::move(s), {} }; }
+inline Value placeholder(std::string name) { return { Value::Kind::Placeholder, 0.0, {}, std::move(name) }; }
+inline Value captureCurrent()              { return { Value::Kind::CaptureCurrent, 0.0, {}, {} }; }
 
 // ActionNode — the algebra tree. See docs/ACTION_ALGEBRA.md for semantics.
 struct ActionNode {

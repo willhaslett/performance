@@ -14,10 +14,12 @@ float ActionInterpreter::resolveValue(const Value& v, const Target* captureTarge
             return (float)v.number;
         case Value::Kind::CaptureCurrent:
             return captureTarget ? io.read(*captureTarget) : 0.0f;
+        case Value::Kind::Text:
+            // Text where a numeric resolution was expected — type mismatch.
+            perfLog("[ActionInterpreter] Text value '%s' used as number\n", v.text.c_str());
+            return 0.0f;
         case Value::Kind::Placeholder:
             // Unbound placeholder — programmer error in the template or args.
-            // Per fail-hard, log and return 0; the assertion comes when someone
-            // calls a typed API with a resolved UUID this Value should've held.
             perfLog("[ActionInterpreter] Unbound placeholder '%s'\n",
                     v.placeholder.c_str());
             return 0.0f;

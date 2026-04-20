@@ -13,6 +13,7 @@ bool Value::operator==(const Value& o) const {
     if (kind != o.kind) return false;
     switch (kind) {
         case Kind::Number:         return number == o.number;
+        case Kind::Text:           return text == o.text;
         case Kind::Placeholder:    return placeholder == o.placeholder;
         case Kind::CaptureCurrent: return true;
     }
@@ -107,9 +108,26 @@ static Value substituteValue(const Value& v,
     return it != bindings.end() ? it->second : v;
 }
 
+// Target.entityId is a plain string at the type level. Templates encode
+// placeholder entity refs as "$name" strings. At substitute time, resolve
+// them by looking up the binding's Value::Text and replacing the string.
+static std::string substituteEntityId(const std::string& s,
+                                       const std::unordered_map<std::string, Value>& bindings) {
+    if (s.size() < 2 || s[0] != '$') return s;
+    auto name = s.substr(1);
+    auto it = bindings.find(name);
+    if (it == bindings.end()) return s;  // unbound — leaves the sigil in for fail-hard later
+    const auto& v = it->second;
+    if (v.kind == Value::Kind::Text) return v.text;
+    // Numbers as entityIds would be a type error; leave unchanged so it
+    // visibly fails at the IO layer rather than silently coercing.
+    return s;
+}
+
 ActionNode substitute(const ActionNode& tree,
                        const std::unordered_map<std::string, Value>& bindings) {
     ActionNode out = tree;
+    out.target.entityId = substituteEntityId(out.target.entityId, bindings);
     out.from     = substituteValue(out.from, bindings);
     out.to       = substituteValue(out.to, bindings);
     out.duration = substituteValue(out.duration, bindings);
@@ -157,6 +175,8 @@ static juce::var valueToVar(const Value& v) {
     switch (v.kind) {
         case Value::Kind::Number:
             return v.number;
+        case Value::Kind::Text:
+            return juce::String(v.text);
         case Value::Kind::CaptureCurrent:
             return ":current";
         case Value::Kind::Placeholder: {
@@ -171,10 +191,9 @@ static juce::var valueToVar(const Value& v) {
 static Value valueFromVar(const juce::var& v) {
     if (v.isString()) {
         if (v.toString() == ":current") return captureCurrent();
-        // Bare strings outside the ":current" sentinel shouldn't appear in Values
-        // today (placeholders always use the {"$": name} form). Treat as
-        // placeholder for forgiveness.
-        return placeholder(v.toString().toStdString());
+        // Bare JSON strings are Text values (UUIDs, "Main", enum values).
+        // Placeholders use the explicit {"$": "name"} object form.
+        return text(v.toString().toStdString());
     }
     if (auto* obj = v.getDynamicObject()) {
         auto ph = obj->getProperty("$").toString();

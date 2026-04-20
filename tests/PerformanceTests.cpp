@@ -3014,6 +3014,27 @@ public:
             expect(result.invokeArgs[2] == num(7.0));
         }
 
+        beginTest("Substitution replaces $name sigil in Target.entityId");
+        {
+            auto tree = interpolate({ Target::Kind::TrackGain, "$track", -1 },
+                                     captureCurrent(), num(0), num(3.0), "linear");
+            std::unordered_map<std::string, Value> bindings {
+                { "track", text("uuid-abc") }
+            };
+            auto result = substitute(tree, bindings);
+            expect(result.target.entityId == "uuid-abc");
+        }
+
+        beginTest("Text value round-trips through JSON as bare string");
+        {
+            auto v = text("some-uuid");
+            auto tree = set({ Target::Kind::Selection, {}, -1 }, v);
+            auto back = fromJson(toJson(tree));
+            expect(tree == back);
+            expect(back.to.kind == Value::Kind::Text);
+            expect(back.to.text == "some-uuid");
+        }
+
         beginTest("Unbound placeholder passes through unchanged");
         {
             auto tree = interpolate({ Target::Kind::TrackGain, "T", -1 },
