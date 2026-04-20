@@ -28,8 +28,8 @@ juce::String formatSize(juce::int64 bytes) {
 
 }  // namespace
 
-PluginInstallDialog::PluginInstallDialog()
-    : progressBar(progressValue) {
+PluginInstallDialog::PluginInstallDialog(RescanFn rescan)
+    : rescanAndSync(std::move(rescan)), progressBar(progressValue) {
     setOpaque(true);
 
     titleLabel.setText("Installing free plugin pack", juce::dontSendNotification);
@@ -119,28 +119,64 @@ void PluginInstallDialog::timerCallback() {
 }
 
 void PluginInstallDialog::onInstallComplete(bool success, const std::string& message) {
-    finished = true;
     stopTimer();
 
     auto p = installer.getProgress();
-    statusLabel.setText(juce::String(message), juce::dontSendNotification);
-    if (success) {
-        progressValue = 1.0;
-        closeButton.setButtonText("Done");
-        closeButton.setEnabled(true);
-    } else {
+    if (!success) {
+        finished = true;
+        statusLabel.setText(juce::String(message), juce::dontSendNotification);
         closeButton.setButtonText("Close");
         closeButton.setEnabled(true);
         if (!p.errorMessage.empty()) {
             perfLog("[PluginInstall] install failed: %s\n", p.errorMessage.c_str());
         }
+        repaint();
+        return;
     }
-    repaint();
+
+    progressValue = 1.0;
+
+    if (rescanAndSync) {
+        statusLabel.setText("Scanning for new plugins...", juce::dontSendNotification);
+        progressLabel.setText("", juce::dontSendNotification);
+        closeButton.setEnabled(false);
+        repaint();
+        startPostInstallRescan();
+    } else {
+        finished = true;
+        statusLabel.setText(juce::String(message), juce::dontSendNotification);
+        closeButton.setButtonText("Done");
+        closeButton.setEnabled(true);
+        repaint();
+    }
 }
 
-void PluginInstallDialog::show() {
+void PluginInstallDialog::startPostInstallRescan() {
+    // Run on a worker — scanForPlugins() loads each AU to probe
+    // parameters and can take a few seconds even with the "skip
+    // already-scanned" fast path. SafePointer makes the UI-update
+    // lambda a no-op if the dialog was destroyed (e.g. window force-
+    // closed) before the rescan returned.
+    auto rescan = rescanAndSync;
+    juce::Component::SafePointer<PluginInstallDialog> safeThis(this);
+    juce::Thread::launch([rescan, safeThis]() {
+        if (rescan) rescan();
+        juce::MessageManager::callAsync([safeThis]() {
+            if (auto* dlg = safeThis.getComponent()) {
+                dlg->finished = true;
+                dlg->statusLabel.setText("Plugins installed and ready to use.",
+                                         juce::dontSendNotification);
+                dlg->closeButton.setButtonText("Done");
+                dlg->closeButton.setEnabled(true);
+                dlg->repaint();
+            }
+        });
+    });
+}
+
+void PluginInstallDialog::show(RescanFn rescanAndSync) {
     juce::DialogWindow::LaunchOptions o;
-    o.content.setOwned(new PluginInstallDialog());
+    o.content.setOwned(new PluginInstallDialog(std::move(rescanAndSync)));
     o.dialogTitle = "Plugins";
     o.dialogBackgroundColour = juce::Colour(Theme::Color::bgOverlay);
     o.escapeKeyTriggersCloseButton = false;

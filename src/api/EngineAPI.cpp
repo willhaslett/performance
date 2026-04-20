@@ -148,6 +148,30 @@ std::vector<juce::String> EngineAPI::listEffectPlugins() const {
     return names;
 }
 
+void EngineAPI::rescanPlugins() {
+    engine.scanForPlugins();
+}
+
+void EngineAPI::pruneMissingPlugins() {
+    auto& known = engine.getKnownPlugins();
+    std::vector<juce::PluginDescription> toRemove;
+    for (auto& type : known.getTypes()) {
+        auto file = juce::File(type.fileOrIdentifier);
+        // AU plugins live inside .component bundles; AU system plugins
+        // have identifiers that don't resolve to real paths (no file,
+        // no .component extension) — leave those alone.
+        if (type.fileOrIdentifier.endsWith(".component") && !file.exists()) {
+            toRemove.push_back(type);
+        }
+    }
+    for (auto& t : toRemove) {
+        known.removeType(t);
+    }
+    if (!toRemove.empty()) {
+        engine.savePluginCache();
+    }
+}
+
 // --- Processor access ---
 
 juce::AudioProcessor* EngineAPI::getTrackInstrumentProcessor(const juce::String& trackId) {

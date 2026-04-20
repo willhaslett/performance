@@ -33,6 +33,18 @@ public:
     std::vector<juce::String> listInstrumentPlugins() const;
     std::vector<juce::String> listEffectPlugins() const;
 
+    // Rescan ~/Library/Audio/Plug-Ins/Components and /Library equivalent,
+    // adding any newly-seen bundles to the plugin cache. Idempotent —
+    // already-scanned plugins are skipped. Call after an install /
+    // uninstall to pick up the change without a restart. Blocks the
+    // calling thread; callers should run on a worker.
+    void rescanPlugins();
+
+    // Drop plugin-cache entries whose .component file no longer exists.
+    // Covers user-Finder deletes + our uninstall path. Safe to call at
+    // startup and after uninstall.
+    void pruneMissingPlugins();
+
     // --- Processor access (for presets, params) ---
     juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId);
     juce::AudioProcessor* getEffectProcessor(const juce::String& parentId,

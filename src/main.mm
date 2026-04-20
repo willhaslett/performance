@@ -485,7 +485,16 @@ public:
             break;
 
         // Help
-        case CommandIDs::helpInstallPlugins: PluginInstallDialog::show(); break;
+        case CommandIDs::helpInstallPlugins:
+            PluginInstallDialog::show([this]() {
+                // Run on the dialog's worker; hop back to message thread
+                // for syncPluginCatalog (mutates state → fires events).
+                coord.engine().rescanPlugins();
+                juce::MessageManager::callAsync([this]() {
+                    coord.syncPluginCatalog();
+                });
+            });
+            break;
 
         // Settings
         case CommandIDs::openSettings: layout.handleGlobalKey(KeyBindings::settings); break;
@@ -742,11 +751,16 @@ public:
                 // Timer delay lets the overlay paint before the blocking scan starts.
                 juce::Timer::callAfterDelay(100, [this, layout, &audioEngine] {
                     audioEngine.scanForPlugins();
+                    coordinator->engine().pruneMissingPlugins();
                     coordinator->syncPluginCatalog();
                     layout->hideOverlay();
                     continueStartup(layout);
                 });
             } else {
+                // Cache was loaded. Drop stale entries for .component
+                // bundles the user deleted between runs (or that we
+                // uninstalled via the plugin manager).
+                coordinator->engine().pruneMissingPlugins();
                 layout->showOverlay("Loading...");
                 juce::MessageManager::callAsync([this, layout] {
                     continueStartup(layout);
