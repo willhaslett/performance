@@ -613,6 +613,14 @@ void PerformanceCoordinator::syncTempoFromState() {
         sequencerImpl->setLoopEnabled(false);
     }
 
+    // Push looper-mode state into the arrangement scanner so it knows
+    // to dispatch to the loop-playback path. Cycle length is cycleEnd
+    // (normalized to start=0 by the StateAPI invariants).
+    if (song) {
+        arrangementImpl.updateLooperMode(song->looperModeActive,
+                                          song->looperModeActive ? song->cycleEnd : 0.0);
+    }
+
     perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d\n",
             stateAPI->getSongTempo(), num, den);
 }

@@ -294,6 +294,12 @@ static double computeLoopEnd(const RegionState& r, const std::vector<RegionState
 
 void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                                   EventCallback callback) const {
+    if (looperModeActive) scanLoopEvents(prevBeat, currentBeat, callback);
+    else                  scanArrangementEvents(prevBeat, currentBeat, callback);
+}
+
+void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
+                                         EventCallback callback) const {
     if (prevBeat >= currentBeat || !songTracks) return;
 
     for (auto& t : *songTracks) {
@@ -383,6 +389,92 @@ void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
                     }
                 }
             }  // end rep loop
+        }
+    }
+}
+
+// Looper-mode MIDI scan. Plays each track's FIRST loop region (track.loops[0])
+// via modular playback: regionPosition = cyclePos mod region.lengthBeats.
+// See docs/LIVE_LOOPING.md for the rule — a 4-bar loop in a 16-bar cycle
+// plays 4× per cycle pass; a 20-bar loop in a 16-bar cycle plays its first
+// 16 bars and wraps.
+//
+// prevBeat / currentBeat are cycle-relative positions (the sequencer wraps
+// at cycle end, so they never span the wrap — they're always in [0, cycle]).
+// If the cycle length is unknown (looperCycleLengthBeats <= 0), no-op.
+void Arrangement::scanLoopEvents(double prevBeat, double currentBeat,
+                                  EventCallback callback) const {
+    if (prevBeat >= currentBeat || !songTracks) return;
+    if (looperCycleLengthBeats <= 0.0) return;
+
+    for (auto& t : *songTracks) {
+        if (t.loops.empty()) continue;
+        auto& r = t.loops[0];  // one loop per track in looper mode
+        if (r.type != "midi" || r.muted) continue;
+        if (r.lengthBeats <= 0.0) continue;
+
+        auto* take = r.activeTake();
+        if (!take) continue;
+
+        // Repetition count within one cycle pass. If the region is
+        // longer than the cycle, we only play its first cycleLength beats
+        // (no repetition — the tail is preserved on disk, silent here).
+        double playableLength = std::min(r.lengthBeats, looperCycleLengthBeats);
+        (void) playableLength;  // reserved for future clip-to-cycle hygiene
+
+        int maxReps = (int) std::ceil(looperCycleLengthBeats / r.lengthBeats);
+        if (maxReps < 1) maxReps = 1;
+
+        std::map<int, MidiEventState> openNotes;
+
+        auto emitEvent = [&](const MidiEventState& event, double absBeat) {
+            bool isNoteOn = (event.status & 0xF0) == 0x90 && event.data2 > 0;
+            bool isNoteOff = (event.status & 0xF0) == 0x80
+                          || ((event.status & 0xF0) == 0x90 && event.data2 == 0);
+            int noteKey = (event.channel << 8) | event.data1;
+
+            if (isNoteOn) openNotes[noteKey] = event;
+            else if (isNoteOff) openNotes.erase(noteKey);
+
+            if (absBeat >= prevBeat && absBeat < currentBeat)
+                callback(t.id, event, absBeat);
+        };
+
+        for (int rep = 0; rep < maxReps; ++rep) {
+            double repBase = rep * r.lengthBeats;
+            // Stop if this repetition starts beyond the cycle.
+            if (repBase >= looperCycleLengthBeats) break;
+            // Window this repetition's events to the current scan range.
+            if (repBase + r.lengthBeats <= prevBeat) continue;
+
+            for (auto& event : take->events) {
+                double offset = event.beatOffset;
+                if (offset < 0.0 || offset >= r.lengthBeats) continue;
+                double absBeat = repBase + offset;
+                // Clip events whose tail sits past the cycle boundary:
+                // a 20-bar loop in a 16-bar cycle has its beats 16–20
+                // inaccessible until the user extends the cycle.
+                if (absBeat >= looperCycleLengthBeats) continue;
+                emitEvent(event, absBeat);
+            }
+
+            // Synthetic noteOffs at this repetition's boundary so notes
+            // don't hang when the loop wraps onto itself (same hygiene
+            // as the arrangement-scan path).
+            double boundaryBeat = std::min(repBase + r.lengthBeats,
+                                            looperCycleLengthBeats);
+            if (boundaryBeat >= prevBeat && boundaryBeat < currentBeat) {
+                for (auto& [_noteKey, onEvent] : openNotes) {
+                    MidiEventState offEvent;
+                    offEvent.status = 0x80;
+                    offEvent.channel = onEvent.channel;
+                    offEvent.data1 = onEvent.data1;
+                    offEvent.data2 = 0;
+                    offEvent.beatOffset = 0;
+                    callback(t.id, offEvent, boundaryBeat);
+                }
+                openNotes.clear();
+            }
         }
     }
 }

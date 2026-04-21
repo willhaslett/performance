@@ -4128,6 +4128,172 @@ public:
 static LooperStateTests looperStateTests;
 
 // ============================================================================
+// Live looper — Phase 2: playback engine (within-cycle region wrap)
+// ============================================================================
+
+class LooperPlaybackTests : public juce::UnitTest {
+public:
+    LooperPlaybackTests() : juce::UnitTest("LooperPlayback") {}
+
+private:
+    // Parallel fixture to ArrangementTests::TestContext but uses
+    // track.loops instead of track.regions. Each test sets up a loop
+    // with some events and scans across a beat range.
+    struct LooperCtx {
+        std::vector<TrackState> tracks;
+        Arrangement arr;
+
+        LooperCtx(std::initializer_list<std::string> trackIds, double cycleLengthBeats) {
+            for (auto& id : trackIds) {
+                TrackState t;
+                t.id = TrackId{id};
+                t.name = id;
+                tracks.push_back(std::move(t));
+            }
+            arr.setTracks(&tracks);
+            arr.updateLooperMode(true, cycleLengthBeats);
+        }
+
+        TrackState* track(const std::string& id) {
+            for (auto& t : tracks)
+                if (t.id == TrackId{id}) return &t;
+            return nullptr;
+        }
+
+        // Add a loop with one take containing the given events.
+        RegionState* addLoop(const std::string& trackId, double lengthBeats,
+                              const std::vector<MidiEventState>& events) {
+            auto* t = track(trackId);
+            if (!t) return nullptr;
+            RegionState r;
+            r.id = RegionId{"loop-" + trackId};
+            r.type = "midi";
+            r.startBeat = 0.0;
+            r.lengthBeats = lengthBeats;
+            TakeState take;
+            take.id = TakeId{"take-" + trackId};
+            take.events = events;
+            r.activeTakeId = take.id;
+            r.takes.push_back(std::move(take));
+            t->loops.push_back(std::move(r));
+            return &t->loops.back();
+        }
+    };
+
+    static MidiEventState noteOn(int pitch, double beat) {
+        return { beat, 0x90, 1, pitch, 100 };
+    }
+    static MidiEventState noteOff(int pitch, double beat) {
+        return { beat, 0x80, 1, pitch, 0 };
+    }
+
+public:
+    void runTest() override {
+        beginTest("4-bar loop in 16-bar cycle plays 4× per cycle pass");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            ctx.addLoop("t1", 4.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+            });
+
+            std::vector<double> beats;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double b) {
+                if ((e.status & 0xF0) == 0x90) beats.push_back(b);
+            });
+
+            expectEquals((int) beats.size(), 4);
+            expectEquals(beats[0], 0.0);
+            expectEquals(beats[1], 4.0);
+            expectEquals(beats[2], 8.0);
+            expectEquals(beats[3], 12.0);
+        }
+
+        beginTest("Loop equal to cycle plays once per cycle pass");
+        {
+            LooperCtx ctx({"t1"}, 8.0);
+            ctx.addLoop("t1", 8.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+                noteOn(62, 4.0), noteOff(62, 5.0),
+            });
+
+            int noteOns = 0;
+            ctx.arr.scanMidiEvents(0.0, 8.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) ++noteOns;
+            });
+            expectEquals(noteOns, 2);  // plays once
+        }
+
+        beginTest("Loop longer than cycle has its tail clipped");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            // 20-bar loop: events at beats 0, 8, 16, 18 within the loop
+            ctx.addLoop("t1", 20.0, {
+                noteOn(60, 0.0),  noteOff(60, 1.0),
+                noteOn(62, 8.0),  noteOff(62, 9.0),
+                noteOn(64, 16.0), noteOff(64, 17.0),  // at cycle boundary — clipped
+                noteOn(65, 18.0), noteOff(65, 19.0),  // past cycle — clipped
+            });
+
+            std::vector<int> pitches;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) pitches.push_back(e.data1);
+            });
+            // Only 60 and 62 play; 64 and 65 are in the preserved-but-silent tail.
+            expectEquals((int) pitches.size(), 2);
+            expectEquals(pitches[0], 60);
+            expectEquals(pitches[1], 62);
+        }
+
+        beginTest("Looper mode off falls back to arrangement scan");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            ctx.addLoop("t1", 4.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+            });
+            ctx.arr.updateLooperMode(false, 0.0);  // flip off
+
+            int noteOns = 0;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) ++noteOns;
+            });
+            // Loops are ignored in arrangement mode — no events.
+            expectEquals(noteOns, 0);
+        }
+
+        beginTest("Multiple tracks loop independently");
+        {
+            LooperCtx ctx({"t1", "t2"}, 16.0);
+            ctx.addLoop("t1", 4.0, { noteOn(60, 0.0), noteOff(60, 1.0) });
+            ctx.addLoop("t2", 8.0, { noteOn(72, 0.0), noteOff(72, 1.0) });
+
+            std::map<int, int> countByPitch;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) countByPitch[e.data1]++;
+            });
+            expectEquals(countByPitch[60], 4);  // 4-bar loop plays 4× in 16
+            expectEquals(countByPitch[72], 2);  // 8-bar loop plays 2× in 16
+        }
+
+        beginTest("Muted track's loop is silent");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            // Mute via the region-level muted flag (track-level mute happens
+            // elsewhere in the engine; this is the region's own muted gate).
+            auto* r = ctx.addLoop("t1", 4.0, { noteOn(60, 0.0), noteOff(60, 1.0) });
+            r->muted = true;
+
+            int events = 0;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState&, double) {
+                ++events;
+            });
+            expectEquals(events, 0);
+        }
+    }
+};
+
+static LooperPlaybackTests looperPlaybackTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 
