@@ -358,6 +358,43 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("save", [&coord]() { coord.save(); });
 
+    // Live looping (see docs/LIVE_LOOPING.md). These toggle looper mode
+    // on the current project and set the project loop length. Writes
+    // go through StateAPI, which enforces invariants (cycleStart=0,
+    // cycleEnabled=true) when looper mode is active.
+    lua.set_function("setLooperModeActive", [&state](bool active) {
+        state.setLooperModeActive(active);
+    });
+    lua.set_function("isLooperModeActive", [&state]() -> bool {
+        return state.isLooperModeActive();
+    });
+    lua.set_function("setCycleLength", [&state](double beats) {
+        state.setCycleLength(beats);
+    });
+    lua.set_function("getCycleLength", [&state]() -> double {
+        return state.getCycleLength();
+    });
+    lua.set_function("setPendingTake", [&state](const std::string& regionId,
+                                                  const std::string& takeId) {
+        state.setPendingTake(RegionId{regionId}, TakeId{takeId});
+    });
+
+    // Loop recording. `toggleLoopRecord` is a latching button: tap
+    // once to arm, again to punch out. Resolves the track by display
+    // name to stay consistent with other track-targeted bindings.
+    lua.set_function("toggleLoopRecord", [&state, &coord](const std::string& trackName) {
+        auto trackId = state.findTrackIdByName(trackName);
+        if (trackId.empty()) {
+            throw std::runtime_error("toggleLoopRecord: no track named '" + trackName + "'");
+        }
+        coord.toggleLoopRecord(trackId);
+    });
+    lua.set_function("getLoopRecordState", [&state, &coord](const std::string& trackName) -> std::string {
+        auto trackId = state.findTrackIdByName(trackName);
+        if (trackId.empty()) return "off";
+        return coord.getLoopRecordState(trackId);
+    });
+
     // Offline render (bounce) to a stereo WAV file. Returns a one-line
     // human-readable status string so the caller (Claude or dev console)
     // knows wall-clock duration and audio length.

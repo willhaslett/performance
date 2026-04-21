@@ -16,6 +16,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     : state(state), engine(engine),
       debugPane(coordinator, engine),
       performPane(state, engine, coordinator),
+      looperPane(state, engine, coordinator),
       chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
@@ -26,6 +27,8 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onStopRecordMode = [&coordinator]() { coordinator.stopRecordMode(); };
     producePane.onIsRecordMode = [&coordinator]() { return coordinator.isInRecordMode(); };
     producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
+
+    looperPane.setSequencer(coordinator.sequencer());
 
     // After a song loads, scan its bindings + action events for refs that
     // don't resolve anymore (e.g. a track got deleted in a past session and
@@ -64,6 +67,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     // All components start hidden — setPaneContent will show the right ones
     sidebar.setVisible(false);
     producePane.setVisible(false);
+    looperPane.setVisible(false);
     performPane.setVisible(false);
     debugPane.setVisible(false);
     chatView.setVisible(false);
@@ -72,6 +76,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     addChildComponent(sidebar);
     addChildComponent(producePane);
+    addChildComponent(looperPane);
     addChildComponent(performPane);
 
     // Single global MIDI monitor — coordinator.setGlobalMidiMonitor is a
@@ -168,6 +173,18 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
             auto cur = getPaneContent(PaneSlot::Left);
             setPaneContent(PaneSlot::Left,
                            cur == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
+        } else if (viewName == "looper") {
+            // Looper pane is the surface for looper mode: entering the pane
+            // flips the song-level flag so the engine scans track.loops, and
+            // leaving it flips back. Producer is the natural fallback.
+            bool isLooper = (getPaneContent(PaneSlot::Left) == PaneContent::Looper);
+            if (isLooper) {
+                this->state.setLooperModeActive(false);
+                setPaneContent(PaneSlot::Left, PaneContent::Produce);
+            } else {
+                this->state.setLooperModeActive(true);
+                setPaneContent(PaneSlot::Left, PaneContent::Looper);
+            }
         } else if (viewName == "perform") {
             auto cur = getPaneContent(PaneSlot::Left);
             setPaneContent(PaneSlot::Left,
@@ -186,6 +203,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     sidebar.isViewActive = [this](const std::string& viewName) -> bool {
         if (viewName == "sidebar")  return getPaneContent(PaneSlot::Sidebar) != PaneContent::Hidden;
         if (viewName == "produce")  return getPaneContent(PaneSlot::Left) == PaneContent::Produce;
+        if (viewName == "looper")   return getPaneContent(PaneSlot::Left) == PaneContent::Looper;
         if (viewName == "perform")  return getPaneContent(PaneSlot::Left) == PaneContent::Perform;
         if (viewName == "mixer")    return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
         if (viewName == "chat")     return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
@@ -222,6 +240,7 @@ juce::Component* MainLayout::componentForContent(PaneContent content) {
     switch (content) {
         case PaneContent::SidebarTree: return &sidebar;
         case PaneContent::Produce:     return &producePane;
+        case PaneContent::Looper:      return &looperPane;
         case PaneContent::Perform:     return &performPane;
         case PaneContent::Debug:       return &debugPane;
         case PaneContent::Chat:        return &chatView;
@@ -236,6 +255,7 @@ std::string MainLayout::contentToString(PaneContent content) {
         case PaneContent::Hidden:      return "hidden";
         case PaneContent::SidebarTree: return "sidebar_tree";
         case PaneContent::Produce:     return "produce";
+        case PaneContent::Looper:      return "looper";
         case PaneContent::Perform:     return "perform";
         case PaneContent::Debug:       return "debug";
         case PaneContent::Chat:        return "chat";
@@ -248,6 +268,7 @@ std::string MainLayout::contentToString(PaneContent content) {
 PaneContent MainLayout::stringToContent(const std::string& s) {
     if (s == "sidebar_tree") return PaneContent::SidebarTree;
     if (s == "produce")      return PaneContent::Produce;
+    if (s == "looper")       return PaneContent::Looper;
     if (s == "perform")      return PaneContent::Perform;
     if (s == "debug")        return PaneContent::Debug;
     if (s == "chat")         return PaneContent::Chat;
@@ -261,6 +282,7 @@ const char* MainLayout::contentLabel(PaneContent content) {
         case PaneContent::Hidden:      return "Hide";
         case PaneContent::SidebarTree: return "Sidebar";
         case PaneContent::Produce:     return "Produce";
+        case PaneContent::Looper:      return "Looper";
         case PaneContent::Perform:     return "Perform";
         case PaneContent::Debug:       return "Debug";
         case PaneContent::Chat:        return "Chat";

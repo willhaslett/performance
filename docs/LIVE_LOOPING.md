@@ -1,6 +1,6 @@
 # Live looping — investigation + design
 
-**Status:** design settled 2026-04-20; phased plan below.
+**Status:** Phases 1–4 landed on branch `live-looping` as of 2026-04-20; initial click-testing in progress. Phase 5 (movement/copy primitives) still open. See **Implementation status** at the bottom for details.
 
 The investigation section surveys the field. The Design section below is what we're actually building — and it diverges from the "Ableton-style matrix" the investigation opens with. The deeper the investigation went, the clearer it became that the user's intuition about a single looping timeline with one region per track was *not* an under-specified matrix; it was a legitimately different model, and the right one for this app.
 
@@ -225,3 +225,22 @@ Five phases, each shippable on its own, building strictly upward.
 - **Pane-aware keybinding filter — implementation detail.** Global table with filter, or per-pane local tables with fallback. Decide during Phase 4.
 - **Punch-in UX when transport is stopped.** Auto-start the transport (Ableton does)? Probably yes. Decide during Phase 3.
 - **`moveLoop` / `moveRegion` same-pool semantics when the target track already has a loop.** Replace, refuse, or keep both (breaking "one loop per track")? Decide during Phase 5.
+
+---
+
+# Implementation status (2026-04-20)
+
+All work is on branch `live-looping`, merged to `main` after initial visual verification.
+
+**Phases 1–3 landed with tests:** state model + pool-discriminated persistence + `pendingTakeId`; modular playback (`regionPosition = cyclePosition mod region.lengthBeats`); latching loop-record state machine (Off → Armed → Recording → StopPending → Off) with cycle-wrap detection in `PerformanceCoordinator`. 205/205 unit tests pass, including `LooperStateTests`, `LooperPlaybackTests`, `LooperTakeSwapTests`, `LooperRecordTests`.
+
+**Phase 4 landed, click-testing in progress.** `LooperPane` renders a top bar (title + cycle-progress strip aligned to the timeline column + cycle-length pill), one row per track (record button with armed/recording/stop-pending visual states, mute pill, take selector, loop content repeated across the cycle with a simple piano-roll note render), and a shared playhead. Sidebar has a "Looper" row that flips `looperModeActive` and swaps the Left slot between Produce and Looper (they're mutually exclusive). Click handlers are wired to `toggleLoopRecord`, `setTrackMuted`, `setPendingTake`, and `setCycleLength`.
+
+**Open items before calling Looper done:**
+
+- **Extended click-testing.** Record path end-to-end (arm → wrap → capture → stop-pending → finalize), take-swap visible at cycle wrap, cycle-length live editing, and behavior under song switch / autosave / quit-and-reload. The full feature surface has not yet been exercised in the running app.
+- **Dedicated keyboard shortcut for the Looper pane.** All adjacent ⌘ keys were taken (⌘L is `view.zoomIn`); deferred until click-testing motivates a choice.
+- **Load-time reconciliation** between persisted `looperModeActive` and the persisted pane layout. Skipped on the first pass; revisit if it bites.
+- **Pane-aware keybinding routing.** Still on the open-questions list above.
+- **Phase 5 — movement/copy primitives** (`moveLoop`, `moveRegion`, `copyLoopToArrangement`, `copyArrangementToLoop`). Not started.
+

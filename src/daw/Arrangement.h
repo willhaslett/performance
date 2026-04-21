@@ -47,6 +47,19 @@ public:
                                               double absoluteBeat)>;
     void scanMidiEvents(double prevBeat, double currentBeat, EventCallback callback) const;
 
+    // --- Looper mode (see docs/LIVE_LOOPING.md) ---
+    // When looper mode is active, scanMidiEvents dispatches to a
+    // modular-playback path that walks each track's loop pool
+    // (track.loops) instead of the arrangement pool (track.regions),
+    // wrapping each loop's content at (cyclePos mod lengthBeats).
+    // Callers (Coordinator) set this via updateLooperMode; the scanner
+    // owns the dispatch so engine callers don't need to know.
+    void updateLooperMode(bool active, double cycleLengthBeats) {
+        looperModeActive = active;
+        looperCycleLengthBeats = cycleLengthBeats;
+    }
+    bool isLooperModeActive() const { return looperModeActive; }
+
     // --- Action event scanning ---
     using ActionCallback = std::function<void(const SongState::ActionEvent& event)>;
     void scanActionEvents(double prevBeat, double currentBeat, ActionCallback callback) const;
@@ -57,6 +70,19 @@ public:
     void stopRecording();
     bool isRecording() const { return !recordingTakes.empty(); }
 
+    // --- Loop recording (Looper mode) ---
+    // Creates (if absent) the track's single loop region at startBeat=0
+    // and adds a new take to it. Routes incoming recorded events into
+    // the new take via the shared recordingTakes list; lengthBeats is
+    // updated at stopLoopRecording.
+    //
+    // `stopLoopRecording` sets the loop region's lengthBeats from the
+    // caller-supplied value (typically punch-out beat − punch-in beat
+    // in the performance timeline) and promotes the new take to active.
+    // Previous takes remain on disk; performer can swap back to them.
+    RegionState* startLoopRecording(const TrackId& trackId);
+    void stopLoopRecording(const TrackId& trackId, double lengthBeats);
+
     // --- Derived views ---
     static std::vector<NoteView> buildNoteList(const TakeState& take, double regionLength);
     // Convenience: build from region's active take
@@ -65,6 +91,16 @@ public:
 private:
     std::vector<TrackState>* songTracks = nullptr;
     std::vector<TakeState*> recordingTakes;  // active recording targets
+
+    bool looperModeActive = false;
+    double looperCycleLengthBeats = 0.0;
+
+    // Internal dispatch helpers for scanMidiEvents. The caller-facing
+    // scanMidiEvents picks one based on the looper-mode flag.
+    void scanArrangementEvents(double prevBeat, double currentBeat,
+                                EventCallback callback) const;
+    void scanLoopEvents(double prevBeat, double currentBeat,
+                        EventCallback callback) const;
 
     static std::string generateId();
 };

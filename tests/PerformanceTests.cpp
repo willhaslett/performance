@@ -3966,6 +3966,592 @@ public:
 static ComposerWriterTests composerWriterTests;
 
 // ============================================================================
+// Live looper — Phase 1: state model + persistence
+// ============================================================================
+//
+// Proves that the new looper-mode state (project.looperModeActive,
+// track.loops, RegionState.pendingTakeId) persists correctly and is
+// independent from the arrangement pool (track.regions). See
+// docs/LIVE_LOOPING.md.
+
+class LooperStateTests : public juce::UnitTest {
+public:
+    LooperStateTests() : juce::UnitTest("LooperState") {}
+
+    void runTest() override {
+        beginTest("looperModeActive defaults false, setter flips + normalizes cycle");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            expect(!s.isLooperModeActive());
+            s.setLooperModeActive(true);
+            expect(s.isLooperModeActive());
+
+            // Enabling looper mode should have normalized the cycle.
+            auto* song = s.currentSong();
+            expectEquals(song->cycleStart, 0.0);
+            expect(song->cycleEnabled);
+            expect(song->cycleEnd > 0.0);  // defaulted to 16 bars if was unset
+        }
+
+        beginTest("setCycleLength sets cycleEnd, no floor from regions");
+        {
+            TestCoordinator tc;
+            tc.state().setLooperModeActive(true);
+            tc.state().setCycleLength(32.0);  // 8 bars × 4 beats
+            auto* song = tc.state().currentSong();
+            expectEquals(song->cycleEnd, 32.0);
+            expectEquals(song->cycleStart, 0.0);
+            expect(song->cycleEnabled);
+            expectEquals(tc.state().getCycleLength(), 32.0);
+        }
+
+        beginTest("loops collection starts empty, independent of regions");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            auto* t = tc.state().findTrack(trackId);
+            expectEquals((int) t->regions.size(), 0);
+            expectEquals((int) t->loops.size(), 0);
+
+            // Put a region in the arrangement pool directly; loops
+            // collection must stay empty.
+            RegionState r;
+            r.id = RegionId{"r1"};
+            r.lengthBeats = 4.0;
+            t->regions.push_back(r);
+            expectEquals((int) t->regions.size(), 1);
+            expectEquals((int) t->loops.size(), 0);
+
+            // And the reverse — a loop entry doesn't leak into regions.
+            RegionState l;
+            l.id = RegionId{"l1"};
+            l.lengthBeats = 8.0;
+            t->loops.push_back(l);
+            expectEquals((int) t->regions.size(), 1);
+            expectEquals((int) t->loops.size(), 1);
+        }
+
+        beginTest("persistence round-trips looperModeActive + loops independently");
+        {
+            TempDB db;
+            RegionId arrangementRegionId, loopRegionId;
+            TrackId trackId;
+            SongId songId;
+
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("RoundTrip");
+                coord.state().setLooperModeActive(true);
+                coord.state().setCycleLength(64.0);
+                trackId = coord.state().createTrack("T");
+                songId = coord.state().currentSong()->id;
+                auto* t = coord.state().findTrack(trackId);
+
+                RegionState r;
+                r.id = RegionId{"r_arr"};
+                r.startBeat = 4.0;
+                r.lengthBeats = 8.0;
+                r.name = "arrangement region";
+                arrangementRegionId = r.id;
+                t->regions.push_back(r);
+
+                RegionState l;
+                l.id = RegionId{"r_loop"};
+                l.startBeat = 0.0;
+                l.lengthBeats = 4.0;
+                l.name = "loop region";
+                loopRegionId = l.id;
+                t->loops.push_back(l);
+
+                coord.save();
+                coord.shutdown();
+            }
+
+            // Reopen with a fresh coordinator.
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto* song = coord.state().findSong(songId);
+                expect(song != nullptr);
+                expect(song->looperModeActive);
+                expectEquals(song->cycleEnd, 64.0);
+
+                auto* t = coord.state().findTrack(trackId);
+                expect(t != nullptr);
+                expectEquals((int) t->regions.size(), 1);
+                expectEquals((int) t->loops.size(), 1);
+                expect(t->regions[0].id == arrangementRegionId);
+                expect(t->loops[0].id == loopRegionId);
+                expectEquals(juce::String(t->regions[0].name), juce::String("arrangement region"));
+                expectEquals(juce::String(t->loops[0].name), juce::String("loop region"));
+                coord.shutdown();
+            }
+        }
+
+        beginTest("pendingTakeId is runtime-only (not persisted)");
+        {
+            TempDB db;
+            TrackId trackId;
+            SongId songId;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("PendingTest");
+                trackId = coord.state().createTrack("T");
+                songId = coord.state().currentSong()->id;
+                auto* t = coord.state().findTrack(trackId);
+                RegionState l;
+                l.id = RegionId{"r_loop"};
+                l.lengthBeats = 4.0;
+                l.activeTakeId = TakeId{"take-a"};
+                l.pendingTakeId = TakeId{"take-pending"};  // should NOT survive
+                t->loops.push_back(l);
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto* t = coord.state().findTrack(trackId);
+                expect(t != nullptr);
+                expectEquals((int) t->loops.size(), 1);
+                expect(t->loops[0].activeTakeId == TakeId{"take-a"});
+                expect(t->loops[0].pendingTakeId.empty());
+                coord.shutdown();
+            }
+        }
+    }
+};
+
+static LooperStateTests looperStateTests;
+
+// ============================================================================
+// Live looper — Phase 2: playback engine (within-cycle region wrap)
+// ============================================================================
+
+class LooperPlaybackTests : public juce::UnitTest {
+public:
+    LooperPlaybackTests() : juce::UnitTest("LooperPlayback") {}
+
+private:
+    // Parallel fixture to ArrangementTests::TestContext but uses
+    // track.loops instead of track.regions. Each test sets up a loop
+    // with some events and scans across a beat range.
+    struct LooperCtx {
+        std::vector<TrackState> tracks;
+        Arrangement arr;
+
+        LooperCtx(std::initializer_list<std::string> trackIds, double cycleLengthBeats) {
+            for (auto& id : trackIds) {
+                TrackState t;
+                t.id = TrackId{id};
+                t.name = id;
+                tracks.push_back(std::move(t));
+            }
+            arr.setTracks(&tracks);
+            arr.updateLooperMode(true, cycleLengthBeats);
+        }
+
+        TrackState* track(const std::string& id) {
+            for (auto& t : tracks)
+                if (t.id == TrackId{id}) return &t;
+            return nullptr;
+        }
+
+        // Add a loop with one take containing the given events.
+        RegionState* addLoop(const std::string& trackId, double lengthBeats,
+                              const std::vector<MidiEventState>& events) {
+            auto* t = track(trackId);
+            if (!t) return nullptr;
+            RegionState r;
+            r.id = RegionId{"loop-" + trackId};
+            r.type = "midi";
+            r.startBeat = 0.0;
+            r.lengthBeats = lengthBeats;
+            TakeState take;
+            take.id = TakeId{"take-" + trackId};
+            take.events = events;
+            r.activeTakeId = take.id;
+            r.takes.push_back(std::move(take));
+            t->loops.push_back(std::move(r));
+            return &t->loops.back();
+        }
+    };
+
+    static MidiEventState noteOn(int pitch, double beat) {
+        return { beat, 0x90, 1, pitch, 100 };
+    }
+    static MidiEventState noteOff(int pitch, double beat) {
+        return { beat, 0x80, 1, pitch, 0 };
+    }
+
+public:
+    void runTest() override {
+        beginTest("4-bar loop in 16-bar cycle plays 4× per cycle pass");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            ctx.addLoop("t1", 4.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+            });
+
+            std::vector<double> beats;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double b) {
+                if ((e.status & 0xF0) == 0x90) beats.push_back(b);
+            });
+
+            expectEquals((int) beats.size(), 4);
+            expectEquals(beats[0], 0.0);
+            expectEquals(beats[1], 4.0);
+            expectEquals(beats[2], 8.0);
+            expectEquals(beats[3], 12.0);
+        }
+
+        beginTest("Loop equal to cycle plays once per cycle pass");
+        {
+            LooperCtx ctx({"t1"}, 8.0);
+            ctx.addLoop("t1", 8.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+                noteOn(62, 4.0), noteOff(62, 5.0),
+            });
+
+            int noteOns = 0;
+            ctx.arr.scanMidiEvents(0.0, 8.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) ++noteOns;
+            });
+            expectEquals(noteOns, 2);  // plays once
+        }
+
+        beginTest("Loop longer than cycle has its tail clipped");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            // 20-bar loop: events at beats 0, 8, 16, 18 within the loop
+            ctx.addLoop("t1", 20.0, {
+                noteOn(60, 0.0),  noteOff(60, 1.0),
+                noteOn(62, 8.0),  noteOff(62, 9.0),
+                noteOn(64, 16.0), noteOff(64, 17.0),  // at cycle boundary — clipped
+                noteOn(65, 18.0), noteOff(65, 19.0),  // past cycle — clipped
+            });
+
+            std::vector<int> pitches;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) pitches.push_back(e.data1);
+            });
+            // Only 60 and 62 play; 64 and 65 are in the preserved-but-silent tail.
+            expectEquals((int) pitches.size(), 2);
+            expectEquals(pitches[0], 60);
+            expectEquals(pitches[1], 62);
+        }
+
+        beginTest("Looper mode off falls back to arrangement scan");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            ctx.addLoop("t1", 4.0, {
+                noteOn(60, 0.0), noteOff(60, 1.0),
+            });
+            ctx.arr.updateLooperMode(false, 0.0);  // flip off
+
+            int noteOns = 0;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) ++noteOns;
+            });
+            // Loops are ignored in arrangement mode — no events.
+            expectEquals(noteOns, 0);
+        }
+
+        beginTest("Multiple tracks loop independently");
+        {
+            LooperCtx ctx({"t1", "t2"}, 16.0);
+            ctx.addLoop("t1", 4.0, { noteOn(60, 0.0), noteOff(60, 1.0) });
+            ctx.addLoop("t2", 8.0, { noteOn(72, 0.0), noteOff(72, 1.0) });
+
+            std::map<int, int> countByPitch;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState& e, double) {
+                if ((e.status & 0xF0) == 0x90) countByPitch[e.data1]++;
+            });
+            expectEquals(countByPitch[60], 4);  // 4-bar loop plays 4× in 16
+            expectEquals(countByPitch[72], 2);  // 8-bar loop plays 2× in 16
+        }
+
+        beginTest("Muted track's loop is silent");
+        {
+            LooperCtx ctx({"t1"}, 16.0);
+            // Mute via the region-level muted flag (track-level mute happens
+            // elsewhere in the engine; this is the region's own muted gate).
+            auto* r = ctx.addLoop("t1", 4.0, { noteOn(60, 0.0), noteOff(60, 1.0) });
+            r->muted = true;
+
+            int events = 0;
+            ctx.arr.scanMidiEvents(0.0, 16.0, [&](const TrackId&, const MidiEventState&, double) {
+                ++events;
+            });
+            expectEquals(events, 0);
+        }
+    }
+};
+
+static LooperPlaybackTests looperPlaybackTests;
+
+// ============================================================================
+// Live looper — Phase 3a: take-swap at cycle wrap
+// ============================================================================
+
+class LooperTakeSwapTests : public juce::UnitTest {
+public:
+    LooperTakeSwapTests() : juce::UnitTest("LooperTakeSwap") {}
+
+    void runTest() override {
+        beginTest("setPendingTake on a loop region defers the swap");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            // Seed the track with a loop region having two takes.
+            RegionState r;
+            r.id = RegionId{"loop1"};
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"take-a"};
+            b.id = TakeId{"take-b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            s.setPendingTake(RegionId{"loop1"}, TakeId{"take-b"});
+
+            // active unchanged, pending set.
+            auto* region = &s.findTrack(trackId)->loops[0];
+            expect(region->activeTakeId == TakeId{"take-a"});
+            expect(region->pendingTakeId == TakeId{"take-b"});
+
+            // Promote.
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 1);
+            expect(region->activeTakeId == TakeId{"take-b"});
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("setPendingTake when looper mode off is immediate");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            // Looper mode stays OFF
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            RegionState r;
+            r.id = RegionId{"loop1"};
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"take-a"};
+            b.id = TakeId{"take-b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            s.setPendingTake(RegionId{"loop1"}, TakeId{"take-b"});
+
+            auto* region = &s.findTrack(trackId)->loops[0];
+            expect(region->activeTakeId == TakeId{"take-b"});   // immediate
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("setPendingTake on an arrangement region is always immediate");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);  // even in looper mode
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            RegionState r;
+            r.id = RegionId{"arr1"};
+            r.startBeat = 4.0;
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"a"};
+            b.id = TakeId{"b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->regions.push_back(r);  // arrangement pool
+
+            s.setPendingTake(RegionId{"arr1"}, TakeId{"b"});
+
+            // Arrangement regions don't defer — the swap is immediate
+            // regardless of looper mode, because the cycle-wrap concept
+            // doesn't apply to timeline regions.
+            auto* region = &s.findTrack(trackId)->regions[0];
+            expect(region->activeTakeId == TakeId{"b"});
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("commitPendingTakeSwaps handles multiple tracks at once");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto t1 = s.createTrack("T1");
+            auto t2 = s.createTrack("T2");
+
+            auto seed = [&](const TrackId& tid, const std::string& loopId) {
+                auto* t = s.findTrack(tid);
+                RegionState r;
+                r.id = RegionId{loopId};
+                r.lengthBeats = 4.0;
+                TakeState a, b;
+                a.id = TakeId{loopId + "-a"};
+                b.id = TakeId{loopId + "-b"};
+                r.takes.push_back(a);
+                r.takes.push_back(b);
+                r.activeTakeId = a.id;
+                t->loops.push_back(r);
+            };
+            seed(t1, "loopA");
+            seed(t2, "loopB");
+
+            s.setPendingTake(RegionId{"loopA"}, TakeId{"loopA-b"});
+            s.setPendingTake(RegionId{"loopB"}, TakeId{"loopB-b"});
+
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 2);
+            expect(s.findTrack(t1)->loops[0].activeTakeId == TakeId{"loopA-b"});
+            expect(s.findTrack(t2)->loops[0].activeTakeId == TakeId{"loopB-b"});
+        }
+
+        beginTest("commitPendingTakeSwaps no-ops when nothing pending");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto t1 = s.createTrack("T1");
+            auto* t = s.findTrack(t1);
+            RegionState r;
+            r.id = RegionId{"loop"};
+            r.lengthBeats = 4.0;
+            TakeState a;
+            a.id = TakeId{"a"};
+            r.takes.push_back(a);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 0);
+        }
+    }
+};
+
+static LooperTakeSwapTests looperTakeSwapTests;
+
+// ============================================================================
+// Live looper — Phase 3b: loop recording (Arrangement helpers)
+// ============================================================================
+
+class LooperRecordTests : public juce::UnitTest {
+public:
+    LooperRecordTests() : juce::UnitTest("LooperRecord") {}
+
+    void runTest() override {
+        beginTest("startLoopRecording creates loop region on first call");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t;
+            t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            expectEquals((int) tracks[0].loops.size(), 0);
+
+            auto* region = arr.startLoopRecording(TrackId{"t1"});
+            expect(region != nullptr);
+            expectEquals((int) tracks[0].loops.size(), 1);
+            expectEquals((int) region->takes.size(), 1);  // first take
+            expect(arr.isRecording());
+        }
+
+        beginTest("captured events route to new take; stopLoopRecording sets length");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            auto* region = arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            expect(!arr.isRecording());
+            expectEquals(region->lengthBeats, 4.0);
+
+            auto* take = region->activeTake();
+            expect(take != nullptr);
+            expectEquals((int) take->events.size(), 2);
+            expect(region->activeTakeId == take->id);
+        }
+
+        beginTest("second punch-in appends a take; previous takes persist");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            // Pass 1
+            arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            auto take1Id = tracks[0].loops[0].activeTakeId;
+
+            // Pass 2
+            arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 64, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 64, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            auto& region = tracks[0].loops[0];
+            expectEquals((int) region.takes.size(), 2);   // both persist
+            expect(region.activeTakeId != take1Id);       // latest is active
+
+            // Active take has the second pass's pitch.
+            auto* active = region.activeTake();
+            expect(active != nullptr);
+            expectEquals((int) active->events.size(), 2);
+            expectEquals(active->events[0].data1, 64);
+        }
+
+        beginTest("stopLoopRecording handles a track with no in-flight recording gracefully");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            // No startLoopRecording — just call stop. Should no-op.
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+            expectEquals((int) tracks[0].loops.size(), 0);
+        }
+    }
+};
+
+static LooperRecordTests looperRecordTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

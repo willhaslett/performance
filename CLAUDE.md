@@ -13,6 +13,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/BUNDLED_PLUGINS.md` — first-launch plugin pack. The "ruled out" list is load-bearing — free-plugin licenses are narrow and easy to violate.
 - `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
+- `docs/LIVE_LOOPING.md` — live-looping design + phased plan. **In progress:** Phases 1–4 landed, initial click-testing underway, Phase 5 not started. Read before touching looper pane, `track.loops`, `pendingTakeId`, or cycle-wrap logic.
 
 User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 

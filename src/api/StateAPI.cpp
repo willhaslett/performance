@@ -302,6 +302,125 @@ std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId.str();
 }
 
+// --- Looper mode ---
+//
+// See docs/LIVE_LOOPING.md. These setters enforce the looper-mode
+// invariants at the state-API level rather than the GUI, because the
+// runtime has multiple non-GUI clients (Lua via `perf` tool, IPC via
+// `bin/perf`, MIDI bindings) and GUI-only enforcement can be bypassed.
+
+void StateAPI::setLooperModeActive(bool active) {
+    auto* s = currentSong();
+    if (!s) return;
+    pushUndo();
+    s->looperModeActive = active;
+    if (active) {
+        // Normalize cycle invariants for looper mode. Leaves cycleEnd
+        // intact (user may have set a custom length) but forces start
+        // to 0 and enables the cycle.
+        s->cycleStart = 0.0;
+        s->cycleEnabled = true;
+        if (s->cycleEnd <= 0.0) {
+            s->cycleEnd = 16.0 * 4.0;  // default 16 bars × 4 beats/bar
+        }
+    }
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+bool StateAPI::isLooperModeActive() const {
+    auto* s = currentSong();
+    return s && s->looperModeActive;
+}
+
+void StateAPI::setCycleLength(double beats) {
+    auto* s = currentSong();
+    if (!s) return;
+    PERF_ASSERT(beats > 0, "setCycleLength: beats must be > 0");
+    pushUndo();
+    // Looper-mode normalization: force cycleStart=0 and cycleEnabled=true
+    // regardless of how the caller reached this API.
+    if (s->looperModeActive) {
+        s->cycleStart = 0.0;
+        s->cycleEnabled = true;
+    }
+    s->cycleEnd = beats;
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+double StateAPI::getCycleLength() const {
+    auto* s = currentSong();
+    if (!s) return 0.0;
+    return s->cycleEnd > s->cycleStart ? (s->cycleEnd - s->cycleStart) : 0.0;
+}
+
+// Find a region anywhere in the current song — either arrangement or
+// loop pool. Returns nullptr if not found. Keeps take-swap routing
+// cheap without duplicating the walk at every call site.
+namespace {
+std::pair<RegionState*, bool> findRegionAnyPool(SongState& song, const RegionId& regionId) {
+    for (auto& t : song.tracks) {
+        for (auto& r : t.regions) if (r.id == regionId) return { &r, /*isLoop=*/false };
+        for (auto& r : t.loops)   if (r.id == regionId) return { &r, /*isLoop=*/true };
+    }
+    return { nullptr, false };
+}
+}  // namespace
+
+void StateAPI::setPendingTake(const RegionId& regionId, const TakeId& takeId) {
+    auto* s = currentSong();
+    if (!s) return;
+    auto [region, isLoop] = findRegionAnyPool(*s, regionId);
+    if (!region) return;
+
+    // If this isn't a loop region, or looper mode is off, do the swap
+    // immediately — there's no cycle wrap to defer to.
+    if (!isLoop || !s->looperModeActive) {
+        pushUndo();
+        region->activeTakeId = takeId;
+        region->pendingTakeId = TakeId{};
+    } else {
+        // Looper mode: defer to the next cycle wrap. No undo push —
+        // the swap itself is transient and will be applied by the
+        // coordinator's wrap handler.
+        region->pendingTakeId = takeId;
+    }
+    // Use a Song Updated event — autosave notices via the
+    // subscription, and Song handlers (e.g. the tempo/cycle sync in
+    // Coordinator) can run cheaply without needing a specific track
+    // lookup. A Track event would require the track id, which we'd
+    // have to look up separately for no gain.
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+int StateAPI::commitPendingTakeSwaps() {
+    auto* s = currentSong();
+    if (!s) return 0;
+    int swapped = 0;
+    for (auto& t : s->tracks) {
+        for (auto& r : t.loops) {
+            if (r.pendingTakeId.empty()) continue;
+            if (r.pendingTakeId != r.activeTakeId) {
+                r.activeTakeId = r.pendingTakeId;
+                ++swapped;
+            }
+            r.pendingTakeId = TakeId{};
+        }
+    }
+    return swapped;
+}
+
 // --- Tracks ---
 
 TrackId StateAPI::createTrack(const std::string& name) {

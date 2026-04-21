@@ -173,6 +173,8 @@ struct RegionState {
     double startBeat = 0.0;
     double lengthBeats = 4.0;
     TakeId activeTakeId;   // which take plays back
+    TakeId pendingTakeId;  // runtime only — set by a take-swap request, applied
+                           // at the next cycle wrap in looper mode. Not persisted.
     bool muted = false;         // region-level mute (skipped during playback)
     bool looped = false;       // region loops until next region or loopEndBeat
     double loopEndBeat = 0.0;  // 0 = auto (extend to next region), >0 = explicit end
@@ -214,7 +216,11 @@ struct TrackState {
     std::string outputTarget;  // output routing: "" = master, "none" = disconnected, UUID = bus
     std::vector<EffectState> effects;
     std::vector<SendState> sends;
-    std::vector<RegionState> regions;
+    std::vector<RegionState> regions;   // arrangement pool — used by Producer
+    std::vector<RegionState> loops;     // looper pool — used by Looper. Invariant in
+                                        // looper mode: each entry has startBeat == 0.
+                                        // Completely independent of `regions`; Producer
+                                        // never sees loops and Looper never sees regions.
     std::vector<ActionEventData> actionData;  // only for Action tracks
 };
 
@@ -271,10 +277,20 @@ struct SongState {
     std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
     std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
 
-    // Cycle playback (per-song)
+    // Cycle playback (per-song). Used by both the Producer's cycle mode
+    // and the Looper. When `looperModeActive == true`, the invariants
+    // cycleStart == 0 and cycleEnabled == true are enforced at the
+    // StateAPI layer, and cycleEnd is the project loop length.
     double cycleStart = 0.0;
     double cycleEnd = 0.0;      // 0 = no cycle set
     bool cycleEnabled = false;
+
+    // Looper mode: the project's main content is presented via the Looper
+    // pane instead of the Producer pane. Regions live in `track.loops`
+    // and wrap within the cycle; arrangement regions in `track.regions`
+    // are hidden from the Looper view (but remain on disk + visible in
+    // Producer). Default false = Producer-first project.
+    bool looperModeActive = false;
 
     // Action events — beat-triggered actions on the timeline
     struct ActionEvent {
