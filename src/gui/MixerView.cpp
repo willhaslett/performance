@@ -159,6 +159,12 @@ void MixerView::timerCallback() {
                 sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f });
             trackStrips[i]->setSends(sends);
             trackStrips[i]->setAvailableBusses(busOptions);
+
+            // Repaint so focus/selection bg changes propagate. TrackStrip's
+            // paint() reads StateAPI every frame for those (they're transient
+            // UI state); other properties pushed above already trigger their
+            // own repaint on change, so this is idempotent in the steady state.
+            trackStrips[i]->repaint();
         }
         // Update busses
         for (size_t i = 0; i < busStrips.size() && i < lastBusses.size(); ++i) {

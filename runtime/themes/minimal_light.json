@@ -10,6 +10,8 @@
     "bgSurfaceRaised": "#f0f0f0",
     "bgRowActive": "#fafafa",
     "bgRowMuted": "#f3f3f3",
+    "bgRowSelected": "#ececec",
+    "bgRowFocused": "#d2d2d2",
     "bgSlot": "#e4e4e4",
     "bgControl": "#dedede",
     "bgControlHover": "#d2d2d2",

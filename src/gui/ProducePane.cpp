@@ -2,6 +2,7 @@
 #include "gui/MorphEditor.h"
 #include "gui/ActionInstanceForm.h"
 #include "gui/ActionPicker.h"
+#include "gui/TrackUi.h"
 #include "api/StateAPI.h"
 #include "state/StateEvents.h"
 #include "engine/Log.h"
@@ -671,8 +672,10 @@ ProducePane::TrackRowVisuals ProducePane::trackRowVisuals(const TrackState& t) c
     if (state) {
         auto sel = state->selectedTrackIds();
         v.selected = std::find(sel.begin(), sel.end(), t.id) != sel.end();
+        v.focused  = state->getFocusedTrackId() == t.id;
     } else {
         v.selected = false;
+        v.focused  = false;
     }
     return v;
 }
@@ -689,16 +692,11 @@ ProducePane::RegionVisuals ProducePane::regionVisuals(const TrackState& t,
 
 void ProducePane::paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
                                 const TrackRowVisuals& v) {
-    auto rowCol = (v.audibility == Audibility::Muted)
-                    ? Theme::color(Theme::Color::bgRowMuted)
-                    : Theme::color(Theme::Color::bgRowActive);
-    g.setColour(rowCol);
+    // Single background shade per (muted, focused, selected) tuple — the
+    // row reads as a single unit. See TrackUi::rowBgToken.
+    g.setColour(TrackUi::rowBg(v.audibility == Audibility::Muted,
+                                v.focused, v.selected));
     g.fillRect(bounds);
-
-    if (v.selected) {
-        g.setColour(Theme::color(Theme::Color::bgSelection));
-        g.fillRect(bounds);
-    }
 }
 
 int ProducePane::rowHeightFor(const TrackState& t) const {
@@ -1764,8 +1762,11 @@ void ProducePane::handleTrackHeaderClick(int trackIdx, const juce::MouseEvent& e
             state->selectTrack(trackId, false);
         }
     } else {
-        // Plain click: select only this track
+        // Plain click: select only this track and make it the focused one.
+        // See docs/LIVE_INPUT_AND_FOCUS.md for the full policy — I-snap
+        // here is gated off until phase 3 engine work lands.
         state->selectTrack(trackId, false);
+        state->setFocusedTrackId(trackId);
         selectionAnchorTrackId = trackId;
     }
 

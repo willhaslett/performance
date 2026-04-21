@@ -1,4 +1,5 @@
 #include "gui/TrackStrip.h"
+#include "gui/TrackUi.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "state/ActionRefs.h"
@@ -275,14 +276,20 @@ void TrackStrip::rebuildEffectSlots() {
 void TrackStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    g.setColour(Theme::color(Theme::Color::bgSurface));
+    // Strip background — one color for the whole strip, driven by the
+    // same (muted, focused, selected) rule used by Produce and Looper.
+    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    juce::Colour stripBg = Theme::color(Theme::Color::bgSurface);
+    if (auto* t = state.findTrack(TrackId{trackId.toStdString()}))
+        stripBg = TrackUi::rowBgForTrack(state, *t);
+    g.setColour(stripBg);
     g.fillRect(bounds);
 
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
 
-    g.setColour(Theme::color(Theme::Color::bgSurface));
+    g.setColour(stripBg);
     g.fillRect(headerBounds);
 
     // Type accent — 2px top stripe. Action tracks get no stripe (they don't show in the mixer anyway).
@@ -516,6 +523,15 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
     if (sourceType == TrackSourceType::AudioInput &&
         inputSlotBounds.contains(event.getPosition()) && !event.mods.isPopupMenu()) {
         showInputPicker(event.getScreenPosition());
+        return;
+    }
+
+    // Click on strip background (anywhere not matched above) counts as a
+    // track-level click. Drives focus + selection via the shared policy
+    // so Mixer, Produce, and Looper behave identically.
+    if (!event.mods.isPopupMenu()) {
+        TrackUi::handleTrackClick(state, TrackId{trackId.toStdString()}, event.mods);
+        repaint();
     }
 }
 

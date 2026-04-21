@@ -1,4 +1,5 @@
 #include "gui/LooperPane.h"
+#include "gui/TrackUi.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -178,10 +179,10 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
 
 void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
                                     const RowGeom& row) {
-    // Row background — match Produce's muted/unmuted split so the
-    // pane reads as a sibling.
-    g.setColour(Theme::color(t.muted ? Theme::Color::bgRowMuted
-                                      : Theme::Color::bgRowActive));
+    // Row background — one color for the whole row (header + timeline),
+    // driven by the shared TrackUi rule so Produce / Mixer / Looper all
+    // shade the same track identically.
+    g.setColour(TrackUi::rowBgForTrack(state, t));
     g.fillRect(row.rowBounds);
 
     // Divider between header and timeline.
@@ -282,10 +283,11 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
 
 void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
                                       const RowGeom& row) {
-    // Background — slightly darker than the header so the timeline
-    // reads as a distinct surface.
-    g.setColour(Theme::color(Theme::Color::bgSurface));
-    g.fillRect(row.timelineBounds);
+    // No separate background — the row bg drawn by paintTrackHeader
+    // already covers this area. Header and timeline read as one unit
+    // so focus/selection shading applies uniformly across the row.
+    (void) t;
+    (void) row;
 
     if (t.loops.empty()) {
         paintEmptyRow(g, row.timelineBounds);
@@ -445,6 +447,12 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
             showTakeMenu(row.trackId);
             return;
         }
+        // Click on the row's background (not on a specific control) —
+        // treat as a track-level click for focus + selection. Matches
+        // Produce's click-on-track-header behavior.
+        TrackUi::handleTrackClick(state, row.trackId, e.mods);
+        repaint();
+        return;
     }
 }
 

@@ -76,6 +76,7 @@ private:
     struct TrackRowVisuals {
         Audibility       audibility;
         bool             selected;
+        bool             focused;     // singular "track I'm playing into"
         TrackSourceType  type;
     };
 
