@@ -2,7 +2,19 @@
 
 A scriptable runtime for live music performance on macOS. Solo performer, centered around an Arturia KeyLab 88 MkII and Audio Unit plugins. The app is a live environment — always running, always ready. An in-memory state store is the single source of truth at runtime. SQLite is the persistence layer (load on startup, save on demand). The audio engine is a pure view of state.
 
-> Changelog, completed work, test inventory, and known issues live in `DEV_HISTORY.md`. Forward-looking DAW bridge design lives in `docs/DAW_BRIDGE_PLAN.md`. **`docs/LAMBDA_CHAT_PROXY.md`** is the design + implementation plan for the AI-for-testers Lambda — read before starting that work. **`docs/PRODUCE_PANE_REFACTOR.md`** is the design + step-plan retro for the audibility-model + visual-layer rework (now shipped) — read before adding new visual axes to track-row or region rendering. **`docs/ACTION_INSTANCES_REFACTOR.md`** is the design + step plan for typed-schema action instantiation, one unified form, and cascade-delete — read before touching action registration, action-instance creation UI, or the param schema format. **`docs/ACTION_ALGEBRA.md`** is the design + step plan for the compositional action core that replaces the hardcoded dispatch ladder with a six-primitive algebra + tree interpreter — read before adding or modifying built-in actions, the action-execution path, or bounce/offline-render integration. **`docs/BUNDLED_PLUGINS.md`** is the design + step plan for the first-launch install pack of 15 permissively-licensed AU plugins (6 instruments, 9 effects) — read before changing the plugin set, the install/uninstall flow, or the licensing / signing pipeline; the "ruled out" list in that doc is load-bearing because the license landscape for free plugins is narrow and easy to violate accidentally. **`docs/INCIDENT_2026-04-18_PERSISTENCE.md` is the incident retro for the first-session data-loss bug and the prioritized architectural hardening plan — treat it as load-bearing when scoping 0.1.0 / 0.2.x work.** User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`. Authoritative history is `git log`.
+**Load-bearing side docs — read before touching the relevant area:**
+
+- `DEV_HISTORY.md` — changelog, completed work, test inventory. `git log` is still authoritative for *what* changed; this is context that doesn't fit in commit messages.
+- `docs/INCIDENT_2026-04-18_PERSISTENCE.md` — first-session data-loss retro + architectural hardening plan. Load-bearing when scoping 0.2.x work.
+- `docs/ACTION_ALGEBRA.md` — compositional action core. Read before adding/modifying built-in actions or touching bounce.
+- `docs/ACTION_INSTANCES_REFACTOR.md` — typed ParamSchema + action-instance form. Read before touching action registration or the param schema.
+- `docs/PRODUCE_PANE_REFACTOR.md` — audibility model + visual layer. Read before adding visual axes to track-row or region rendering.
+- `docs/LAMBDA_CHAT_PROXY.md` — AI-for-testers Lambda design + implementation.
+- `docs/BUNDLED_PLUGINS.md` — first-launch plugin pack. The "ruled out" list is load-bearing — free-plugin licenses are narrow and easy to violate.
+- `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
+- `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
+
+User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 
 ## Version & Distribution
 
@@ -24,14 +36,7 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-20 (tagged `0.0.2`), the **architectural foundation is settled.** Four deep passes landed over the preceding week:
-
-1. **Typed IDs** — all 13 entity ID families are strongly-typed newtypes. The persistence data-loss bug class that motivated them is now a compile error. See `docs/INCIDENT_2026-04-18_PERSISTENCE.md`.
-2. **Produce-pane refactor** — Phase 1 dropped redundant `audioEnabled` / `midiEnabled` / `masterAudioEnabled` state and the U power icon (Logic-style: mute is the only track-level silencer). Phase 2 replaced ad-hoc paint logic with a derived visual model (`Audibility` enum, `TrackRowVisuals` / `RegionVisuals` structs, two paint helpers). See `docs/PRODUCE_PANE_REFACTOR.md`.
-3. **Action-instances refactor** — typed `ParamSchema` with five primitives (`channelRef`, `presetRef`, `enum`, `float`, `morph`) is the sole source of truth; `ActionInstanceForm` + `ActionPicker` replace the three ad-hoc creation dialogs with a single validated, context-popup flow; env-availability filter (`actionCanInstantiate`) disables unsatisfiable actions; cascade-delete with confirmation + load-time repair dialog for stale refs. See `docs/ACTION_INSTANCES_REFACTOR.md`.
-4. **Action-algebra refactor** — the hardcoded `if (name == "fadeOut") ...` dispatch ladder is replaced by a six-primitive algebra (`Set` / `Interpolate` / `Delay` / `Parallel` / `Sequence` / `Invoke`) + `Lua` escape-hatch op + a tiny tree interpreter. Built-ins execute via one of three paths: static tree body with placeholder substitution, dynamic expander (morph family), or Op::Lua (setActiveTrack, trackVolume). New built-ins land as registered templates, not new C++ branches; LLM-generated custom actions compose with built-ins via `Invoke` on equal footing. 158 tests pass. Step 9 of the doc (bounce + virtual clock) deferred to 0.2.x. See `docs/ACTION_ALGEBRA.md`.
-
-Peripheral work also landed: the **AI-for-testers chunk** (chat proxy Lambda deployed, C++ client wired with SSE streaming, per-install monthly token caps, Show Log + Export Logs UI) and **bounce** (offline render to stereo WAV, File → Bounce…).
+As of 2026-04-20, the **architectural foundation is settled.** Four deep passes landed on the 0.0.2 checkpoint: typed IDs (all entity IDs are newtypes; whole persistence bug class is now a compile error), the produce-pane refactor (derived visual model), the action-instances refactor (typed ParamSchema + unified form + cascade-delete), and the action-algebra refactor (six-primitive core replacing the hardcoded dispatch ladder). Each has its own design doc — see the side-docs list above. AI-for-testers chat (proxy Lambda, SSE streaming, monthly token caps) and bounce-to-WAV both landed alongside.
 
 **0.1.0 plan — reassessed.** Architecture is settled; the remaining gates are about whether the app *rewards* a tester's hour. The two major features before ship both landed on 2026-04-20: bundled-plugin install pack (15 curated free AU plugins via S3 + presigned Lambda; see `docs/BUNDLED_PLUGINS.md`) and composer integration (chat-driven MIDI composition writing directly onto project tracks; see `docs/COMPOSER_INTEGRATION.md`).
 
@@ -57,60 +62,26 @@ Pipeline is built but has only ever run on the dev machine. Before shipping:
 
 ### 2. First-friend checklist
 
-Carry-over from pre-beta:
+Items still open:
 
-- [x] Code signing + notarization pipeline
-- [x] Beta expiry check
-- [x] Universal binary (arm64 + x86_64)
-- [x] Build info in toolbar
-- [x] Themed context menus via LookAndFeel
-- [x] Startup song chooser (themed modal card)
-- [x] Default song template (DLS Electric Piano + Audio In)
-- [x] Plugin scan overlay ("Scanning plugins..." shown while AU scan runs)
-- [x] Debounced autosave (3-second quiet period after last state change)
-- [x] File → Open Song submenu
-- [x] First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
-- [x] **Persistence integrity** (2026-04-18) — data-loss regression fixed: first-session recordings now actually persist through quit/relaunch. Saves are error-checked and roll back cleanly on any constraint violation; WAL-mode backup works; `createDefaultSong` no longer poisons `tracks.preset_id` with a plugin name; `onTrackCreated` applies `inputMonitoring` on load; `loadSong` hydrates audio region WAV files + waveforms. See `DEV_HISTORY.md` for the full list of fixes. Tests: 143/143. *Ship blocker resolved.*
-- [ ] **perfuce.com rebuilt as the single docs/reference surface.** Three featured sections (AI / sequencer / perform), each with a looping UI demo video. New `/docs` route with step-by-step guides per pane (Producer / Chat / Mixer / Perform / Settings). See `../performance-testing/rounds/01-v0.1.0-first-friends/02-materials/perfuce-site-plan.md` for the checklist. No in-repo getting-started doc — the site replaces it.
-- [x] "Show Log File" menu item (View → Reveal Log in Finder) + Export Logs button on the LogPane (bundles all rescued `.prev` logs + current session into a Save As dialog) as a manual-fallback if telemetry shipping ever fails.
-- [x] Feedback channel — resolved: individual outreach per tester (text / email / iMessage). Documented in `performance-testing/.../welcome.md`.
+- [ ] **perfuce.com rebuilt as the single docs/reference surface.** Three featured sections (AI / sequencer / perform), each with a looping UI demo video. New `/docs` route with step-by-step guides per pane. See `../performance-testing/rounds/01-v0.1.0-first-friends/02-materials/perfuce-site-plan.md`.
+
+Completed pre-beta items archived in `DEV_HISTORY.md` (code signing, beta expiry, universal binary, startup chooser, autosave debounce, persistence integrity fix, audio device auto-select, Export Logs, feedback channel, etc).
 
 ### 3. Built-in AI for testers
 
-Must-have for 0.1.0. Goal: a tester who has never touched Claude opens the Chat pane and gets meaningful help — "add a reverb to track 2," "why isn't my MIDI working." Full design + implementation history in `docs/LAMBDA_CHAT_PROXY.md`.
+Shipped. Chat pane with Lambda-proxied Claude (no key on tester machines), SSE streaming, per-install monthly token caps, safe-default gain rules, hidden tool-call surface, Secrets Manager bearer. Full design + shipped-detail in `docs/LAMBDA_CHAT_PROXY.md`.
 
-**Decided + shipped:**
-- **API-key provisioning: Lambda proxy only.** The app POSTs chat requests to our chat-proxy Lambda which adds the Anthropic key and forwards. Per-install monthly token cap (100k input / 25k output) tracked in DynamoDB; 402 surfaced to the chat UI when exhausted. No key on tester machines. The dev-only `getenv("ANTHROPIC_API_KEY")` path is gone. "Bring your own key" Settings field deferred to 0.2.x.
-- **Tool-call visibility: hidden.** `ChatView::onToolUse` is a no-op — no raw Lua, no raw errors in chat. Users see only assistant bubbles. Tool activity still goes to `/tmp/performance.log` for debugging.
-- **Safety + dB API.** All gain setters clamp to [0.0, 2.0] (matches fader floor = true silence, fader top = +6dB). dB-native Lua bindings (`setTrackGainDb`, `setBusGainDb`, `addSendDb`, `setSendGainDb`) so Claude never does dB↔linear math. Prompt codifies safe defaults for new tracks / busses / sends (audio-input tracks have no input + monitoring off; new busses silent; new sends -12dB).
-- **Streaming: yes.** SSE end-to-end. Lambda forwards Anthropic's stream, parses `message_delta.usage` for token counting; C++ client (`ClaudeClient::streamResponse`) consumes events incrementally and accumulates content blocks before invoking the listener.
-- **Default model: server-controlled.** `DEFAULT_MODEL` env var on the chat Lambda (currently `claude-sonnet-4-5`). Bump server-side without an app rebuild. App-level `model` field removed from request body.
-- **Bearer token storage.** Migrated from a CDK-managed SSM Parameter (which silently rotated on every redeploy) to AWS Secrets Manager with native auto-generation. Stable across redeploys.
+Open tails:
 
-**To do:**
-
-- [x] **Refresh `runtime/CLAUDE.md`** — embedded system prompt rewritten, bundled as BinaryData so it ships with the binary, clarifies safe defaults + dB API. Continues to be tuned through self-test.
-- [x] **Silent-failure surface** — resolver helpers and plugin lookups now throw with actionable errors. Claude self-corrects instead of claiming success on no-ops.
-- [x] **ChatView typing indicator** — three pulsing dots while Claude is working; appears instantly on send.
-- [x] **Lambda proxy** — `infra/lambda/chat.ts`; deployed as `ChatProxy` Lambda + function URL with response streaming.
-- [x] **Cost guardrails** — per-install monthly token cap in Lambda; 402 + friendly message; CloudWatch billing alarm at $50/mo.
-- [x] **Streaming end-to-end.** SSE wire path top to bottom.
-- [ ] **Tool-use surface** — full audit of what Claude can call through `perf`. Safe-default rules cover the biggest risks; destructive-op gating (confirm / dry-run) still open.
-- [ ] **ChatView UX tail** — error states polish, history persistence, clear chat, cancel in-flight, auto-focus input on pane reveal.
-- [ ] **Self-test round** — Will plays for a session as a new user. Iterate prompts + tool descriptions until common asks work first-try. Ongoing through local use.
-- [ ] **Tester onboarding copy** — 3–4 example prompts shown on perfuce.com (not a repo doc). Carry-over to §1 above.
+- [ ] **Tool-use surface audit** — safe-default rules cover the biggest risks; destructive-op gating (confirm / dry-run) still open.
+- [ ] **ChatView UX polish** — error states, history persistence, clear chat, cancel in-flight, auto-focus input on pane reveal.
+- [ ] **Self-test round** — ongoing through local use.
+- [ ] **Tester onboarding copy** — 3–4 example prompts on perfuce.com. Carry-over to §1 above.
 
 ### 4. Nice-to-haves considered
 
-- [x] **Bounce to stereo file** — shipped for 0.1.0. File → Bounce… with native Save As dialog; uses the cycle region when active, else bounces 0 to the last region's endBeat. Faster-than-realtime render via `OfflineRenderer` (engine paused during bounce, graph driven from a render thread). DLS renders ~76× realtime; verified with heavy plugins. Lua surface: `bounce(path)` (cycle, throws on error) and `bounce(path, startBeat, endBeat)` (explicit). Explicit punts carried forward:
-  - Automation values freeze during render (AutomationEngine pauses rather than ticking per-buffer).
-  - Constant tempo (start-of-render tempo applied throughout). Proper variable tempo needs TempoMap runtime evaluation — a prerequisite, tracked separately in Backlog.
-  - Constant time signature (same reason; TimeSignatureMap prerequisite).
-  - Hard cutoff at end beat (no tail-time option for reverb/delay decays).
-  - Master output only (no stem / per-track bouncing).
-  - Plugin compatibility varies — some AUs glitch when driven faster than realtime despite `setNonRealtime(true)`. Known risk; document per-plugin as testers hit it.
-
-  Graduating the feature to production-ready requires all the above: automation by render position, TempoMap + TimeSignatureMap honored, tail-time option, stem bouncing.
+- [x] **Bounce to stereo file** — shipped. File → Bounce…; cycle-aware; faster-than-realtime via `OfflineRenderer`. Lua: `bounce(path[, startBeat, endBeat])`. Punts documented in `DEV_HISTORY.md` (constant tempo/time-sig, frozen automation, master-only, hard cutoff at end beat). Production-grade would require TempoMap runtime + tail-time option + stem bouncing.
 - [ ] (open — fill in as testing surfaces asks)
 
 ### 5. Explicitly deferred to 0.2.x
@@ -311,37 +282,16 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 
 ### Theme
 
-Tokens live in `src/gui/Theme.h` (authoritative values). Full reference — all color tables, typography, spacing, dimensions, design principles — is in `docs/THEME.md`. Read that before touching tokens or adding new ones.
+Tokens live in `src/gui/Theme.h` (authoritative values). **Full reference — all color tables, typography, spacing, token categories, design principles — lives in `docs/THEME.md`. Read that before touching tokens or adding new ones.**
 
-#### Rules
+Six non-negotiable rules for GUI code:
 
-1. **Never** use `juce::Colour(0x...)`, `juce::Colours::xxx`, or raw hex literals in GUI code. All colors come from `Theme::color(Theme::Color::xxx)`.
-2. **Never** use raw font sizes (`juce::Font(14.0f)`, `Theme::font(22.0f)`). Use named tokens: `Theme::fontSizeLg`, `Theme::fontSizeSm`, etc.
-3. **Never** use magic padding/spacing numbers where a token fits. Use `Theme::spacingXs/S/M/L/Xl`, `Theme::headerHeight`, `Theme::pillSize`, etc. (Layout math tied to local geometry — centering icons inside their own bounds, arc radii inside a knob — is fine; those aren't themeable.)
-4. **`.withAlpha(x)` is allowed** on a theme token (e.g. `Theme::color(Theme::Color::accent).withAlpha(0.5f)`). Prefer this over a raw semi-transparent hex. If a semi-transparent color has a clear semantic role (drag-dim overlay, playhead line), add a dedicated token in Theme.h.
-5. **Semantic naming over value reuse.** Several tokens share the same hex value (`bgSlot`, `bgControl`, `bgSelection` are all `0x2a2a2a`) — they're kept distinct so a future theme can vary them independently without grep-and-replace.
-6. **When adding a new token**: add it to `Theme.h` in the appropriate category with a comment describing its use. Grep for similar call sites first — you may be duplicating an existing token. Also update `docs/THEME.md` and the factory JSON themes in `runtime/themes/`.
-
-#### Token categories (see `docs/THEME.md` for values)
-
-- **Surfaces** — `bgApp`/`bgPanel`, `bgSurface`, `bgSurfaceRaised`, `bgRecessed`
-- **Interactive controls** — `bgControl`, `bgControlHover`, `bgSelection` (content panes), `bgListActive` (list views), `bgOverlay`, `bgDisabled`
-- **Passive inset** — `bgSlot`, `overlayDim`
-- **Text** — `textPrimary`, `textSecondary`, `textDim`, `textKeyHint`, `textOnColor`, `controlHandle`
-- **Borders** — `border`, `borderSubtle`
-- **Accent** — `accent`, `accentDim`
-- **Transport** — `transportPlay`/`Rec`/`RecDot`/`Cycle`/`CycleOff`, `playhead`
-- **Meter / activity** — `meterGreen`/`Amber`/`Red`, `sendPeak`, `activityOn`/`Off`, `statusError`
-- **Track pills** — `pillMute`/`Solo`/`Arm`/`Input`/`TextOff`
-- **Channel type accents** — `typeInstrument`/`typeAudio`/`typeBus`/`typeOutput` (mixer top stripe / ProducePane left stripe)
-
-#### Design principles (brief)
-
-- Minimal color, maximum contrast hierarchy. Color is reserved for meaning (transport, meter, status, type identity).
-- Hover is an interaction signal, not decoration — only interactive controls, only when resting.
-- Semantic tokens over value reuse (duplicated hex across tokens is a feature).
-
-Full articulation of principles in `docs/THEME.md`.
+1. **No raw hex colors, `juce::Colour(0x...)`, or `juce::Colours::xxx`** — use `Theme::color(Theme::Color::xxx)`.
+2. **No raw font sizes** — use named tokens (`Theme::fontSizeLg`, `fontSizeSm`, etc.).
+3. **No magic padding/spacing numbers where a token fits** — use `Theme::spacingXs/S/M/L/Xl`, `headerHeight`, `pillSize`, etc. Layout math tied to local geometry (centering icons in their own bounds, arc radii) is fine; it isn't themeable.
+4. **`.withAlpha(x)` on a theme token is allowed.** If a semi-transparent color has a clear semantic role, add a dedicated token in `Theme.h` instead.
+5. **Semantic naming over value reuse.** Some tokens share a hex value (`bgSlot`, `bgControl`, `bgSelection` are all `0x2a2a2a`) — kept distinct so a future theme can vary them independently.
+6. **When adding a new token**: add it to `Theme.h` with a comment, grep for similar call sites first, update `docs/THEME.md` and the factory JSON themes in `runtime/themes/`.
 
 ### Bindings & Actions
 
@@ -365,19 +315,10 @@ On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/perform
 
 ### Install identity & telemetry
 
-**`InstallId`** (`src/telemetry/InstallId.h`/.cpp) — UUID generated on first launch and persisted at `~/Library/Application Support/com.performance.app/install.json` (survives state resets and version upgrades; new ID only on new machine / new account / manual wipe). Surfaced in Settings > About with a copy button.
-
-**`TelemetryShipper`** (`src/telemetry/TelemetryShipper.h`/.cpp) — on startup, enumerates `/tmp/performance.log.*.prev` and POSTs each to the ingest endpoint on a background thread via `juce::Thread::launch` (fire-and-forget, non-blocking). On success deletes the file; on failure leaves it for the next startup to retry — so crashes ship naturally. Respects the "Send Diagnostics" toggle in Settings > About (persisted in `state.db` under `telemetry_enabled`, default on).
-
-**Build-time configuration** — `cmake/GenerateBuildVersion.cmake` writes `build/generated/BuildVersion.h` with git commit/tag/dirty state on every build (idempotent — only rewrites the file if content changed). `cmake/GenerateBuildConfig.cmake` writes `build/generated/BuildConfig.h` with `TELEMETRY_URL` + `TELEMETRY_TOKEN` read from `keys/telemetry.json` (gitignored). Populate the keys file via `scripts/fetch-telemetry-config.sh` (pulls from AWS CloudFormation outputs + SSM). Missing keys file = empty values = shipper is a silent no-op, so fresh checkouts still build.
-
-**AWS infra** (`infra/`) — CDK v2 TypeScript stack `PerformanceTelemetry`:
-- S3 bucket `performance-session-logs-<account>` for gzipped logs (1-year lifecycle, `RETAIN` on stack destroy).
-- DynamoDB `performance-installations` (pay-per-request) tracking firstSeen, lastSeen, lastCommit, lastVersion, totalBytes, totalLogs per install.
-- Node.js 20 Lambda with function URL; validates `Authorization: Bearer <token>`, writes to S3 at `<installId>/<iso>-<commit>.log.gz`, upserts DDB row.
-- Bearer token generated on first deploy and stored at SSM `/performance/telemetry/bearer-token`. Rotate by deleting the param and redeploying.
-- $5/month budget alarm with email notification at 80%.
-- Deploy: `cd infra && npx cdk deploy`. See `infra/README.md` for one-time bootstrap + rotation steps.
+- **`InstallId`** (`src/telemetry/`) — UUID at `~/Library/Application Support/com.performance.app/install.json`. Survives state resets + version upgrades. Shown in Settings > About.
+- **`TelemetryShipper`** — startup-time fire-and-forget POST of any `/tmp/performance.log.*.prev` file to the ingest endpoint. Respects the "Send Diagnostics" Settings toggle. Deletes on success, retains on failure (auto-retry next launch).
+- **Build-time config** — `cmake/GenerateBuildConfig.cmake` writes `build/generated/BuildConfig.h` with the Lambda URLs + bearer token from `keys/telemetry.json` (gitignored; populate via `scripts/fetch-telemetry-config.sh`). Absent file = empty values = shipper/chat/plugins-proxy all no-op, so fresh checkouts still build.
+- **AWS infra** — two CDK stacks (`PerformanceTelemetry` + `PerformancePlugins`). Full design, deploy commands, and rotation steps in `infra/README.md`.
 
 ### IPC
 

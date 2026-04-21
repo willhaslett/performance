@@ -2,6 +2,34 @@
 
 Changelog, test inventory, completed work, and known issues. Archived from CLAUDE.md to keep the orientation doc lean. Authoritative source for "what changed" is still `git log`; this file captures context that doesn't fit in commit messages.
 
+## Pre-beta checklist — completed items (archived from CLAUDE.md)
+
+- Code signing + notarization pipeline
+- Beta expiry check (compile-time date in `main.mm`)
+- Universal binary (arm64 + x86_64)
+- Build info in toolbar (commit hash + `-dirty` + tag, refreshed on every build)
+- Themed context menus via LookAndFeel
+- Startup song chooser (themed modal card)
+- Default song template (DLS Electric Piano + Audio In)
+- Plugin scan overlay ("Scanning plugins..." shown while AU scan runs)
+- Debounced autosave (3-second quiet period after last state change)
+- File → Open Song submenu
+- First-run audio device auto-selection — persists macOS default on empty config; defensive fallback via `getDefaultDeviceIndex` for aggregate/mic-denied edge cases
+- **Persistence integrity (2026-04-18)** — data-loss regression fixed: first-session recordings now actually persist through quit/relaunch. Saves are error-checked and roll back cleanly on constraint violation; WAL-mode backup works; `createDefaultSong` no longer poisons `tracks.preset_id` with a plugin name; `onTrackCreated` applies `inputMonitoring` on load; `loadSong` hydrates audio region WAV files + waveforms. *Ship blocker resolved.*
+- "Show Log File" menu item (View → Reveal Log in Finder) + Export Logs button on the LogPane (bundles all rescued `.prev` logs + current session into a Save As dialog) as a manual-fallback if telemetry shipping ever fails.
+- Feedback channel — individual outreach per tester (text / email / iMessage). Documented in `performance-testing/.../welcome.md`.
+
+## Bounce — shipping punts (carried forward)
+
+Bounce to stereo file shipped for 0.1.0 (File → Bounce…, cycle-aware, faster-than-realtime via `OfflineRenderer`). Explicit punts that production-grade would eventually address:
+
+- Automation values freeze during render (AutomationEngine pauses rather than ticking per-buffer).
+- Constant tempo (start-of-render tempo applied throughout). Proper variable tempo needs TempoMap runtime evaluation — a prerequisite, tracked in Backlog.
+- Constant time signature (same reason; TimeSignatureMap prerequisite).
+- Hard cutoff at end beat (no tail-time option for reverb/delay decays).
+- Master output only (no stem / per-track bouncing).
+- Plugin compatibility varies — some AUs glitch when driven faster than realtime despite `setNonRealtime(true)`. Known risk; document per-plugin as testers hit it.
+
 ## Test Suite
 
 Single file: `tests/PerformanceTests.cpp`. JUCE `UnitTest` framework. All tests isolated (fresh state per case, temp DB files cleaned up). `MockAudioEngine` captures call log for EngineSync verification.
