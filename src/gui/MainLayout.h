@@ -8,6 +8,7 @@
 #include "gui/PerformPane.h"
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
+#include "gui/LooperPane.h"
 #include "gui/Divider.h"
 #include "gui/MusicalTyping.h"
 #include "gui/KeyBindingManager.h"
@@ -27,6 +28,7 @@ enum class PaneContent {
     Hidden,
     SidebarTree,
     Produce,
+    Looper,
     Perform,
     Debug,
     Chat,
@@ -76,6 +78,7 @@ public:
     DebugPane debugPane;
     PerformPane performPane;
     ProducePane producePane;
+    LooperPane looperPane;
     ChatView chatView;
     LogPane logPane;
 

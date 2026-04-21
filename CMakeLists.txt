@@ -91,6 +91,7 @@ target_sources(Performance PRIVATE
     src/gui/SettingsWindow.cpp
     src/gui/TransportBar.cpp
     src/gui/ProducePane.cpp
+    src/gui/LooperPane.cpp
     src/gui/MusicalTyping.cpp
     src/gui/MorphEditor.cpp
     src/gui/ActionInstanceForm.cpp
