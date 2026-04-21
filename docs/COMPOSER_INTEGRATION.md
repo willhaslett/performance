@@ -153,7 +153,13 @@ Then pick an option (A / B / C), scope it into steps, add a second section to th
 
 # Design
 
-*Decisions made 2026-04-20 after the conversation the investigation recommended. Values here are load-bearing; the phased plan below follows from them.*
+*Decisions made 2026-04-20 after the conversation the investigation recommended. Values here are load-bearing; the phased plan below follows from them. **All five phases shipped 2026-04-20.***
+
+**Shipped status (2026-04-20):** end-to-end working. Chat pane has a latching Compose toggle; toggling it swaps in the composer prompt and the `compose(notation, startBeat)` Lua tool; notes land on real project tracks and play through the instrument plugins. 185 tests passing (19 new: 13 V2 parser, 6 writer).
+
+**Known rough edges to address by prompt iteration (no code changes needed):**
+- Region start beat and bar ranges sometimes don't line up with where the user expects — the LLM picks startBeat=0 by default or writes bar numbers without anchoring to the project timeline. Prompt-tunable.
+- The composer prompt is lightly adapted from dawai's (dropped the piece-document and Python-compiler sections, added a "Writing notes into the project" section pointing at `compose`). Substantive prompt-tuning for *our* environment hasn't happened yet — we get dawai's Phase 11 work as a starting point.
 
 ## Decisions
 
