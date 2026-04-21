@@ -358,6 +358,23 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("save", [&coord]() { coord.save(); });
 
+    // Live looping (see docs/LIVE_LOOPING.md). These toggle looper mode
+    // on the current project and set the project loop length. Writes
+    // go through StateAPI, which enforces invariants (cycleStart=0,
+    // cycleEnabled=true) when looper mode is active.
+    lua.set_function("setLooperModeActive", [&state](bool active) {
+        state.setLooperModeActive(active);
+    });
+    lua.set_function("isLooperModeActive", [&state]() -> bool {
+        return state.isLooperModeActive();
+    });
+    lua.set_function("setCycleLength", [&state](double beats) {
+        state.setCycleLength(beats);
+    });
+    lua.set_function("getCycleLength", [&state]() -> double {
+        return state.getCycleLength();
+    });
+
     // Offline render (bounce) to a stereo WAV file. Returns a one-line
     // human-readable status string so the caller (Claude or dev console)
     // knows wall-clock duration and audio length.
