@@ -347,8 +347,9 @@ void PerformanceCoordinator::timerCallback() {
             // beat position wraps backward (audioBeat < lastSequencerBeat
             // while loop is enabled), the scanner has just crossed the
             // cycle boundary — the right moment to promote any deferred
-            // take swaps. Safe to do on the message thread because the
-            // scan reads activeTakeId fresh each call.
+            // take swaps and fire loop-record transitions. Safe to do on
+            // the message thread because the scan reads activeTakeId and
+            // record state fresh each call.
             if (sequencerImpl->isLoopEnabled()
                 && audioBeat < lastSequencerBeat
                 && lastSequencerBeat > 0.0) {
@@ -357,6 +358,7 @@ void PerformanceCoordinator::timerCallback() {
                     if (swapped > 0) {
                         perfLog("[Looper] cycle wrap — committed %d take swap(s)\n", swapped);
                     }
+                    onCycleWrap(audioBeat);
                 }
             }
             // Drain recorded MIDI events from audio thread
@@ -840,6 +842,80 @@ void PerformanceCoordinator::syncPluginCatalog() {
 void PerformanceCoordinator::unloadSong() {
     stateAPI->setCurrentSong(SongId{});
     songRuntime->clearBindings();
+}
+
+// --- Loop recording (see docs/LIVE_LOOPING.md) ---
+//
+// The "toggle" action transitions state per the diagram in the header.
+// Actual recording work — creating takes, routing events, finalizing
+// length — happens in onCycleWrap, which runs when the audio-thread
+// beat wraps backward. That way punch-in/out always land on musical
+// boundaries without the caller thinking about timing.
+
+void PerformanceCoordinator::toggleLoopRecord(const TrackId& trackId) {
+    auto& entry = loopRecordStates[trackId.str()];
+    switch (entry.state) {
+        case LoopRecordState::Off:
+            entry.state = LoopRecordState::Armed;
+            perfLog("[Looper] armed track %s for loop recording\n", trackId.c_str());
+            break;
+        case LoopRecordState::Armed:
+            entry.state = LoopRecordState::Off;
+            perfLog("[Looper] disarmed track %s\n", trackId.c_str());
+            break;
+        case LoopRecordState::Recording:
+            entry.state = LoopRecordState::StopPending;
+            perfLog("[Looper] punch-out queued for track %s (next wrap)\n", trackId.c_str());
+            break;
+        case LoopRecordState::StopPending:
+            entry.state = LoopRecordState::Recording;
+            perfLog("[Looper] punch-out cancelled for track %s\n", trackId.c_str());
+            break;
+    }
+}
+
+std::string PerformanceCoordinator::getLoopRecordState(const TrackId& trackId) const {
+    auto it = loopRecordStates.find(trackId.str());
+    if (it == loopRecordStates.end()) return "off";
+    switch (it->second.state) {
+        case LoopRecordState::Off:          return "off";
+        case LoopRecordState::Armed:        return "armed";
+        case LoopRecordState::Recording:    return "recording";
+        case LoopRecordState::StopPending:  return "stop-pending";
+    }
+    return "off";
+}
+
+void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
+    // Pending take swaps land first (phase 3a). Then loop-record
+    // transitions — this ordering means a punch-in that fires at the
+    // same wrap as a take swap gets a fresh slate to record into.
+    for (auto& [trackIdStr, entry] : loopRecordStates) {
+        TrackId trackId{trackIdStr};
+        switch (entry.state) {
+            case LoopRecordState::Armed:
+                entry.state = LoopRecordState::Recording;
+                entry.punchInBeat = wrapBeat;
+                arrangementImpl.startLoopRecording(trackId);
+                perfLog("[Looper] punch-in on %s at beat %.2f\n",
+                        trackId.c_str(), wrapBeat);
+                break;
+            case LoopRecordState::StopPending: {
+                double lengthBeats = wrapBeat - entry.punchInBeat;
+                if (lengthBeats < 0.0) lengthBeats = 0.0;
+                arrangementImpl.stopLoopRecording(trackId, lengthBeats);
+                entry.state = LoopRecordState::Off;
+                entry.punchInBeat = 0.0;
+                perfLog("[Looper] punch-out on %s at beat %.2f (length %.2f)\n",
+                        trackId.c_str(), wrapBeat, lengthBeats);
+                break;
+            }
+            case LoopRecordState::Off:
+            case LoopRecordState::Recording:
+                // No transition; Recording continues to capture events.
+                break;
+        }
+    }
 }
 
 // --- Persistence ---

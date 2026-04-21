@@ -61,6 +61,18 @@ public:
     bool restoreSession();
     void unloadSong();
 
+    // --- Live looping (see docs/LIVE_LOOPING.md) ---
+    // Toggle loop-record state on a track. Transitions:
+    //   Off → Armed         (user taps record; waits for next cycle wrap)
+    //   Armed → Off         (user cancels before wrap)
+    //   Recording → StopPending  (user taps record again during capture)
+    //   StopPending → Recording  (user cancels the stop before wrap)
+    // Wrap-driven transitions (Armed → Recording, StopPending → Off)
+    // happen in onCycleWrap, which is called from the coordinator's
+    // timer when the audio-thread beat wraps backward.
+    void toggleLoopRecord(const TrackId& trackId);
+    std::string getLoopRecordState(const TrackId& trackId) const;
+
     // --- Persistence ---
     void save();  // flush state to SQLite
     void captureProcessorState();  // grab all plugin binary blobs into state
@@ -189,6 +201,16 @@ private:
     void computeAudioPeaks(TakeState& take);
     void loadAudioFilesIntoEngine();
     void syncTempoFromState();
+
+    // Loop recording — runtime state per track, driven by the
+    // cycle-wrap hook. See docs/LIVE_LOOPING.md.
+    enum class LoopRecordState { Off, Armed, Recording, StopPending };
+    struct LoopRecordEntry {
+        LoopRecordState state = LoopRecordState::Off;
+        double punchInBeat = 0.0;   // global beat at which current recording began
+    };
+    std::map<std::string /*TrackId*/, LoopRecordEntry> loopRecordStates;
+    void onCycleWrap(double wrapBeat);   // called from timer when beat wraps
 
     void timerCallback() override;
     void populatePluginCatalog();
