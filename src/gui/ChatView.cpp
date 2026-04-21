@@ -50,7 +50,46 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     messageViewport.setScrollBarsShown(true, false);
     addAndMakeVisible(messageViewport);
 
+    // Compose toggle — latching button in the top-right of the pane.
+    // Flipping it swaps the system prompt and clears any in-flight
+    // conversation (the two personas don't share context cleanly).
+    composeToggle.setButtonText("Compose");
+    composeToggle.setClickingTogglesState(true);
+    composeToggle.setColour(juce::TextButton::buttonColourId,
+                             Theme::color(Theme::Color::bgControl));
+    composeToggle.setColour(juce::TextButton::buttonOnColourId,
+                             Theme::color(Theme::Color::accent));
+    composeToggle.setColour(juce::TextButton::textColourOffId,
+                             Theme::color(Theme::Color::textSecondary));
+    composeToggle.setColour(juce::TextButton::textColourOnId,
+                             Theme::color(Theme::Color::textOnColor));
+    composeToggle.onClick = [this]() {
+        composeActive = composeToggle.getToggleState();
+        applyActivePrompt();
+        inputField.setTextToShowWhenEmpty(
+            composeActive ? "Message composer..." : "Message Claude...",
+            Theme::color(Theme::Color::textDim));
+        repaint();
+    };
+    addAndMakeVisible(composeToggle);
+
     setOpaque(true);
+}
+
+void ChatView::setPrompts(const juce::String& perf,
+                           const juce::String& composer) {
+    perfPrompt = perf;
+    composerPrompt = composer;
+    // If the composer prompt is empty, hide the toggle entirely so
+    // builds without the bundled composer prompt don't advertise it.
+    composeToggle.setVisible(composerPrompt.isNotEmpty());
+    applyActivePrompt();
+}
+
+void ChatView::applyActivePrompt() {
+    const auto& p = (composeActive && composerPrompt.isNotEmpty())
+                        ? composerPrompt : perfPrompt;
+    client.setSystemPrompt(p);
 }
 
 void ChatView::paint(juce::Graphics& g) {
@@ -68,12 +107,20 @@ void ChatView::paint(juce::Graphics& g) {
 void ChatView::resized() {
     auto area = getLocalBounds();
     int pad = Theme::chatBubblePad;
+
+    // Compose toggle in the top-right corner.
+    int toggleW = 90, toggleH = 26;
+    composeToggle.setBounds(area.getRight() - toggleW - pad, pad,
+                             toggleW, toggleH);
+
     auto inputArea = area.removeFromBottom(Theme::chatInputHeight + pad * 2);
     auto fieldBounds = inputArea.reduced(pad + 4, 0)
                                 .withSizeKeepingCentre(inputArea.getWidth() - (pad + 4) * 2,
                                                        Theme::chatInputHeight);
     inputField.setBounds(fieldBounds);
 
+    // Leave vertical room for the toggle at the top.
+    area.removeFromTop(toggleH + pad);
     messageViewport.setBounds(area);
     layoutBubbles();
 }

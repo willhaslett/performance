@@ -433,11 +433,17 @@ void emitOutput(const Score& score, ComposerOutput& out) {
         }
     }
 
-    // Total region length = bar count × beats per bar.
+    // Total region length: at least `bar count × beats per bar`, but
+    // extend to cover any note whose tail runs past the final bar
+    // (e.g. a half note on beat 4 of the last bar). Clipping would
+    // change the user's intent; growing the region is the honest move.
     if (!score.bars.empty()) {
         int maxBar = 0;
         for (auto& b : score.bars) maxBar = std::max(maxBar, b.number);
         out.lengthBeats = maxBar * beatsPerBar;
+    }
+    for (auto& n : out.notes) {
+        out.lengthBeats = std::max(out.lengthBeats, n.startBeat + n.durationBeats);
     }
 
     // Stable order for deterministic output + downstream sort-friendliness.

@@ -193,18 +193,27 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     };
     // sidebar.onNewSong is wired by main.mm after layout construction.
 
-    // Load system prompt for Claude from BinaryData (baked in at build time
-    // from runtime/CLAUDE.md — rebuilt automatically when the .md changes).
-    int promptSize = 0;
-    if (auto* promptData = BinaryData::getNamedResource("CLAUDE_md", promptSize); promptData && promptSize > 0) {
-        auto preamble = juce::String(
-            "You have a `perf` tool that executes Lua code directly in the running performance engine. "
-            "Use tool calls instead of shell commands. The `code` parameter takes the same Lua that the "
-            "API docs below describe. Always use the perf tool to make changes — never suggest shell commands.\n\n");
-        chatView.setSystemPrompt(preamble + juce::String::fromUTF8(promptData, promptSize));
+    // Load system prompts for Claude from BinaryData (baked in at build time
+    // from runtime/CLAUDE.md + runtime/composer_prompt.md — rebuilt
+    // automatically when either .md changes).
+    const auto toolPreamble = juce::String(
+        "You have a `perf` tool that executes Lua code directly in the running performance engine. "
+        "Use tool calls instead of shell commands. The `code` parameter takes the same Lua that the "
+        "API docs below describe. Always use the perf tool to make changes — never suggest shell commands.\n\n");
+
+    juce::String perfPrompt, composerPrompt;
+    int size = 0;
+    if (auto* data = BinaryData::getNamedResource("CLAUDE_md", size); data && size > 0) {
+        perfPrompt = toolPreamble + juce::String::fromUTF8(data, size);
     } else {
-        perfLog("[MainLayout] WARNING: CLAUDE.md not found in BinaryData — Claude will have no system prompt\n");
+        perfLog("[MainLayout] WARNING: CLAUDE.md not found in BinaryData — Claude will have no perf prompt\n");
     }
+    if (auto* data = BinaryData::getNamedResource("composer_prompt_md", size); data && size > 0) {
+        composerPrompt = toolPreamble + juce::String::fromUTF8(data, size);
+    } else {
+        perfLog("[MainLayout] INFO: composer_prompt.md not in BinaryData — Compose toggle will be hidden\n");
+    }
+    chatView.setPrompts(perfPrompt, composerPrompt);
 }
 
 // --- Pane content management ---

@@ -47,6 +47,7 @@ juce_add_binary_data(PerformanceResources
         runtime/themes/minimal_dark.json
         runtime/themes/minimal_light.json
         runtime/CLAUDE.md
+        runtime/composer_prompt.md
         runtime/bundled-plugins/manifest.json
         runtime/bundled-plugins/LICENSES/NOTICE-mda.txt
         runtime/bundled-plugins/LICENSES/NOTICE-Airwindows.txt

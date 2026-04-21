@@ -3737,6 +3737,24 @@ bar 2 | C
             expectEquals(out.lengthBeats, 8.0);  // 2 bars × 4 beats/bar
         }
 
+        beginTest("lengthBeats extends to cover notes whose tail runs past last bar");
+        {
+            // Half note on beat 4 of bar 2 = startBeat 7, duration 2 → ends at beat 9.
+            // Region length should grow from 8 (2 bars * 4) to 9.
+            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
+time_signature: 4/4
+tracks:
+  Piano: 0
+
+bar 1 | C
+  Piano: beat 1 C4 q mf
+
+bar 2 | C
+  Piano: beat 4 C4 h mf
+)"));
+            expectEquals(out.lengthBeats, 9.0);
+        }
+
         beginTest("swing shifts offbeat eighths to triplet grid");
         {
             auto out = parseOrFail(*this, juce::String(R"(tempo: 120
