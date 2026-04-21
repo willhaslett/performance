@@ -1128,6 +1128,26 @@ std::vector<TrackId> StateAPI::selectedTrackIds() const {
     return s ? s->selectedTrackIds : std::vector<TrackId>{};
 }
 
+void StateAPI::setFocusedTrackId(const TrackId& trackId) {
+    auto* s = currentSong();
+    if (!s) return;
+    // Idempotent: skip event emission when the value didn't change.
+    // Matches the pattern established in setMode (docs/PANE_MODE_MODEL.md).
+    if (s->focusedTrackId == trackId) return;
+    pushUndo();
+    s->focusedTrackId = trackId;
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Focus;
+    ev.entityId = trackId.str();
+    eventBus.emit(ev);
+}
+
+TrackId StateAPI::getFocusedTrackId() const {
+    auto* s = currentSong();
+    return s ? s->focusedTrackId : TrackId{};
+}
+
 std::vector<BusId> StateAPI::selectedBusIds() const {
     auto* s = currentSong();
     return s ? s->selectedBusIds : std::vector<BusId>{};

@@ -4552,6 +4552,90 @@ public:
 static LooperRecordTests looperRecordTests;
 
 // ============================================================================
+// Focus — singular per-song pointer at "the track I'm playing into."
+// See docs/LIVE_INPUT_AND_FOCUS.md. Phase 1: state-layer accessors only,
+// no engine behavior yet.
+class TrackFocusTests : public juce::UnitTest {
+public:
+    TrackFocusTests() : juce::UnitTest("TrackFocus") {}
+
+    void runTest() override {
+        beginTest("focus defaults empty; setter stores and emits");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto trackId = s.createTrack("T");
+            expect(s.getFocusedTrackId().empty());
+
+            int eventCount = 0;
+            std::string lastEntityId;
+            int subId = s.events().subscribe([&](const StateEvent& ev) {
+                if (ev.entity == StateEvent::Focus) {
+                    eventCount++;
+                    lastEntityId = ev.entityId;
+                }
+            });
+
+            s.setFocusedTrackId(trackId);
+            expect(s.getFocusedTrackId() == trackId);
+            expectEquals(eventCount, 1);
+            expectEquals(juce::String(lastEntityId), juce::String(trackId.str()));
+
+            s.events().unsubscribe(subId);
+        }
+
+        beginTest("setFocusedTrackId is idempotent — no event when unchanged");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto trackId = s.createTrack("T");
+            s.setFocusedTrackId(trackId);
+
+            int eventCount = 0;
+            int subId = s.events().subscribe([&](const StateEvent& ev) {
+                if (ev.entity == StateEvent::Focus) eventCount++;
+            });
+
+            s.setFocusedTrackId(trackId);   // same value — no-op
+            expectEquals(eventCount, 0);
+
+            s.setFocusedTrackId(TrackId{}); // clear — real change, emits
+            expectEquals(eventCount, 1);
+
+            s.events().unsubscribe(subId);
+        }
+
+        beginTest("focus persists per-song across coordinator restart");
+        {
+            TempDB db;
+            TrackId focusTrackId;
+            SongId songId;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("Focus");
+                focusTrackId = coord.state().createTrack("focused track");
+                coord.state().createTrack("other track");
+                songId = coord.state().currentSong()->id;
+                coord.state().setFocusedTrackId(focusTrackId);
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto* song = coord.state().findSong(songId);
+                expect(song != nullptr);
+                expect(coord.state().getFocusedTrackId() == focusTrackId);
+                coord.shutdown();
+            }
+        }
+    }
+};
+
+static TrackFocusTests trackFocusTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

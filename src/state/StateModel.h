@@ -294,9 +294,17 @@ struct SongState {
     };
     std::vector<ActionEvent> actionEvents;
 
-    // Selection state (observable, not persisted)
+    // Selection state (observable, not persisted) — plural, for grouped
+    // UI actions (bulk fader, multi-track mute, etc.).
     std::vector<TrackId> selectedTrackIds;
     std::vector<BusId> selectedBusIds;
+
+    // Focus — the singular "track I'm playing into right now." UI cursor
+    // and primary target. Persisted per-song. Distinct from selection:
+    // selection is a set for group actions, focus is one pointer for
+    // routing and single-target actions. Empty = no focus.
+    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    TrackId focusedTrackId;
 };
 
 // Workflow/session mode. Determines how the engine dispatches playback

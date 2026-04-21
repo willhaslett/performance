@@ -202,6 +202,16 @@ public:
     std::vector<TrackId> selectedTrackIds() const;
     std::vector<BusId> selectedBusIds() const;
 
+    // --- Focus ---
+    // Singular per-song pointer at "the track I'm playing into right now."
+    // Used by the engine (in a later phase) to route live MIDI to one
+    // plugin, and by the GUI as the primary-target cursor. Distinct from
+    // selection, which is a plural set for grouped UI actions.
+    // Idempotent: no event emitted when unchanged. Pass an empty TrackId
+    // to clear. See docs/LIVE_INPUT_AND_FOCUS.md.
+    void setFocusedTrackId(const TrackId& trackId);
+    TrackId getFocusedTrackId() const;
+
     // --- Config ---
     void setConfig(const std::string& key, const std::string& value);
     std::string getConfig(const std::string& key, const std::string& defaultValue = "") const;

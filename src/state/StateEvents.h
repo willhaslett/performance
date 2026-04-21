@@ -9,7 +9,12 @@ struct StateEvent {
     enum Entity { Song, Track, Bus, Effect, Send, Binding, Config, Plugin, Preset, Selection, Device,
                   // AppState-level changes (currentMode, and future app-level state).
                   // entityId is unused for App events.
-                  App };
+                  App,
+                  // Per-song singular focus pointer — the "track I'm playing into."
+                  // Kept distinct from Selection (plural, for grouped UI actions).
+                  // See docs/LIVE_INPUT_AND_FOCUS.md. entityId is the focused track id
+                  // (may be empty, meaning no focus).
+                  Focus };
 
     Action action;
     Entity entity;

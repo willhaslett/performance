@@ -117,7 +117,8 @@ void PersistenceLayer::createSchema() {
             time_sig_den INTEGER DEFAULT 4,
             cycle_start REAL DEFAULT 0.0,
             cycle_end REAL DEFAULT 0.0,
-            cycle_enabled INTEGER DEFAULT 0
+            cycle_enabled INTEGER DEFAULT 0,
+            focused_track_id TEXT DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -224,6 +225,11 @@ void PersistenceLayer::createSchema() {
     // See docs/LIVE_LOOPING.md. (App mode lives on AppState, not per-song —
     // persisted via the config key-value dict; see docs/PANE_MODE_MODEL.md.)
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN pool TEXT NOT NULL DEFAULT 'arrangement'",
+                 nullptr, nullptr, nullptr);
+
+    // Live-input-and-focus: per-song singular focused track pointer.
+    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN focused_track_id TEXT DEFAULT ''",
                  nullptr, nullptr, nullptr);
 
     // Action events table
@@ -392,7 +398,7 @@ void PersistenceLayer::readActions(AppState& out) {
 }
 
 void PersistenceLayer::readSongs(AppState& out) {
-    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled FROM songs");
+    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, focused_track_id FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
         song.id = SongId{col_str(songStmt, 0)};
@@ -408,6 +414,11 @@ void PersistenceLayer::readSongs(AppState& out) {
         song.cycleStart = sqlite3_column_double(songStmt, 7);
         song.cycleEnd = sqlite3_column_double(songStmt, 8);
         song.cycleEnabled = sqlite3_column_int(songStmt, 9) != 0;
+        {
+            std::string focusedId = col_str(songStmt, 10);
+            if (!focusedId.empty())
+                song.focusedTrackId = TrackId{focusedId};
+        }
 
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, color, output_target, input_monitoring FROM tracks WHERE song_id = ? ORDER BY position");
@@ -800,7 +811,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         int songTsNum = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].numerator;
         int songTsDen = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].denominator;
 
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, focused_track_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -814,6 +825,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 8, song.cycleStart);
         sqlite3_bind_double(stmt, 9, song.cycleEnd);
         sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
+        sqlite3_bind_text(stmt, 11, song.focusedTrackId.c_str(), -1, SQLITE_TRANSIENT);
         stepWrite(stmt, "save");
 
         // Busses (before tracks, since sends reference busses)
