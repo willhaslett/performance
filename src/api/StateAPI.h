@@ -45,6 +45,18 @@ public:
     void setCycleLength(double beats);
     double getCycleLength() const;  // 0 when no cycle is set
 
+    // Request a take swap on a loop region. In looper mode, the swap
+    // is deferred to the next cycle wrap (see Coordinator's wrap
+    // detection + commitPendingTakeSwaps). If looper mode is off or
+    // the region isn't in a track's loops pool, the swap is immediate.
+    // Pass an empty TakeId to clear any pending swap.
+    void setPendingTake(const RegionId& regionId, const TakeId& takeId);
+
+    // Promote every loop region's pendingTakeId → activeTakeId in
+    // one atomic pass. Called by the Coordinator on cycle wrap.
+    // Returns the number of regions whose active take changed.
+    int commitPendingTakeSwaps();
+
     // --- Tracks ---
     TrackId createTrack(const std::string& name);  // virtual instrument track
     TrackId createAudioInputTrack(const std::string& name, int inputChannelStart,

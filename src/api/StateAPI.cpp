@@ -361,6 +361,66 @@ double StateAPI::getCycleLength() const {
     return s->cycleEnd > s->cycleStart ? (s->cycleEnd - s->cycleStart) : 0.0;
 }
 
+// Find a region anywhere in the current song — either arrangement or
+// loop pool. Returns nullptr if not found. Keeps take-swap routing
+// cheap without duplicating the walk at every call site.
+namespace {
+std::pair<RegionState*, bool> findRegionAnyPool(SongState& song, const RegionId& regionId) {
+    for (auto& t : song.tracks) {
+        for (auto& r : t.regions) if (r.id == regionId) return { &r, /*isLoop=*/false };
+        for (auto& r : t.loops)   if (r.id == regionId) return { &r, /*isLoop=*/true };
+    }
+    return { nullptr, false };
+}
+}  // namespace
+
+void StateAPI::setPendingTake(const RegionId& regionId, const TakeId& takeId) {
+    auto* s = currentSong();
+    if (!s) return;
+    auto [region, isLoop] = findRegionAnyPool(*s, regionId);
+    if (!region) return;
+
+    // If this isn't a loop region, or looper mode is off, do the swap
+    // immediately — there's no cycle wrap to defer to.
+    if (!isLoop || !s->looperModeActive) {
+        pushUndo();
+        region->activeTakeId = takeId;
+        region->pendingTakeId = TakeId{};
+    } else {
+        // Looper mode: defer to the next cycle wrap. No undo push —
+        // the swap itself is transient and will be applied by the
+        // coordinator's wrap handler.
+        region->pendingTakeId = takeId;
+    }
+    // Use a Song Updated event — autosave notices via the
+    // subscription, and Song handlers (e.g. the tempo/cycle sync in
+    // Coordinator) can run cheaply without needing a specific track
+    // lookup. A Track event would require the track id, which we'd
+    // have to look up separately for no gain.
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+int StateAPI::commitPendingTakeSwaps() {
+    auto* s = currentSong();
+    if (!s) return 0;
+    int swapped = 0;
+    for (auto& t : s->tracks) {
+        for (auto& r : t.loops) {
+            if (r.pendingTakeId.empty()) continue;
+            if (r.pendingTakeId != r.activeTakeId) {
+                r.activeTakeId = r.pendingTakeId;
+                ++swapped;
+            }
+            r.pendingTakeId = TakeId{};
+        }
+    }
+    return swapped;
+}
+
 // --- Tracks ---
 
 TrackId StateAPI::createTrack(const std::string& name) {

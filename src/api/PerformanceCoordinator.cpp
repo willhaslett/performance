@@ -342,6 +342,23 @@ void PerformanceCoordinator::timerCallback() {
             audioEngine->setPlaybackLoop(sequencerImpl->isLoopEnabled(),
                                           sequencerImpl->getLoopStart(),
                                           sequencerImpl->getLoopEnd());
+
+            // Cycle-wrap detection for looper mode. When the audio-thread
+            // beat position wraps backward (audioBeat < lastSequencerBeat
+            // while loop is enabled), the scanner has just crossed the
+            // cycle boundary — the right moment to promote any deferred
+            // take swaps. Safe to do on the message thread because the
+            // scan reads activeTakeId fresh each call.
+            if (sequencerImpl->isLoopEnabled()
+                && audioBeat < lastSequencerBeat
+                && lastSequencerBeat > 0.0) {
+                if (stateAPI && stateAPI->isLooperModeActive()) {
+                    int swapped = stateAPI->commitPendingTakeSwaps();
+                    if (swapped > 0) {
+                        perfLog("[Looper] cycle wrap — committed %d take swap(s)\n", swapped);
+                    }
+                }
+            }
             // Drain recorded MIDI events from audio thread
             if (isRecording) {
                 drainRecordFIFO();

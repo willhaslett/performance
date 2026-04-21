@@ -4294,6 +4294,165 @@ public:
 static LooperPlaybackTests looperPlaybackTests;
 
 // ============================================================================
+// Live looper — Phase 3a: take-swap at cycle wrap
+// ============================================================================
+
+class LooperTakeSwapTests : public juce::UnitTest {
+public:
+    LooperTakeSwapTests() : juce::UnitTest("LooperTakeSwap") {}
+
+    void runTest() override {
+        beginTest("setPendingTake on a loop region defers the swap");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            // Seed the track with a loop region having two takes.
+            RegionState r;
+            r.id = RegionId{"loop1"};
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"take-a"};
+            b.id = TakeId{"take-b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            s.setPendingTake(RegionId{"loop1"}, TakeId{"take-b"});
+
+            // active unchanged, pending set.
+            auto* region = &s.findTrack(trackId)->loops[0];
+            expect(region->activeTakeId == TakeId{"take-a"});
+            expect(region->pendingTakeId == TakeId{"take-b"});
+
+            // Promote.
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 1);
+            expect(region->activeTakeId == TakeId{"take-b"});
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("setPendingTake when looper mode off is immediate");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            // Looper mode stays OFF
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            RegionState r;
+            r.id = RegionId{"loop1"};
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"take-a"};
+            b.id = TakeId{"take-b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            s.setPendingTake(RegionId{"loop1"}, TakeId{"take-b"});
+
+            auto* region = &s.findTrack(trackId)->loops[0];
+            expect(region->activeTakeId == TakeId{"take-b"});   // immediate
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("setPendingTake on an arrangement region is always immediate");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);  // even in looper mode
+            auto trackId = s.createTrack("T");
+            auto* t = s.findTrack(trackId);
+
+            RegionState r;
+            r.id = RegionId{"arr1"};
+            r.startBeat = 4.0;
+            r.lengthBeats = 4.0;
+            TakeState a, b;
+            a.id = TakeId{"a"};
+            b.id = TakeId{"b"};
+            r.takes.push_back(a);
+            r.takes.push_back(b);
+            r.activeTakeId = a.id;
+            t->regions.push_back(r);  // arrangement pool
+
+            s.setPendingTake(RegionId{"arr1"}, TakeId{"b"});
+
+            // Arrangement regions don't defer — the swap is immediate
+            // regardless of looper mode, because the cycle-wrap concept
+            // doesn't apply to timeline regions.
+            auto* region = &s.findTrack(trackId)->regions[0];
+            expect(region->activeTakeId == TakeId{"b"});
+            expect(region->pendingTakeId.empty());
+        }
+
+        beginTest("commitPendingTakeSwaps handles multiple tracks at once");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto t1 = s.createTrack("T1");
+            auto t2 = s.createTrack("T2");
+
+            auto seed = [&](const TrackId& tid, const std::string& loopId) {
+                auto* t = s.findTrack(tid);
+                RegionState r;
+                r.id = RegionId{loopId};
+                r.lengthBeats = 4.0;
+                TakeState a, b;
+                a.id = TakeId{loopId + "-a"};
+                b.id = TakeId{loopId + "-b"};
+                r.takes.push_back(a);
+                r.takes.push_back(b);
+                r.activeTakeId = a.id;
+                t->loops.push_back(r);
+            };
+            seed(t1, "loopA");
+            seed(t2, "loopB");
+
+            s.setPendingTake(RegionId{"loopA"}, TakeId{"loopA-b"});
+            s.setPendingTake(RegionId{"loopB"}, TakeId{"loopB-b"});
+
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 2);
+            expect(s.findTrack(t1)->loops[0].activeTakeId == TakeId{"loopA-b"});
+            expect(s.findTrack(t2)->loops[0].activeTakeId == TakeId{"loopB-b"});
+        }
+
+        beginTest("commitPendingTakeSwaps no-ops when nothing pending");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            s.setLooperModeActive(true);
+            s.setCycleLength(16.0);
+            auto t1 = s.createTrack("T1");
+            auto* t = s.findTrack(t1);
+            RegionState r;
+            r.id = RegionId{"loop"};
+            r.lengthBeats = 4.0;
+            TakeState a;
+            a.id = TakeId{"a"};
+            r.takes.push_back(a);
+            r.activeTakeId = a.id;
+            t->loops.push_back(r);
+
+            int swapped = s.commitPendingTakeSwaps();
+            expectEquals(swapped, 0);
+        }
+    }
+};
+
+static LooperTakeSwapTests looperTakeSwapTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 
