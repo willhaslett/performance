@@ -1,220 +1,227 @@
-# Live looping — investigation
+# Live looping — investigation + design
 
-**Status:** investigation only; no design decisions yet.
-**Date started:** 2026-04-20.
+**Status:** design settled 2026-04-20; phased plan below.
 
-The user's phrasing in the opening prompt — *"2d matrix of squares, n tracks, n' tracks, dead simple affordances for writing over a cell, muting a cell, deleting a cell, same at the track level"* — is an accurate sketch of the dominant model in the field. This doc explains the landscape for context, then gets opinionated about what to build.
+The investigation section surveys the field. The Design section below is what we're actually building — and it diverges from the "Ableton-style matrix" the investigation opens with. The deeper the investigation went, the clearer it became that the user's intuition about a single looping timeline with one region per track was *not* an under-specified matrix; it was a legitimately different model, and the right one for this app.
 
 ---
+
+# Investigation
 
 ## What live looping is, in the field
 
-Live looping is **capturing musical material in real time into fixed-length loops, then launching / layering / muting / arranging those loops from a control surface while you continue to play.** The performer is simultaneously composer, arranger, and player. Every affordance has to work hands-free or near-hands-free because the musician's hands and eyes are busy making music.
+Live looping is **capturing musical material in real time into fixed-length loops, then arranging those loops while you continue to play.** The performer is simultaneously composer, arranger, and player. Every affordance has to work hands-free or near-hands-free because the musician's hands and eyes are busy making music.
 
-Two archetypes dominate:
+Two archetypes dominate in the field:
 
-### 1. The **clip-launcher matrix** (Ableton Live Session View, Bitwig Clip Launcher, Maschine Scenes)
+### 1. The clip-launcher matrix (Ableton Live, Bitwig, Maschine)
 
-A 2D grid. **Columns are tracks**, **rows are scenes** (musical sections — "verse," "chorus," "bridge"). Each cell in the grid holds a **clip**: one musical fragment with a fixed length in beats, attached to that track + that scene.
+A 2D grid. Columns are tracks, rows are scenes (song sections). Each cell holds a clip — one musical fragment attached to that track + that scene. Tapping a clip starts it at the next quantize boundary. Tapping a scene fires every clip in that row. Only one clip per track plays at a time. Ableton + Push is the de facto laptop-performer rig.
 
-Launching a clip: you tap it, and it starts at the **next quantize boundary** (typically the next bar) so clips that start at slightly different wall-clock moments still line up rhythmically. A clip plays until it's stopped, relaunched, or replaced by another clip on the same track (only one clip per track plays at a time — the track is monophonic in the clip sense, like channels in a stripper DAW).
+### 2. The tape-style looper (Boss RC-505, Ditto, Headrush)
 
-Launching a **scene**: fires every clip in that row simultaneously. This is the "song form" surface — scenes are the arrangement.
+Linear, textural, additive. Press record, play a phrase, press record again to close the loop — the first phrase's length becomes the master length. Overdub layer after layer on top. Everything shares one master loop. Ed Sheeran, KT Tunstall, Reggie Watts.
 
-This is what the user's sketch describes. Ableton + Push/Launchpad is the de facto laptop-performer rig.
+Modern software rigs are almost always matrix-primary. Tape pedals are still common with solo guitarists.
 
-### 2. The **tape-style looper** (Boss RC-505, Ditto, Headrush Looperboard, Infinite Jukebox)
+## Why neither archetype is exactly what we built
 
-Linear, textural, additive. You press record, play a phrase, press record again to close the loop — the first loop's length becomes the master loop length. You then **overdub** layer after layer on top of the same master loop, building a denser soundscape. Usually 4–8 parallel "tracks" max (more is hard to control without a big grid).
+The user's prompt described a 2D grid, and the doc initially proposed a matrix implementation. Through conversation, the actual model turned out to be **neither** archetype. Three specific divergences:
 
-Emphasis is on evolving textures in one sitting, less on switching sections. Great for solo textural performers (KT Tunstall, Ed Sheeran, Reggie Watts). Weaker for structured songs with choruses.
+- **One region per track, not N cells.** A track has exactly one "loop region." Variations are stored as takes inside that region, not as sibling cells in a column.
+- **No scenes, no cross-track coordination primitives.** Each track's loop plays or doesn't; there's no "fire this row of clips together" surface.
+- **The cycle length is the only quantization.** No per-cell launch quantize (1/4 bar, 1/2 bar, etc.). Changes happen at the cycle wrap, full stop.
 
-### What "a live looping rig" actually is in 2026
-
-Almost always the matrix model. Tape-style loopers still ship as pedals for guitarists, but software-centric rigs use the grid because it scales to structured arrangements without losing the real-time-capture core. Our user asked for the matrix, and the matrix is the right default.
-
----
-
-## Vocabulary the design should use
-
-- **Cell** — one unit of musical content at a (track, scene) coordinate. Has state: empty / recording / playing / stopped. MIDI or audio.
-- **Track** — column in the matrix. Usually one instrument or input. Monophonic *w.r.t. cells* — only one cell on a given track plays at a time.
-- **Scene** — row in the matrix. Launching a scene launches all its cells.
-- **Launch quantize** — global setting: when you tap a cell, when does it actually start? Typical values: off, 1/4 bar, 1/2 bar, 1 bar, 2 bars, 4 bars. **1 bar** is the universal default.
-- **Count-in** — some systems add a metronomic count before a record pass. Others punch in at the next quantize boundary with no count.
-- **Overdub** — record layer on top of an existing cell without erasing (Boss model). Ableton doesn't do this natively at the cell level.
-- **Retrigger** — launching a cell that's already playing. Most systems default to "restart from beginning"; some offer "toggle stop" instead.
-- **Panic / stop all** — kill every playing cell instantly (or at next bar, depending on config). A must-have for live.
-- **Follow actions** — a clip can be configured to automatically launch another clip after N plays. Ableton's most underused feature. Out of scope for v1.
+The result is closer to a multi-track loop sequencer (hardware grooveboxes, early Korg Electribes, Novation Circuit) than to Ableton Session View. Simpler, fewer primitives, and a better fit for what this app's user is actually trying to do.
 
 ---
 
-## Why this is a natural fit for Performance
+# Design
 
-Our current state model already has everything this feature needs, minus the matrix coordinate:
+## Shape in one sentence
 
-- **Tracks** — already exist. Cells hang off tracks.
-- **Regions** — already the atom of "a chunk of musical content with a length, MIDI or audio." A cell in our system is **a region with launch metadata** instead of a timeline position.
-- **Sequencer / transport / global beat clock** — already running. Launch quantize is just "wait until the next bar boundary according to the already-running clock."
-- **MIDI / audio recording** — already works. We don't need new capture code; we need to point capture at a cell's region instead of a timeline position.
-- **Actions + bindings infrastructure** — already the right shape for "bind MIDI pad 4 to `launchCell(1, 2)`." The action-algebra refactor makes adding new built-in actions cheap.
-- **State event bus** — GUI refreshes automatically when regions change.
+**A Looper pane is an alternative view onto the same Project.** It replaces the Producer pane in the main content slot, cycles a user-set loop length continuously, and lets each track carry one loop region that either plays continuously within that cycle or repeats inside it (if shorter). No cells, no scenes, no matrix, no per-cell launch quantize — the cycle *is* the quantization.
 
-Where the fit isn't automatic: the **Produce pane** is timeline-centric. A 2D matrix wants a different view. And we need a data delta: regions today have a linear `startBeat`; cells are (trackIdx, sceneIdx) coordinates.
+## Data model
 
----
+Per project:
 
-## Proposed architecture
-
-### Data model — regions stay regions, gain a `kind`
-
-```cpp
-struct RegionState {
-    // ... existing fields (id, type, startBeat, lengthBeats, takes...)
-
-    enum Kind { Arrangement, Cell };   // NEW
-    Kind kind = Arrangement;
-
-    // NEW — only meaningful when kind == Cell:
-    int sceneIndex = -1;               // row in the matrix
-    // (trackIdx is implicit — the region already belongs to a track)
-    bool loopWhenTriggered = true;     // false = one-shot
-    bool isRecording = false;          // transient, set during capture
-};
+```
+Project
+  cycleLengthBeats: int        // persisted; user-set via setCycleLength
+  looperModeActive: bool       // persisted; determines pane + invariants
+  // + existing cycle fields (loopStart / loopEnd / loopEnabled) —
+  //   normalized to loopStart=0, loopEnabled=true when looperModeActive
 ```
 
-This keeps the two mental models (timeline arrangement vs. matrix session) in one data type, lets us share all existing persistence / undo / engine-sync plumbing, and lets a single track hold both — arrangement regions for sections that always play the same, cells for the live-triggerable material.
+Per track:
 
-Alternative — a separate `CellState` parallel type — is cleaner conceptually but doubles the state surface and forces every feature (persistence, event bus, GUI rendering) to learn about two types. Not worth it.
+```
+Track
+  regions: vector<RegionState>   // existing — arrangement pool, used by Producer
+  loops:   vector<RegionState>   // new — looper pool, used by Looper
+  // + existing fields (muted, etc.)
+```
 
-### A new pane: "Session"
+**Two pools per track, genuinely independent.** Creating, deleting, editing, recording into, or swapping takes on one has zero effect on the other. Producer never sees loops; Looper never sees arrangement regions. This closes the foot-gun the user surfaced — "Producer delete accidentally nukes a loop you're about to trigger live" — and leaves room for the concurrent-capture workflow the user flagged as a future possibility (record the Looper's output via Producer while performing).
 
-Add a fifth main pane alongside Produce / Perform / Chat / Mixer. Keyboard shortcut ⌘L (for "Loops") or similar. The Session pane renders the matrix:
+Invariants on entries in `loops`, enforced at the state API:
 
-- Columns = tracks (same tracks the rest of the app sees)
-- Rows = scenes (new concept at the project level — just an integer count, effectively)
-- Cells painted by state: empty / armed / recording (red pulse) / playing (green pulse) / stopped
-- Click a cell to launch; Cmd+click to arm for record; right-click for delete / rename / duplicate
-- A "scene launcher" column on the far right fires a whole row
+- `startBeat == 0` always
+- `lengthBeats` can be any positive value — even longer than `project.cycleLengthBeats`. Tail is preserved; playback clips until the user extends the cycle.
+- Existing `takes` + `activeTakeId` fields handle variant swapping with no new machinery.
+- New `pendingTakeId` field on `RegionState` (empty when no swap pending) — see take-swap rule below.
 
-Produce pane stays unchanged — arrangement regions still render there on the timeline. If a region is a Cell, Produce doesn't show it (it has no timeline position). If it's an Arrangement region, Session doesn't show it.
+Enforcement lives at the state API, not the GUI. Writes from any caller (GUI, Lua, IPC, MIDI binding) normalize the invariants when `looperModeActive` is true. This matters because the runtime has multiple non-GUI clients — chat's `perf` tool can write state directly.
 
-### New built-in actions (for MIDI bindings)
+## Playback rule
 
-Every interactive affordance gets a bindable action so a musician can map it to their controller:
+One formula governs everything:
 
-| Action | Arguments | Behavior |
-|---|---|---|
-| `launchCell` | `trackRef`, `scene` | Start/stop cell at this coordinate (quantized to launch-quantize) |
-| `recordCell` | `trackRef`, `scene` | Arm the cell; record starts at next quantize boundary, length = launch-quantize × count or until pressed again |
-| `stopTrack` | `trackRef` | Stop whatever cell is playing on this track |
-| `stopAllCells` | — | Global panic (quantized or instant, depending on hold duration) |
-| `launchScene` | `scene` | Fire every cell in this row |
-| `scrollMatrix` | `dx`, `dy` | Move the visible 4×4 window when the matrix exceeds 4×4 |
-| `setLaunchQuantize` | `quantizeValue` | Switch between 1/4, 1/2, 1, 2, 4 bar quantize |
+```
+regionPosition = cyclePosition mod region.lengthBeats
+```
 
-With your KeyLab 88 MkII (16 pads + transport controls), a natural default mapping is:
+Where `cyclePosition = globalBeat mod project.cycleLengthBeats` (the sequencer already wraps this).
 
-- 16 pads → 4×4 visible window onto the matrix
-- Arrow buttons (or two pads reserved) → `scrollMatrix`
-- Record button → `recordCell` on the currently-selected cell
-- Stop button → `stopAllCells`
-- One of the pad-bank buttons → `launchScene` (held = scene-launch mode, release pad to fire row)
+- **Region shorter than cycle** — plays multiple times per cycle. 4-bar loop in 16-bar cycle plays 4×.
+- **Region equal to cycle** — plays once per cycle.
+- **Region longer than cycle** — tail past `cycleLengthBeats` is never reached; data stays on disk. `setCycleLength(longer)` surfaces the tail.
+- **Region between 1× and 2× cycle** — plays once fully, then wraps and partially plays again.
 
-The prescribed MIDI map ships as the default for a KeyLab; we document it prominently and users with other controllers can remap via the existing SongMappingsPane.
+No truncation at capture, no special cases, no floor on cycle length derived from region content.
 
-### Launch-quantize engine
+## Recording rule
 
-One new piece of engine code — a **launch scheduler**. Small:
+- Punch-in on a track → record starts at the next cycle wrap.
+- Captured events go into a new take on that track's loop region. Positions stored relative to punch-in (region-local beats).
+- Punch-out → region `lengthBeats` = punch-out beat − punch-in beat.
+- If the user records past the cycle boundary, the region grows past `cycleLengthBeats`. Playback clips per the formula; data preserved.
+- Stuck-note hygiene: synthetic noteOffs injected at punch-out for any still-held notes (reuses the existing MIDI recording pattern).
+- Recording creates a new take, promoted to active. Previous takes persist on the region.
 
-- Keeps a list of pending `(action, fireAtBeat)` tuples.
-- On every engine tick, fires any actions whose `fireAtBeat <= currentBeat`.
-- `launchCell(track, scene)` computes `fireAtBeat = ceilToQuantize(currentBeat, quantize)` and enqueues.
-- Same for scene launches and global stops.
+## Take-swap semantics
 
-The Sequencer already exposes a `beatCallback` we can hook; no new thread / clock work.
+User changes active take mid-performance → deferred to next cycle wrap. Implementation:
 
----
+- `region.pendingTakeId` holds the requested take; `region.activeTakeId` is what's playing.
+- User action writes `pendingTakeId`.
+- On cycle wrap (sequencer's loopWrap callback), the playback engine:
+  1. Sends noteOffs for any still-held notes from the current take.
+  2. Sets `activeTakeId = pendingTakeId`; clears `pendingTakeId`.
+  3. Begins the new take from its beat 0.
 
-## Open design questions (for the conversation before coding)
+Clean entrance at a musical boundary; no mid-cycle cut.
 
-1. **MIDI-only in v1, or MIDI + audio?**
-   - MIDI cells: cheap. We already record MIDI into regions.
-   - Audio cells: real-time audio capture + seamless loop playback is meaningfully harder (buffer management, sample-accurate loop boundaries, disk I/O during performance). Doable, not free.
-   - Recommendation: **MIDI only for v1**, audio in v2. A musician recording loops through a synth (keys user) gets the full value with MIDI.
+## Cycle length semantics
 
-2. **Scenes for v1?**
-   - Adds complexity (scene launch action, scene UI column, scene persistence).
-   - Removing scenes means the matrix is really "tracks × positions" where each position is just a slot, with no row-level launch semantics.
-   - Recommendation: **yes, include scenes**. They're core to the clip-launcher mental model; without them the matrix feels like a sampler grid (still useful, but less structural). The implementation cost is small — a scene is just an integer; launching one iterates cells with matching sceneIndex.
+- `cycleLengthBeats` is purely user-set via the new `setCycleLength(bars)` action (bindable to MIDI).
+- Default on a new Looper-mode project: 16 bars (64 beats at 4/4).
+- No floor constraint from regions — user can set any positive value.
+- Recording never auto-grows cycle length. Oversized regions stored in full, playback clips.
+- The underlying sequencer's cycle state (`loopStart`, `loopEnd`, `loopEnabled`) is the same state used by Producer's cycle-mode today. Looper-mode writes normalize: `loopStart=0`, `loopEnabled=true`, `loopEnd=cycleLengthBeats`.
 
-3. **Overdub in v1?**
-   - Classic Boss feature. Adds meaningful complexity: record-while-cell-plays, layered takes, undo-last-layer.
-   - Recommendation: **no for v1**. "Record replaces" is simpler and covers the clip-launcher idiom. Overdub is a tape-looper feature we can add later if testers miss it.
+## Movement and copy primitives
 
-4. **Launch quantize default?**
-   - Almost every system defaults to **1 bar**. Recommend the same.
-   - User-configurable via `setLaunchQuantize` binding + a Session-pane menu.
+Five new Lua-bindable actions:
 
-5. **Cell length determination?**
-   - Two models: fixed (set before recording — e.g. "record a 4-bar clip") or punch-out (press record to start, press again to stop, length = beats between).
-   - Recommendation: **punch-out with bar-quantized boundaries**. Matches Ableton and most performers' muscle memory. First press records the next bar-boundary; second press ends at the next bar-boundary.
+| Action | Purpose |
+|---|---|
+| `setCycleLength(bars)` | User-set cycle length. Takes effect immediately. |
+| `moveRegion(regionId, targetTrackId)` | Within the arrangement pool, relocate to another track. Type-checked: MIDI↔MIDI, audio↔audio. |
+| `moveLoop(loopId, targetTrackId)` | Symmetric within the loop pool. Same type check. |
+| `copyArrangementToLoop(regionId)` | Edge-case: duplicate an arrangement region as a loop. New id, new takes. `startBeat` discarded. |
+| `copyLoopToArrangement(loopId, startBeat)` | Duplicate a loop region into the arrangement at a given start beat. |
 
-6. **Retrigger semantics when a cell is already playing?**
-   - Two options: **restart from beginning** (Ableton default) or **toggle-stop**.
-   - Recommendation: **restart from beginning**. Toggle-stop is what `stopTrack` is for.
+Cross-pool copy is an **edge-case primitive** — no menu entry in v1, no visible indicator. The bindings exist so it's not trap-doored; chat or a power user reaches it via Lua.
 
-7. **Does a cell persist its recorded content across quit/relaunch?**
-   - Yes — they're regions, and regions persist. The only wrinkle: we need cell content in SQLite schema (already there via region state). Free.
+## Pane-aware keybindings
 
-8. **Cells vs arrangement — do they interact?**
-   - If a track has both timeline-arrangement regions and matrix-cells, and both try to play at once, what wins?
-   - Recommendation: **cell wins.** When a cell is playing on a track, the arrangement for that track pauses. Simpler than mixing two sources of MIDI into one track.
+Currently our keybinding system is global. With Looper, some shortcuts need pane-aware routing — `c` (toggle cycle) is meaningful in Producer but a no-op in Looper. Small extension:
 
----
+- Each registered command gains an optional `applicableWhen: PaneContext` filter.
+- The dispatch layer reads the currently-visible main-slot pane and skips commands whose filter rules it out.
+- Default `applicableWhen = Any`. Most commands don't need the filter.
 
-## MVP shape candidates
+## Sidebar / navigation
 
-### A. Matrix-only, minimum viable
-- 4×4 Session pane (scrollable if bigger)
-- MIDI cells, no audio
-- Scenes included
-- Launch quantize = 1 bar fixed
-- Punch-out recording
-- Restart-from-beginning retrigger
-- `launchCell` / `recordCell` / `stopTrack` / `stopAllCells` / `launchScene` / `scrollMatrix` bindable actions
-- Default KeyLab 88 MkII mapping shipped
-- No overdub, no follow actions, no audio cells
+Looper occupies the same UI slot as Producer (the Left / main content slot). They're mutually exclusive; switching to Looper closes Producer. Sidebar gains a "Looper" entry next to "Produce":
 
-**Effort estimate:** 2–3 days. Scenes are cheap, the scheduler is cheap, the pane is the main cost.
+```
+View
+  Produce   ⌘Y
+  Looper    ⌘?        ← new, shares slot with Produce
+  Perform   ⌘U
+  Mixer     ⌘O
+  Chat      ⌘I
+```
 
-### B. "Real" session view
-- Everything in A, plus:
-- Audio cells
-- Overdub
-- User-configurable launch quantize
-- Scene column + scene launch affordances
-- Per-cell color / label / launch mode overrides
+Keyboard shortcut TBD — pick during implementation, after checking for conflicts.
 
-Double the surface; probably a week. Some of this *might* ship for free once A is in (e.g. user-configurable quantize is just exposing the internal value).
+## What's persisted vs. transient
 
-### Recommendation
+**Persisted (SQLite):**
+- `project.cycleLengthBeats`
+- `project.looperModeActive`
+- `track.loops` — full regions + takes + `activeTakeId`. Same persistence machinery as `regions`.
 
-**Do A.** Ship. Watch testers live-loop for a couple of sessions. Add what they miss.
-
-The biggest risk in this feature isn't "will it work" — the data model, engine work, and UI are straightforward given what we already have. The risk is **the MIDI mapping not feeling right under the hands of a musician who's also playing.** That only reveals itself in use. Shipping A quickly optimizes for feedback cycles on the ergonomic question.
+**Transient (runtime, resets on relaunch):**
+- `region.pendingTakeId`
+- Sequencer position, cycle count, etc. — already transient today.
 
 ---
 
-## Recommended next step
+# Phased plan
 
-Same shape as composer and bundled plugins:
+Five phases, each shippable on its own, building strictly upward.
 
-1. Read the above. Push back / correct my assumptions about what a performer actually needs.
-2. Answer the 8 open questions (or agree with my recommendations).
-3. I scope A into phases and execute.
+## Phase 1 — State model
 
-Two questions I'd especially like you to weigh in on up front:
+- Add `project.cycleLengthBeats`, `project.looperModeActive`, `track.loops`.
+- Extend `RegionState` with `pendingTakeId`.
+- Extend persistence schema (new table for loop regions, or a `pool` discriminator on the existing regions table).
+- Tests: round-trip a project with loops; verify `loops` collection is independent of `regions`.
 
-- **The matrix dimensions question.** "N tracks × N' tracks" in your prompt is probably a typo. I'm assuming you meant **N tracks (columns) × M scenes (rows)**. Confirm, or correct me.
-- **Does Session replace something or sit alongside?** Sidebar currently has Produce / Perform / Chat / Mixer. Adding Session as a fifth pane is natural. Alternative: a mode toggle on Produce (Timeline vs Session). Your call.
+## Phase 2 — Playback engine
+
+- Implement within-cycle region wrap: when `looperModeActive` is true, drive `track.loops[0]` (if present) using `regionPosition = cyclePosition mod region.lengthBeats`.
+- Arrangement-pool playback unchanged.
+- Tests: 4-bar loop in 16-bar cycle plays 4×; 20-bar loop in 16-bar cycle plays first 16 bars only; extend cycle to 24, first 20 bars of region play then wraps.
+
+## Phase 3 — Recording + take-swap
+
+- Punch-in / punch-out recording that creates takes on loop regions.
+- `setCycleLength(bars)` action.
+- Take-swap at cycle wrap (pendingTakeId → activeTakeId with noteOff flush).
+- Tests: record a 3-bar loop stored as a single take; mid-cycle take change takes effect at wrap with clean note-offs.
+
+## Phase 4 — Looper pane
+
+- New pane component sharing the main content slot with Producer.
+- Renders per-track loop tiles: take name, length, mute state, record button, take selector.
+- Keyboard shortcut + Sidebar entry.
+- Pane-aware keybinding infrastructure.
+- Tests: GUI integration + manual verification.
+
+## Phase 5 — Movement and copy primitives
+
+- Expose `moveLoop`, `moveRegion`, `copyLoopToArrangement`, `copyArrangementToLoop` as Lua bindings.
+- Right-click menu entries in each pane for the same-pool moves.
+- Tests: type-check enforcement; copy produces fully independent region with new ids.
+
+## Out of scope for v1
+
+- Audio loops. MIDI only for this release.
+- Overdub (add layer to an existing take). Not part of our model.
+- Scenes / cross-track coordinated launch. Not applicable.
+- "Start from arbitrary beat" when launching a take. The model is always beat-0-at-wrap.
+- Follow actions, per-take quantize, per-loop tempo.
+
+---
+
+# Open questions deferred
+
+- **Default keybinding letter for Looper pane.** Pick during Phase 4 after checking conflicts.
+- **Pane-aware keybinding filter — implementation detail.** Global table with filter, or per-pane local tables with fallback. Decide during Phase 4.
+- **Punch-in UX when transport is stopped.** Auto-start the transport (Ableton does)? Probably yes. Decide during Phase 3.
+- **`moveLoop` / `moveRegion` same-pool semantics when the target track already has a loop.** Replace, refuse, or keep both (breaking "one loop per track")? Decide during Phase 5.
