@@ -30,6 +30,21 @@ public:
     std::pair<int,int> getSongTimeSignature() const;
     std::string getMasterOutputId() const;
 
+    // --- Looper mode (see docs/LIVE_LOOPING.md) ---
+    // When looper mode is active, the project is presented via the Looper
+    // pane. Enabling it normalizes cycle state (loopStart=0, loopEnabled=true)
+    // and is the single switch that gates within-cycle region wrap + the
+    // "one loop per track at startBeat=0" invariants.
+    void setLooperModeActive(bool active);
+    bool isLooperModeActive() const;
+
+    // Cycle length for the Looper. Equivalent to setting cycleEnd with
+    // cycleStart forced to 0. Takes beats (a whole-number bar * 4 is the
+    // typical caller idiom). No floor from region content — regions
+    // longer than the cycle have their tails preserved but silent.
+    void setCycleLength(double beats);
+    double getCycleLength() const;  // 0 when no cycle is set
+
     // --- Tracks ---
     TrackId createTrack(const std::string& name);  // virtual instrument track
     TrackId createAudioInputTrack(const std::string& name, int inputChannelStart,

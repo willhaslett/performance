@@ -1332,6 +1332,15 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
     // Watch for Track or Effect Updated events — LoadStatus may have changed to Loaded
     if (event.action != StateEvent::Updated) return;
 
+    // Song Updated — may be a cycle-length change from setCycleLength /
+    // setLooperModeActive. Push state → sequencer so the playback clock
+    // reflects the new cycle, and so the next save() snapshot (which
+    // reads from sequencer) matches what state already says.
+    if (event.entity == StateEvent::Song) {
+        syncTempoFromState();
+        return;
+    }
+
     if (event.entity == StateEvent::Track) {
         auto* track = stateAPI->findTrack(TrackId{event.entityId});
         if (!track || track->instrumentLoadStatus != LoadStatus::Loaded) return;

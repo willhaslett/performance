@@ -3966,6 +3966,168 @@ public:
 static ComposerWriterTests composerWriterTests;
 
 // ============================================================================
+// Live looper — Phase 1: state model + persistence
+// ============================================================================
+//
+// Proves that the new looper-mode state (project.looperModeActive,
+// track.loops, RegionState.pendingTakeId) persists correctly and is
+// independent from the arrangement pool (track.regions). See
+// docs/LIVE_LOOPING.md.
+
+class LooperStateTests : public juce::UnitTest {
+public:
+    LooperStateTests() : juce::UnitTest("LooperState") {}
+
+    void runTest() override {
+        beginTest("looperModeActive defaults false, setter flips + normalizes cycle");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            expect(!s.isLooperModeActive());
+            s.setLooperModeActive(true);
+            expect(s.isLooperModeActive());
+
+            // Enabling looper mode should have normalized the cycle.
+            auto* song = s.currentSong();
+            expectEquals(song->cycleStart, 0.0);
+            expect(song->cycleEnabled);
+            expect(song->cycleEnd > 0.0);  // defaulted to 16 bars if was unset
+        }
+
+        beginTest("setCycleLength sets cycleEnd, no floor from regions");
+        {
+            TestCoordinator tc;
+            tc.state().setLooperModeActive(true);
+            tc.state().setCycleLength(32.0);  // 8 bars × 4 beats
+            auto* song = tc.state().currentSong();
+            expectEquals(song->cycleEnd, 32.0);
+            expectEquals(song->cycleStart, 0.0);
+            expect(song->cycleEnabled);
+            expectEquals(tc.state().getCycleLength(), 32.0);
+        }
+
+        beginTest("loops collection starts empty, independent of regions");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            auto* t = tc.state().findTrack(trackId);
+            expectEquals((int) t->regions.size(), 0);
+            expectEquals((int) t->loops.size(), 0);
+
+            // Put a region in the arrangement pool directly; loops
+            // collection must stay empty.
+            RegionState r;
+            r.id = RegionId{"r1"};
+            r.lengthBeats = 4.0;
+            t->regions.push_back(r);
+            expectEquals((int) t->regions.size(), 1);
+            expectEquals((int) t->loops.size(), 0);
+
+            // And the reverse — a loop entry doesn't leak into regions.
+            RegionState l;
+            l.id = RegionId{"l1"};
+            l.lengthBeats = 8.0;
+            t->loops.push_back(l);
+            expectEquals((int) t->regions.size(), 1);
+            expectEquals((int) t->loops.size(), 1);
+        }
+
+        beginTest("persistence round-trips looperModeActive + loops independently");
+        {
+            TempDB db;
+            RegionId arrangementRegionId, loopRegionId;
+            TrackId trackId;
+            SongId songId;
+
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("RoundTrip");
+                coord.state().setLooperModeActive(true);
+                coord.state().setCycleLength(64.0);
+                trackId = coord.state().createTrack("T");
+                songId = coord.state().currentSong()->id;
+                auto* t = coord.state().findTrack(trackId);
+
+                RegionState r;
+                r.id = RegionId{"r_arr"};
+                r.startBeat = 4.0;
+                r.lengthBeats = 8.0;
+                r.name = "arrangement region";
+                arrangementRegionId = r.id;
+                t->regions.push_back(r);
+
+                RegionState l;
+                l.id = RegionId{"r_loop"};
+                l.startBeat = 0.0;
+                l.lengthBeats = 4.0;
+                l.name = "loop region";
+                loopRegionId = l.id;
+                t->loops.push_back(l);
+
+                coord.save();
+                coord.shutdown();
+            }
+
+            // Reopen with a fresh coordinator.
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto* song = coord.state().findSong(songId);
+                expect(song != nullptr);
+                expect(song->looperModeActive);
+                expectEquals(song->cycleEnd, 64.0);
+
+                auto* t = coord.state().findTrack(trackId);
+                expect(t != nullptr);
+                expectEquals((int) t->regions.size(), 1);
+                expectEquals((int) t->loops.size(), 1);
+                expect(t->regions[0].id == arrangementRegionId);
+                expect(t->loops[0].id == loopRegionId);
+                expectEquals(juce::String(t->regions[0].name), juce::String("arrangement region"));
+                expectEquals(juce::String(t->loops[0].name), juce::String("loop region"));
+                coord.shutdown();
+            }
+        }
+
+        beginTest("pendingTakeId is runtime-only (not persisted)");
+        {
+            TempDB db;
+            TrackId trackId;
+            SongId songId;
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                coord.createSong("PendingTest");
+                trackId = coord.state().createTrack("T");
+                songId = coord.state().currentSong()->id;
+                auto* t = coord.state().findTrack(trackId);
+                RegionState l;
+                l.id = RegionId{"r_loop"};
+                l.lengthBeats = 4.0;
+                l.activeTakeId = TakeId{"take-a"};
+                l.pendingTakeId = TakeId{"take-pending"};  // should NOT survive
+                t->loops.push_back(l);
+                coord.save();
+                coord.shutdown();
+            }
+            {
+                PerformanceCoordinator coord;
+                coord.initialise(db.path());
+                auto* t = coord.state().findTrack(trackId);
+                expect(t != nullptr);
+                expectEquals((int) t->loops.size(), 1);
+                expect(t->loops[0].activeTakeId == TakeId{"take-a"});
+                expect(t->loops[0].pendingTakeId.empty());
+                coord.shutdown();
+            }
+        }
+    }
+};
+
+static LooperStateTests looperStateTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

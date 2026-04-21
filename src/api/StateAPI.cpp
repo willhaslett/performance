@@ -302,6 +302,65 @@ std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId.str();
 }
 
+// --- Looper mode ---
+//
+// See docs/LIVE_LOOPING.md. These setters enforce the looper-mode
+// invariants at the state-API level rather than the GUI, because the
+// runtime has multiple non-GUI clients (Lua via `perf` tool, IPC via
+// `bin/perf`, MIDI bindings) and GUI-only enforcement can be bypassed.
+
+void StateAPI::setLooperModeActive(bool active) {
+    auto* s = currentSong();
+    if (!s) return;
+    pushUndo();
+    s->looperModeActive = active;
+    if (active) {
+        // Normalize cycle invariants for looper mode. Leaves cycleEnd
+        // intact (user may have set a custom length) but forces start
+        // to 0 and enables the cycle.
+        s->cycleStart = 0.0;
+        s->cycleEnabled = true;
+        if (s->cycleEnd <= 0.0) {
+            s->cycleEnd = 16.0 * 4.0;  // default 16 bars × 4 beats/bar
+        }
+    }
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+bool StateAPI::isLooperModeActive() const {
+    auto* s = currentSong();
+    return s && s->looperModeActive;
+}
+
+void StateAPI::setCycleLength(double beats) {
+    auto* s = currentSong();
+    if (!s) return;
+    PERF_ASSERT(beats > 0, "setCycleLength: beats must be > 0");
+    pushUndo();
+    // Looper-mode normalization: force cycleStart=0 and cycleEnabled=true
+    // regardless of how the caller reached this API.
+    if (s->looperModeActive) {
+        s->cycleStart = 0.0;
+        s->cycleEnabled = true;
+    }
+    s->cycleEnd = beats;
+    StateEvent ev;
+    ev.action = StateEvent::Updated;
+    ev.entity = StateEvent::Song;
+    ev.entityId = s->id.str();
+    eventBus.emit(ev);
+}
+
+double StateAPI::getCycleLength() const {
+    auto* s = currentSong();
+    if (!s) return 0.0;
+    return s->cycleEnd > s->cycleStart ? (s->cycleEnd - s->cycleStart) : 0.0;
+}
+
 // --- Tracks ---
 
 TrackId StateAPI::createTrack(const std::string& name) {

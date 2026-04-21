@@ -114,7 +114,11 @@ void PersistenceLayer::createSchema() {
             initial_state TEXT,
             tempo REAL DEFAULT 120.0,
             time_sig_num INTEGER DEFAULT 4,
-            time_sig_den INTEGER DEFAULT 4
+            time_sig_den INTEGER DEFAULT 4,
+            cycle_start REAL DEFAULT 0.0,
+            cycle_end REAL DEFAULT 0.0,
+            cycle_enabled INTEGER DEFAULT 0,
+            looper_mode_active INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -217,6 +221,13 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN channel_count INTEGER DEFAULT 2", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
 
+    // Live-looping: regions get a pool discriminator ('arrangement' | 'loop'),
+    // songs get a looper_mode_active flag. See docs/LIVE_LOOPING.md.
+    sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN pool TEXT NOT NULL DEFAULT 'arrangement'",
+                 nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN looper_mode_active INTEGER DEFAULT 0",
+                 nullptr, nullptr, nullptr);
+
     // Action events table
     exec(R"(
         CREATE TABLE IF NOT EXISTS action_events (
@@ -241,7 +252,8 @@ void PersistenceLayer::createSchema() {
             muted INTEGER DEFAULT 0,
             quantize REAL DEFAULT 0,
             looped INTEGER DEFAULT 0,
-            loop_end_beat REAL DEFAULT 0
+            loop_end_beat REAL DEFAULT 0,
+            pool TEXT NOT NULL DEFAULT 'arrangement'
         );
 
         CREATE TABLE IF NOT EXISTS takes (
@@ -371,7 +383,7 @@ void PersistenceLayer::readActions(AppState& out) {
 }
 
 void PersistenceLayer::readSongs(AppState& out) {
-    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled FROM songs");
+    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, looper_mode_active FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
         song.id = SongId{col_str(songStmt, 0)};
@@ -387,6 +399,7 @@ void PersistenceLayer::readSongs(AppState& out) {
         song.cycleStart = sqlite3_column_double(songStmt, 7);
         song.cycleEnd = sqlite3_column_double(songStmt, 8);
         song.cycleEnabled = sqlite3_column_int(songStmt, 9) != 0;
+        song.looperModeActive = sqlite3_column_int(songStmt, 10) != 0;
 
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, color, output_target, input_monitoring FROM tracks WHERE song_id = ? ORDER BY position");
@@ -434,8 +447,9 @@ void PersistenceLayer::readSongs(AppState& out) {
             }
             sqlite3_finalize(ss);
 
-            // Regions for this track
-            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat FROM regions WHERE track_id = ? ORDER BY start_beat");
+            // Regions (both arrangement + loop pools) for this track.
+            // The `pool` column routes each row into the right collection.
+            auto* rs = prepare("SELECT id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat, pool FROM regions WHERE track_id = ? ORDER BY pool, start_beat");
             sqlite3_bind_text(rs, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(rs) == SQLITE_ROW) {
                 RegionState r;
@@ -449,6 +463,7 @@ void PersistenceLayer::readSongs(AppState& out) {
                 r.quantize = sqlite3_column_double(rs, 7);
                 r.looped = sqlite3_column_int(rs, 8) != 0;
                 r.loopEndBeat = sqlite3_column_double(rs, 9);
+                std::string pool = col_str(rs, 10);
 
                 // Takes for this region
                 auto* tks = prepare("SELECT id, name, file_path, record_tempo, sample_rate, channel_count FROM takes WHERE region_id = ?");
@@ -480,7 +495,8 @@ void PersistenceLayer::readSongs(AppState& out) {
                 }
                 sqlite3_finalize(tks);
 
-                t.regions.push_back(std::move(r));
+                if (pool == "loop") t.loops.push_back(std::move(r));
+                else                t.regions.push_back(std::move(r));
             }
             sqlite3_finalize(rs);
 
@@ -776,7 +792,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         int songTsNum = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].numerator;
         int songTsDen = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].denominator;
 
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, looper_mode_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -790,6 +806,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 8, song.cycleStart);
         sqlite3_bind_double(stmt, 9, song.cycleEnd);
         sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
+        sqlite3_bind_int(stmt, 11, song.looperModeActive ? 1 : 0);
         stepWrite(stmt, "save");
 
         // Busses (before tracks, since sends reference busses)
@@ -895,11 +912,12 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 stepWrite(ss, "save");
             }
 
-            // Regions and takes
-            for (auto& r : t.regions) {
+            // Regions and takes — both pools go through the same
+            // persistence path, distinguished by the `pool` column.
+            auto saveRegion = [&](const RegionState& r, const char* pool) {
                 auto* rs = prepare(
-                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                    "INSERT INTO regions (id, track_id, type, name, start_beat, length_beats, active_take_id, muted, quantize, looped, loop_end_beat, pool) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(rs, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(rs, 3, r.type.c_str(), -1, SQLITE_TRANSIENT);
@@ -911,6 +929,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                 sqlite3_bind_double(rs, 9, r.quantize);
                 sqlite3_bind_int(rs, 10, r.looped ? 1 : 0);
                 sqlite3_bind_double(rs, 11, r.loopEndBeat);
+                sqlite3_bind_text(rs, 12, pool, -1, SQLITE_STATIC);
                 stepWrite(rs, "save");
 
                 for (auto& take : r.takes) {
@@ -941,7 +960,9 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                         stepWrite(es, "save");
                     }
                 }
-            }
+            };
+            for (auto& r : t.regions) saveRegion(r, "arrangement");
+            for (auto& r : t.loops)   saveRegion(r, "loop");
         }
 
         // Master effects
