@@ -13,9 +13,9 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/BUNDLED_PLUGINS.md` — first-launch plugin pack. The "ruled out" list is load-bearing — free-plugin licenses are narrow and easy to violate.
 - `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
-- `docs/LIVE_LOOPING.md` — live-looping design + phased plan. **In progress:** Phases 1–4 landed, initial click-testing underway, Phase 5 not started. Read before touching looper pane, `track.loops`, `pendingTakeId`, or cycle-wrap logic.
-- `docs/PANE_MODE_MODEL.md` — Left-slot-as-mode-picker decision: `looperModeActive` is driven by Left-slot pane content (Produce/Looper/Perform mutually exclusive). Read before touching pane visibility, `looperModeActive`, or anything that flips Produce↔Looper.
-- `docs/LIVE_INPUT_AND_FOCUS.md` — **In-flight design, not yet implemented.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Load-bearing for anything touching live MIDI dispatch, the Looper pane, or track `R`/`I` semantics. Living doc until merged to main.
+- `docs/LIVE_LOOPING.md` — live-looping data model + phased plan. Phases 1–4 landed (state model, playback dispatch, recording with refcounted capture, Looper pane). Single-cycle recording end-to-end works; multi-cycle display bug known and re-scoped via `LIVE_INPUT_AND_FOCUS.md` phase 6 (Boss-style first-tap-sets-length). Read before touching `track.loops`, `pendingTakeId`, cycle-wrap logic, or the Looper pane.
+- `docs/PANE_MODE_MODEL.md` — mode lives as `AppMode` on `AppState` (not `SongState`). Left-slot pane content is the current GUI policy that drives the mode flag. Read before touching pane visibility, `currentMode`, or the Produce↔Looper interaction.
+- `docs/LIVE_INPUT_AND_FOCUS.md` — **Living doc, in-flight.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Phases 1–2 landed (state field + click rules + focus highlight); phases 3–6 not yet implemented. Load-bearing for live MIDI dispatch, track `R`/`I` semantics, and looper recording flow.
 
 User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 
@@ -39,17 +39,18 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-20, the **architectural foundation is settled.** Four deep passes landed on the 0.0.2 checkpoint: typed IDs (all entity IDs are newtypes; whole persistence bug class is now a compile error), the produce-pane refactor (derived visual model), the action-instances refactor (typed ParamSchema + unified form + cascade-delete), and the action-algebra refactor (six-primitive core replacing the hardcoded dispatch ladder). Each has its own design doc — see the side-docs list above. AI-for-testers chat (proxy Lambda, SSE streaming, monthly token caps) and bounce-to-WAV both landed alongside.
+As of 2026-04-21, the **architectural foundation is settled and the two "reward-per-hour" features (bundled plugins, composer) have shipped.** Since then, live looping has been an active line: the data model, playback dispatch, refcounted capture gates, and Looper pane all landed. Single-cycle recording works end-to-end. The *mode* concept got refactored out of `SongState` and onto `AppState` as typed `AppMode { Arrangement, Looper }` (see `docs/PANE_MODE_MODEL.md`). A deeper design for per-track MIDI routing and the singular focused-track concept is in flight (see `docs/LIVE_INPUT_AND_FOCUS.md`); phases 1–2 have landed (state field, click rules, focus visual across Produce/Mixer/Looper).
 
-**0.1.0 plan — reassessed.** Architecture is settled; the remaining gates are about whether the app *rewards* a tester's hour. The two major features before ship both landed on 2026-04-20: bundled-plugin install pack (15 curated free AU plugins via S3 + presigned Lambda; see `docs/BUNDLED_PLUGINS.md`) and composer integration (chat-driven MIDI composition writing directly onto project tracks; see `docs/COMPOSER_INTEGRATION.md`).
+**0.1.0 plan — current state.** Architecture + reward features settled. Live-looping needs enough of `LIVE_INPUT_AND_FOCUS.md` landed to make the performer workflow actually clean (right now live MIDI still broadcasts to every loaded plugin, which is a showstopper for multi-track looper use). Then distribution proof + perfuce.com + tag.
 
 Remaining sequence:
 
-1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* 15 curated free AU plugins (6 instruments, 9 effects — mda suite from `hollance/mda-plugins-juce` built from source, plus Dexed, Surge XT + Effects, Airwindows Consolidated downloaded + re-signed). The DMG stays small because plugins aren't in-bundle: they live in a private S3 bucket fronted by a `PluginsProxy` Lambda that hands out 1-hour presigned URLs to any app presenting the shared bearer. First-launch prompt kicks off download → SHA-256 verify → extract to `~/Library/Audio/Plug-Ins/Components/` → rescan engine → sync catalog. Help → Install Plugin Pack and Settings → Plugins (per-archive Remove + Remove all) provide the ongoing surfaces. See `docs/BUNDLED_PLUGINS.md` for the pipeline; `scripts/bundled-plugins/` for `build-mda.sh` / `download-*.sh` / `sign-all.sh` / `notarize-all.sh` / `package-all.sh` / `publish.sh`; `infra/lib/plugins-stack.ts` + `infra/lambda/plugins.ts` for the server side.
-2. ~~**Composer integration.**~~ *Shipped (2026-04-20).* Chat pane gained a latching Compose toggle that swaps in a composer system prompt (adapted from `~/ideas_and_projects/dawai/`) and exposes a `compose(notation, startBeat)` Lua tool. The LLM emits dawai's v2 text notation; our C++ port of its compiler (`src/composer/`) parses it into a canonical `ComposerOutput` struct and a pluggable `NotationParser` interface; a `ComposerWriter` creates regions directly on the project's tracks via the normal StateAPI path. No MIDI file intermediate, no Python runtime, no Lambda changes — the app sends the composer prompt to the existing chat proxy. Notes play through whatever AU plugin the track has loaded. Undo is the "reject" affordance. Prompt-tuning for placement (region start / bar ranges) and quality is ongoing per `docs/COMPOSER_INTEGRATION.md`.
-3. **perfuce.com rebuild** (several days). Tester onboarding copy, example prompts, "chat is free for testers" line. Mostly gated on video capture.
-4. **Distribution proof** (second-machine install, ~1 hour).
-5. **Tag + release.**
+1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* See `docs/BUNDLED_PLUGINS.md`.
+2. ~~**Composer integration.**~~ *Shipped (2026-04-20).* See `docs/COMPOSER_INTEGRATION.md`.
+3. **Live looping workflow complete enough to ship.** Recording path works; UX is the question. Dependencies on `LIVE_INPUT_AND_FOCUS.md` phases 3 (per-track MIDI routing), 5 (session-level global record), 6 (Boss-style first-tap-sets-length). Phase 4 (capture FIFO trackId tagging) falls out of 3. Everything else is polish.
+4. **perfuce.com rebuild.** Tester onboarding copy, example prompts, demo videos. Gated on video capture.
+5. **Distribution proof** (second-machine install, ~1 hour).
+6. **Tag + release.**
 
 ### 1. Distribution proof
 
@@ -91,13 +92,9 @@ Open tails:
 
 Named so it's a decision, not a gap:
 
-- Failed plugin load UI feedback (no issues in months; telemetry will surface; revisit if a tester hits it)
 - Bring-your-own-key Settings field (not needed for the friends round; Lambda proxy covers everyone)
-- Theme picker UI (backend ready, UI deferred)
 - Remaining theming sweep (DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay)
 - MIDI effects (transpose, channel filter, arpeggiator)
-- LCD interactivity (drag / double-click to edit)
-- TempoMap + TimeSignatureMap runtime evaluation
 - Background plugin state capture
 - Settings MIDI tab content
 - ⌘O Songs palette
@@ -127,7 +124,7 @@ The immediate goal is getting the app in the hands of 4 musician friends. Focus 
 
 Flat categorized list (no tabs, no tree). Two sections with title-case headers at `fontSizeLg`:
 
-**View** — one row per pane with a monospaced keybinding hint right of a fixed-width label column. Rows: Produce ⌘Y · Perform ⌘U · Chat ⌘I · Mixer ⌘O. Sidebar itself is not a row — toggle via ⌘P or the View menu. Active panes are indicated by text color only (no accent bar, no row highlight — pane visibility is self-evident).
+**View** — one row per pane with a monospaced keybinding hint right of a fixed-width label column. Rows: Produce ⌘Y · Looper · Perform ⌘U · Chat ⌘I · Mixer ⌘O. Sidebar itself is not a row — toggle via ⌘P or the View menu. Active panes are indicated by text color only (no accent bar, no row highlight — pane visibility is self-evident). Looper doesn't have a keyboard shortcut yet; all single-letter ⌘ keys in the neighborhood are taken (⌘L is `view.zoomIn`). Clicking "Produce" or "Looper" is mutually exclusive — both flip `AppMode` via the `MainLayout::setPaneContent` bridge (see `docs/PANE_MODE_MODEL.md`).
 
 **Songs** — list of all songs (click to load) + "+ New Song" action button. Current song stays highlighted with `bgListActive` (brighter than `bgSelection` — a separate token because the list-selection context doesn't have embedded pills to contrast against).
 
@@ -141,7 +138,7 @@ Every pane is a simple show/hide toggle — no modes, no workspace concept. A mo
 
 **PerformPane** composes `ControllersPane` + `SongMappingsPane` side-by-side with an internal draggable divider, and lives in the Left slot as a single `PaneContent::Perform`. This avoided an orphaning bug where the old dual-slot Controllers/SongMappings arrangement left one half visible if anything else took the Right slot. The two inner panes remain independent classes; `PerformPane` is a thin composer, so pulling them apart later stays cheap.
 
-**Per-content preferred widths (for Left/Right split):** `Produce = 0.65`, `Perform = 0.75`, `Debug = 0.50`.
+**Per-content preferred widths (for Left/Right split):** `Produce = 0.65`, `Looper = 0.65`, `Perform = 0.75`, `Debug = 0.50`.
 
 ### Theme system
 
@@ -155,7 +152,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 
 ### Theming sweep status
 
-**Done:** ProducePane, MixerView family, ControllersPane, SongMappingsPane, PerformPane, Sidebar.
+**Done:** ProducePane, MixerView family, ControllersPane, SongMappingsPane, PerformPane, Sidebar, LooperPane.
 **Not swept:** DebugPane, LogPane, ChatView, SettingsWindow, MusicalTyping, MorphEditor, KeyBindingEditor, SaveAsDialog, MainLayout overlay.
 
 ### Design document
@@ -172,14 +169,17 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 
 ## Backlog
 
-**High priority:**
-- **First-run audio device auto-selection** — auto-select system default output on first launch.
-- **Failed plugin load feedback** — show plugin name in error color when load fails.
+**High priority (0.1.0 candidates):**
+- **Per-track live MIDI routing** — phases 3–5 of `docs/LIVE_INPUT_AND_FOCUS.md`. Stops the "all plugins hear every note" resource+UX problem. The single biggest thing between now and 0.1.0.
+- **Boss-style loop length** — phase 6 of `docs/LIVE_INPUT_AND_FOCUS.md` (depends on phase 5). First-tap-sets-length; fixes the multi-cycle display bug.
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
+- **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
+
+**Deferred / lower priority:**
+- **Failed plugin load feedback** — show plugin name in error color when load fails.
 - **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
 - **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
-- **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
 
 **Longer-term:**
 - Refactor oversized GUI files (ProducePane ~2520 lines).
@@ -236,8 +236,11 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 ### Key state-model facts
 
 - **Track source types:** `Instrument` (MIDI→plugin→audio), `AudioInput` (physical input→fx→output, mono→stereo upmix), `Action` (beat-triggered, no audio, hidden from mixer).
-- **No track-level on/off.** Logic-style: `muted` is the only track-level silencer. There is no `audioEnabled` / `midiEnabled` / `masterAudioEnabled`. `setActiveTrack` just selects.
-- `armed`, `muted`, `soloed`, `recordModeActive` — runtime, not persisted. Recording is explicit: armed tracks record only when record mode is active.
+- **No track-level on/off.** Logic-style: `muted` is the only track-level silencer. There is no `audioEnabled` / `midiEnabled` / `masterAudioEnabled`. `setActiveTrack` is a Lua alias that just selects.
+- `armed` and `inputMonitoring` persist; `muted`, `soloed`, `recordModeActive` are runtime only. Recording is explicit: armed tracks record only when record mode is active.
+- **`AppMode`** lives on `AppState` (not `SongState`). Values: `Arrangement` / `Looper`. Controls engine dispatch in `Arrangement::scanMidiEvents`. Entering `Looper` forces `cycleEnabled=true` + `cycleStart=0` on the current song; leaving resets `cycleEnabled`. See `docs/PANE_MODE_MODEL.md`.
+- **`focusedTrackId`** is a singular per-song pointer at "the track I'm playing into right now" — distinct from `selectedTrackIds` (plural set, for grouped UI actions). Emitted as `StateEvent::Focus`. Phase 1 of `docs/LIVE_INPUT_AND_FOCUS.md`; engine-level routing (phase 3) not yet wired.
+- `track.regions` (arrangement pool) and `track.loops` (looper pool) are fully independent collections on `TrackState`. `AppMode::Looper` engine dispatch reads `loops`; `Arrangement` reads `regions`. No runtime cross-pollination — region copying is a design-time action.
 - Regions are take folders. `MidiEventState` is raw events; notes derived via `buildNoteList()`.
 - Action track: one per song (auto-created), no regions — events stored directly with absolute beat positions.
 
@@ -272,8 +275,10 @@ Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. 
 All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individual files.
 
 - **MainLayout** — toolbar + sidebar + dual-pane area + mixer.
-- **ProducePane** — DAW arrange view: transport bar with LCD position, two-row track headers (name / M/S/R/I pills), timeline grid, regions (MIDI piano roll or audio waveform), action track. Paint flows through a derived visual model (`Audibility` enum + `TrackRowVisuals` / `RegionVisuals` structs + `paintTrackRow` / `paintRegionShell` helpers) — add new visual axes there, not in scattered conditionals. Region ops via Cmd/Shift selection + drag/keyboard. Auto-scroll, two-finger horizontal scroll. Keyboard: space/r/return, h/l (step by div), Shift+H/L (step by measure), Cmd+h/l/j/k (zoom).
-- **MixerView** + **TrackStrip** / **BusStrip** / **OutputStrip** — 30Hz peak polling. Drag headers to reorder. M/S pills bottom row.
+- **ProducePane** — DAW arrange view: transport bar with LCD position, two-row track headers (name / M/S/R/I pills), timeline grid, regions (MIDI piano roll or audio waveform), action track. Paint flows through a derived visual model (`Audibility` enum + `TrackRowVisuals` / `RegionVisuals` structs + `paintTrackRow` / `paintRegionShell` helpers) — add new visual axes there, not in scattered conditionals. Row bg goes through `TrackUi::rowBgForTrack()` (shared with Mixer + Looper). Region ops via Cmd/Shift selection + drag/keyboard. Auto-scroll, two-finger horizontal scroll. Keyboard: space/r/return, h/l (step by div), Shift+H/L (step by measure), Cmd+h/l/j/k (zoom).
+- **LooperPane** — live-looping surface sharing the Left slot with Produce (mutually exclusive). Cycle progress strip + cycle-length editor in top bar; per-track rows with record / stop / mute / take-selector controls and a piano-roll-ish timeline. Shared row bg with Produce/Mixer via `TrackUi`. See `docs/LIVE_LOOPING.md` and `docs/LIVE_INPUT_AND_FOCUS.md`.
+- **MixerView** + **TrackStrip** / **BusStrip** / **OutputStrip** — 30Hz peak polling. Drag headers to reorder. M/S pills bottom row. Strip bg goes through `TrackUi::rowBgForTrack()` so focus/selection highlight is consistent with Produce/Looper.
+- **TrackUi** (`src/gui/TrackUi.h`) — shared helpers used by Produce, Mixer, Looper: `rowBgToken(muted, focused, selected)` for the four-state row-shading rule, and `handleTrackClick()` for plain/Cmd/Shift click policy. Single place to change how focus/selection present visually.
 - **FaderMeter** — fader + L/R meters, IEC dB scale (-60 to +6), peak hold, click-to-jump, full range from handle center.
 - **MusicalTyping** — Cmd+Shift+K. Logic-style keyboard layout, octave/velocity, sustain. Injects via `audioEngine.injectMidi()`.
 - **MorphEditor** — slot-based compound morph editor.
@@ -286,6 +291,8 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 ### Theme
 
 Tokens live in `src/gui/Theme.h` (authoritative values). **Full reference — all color tables, typography, spacing, token categories, design principles — lives in `docs/THEME.md`. Read that before touching tokens or adding new ones.**
+
+**Track row background** is a four-state rule shared by Produce, Mixer, Looper via `TrackUi::rowBgToken(muted, focused, selected)`. Priority: `bgRowMuted` > `bgRowFocused` (distinctly lighter) > `bgRowSelected` (subtle) > `bgRowActive` (base). Header + timeline/strip of one track always share the same shade.
 
 Six non-negotiable rules for GUI code:
 
