@@ -30,13 +30,13 @@ public:
     std::pair<int,int> getSongTimeSignature() const;
     std::string getMasterOutputId() const;
 
-    // --- Looper mode (see docs/LIVE_LOOPING.md) ---
-    // When looper mode is active, the project is presented via the Looper
-    // pane. Enabling it normalizes cycle state (loopStart=0, loopEnabled=true)
-    // and is the single switch that gates within-cycle region wrap + the
-    // "one loop per track at startBeat=0" invariants.
-    void setLooperModeActive(bool active);
-    bool isLooperModeActive() const;
+    // --- App mode (see docs/PANE_MODE_MODEL.md + docs/LIVE_LOOPING.md) ---
+    // Workflow/session mode. Arrangement = play from track.regions;
+    // Looper = play from track.loops. Setting Looper forces cycle on
+    // (and start=0) on the current song; setting Arrangement turns
+    // cycle off. Idempotent: no event emission when unchanged.
+    void setMode(AppMode mode);
+    AppMode getMode() const;
 
     // Cycle length for the Looper. Equivalent to setting cycleEnd with
     // cycleStart forced to 0. Takes beats (a whole-number bar * 4 is the
@@ -45,9 +45,9 @@ public:
     void setCycleLength(double beats);
     double getCycleLength() const;  // 0 when no cycle is set
 
-    // Request a take swap on a loop region. In looper mode, the swap
+    // Request a take swap on a loop region. In Looper mode, the swap
     // is deferred to the next cycle wrap (see Coordinator's wrap
-    // detection + commitPendingTakeSwaps). If looper mode is off or
+    // detection + commitPendingTakeSwaps). In Arrangement mode or if
     // the region isn't in a track's loops pool, the swap is immediate.
     // Pass an empty TakeId to clear any pending swap.
     void setPendingTake(const RegionId& regionId, const TakeId& takeId);

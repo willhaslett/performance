@@ -569,6 +569,30 @@ RegionState* Arrangement::startLoopRecording(const TrackId& trackId) {
     return nullptr;
 }
 
+void Arrangement::discardLastLoopRecording(const TrackId& trackId) {
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
+    for (auto& t : *songTracks) {
+        if (t.id != trackId) continue;
+        if (t.loops.empty()) return;
+        auto& region = t.loops[0];
+        if (region.takes.empty()) return;
+
+        auto* discarded = &region.takes.back();
+        recordingTakes.erase(
+            std::remove(recordingTakes.begin(), recordingTakes.end(), discarded),
+            recordingTakes.end());
+        region.takes.pop_back();
+
+        // If we took the last take out of a region that was freshly
+        // created (lengthBeats still 0, no other content), remove the
+        // region itself so the track doesn't carry an empty shell.
+        if (region.takes.empty() && region.lengthBeats == 0.0) {
+            t.loops.erase(t.loops.begin());
+        }
+        return;
+    }
+}
+
 void Arrangement::stopLoopRecording(const TrackId& trackId, double lengthBeats) {
     PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {

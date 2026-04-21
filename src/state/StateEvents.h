@@ -6,7 +6,10 @@
 
 struct StateEvent {
     enum Action { Created, Updated, Deleted };
-    enum Entity { Song, Track, Bus, Effect, Send, Binding, Config, Plugin, Preset, Selection, Device };
+    enum Entity { Song, Track, Bus, Effect, Send, Binding, Config, Plugin, Preset, Selection, Device,
+                  // AppState-level changes (currentMode, and future app-level state).
+                  // entityId is unused for App events.
+                  App };
 
     Action action;
     Entity entity;

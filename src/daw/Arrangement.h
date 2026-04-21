@@ -83,6 +83,11 @@ public:
     RegionState* startLoopRecording(const TrackId& trackId);
     void stopLoopRecording(const TrackId& trackId, double lengthBeats);
 
+    // Drop the most recently-started loop take (and its loop region,
+    // if we just created it via startLoopRecording and it's now
+    // empty). Used to abort a recording that never completed a cycle.
+    void discardLastLoopRecording(const TrackId& trackId);
+
     // --- Derived views ---
     static std::vector<NoteView> buildNoteList(const TakeState& take, double regionLength);
     // Convenience: build from region's active take

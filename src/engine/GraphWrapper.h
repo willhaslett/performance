@@ -96,6 +96,31 @@ public:
     void setRecording(bool r) { recording.store(r, std::memory_order_release); }
     bool isRecording() const { return recording.load(std::memory_order_acquire); }
     RecordFIFO& getRecordFIFO() { return recordFIFO; }
+
+    // --- Recording diagnostics (see PerformanceCoordinator timer log) ---
+    // Written in the audio thread while recording=true, read from the
+    // message thread. No behavior — just counters to pinpoint where
+    // events are being lost on a broken record path.
+    struct RecordDiag {
+        int processBlockTicks;
+        int midiEventsSeen;
+        int fifoPushes;
+        int playingTicks;           // how many of those ticks had playing=true
+    };
+    RecordDiag readRecordDiag() const {
+        return {
+            diagProcessBlockTicks.load(std::memory_order_acquire),
+            diagMidiEventsSeen.load(std::memory_order_acquire),
+            diagFifoPushes.load(std::memory_order_acquire),
+            diagPlayingTicks.load(std::memory_order_acquire),
+        };
+    }
+    void resetRecordDiag() {
+        diagProcessBlockTicks.store(0);
+        diagMidiEventsSeen.store(0);
+        diagFifoPushes.store(0);
+        diagPlayingTicks.store(0);
+    }
     // Per-track audio recording
     struct AudioRecordTarget {
         int chStart = -1;
@@ -147,6 +172,17 @@ public:
     }
 
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override {
+        // Diagnostic: count every audio-callback tick while recording=true,
+        // regardless of the playing gate. Cheap; only relaxed atomics.
+        if (recording.load(std::memory_order_acquire)) {
+            diagProcessBlockTicks.fetch_add(1, std::memory_order_relaxed);
+            if (playing.load(std::memory_order_acquire))
+                diagPlayingTicks.fetch_add(1, std::memory_order_relaxed);
+            int blockMidi = 0;
+            for (const auto metadata : midi) { (void) metadata; ++blockMidi; }
+            if (blockMidi > 0)
+                diagMidiEventsSeen.fetch_add(blockMidi, std::memory_order_relaxed);
+        }
         // Check for new atomic transport command
         int64_t seq = transportSeq.load(std::memory_order_acquire);
         if (seq != lastTransportSeq) {
@@ -276,6 +312,7 @@ public:
                                           msg.getRawDataSize() > 1 ? msg.getRawData()[1] : 0,
                                           msg.getRawDataSize() > 2 ? msg.getRawData()[2] : 0,
                                           msg.getChannel(), eventBeat });
+                        diagFifoPushes.fetch_add(1, std::memory_order_relaxed);
                     }
                 }
             }
@@ -417,6 +454,11 @@ private:
     // Recording
     std::atomic<bool> recording { false };
     RecordFIFO recordFIFO;
+    // Diagnostic counters — audio-thread writes, message-thread reads.
+    std::atomic<int> diagProcessBlockTicks { 0 };
+    std::atomic<int> diagMidiEventsSeen    { 0 };
+    std::atomic<int> diagFifoPushes        { 0 };
+    std::atomic<int> diagPlayingTicks      { 0 };
     std::vector<AudioRecordTarget> audioRecordTargets;
     static constexpr int audioScratchSize = 4096;
     float audioScratch[audioScratchSize];

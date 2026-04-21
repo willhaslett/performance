@@ -225,6 +225,7 @@ Five phases, each shippable on its own, building strictly upward.
 - **Pane-aware keybinding filter — implementation detail.** Global table with filter, or per-pane local tables with fallback. Decide during Phase 4.
 - **Punch-in UX when transport is stopped.** Auto-start the transport (Ableton does)? Probably yes. Decide during Phase 3.
 - **`moveLoop` / `moveRegion` same-pool semantics when the target track already has a loop.** Replace, refuse, or keep both (breaking "one loop per track")? Decide during Phase 5.
+- ~~**User-facing UX for `looperModeActive`.**~~ Resolved 2026-04-21: the Left-slot pane content IS the mode picker. `looperModeActive == (leftSlot == Looper)`. Produce / Looper / Perform are mutually exclusive workspaces. See `docs/PANE_MODE_MODEL.md`.
 
 ---
 

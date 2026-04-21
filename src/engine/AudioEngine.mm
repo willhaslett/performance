@@ -1597,6 +1597,14 @@ RecordFIFO& AudioEngine::getRecordFIFO() {
     return graphWrapper->getRecordFIFO();
 }
 
+GraphWrapper::RecordDiag AudioEngine::readRecordDiag() const {
+    return graphWrapper->readRecordDiag();
+}
+
+void AudioEngine::resetRecordDiag() {
+    graphWrapper->resetRecordDiag();
+}
+
 void AudioEngine::setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets) {
     graphWrapper->setAudioRecordTargets(targets);
 }

@@ -10,6 +10,7 @@
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
 #include "state/ActionRefs.h"
+#include "state/StateEvents.h"
 
 MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                        PerformanceCoordinator& coordinator)
@@ -162,33 +163,22 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
 
     setWantsKeyboardFocus(true);
 
-    // Sidebar navigation — toggle individual panels within the current mode.
-    // Changes are saved to the current mode's layout automatically.
+    // Sidebar navigation. Left-slot clicks (produce / looper / perform)
+    // are mutually exclusive workspace selectors — clicking any of
+    // them switches the Left slot to that content. App mode follows
+    // automatically via the bridge in setPaneContent.
+    // See docs/PANE_MODE_MODEL.md.
     sidebar.onToggleView = [this](const std::string& viewName) {
         if (viewName == "sidebar") {
             auto cur = getPaneContent(PaneSlot::Sidebar);
             setPaneContent(PaneSlot::Sidebar,
                            cur == PaneContent::Hidden ? PaneContent::SidebarTree : PaneContent::Hidden);
         } else if (viewName == "produce") {
-            auto cur = getPaneContent(PaneSlot::Left);
-            setPaneContent(PaneSlot::Left,
-                           cur == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
+            setPaneContent(PaneSlot::Left, PaneContent::Produce);
         } else if (viewName == "looper") {
-            // Looper pane is the surface for looper mode: entering the pane
-            // flips the song-level flag so the engine scans track.loops, and
-            // leaving it flips back. Producer is the natural fallback.
-            bool isLooper = (getPaneContent(PaneSlot::Left) == PaneContent::Looper);
-            if (isLooper) {
-                this->state.setLooperModeActive(false);
-                setPaneContent(PaneSlot::Left, PaneContent::Produce);
-            } else {
-                this->state.setLooperModeActive(true);
-                setPaneContent(PaneSlot::Left, PaneContent::Looper);
-            }
+            setPaneContent(PaneSlot::Left, PaneContent::Looper);
         } else if (viewName == "perform") {
-            auto cur = getPaneContent(PaneSlot::Left);
-            setPaneContent(PaneSlot::Left,
-                           cur == PaneContent::Perform ? PaneContent::Hidden : PaneContent::Perform);
+            setPaneContent(PaneSlot::Left, PaneContent::Perform);
         } else if (viewName == "mixer") {
             auto cur = getPaneContent(PaneSlot::Bottom);
             setPaneContent(PaneSlot::Bottom,
@@ -232,6 +222,32 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         perfLog("[MainLayout] INFO: composer_prompt.md not in BinaryData — Compose toggle will be hidden\n");
     }
     chatView.setPrompts(perfPrompt, composerPrompt);
+
+    // Reverse-sync: when currentMode flips from outside the GUI (Lua,
+    // Claude via perf, IPC, MIDI bindings), bring the Left slot in
+    // line. The forward direction is handled in setPaneContent; the
+    // idempotent guard in StateAPI::setMode breaks the potential loop
+    // between these two handlers.
+    // See docs/PANE_MODE_MODEL.md.
+    stateSubId = state.events().subscribe([this](const StateEvent& ev) {
+        if (ev.entity != StateEvent::App || ev.action != StateEvent::Updated) return;
+        bool looperMode = this->state.getMode() == AppMode::Looper;
+        auto cur = getPaneContent(PaneSlot::Left);
+        if (looperMode && cur != PaneContent::Looper) {
+            juce::MessageManager::callAsync([safe = juce::Component::SafePointer<MainLayout>(this)] {
+                if (safe) safe->setPaneContent(PaneSlot::Left, PaneContent::Looper);
+            });
+        } else if (!looperMode && cur == PaneContent::Looper) {
+            juce::MessageManager::callAsync([safe = juce::Component::SafePointer<MainLayout>(this)] {
+                if (safe) safe->setPaneContent(PaneSlot::Left, PaneContent::Produce);
+            });
+        }
+    });
+}
+
+MainLayout::~MainLayout() {
+    if (stateSubId >= 0)
+        state.events().unsubscribe(stateSubId);
 }
 
 // --- Pane content management ---
@@ -316,6 +332,13 @@ void MainLayout::setPaneContent(PaneSlot slot, PaneContent content) {
 
     // Update sidebar divider visibility
     sidebarDivider.setVisible(paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
+
+    // Single SSOT bridge: Left-slot content drives currentMode.
+    // See docs/PANE_MODE_MODEL.md. Every GUI path that changes the Left
+    // slot funnels through here; no duplicate mode-flip logic elsewhere.
+    // setMode is idempotent, so no-op when value unchanged.
+    if (slot == PaneSlot::Left)
+        state.setMode(content == PaneContent::Looper ? AppMode::Looper : AppMode::Arrangement);
 
     savePaneConfig();
     resized();

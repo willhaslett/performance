@@ -309,31 +309,45 @@ std::string StateAPI::getMasterOutputId() const {
 // runtime has multiple non-GUI clients (Lua via `perf` tool, IPC via
 // `bin/perf`, MIDI bindings) and GUI-only enforcement can be bypassed.
 
-void StateAPI::setLooperModeActive(bool active) {
-    auto* s = currentSong();
-    if (!s) return;
+void StateAPI::setMode(AppMode mode) {
+    // Idempotent: no-op (and no event emission) when the value didn't
+    // change. Required by the MainLayout ↔ state reverse-sync in
+    // docs/PANE_MODE_MODEL.md — otherwise setPaneContent → emit →
+    // subscriber → setPaneContent would loop.
+    if (state.currentMode == mode) return;
     pushUndo();
-    s->looperModeActive = active;
-    if (active) {
-        // Normalize cycle invariants for looper mode. Leaves cycleEnd
-        // intact (user may have set a custom length) but forces start
-        // to 0 and enables the cycle.
-        s->cycleStart = 0.0;
-        s->cycleEnabled = true;
-        if (s->cycleEnd <= 0.0) {
-            s->cycleEnd = 16.0 * 4.0;  // default 16 bars × 4 beats/bar
+    state.currentMode = mode;
+
+    // Cycle coupling lives on the current song (cycle markers are a
+    // song property). Entering Looper mode forces cycle on; leaving
+    // resets it. Songs without a loaded current song skip the cycle
+    // mutation — the mode change itself still lands.
+    if (auto* s = currentSong()) {
+        if (mode == AppMode::Looper) {
+            s->cycleStart = 0.0;
+            s->cycleEnabled = true;
+            if (s->cycleEnd <= 0.0)
+                s->cycleEnd = 16.0 * 4.0;  // default 16 bars × 4 beats/bar
+        } else {
+            s->cycleEnabled = false;
         }
+        // Song cycle fields changed; emit a Song Updated too so the
+        // engine picks them up via the existing syncTempoFromState path.
+        StateEvent songEv;
+        songEv.action = StateEvent::Updated;
+        songEv.entity = StateEvent::Song;
+        songEv.entityId = s->id.str();
+        eventBus.emit(songEv);
     }
+
     StateEvent ev;
     ev.action = StateEvent::Updated;
-    ev.entity = StateEvent::Song;
-    ev.entityId = s->id.str();
+    ev.entity = StateEvent::App;
     eventBus.emit(ev);
 }
 
-bool StateAPI::isLooperModeActive() const {
-    auto* s = currentSong();
-    return s && s->looperModeActive;
+AppMode StateAPI::getMode() const {
+    return state.currentMode;
 }
 
 void StateAPI::setCycleLength(double beats) {
@@ -343,7 +357,7 @@ void StateAPI::setCycleLength(double beats) {
     pushUndo();
     // Looper-mode normalization: force cycleStart=0 and cycleEnabled=true
     // regardless of how the caller reached this API.
-    if (s->looperModeActive) {
+    if (state.currentMode == AppMode::Looper) {
         s->cycleStart = 0.0;
         s->cycleEnabled = true;
     }
@@ -380,9 +394,9 @@ void StateAPI::setPendingTake(const RegionId& regionId, const TakeId& takeId) {
     auto [region, isLoop] = findRegionAnyPool(*s, regionId);
     if (!region) return;
 
-    // If this isn't a loop region, or looper mode is off, do the swap
-    // immediately — there's no cycle wrap to defer to.
-    if (!isLoop || !s->looperModeActive) {
+    // If this isn't a loop region, or we're in Arrangement mode, do
+    // the swap immediately — there's no cycle wrap to defer to.
+    if (!isLoop || state.currentMode != AppMode::Looper) {
         pushUndo();
         region->activeTakeId = takeId;
         region->pendingTakeId = TakeId{};

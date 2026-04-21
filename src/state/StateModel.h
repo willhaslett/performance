@@ -278,19 +278,12 @@ struct SongState {
     std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
 
     // Cycle playback (per-song). Used by both the Producer's cycle mode
-    // and the Looper. When `looperModeActive == true`, the invariants
-    // cycleStart == 0 and cycleEnabled == true are enforced at the
-    // StateAPI layer, and cycleEnd is the project loop length.
+    // and the Looper. When the app is in `AppMode::Looper`, the
+    // invariants cycleStart == 0 and cycleEnabled == true are enforced
+    // at the StateAPI layer, and cycleEnd is the project loop length.
     double cycleStart = 0.0;
     double cycleEnd = 0.0;      // 0 = no cycle set
     bool cycleEnabled = false;
-
-    // Looper mode: the project's main content is presented via the Looper
-    // pane instead of the Producer pane. Regions live in `track.loops`
-    // and wrap within the cycle; arrangement regions in `track.regions`
-    // are hidden from the Looper view (but remain on disk + visible in
-    // Producer). Default false = Producer-first project.
-    bool looperModeActive = false;
 
     // Action events — beat-triggered actions on the timeline
     struct ActionEvent {
@@ -306,6 +299,17 @@ struct SongState {
     std::vector<BusId> selectedBusIds;
 };
 
+// Workflow/session mode. Determines how the engine dispatches playback
+// for the current song:
+//   Arrangement - plays from track.regions (classic DAW). Cycle optional.
+//   Looper      - plays from track.loops, cycle forced on at StateAPI layer.
+// See docs/PANE_MODE_MODEL.md for the full design — in particular, why
+// this lives on AppState (workflow/session) rather than SongState.
+enum class AppMode {
+    Arrangement,
+    Looper,
+};
+
 // Top-level application state
 struct AppState {
     SongId currentSongId;
@@ -316,4 +320,5 @@ struct AppState {
     std::vector<DeviceState> devices;           // catalog of registered controllers
     std::vector<BindingState> globalBindings;  // song_id empty = applies everywhere
     std::map<std::string, std::string> config;
+    AppMode currentMode = AppMode::Arrangement;
 };

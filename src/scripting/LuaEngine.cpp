@@ -358,15 +358,19 @@ void LuaEngine::registerAPI() {
     });
     lua.set_function("save", [&coord]() { coord.save(); });
 
-    // Live looping (see docs/LIVE_LOOPING.md). These toggle looper mode
-    // on the current project and set the project loop length. Writes
-    // go through StateAPI, which enforces invariants (cycleStart=0,
-    // cycleEnabled=true) when looper mode is active.
-    lua.set_function("setLooperModeActive", [&state](bool active) {
-        state.setLooperModeActive(active);
+    // Live looping (see docs/LIVE_LOOPING.md + docs/PANE_MODE_MODEL.md).
+    // Mode is an AppState-level enum. setMode("looper"|"arrangement")
+    // flips it; getMode() returns the current string. Cycle invariants
+    // are enforced in StateAPI::setMode / setCycleLength.
+    lua.set_function("setMode", [&state](const std::string& mode) {
+        if (mode == "looper")           state.setMode(AppMode::Looper);
+        else if (mode == "arrangement") state.setMode(AppMode::Arrangement);
+        // Unknown values are silently ignored to match the rest of the
+        // Lua API's tolerance — callers can check getMode() if they
+        // need confirmation.
     });
-    lua.set_function("isLooperModeActive", [&state]() -> bool {
-        return state.isLooperModeActive();
+    lua.set_function("getMode", [&state]() -> std::string {
+        return state.getMode() == AppMode::Looper ? "looper" : "arrangement";
     });
     lua.set_function("setCycleLength", [&state](double beats) {
         state.setCycleLength(beats);

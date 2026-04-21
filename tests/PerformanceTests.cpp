@@ -3979,15 +3979,15 @@ public:
     LooperStateTests() : juce::UnitTest("LooperState") {}
 
     void runTest() override {
-        beginTest("looperModeActive defaults false, setter flips + normalizes cycle");
+        beginTest("mode defaults Arrangement, setMode(Looper) normalizes cycle");
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            expect(!s.isLooperModeActive());
-            s.setLooperModeActive(true);
-            expect(s.isLooperModeActive());
+            expect(s.getMode() == AppMode::Arrangement);
+            s.setMode(AppMode::Looper);
+            expect(s.getMode() == AppMode::Looper);
 
-            // Enabling looper mode should have normalized the cycle.
+            // Entering Looper mode should have normalized the cycle.
             auto* song = s.currentSong();
             expectEquals(song->cycleStart, 0.0);
             expect(song->cycleEnabled);
@@ -3997,7 +3997,7 @@ public:
         beginTest("setCycleLength sets cycleEnd, no floor from regions");
         {
             TestCoordinator tc;
-            tc.state().setLooperModeActive(true);
+            tc.state().setMode(AppMode::Looper);
             tc.state().setCycleLength(32.0);  // 8 bars × 4 beats
             auto* song = tc.state().currentSong();
             expectEquals(song->cycleEnd, 32.0);
@@ -4032,7 +4032,7 @@ public:
             expectEquals((int) t->loops.size(), 1);
         }
 
-        beginTest("persistence round-trips looperModeActive + loops independently");
+        beginTest("persistence round-trips app mode + loops independently");
         {
             TempDB db;
             RegionId arrangementRegionId, loopRegionId;
@@ -4043,7 +4043,7 @@ public:
                 PerformanceCoordinator coord;
                 coord.initialise(db.path());
                 coord.createSong("RoundTrip");
-                coord.state().setLooperModeActive(true);
+                coord.state().setMode(AppMode::Looper);
                 coord.state().setCycleLength(64.0);
                 trackId = coord.state().createTrack("T");
                 songId = coord.state().currentSong()->id;
@@ -4075,7 +4075,7 @@ public:
                 coord.initialise(db.path());
                 auto* song = coord.state().findSong(songId);
                 expect(song != nullptr);
-                expect(song->looperModeActive);
+                expect(coord.state().getMode() == AppMode::Looper);
                 expectEquals(song->cycleEnd, 64.0);
 
                 auto* t = coord.state().findTrack(trackId);
@@ -4306,7 +4306,7 @@ public:
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            s.setLooperModeActive(true);
+            s.setMode(AppMode::Looper);
             s.setCycleLength(16.0);
             auto trackId = s.createTrack("T");
             auto* t = s.findTrack(trackId);
@@ -4367,7 +4367,7 @@ public:
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            s.setLooperModeActive(true);  // even in looper mode
+            s.setMode(AppMode::Looper);  // even in looper mode
             auto trackId = s.createTrack("T");
             auto* t = s.findTrack(trackId);
 
@@ -4397,7 +4397,7 @@ public:
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            s.setLooperModeActive(true);
+            s.setMode(AppMode::Looper);
             s.setCycleLength(16.0);
             auto t1 = s.createTrack("T1");
             auto t2 = s.createTrack("T2");
@@ -4431,7 +4431,7 @@ public:
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            s.setLooperModeActive(true);
+            s.setMode(AppMode::Looper);
             s.setCycleLength(16.0);
             auto t1 = s.createTrack("T1");
             auto* t = s.findTrack(t1);

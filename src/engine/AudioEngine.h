@@ -134,6 +134,8 @@ public:
     // Recording
     void setRecording(bool recording);
     RecordFIFO& getRecordFIFO();
+    GraphWrapper::RecordDiag readRecordDiag() const;
+    void resetRecordDiag();
     void setAudioRecordTargets(const std::vector<GraphWrapper::AudioRecordTarget>& targets);
     void clearAudioRecordTargets();
     void setMetronome(bool on, int beatsPerBar, float volume = -1.0f);

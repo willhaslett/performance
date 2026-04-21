@@ -16,12 +16,21 @@ constexpr double kBeatsPerBar = 4.0;
 LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     : state(s), engine(e), coord(c) {
     setOpaque(true);
+    // Accept focus so a click steals it from any stray TextEditor
+    // (e.g. the toolbar build-info field) — otherwise global
+    // shortcuts like spacebar get swallowed upstream.
+    setWantsKeyboardFocus(true);
     stateSubId = state.events().subscribe([this](const StateEvent&) {
         // Any state mutation can invalidate our rendering (loop
         // created, take swapped, mute toggled, etc.). Defer to the
         // message thread to be safe — events may fire from any thread.
+        // Rebuild row geometry too: track add/remove/reorder changes
+        // the row set, which paint() depends on.
         juce::MessageManager::callAsync([safe = juce::Component::SafePointer<LooperPane>(this)]() {
-            if (safe) safe->repaint();
+            if (safe) {
+                safe->rebuildRowGeoms();
+                safe->repaint();
+            }
         });
     });
 }
@@ -85,6 +94,8 @@ void LooperPane::rebuildRowGeoms() {
         int yTop = hdr.getY();
         g.recordButton = { xCursor, yTop, recButtonSize, recButtonSize };
         xCursor += recButtonSize + Theme::spacingS;
+        g.stopButton   = { xCursor, yTop, recButtonSize, recButtonSize };
+        xCursor += recButtonSize + Theme::spacingS;
         g.muteButton   = { xCursor, yTop + (recButtonSize - 20) / 2, mutePillWidth, 20 };
 
         // Take selector — second line, below the buttons. Fills
@@ -97,7 +108,7 @@ void LooperPane::rebuildRowGeoms() {
         y += rowHeight + rowGap;
     }
 
-    // Cycle-length edit area — right side of the top bar, width ~120px.
+    // Top-bar control — cycle length pill on the right.
     cycleLengthField = { getWidth() - 160, 8, 140, 24 };
 }
 
@@ -162,6 +173,7 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText("cycle: " + juce::String(bars) + " bars", cycleLengthField,
                juce::Justification::centred);
+
 }
 
 void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
@@ -177,9 +189,9 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     g.fillRect(headerWidth - 1, row.rowBounds.getY(),
                1, row.rowBounds.getHeight());
 
-    // Track name, top-right of the record button.
-    auto nameArea = row.headerBounds.withTrimmedLeft(row.recordButton.getRight()
-                                                        + Theme::spacingM + mutePillWidth)
+    // Track name, top-right of the mute pill (after record + stop + mute).
+    auto nameArea = row.headerBounds.withTrimmedLeft(row.muteButton.getRight()
+                                                        + Theme::spacingS)
                                      .withHeight(recButtonSize + 8)
                                      .translated(0, Theme::spacingS);
     g.setColour(Theme::color(t.muted ? Theme::Color::textDim
@@ -213,6 +225,20 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
         g.setColour(recColor);
         g.drawEllipse(recBtn.reduced(1.0f), 2.0f);
     }
+
+    // Stop button — always a filled square inside a circle. Dim when
+    // state is Off, full when there's something to stop.
+    bool canStop = (recState != "off");
+    auto stopBtn = row.stopButton.toFloat();
+    juce::Colour stopColor = Theme::color(canStop ? Theme::Color::textPrimary
+                                                  : Theme::Color::textDim);
+    g.setColour(stopColor);
+    g.drawEllipse(stopBtn.reduced(1.0f), 2.0f);
+    // Inner square — two-thirds the ellipse for a classic "stop" glyph.
+    auto innerSize = stopBtn.getWidth() * 0.42f;
+    auto innerRect = juce::Rectangle<float>(innerSize, innerSize)
+                        .withCentre(stopBtn.getCentre());
+    g.fillRect(innerRect);
 
     // Mute pill — same style as Produce's M pill.
     auto muteBtn = row.muteButton.toFloat();
@@ -388,6 +414,7 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
 // ---- Interaction ----------------------------------------------------------
 
 void LooperPane::mouseDown(const juce::MouseEvent& e) {
+    grabKeyboardFocus();
     auto pos = e.getPosition();
 
     // Top bar — cycle length edit.
@@ -401,6 +428,11 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
 
         if (row.recordButton.contains(pos)) {
             coord.toggleLoopRecord(row.trackId);
+            repaint();
+            return;
+        }
+        if (row.stopButton.contains(pos)) {
+            coord.forceStopLoopRecord(row.trackId);
             repaint();
             return;
         }

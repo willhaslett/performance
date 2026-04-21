@@ -293,6 +293,16 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             audioEngine->stopPlayback();
             stopRecording();
             recordModeActive = false;
+            // Transport stop is an implicit punch-out for any active
+            // loop-record session — the cycle-wrap handler can't fire
+            // once the sequencer isn't advancing, so without this the
+            // state machine would hang in Armed/Recording/StopPending.
+            // Collect ids first to avoid mutating the map while iterating.
+            std::vector<TrackId> active;
+            for (auto& [tid, entry] : loopRecordStates)
+                if (entry.state != LoopRecordState::Off)
+                    active.push_back(TrackId{tid});
+            for (auto& tid : active) forceStopLoopRecord(tid);
         }
     });
 
@@ -353,7 +363,7 @@ void PerformanceCoordinator::timerCallback() {
             if (sequencerImpl->isLoopEnabled()
                 && audioBeat < lastSequencerBeat
                 && lastSequencerBeat > 0.0) {
-                if (stateAPI && stateAPI->isLooperModeActive()) {
+                if (stateAPI && stateAPI->getMode() == AppMode::Looper) {
                     int swapped = stateAPI->commitPendingTakeSwaps();
                     if (swapped > 0) {
                         perfLog("[Looper] cycle wrap — committed %d take swap(s)\n", swapped);
@@ -364,6 +374,19 @@ void PerformanceCoordinator::timerCallback() {
             // Drain recorded MIDI events from audio thread
             if (isRecording) {
                 drainRecordFIFO();
+
+                // Diagnostic: log audio-thread counters once per second.
+                double nowMs = juce::Time::getMillisecondCounterHiRes();
+                if (nowMs - lastRecordDiagLogMs >= 1000.0) {
+                    auto d = audioEngine->readRecordDiag();
+                    perfLog("[RecDiag] playing=%d / procTicks=%d  midiSeen=%d  fifoPush=%d  "
+                            "pops=%d  dropped(offset<0)=%d  recStartBeat=%.2f\n",
+                            d.playingTicks, d.processBlockTicks,
+                            d.midiEventsSeen, d.fifoPushes,
+                            diagFifoPops, diagDroppedNegativeOffset,
+                            recordStartBeat);
+                    lastRecordDiagLogMs = nowMs;
+                }
 
                 // Update audio region lengths and peaks during recording
                 for (auto& session : audioRecordSessions) {
@@ -424,6 +447,16 @@ void PerformanceCoordinator::timerCallback() {
 
 void PerformanceCoordinator::startRecordMode() {
     if (!sequencerImpl) return;
+    // Refuse while any looper track is armed/recording/stop-pending —
+    // the two flows share FIFO + recordStartBeat, and mixing them
+    // produces takes with the wrong event offsets.
+    for (auto& [tid, entry] : loopRecordStates) {
+        if (entry.state != LoopRecordState::Off) {
+            perfLog("[Coordinator] startRecordMode refused — looper recording in progress (track=%s)\n",
+                    tid.c_str());
+            return;
+        }
+    }
     recordModeActive = true;
     if (!sequencerImpl->isPlaying())
         sequencerImpl->play();  // transport callback will call startRecording()
@@ -520,19 +553,20 @@ void PerformanceCoordinator::startRecording() {
             audioEngine->setAudioRecordTargets(targets);
     }
 
-    audioEngine->setRecording(true);
-    isRecording = true;
+    arrangementRecordingActive = true;
+    beginCapture(recordStartBeat);
     perfLog("[Coordinator] Recording started (%d MIDI, %d audio) at beat %.1f\n",
             (int)recordingTrackIds.size(),
             (int)audioRecordSessions.size(), recordStartBeat);
 }
 
 void PerformanceCoordinator::stopRecording() {
-    if (!isRecording) return;
+    if (!arrangementRecordingActive) return;
 
-    audioEngine->setRecording(false);
+    arrangementRecordingActive = false;
+    endCapture();
 
-    // Drain remaining MIDI events
+    // Drain remaining MIDI events still in the FIFO.
     drainRecordFIFO();
 
     // Inject synthetic noteOffs for any notes still open at stop time
@@ -579,7 +613,6 @@ void PerformanceCoordinator::stopRecording() {
     }
 
     arrangementImpl.stopRecording();
-    isRecording = false;
     recordingTrackIds.clear();
 
     // Resume undo — the next undo will revert to pre-recording state
@@ -587,6 +620,49 @@ void PerformanceCoordinator::stopRecording() {
 
     perfLog("[Coordinator] Recording stopped at beat %.1f, total regions: %d\n",
             stopBeat, (int)arrangementImpl.allRegions().size());
+
+    // Final diagnostic snapshot for the just-ended session.
+    auto d = audioEngine->readRecordDiag();
+    perfLog("[RecDiag] final: playing=%d / procTicks=%d  midiSeen=%d  fifoPush=%d  "
+            "pops=%d  dropped(offset<0)=%d  recStartBeat=%.2f\n",
+            d.playingTicks, d.processBlockTicks,
+            d.midiEventsSeen, d.fifoPushes,
+            diagFifoPops, diagDroppedNegativeOffset,
+            recordStartBeat);
+}
+
+// Refcounted capture gates. Multiple concurrent flows (arrangement
+// recording, looper punch-in) can share the engine's MIDI capture +
+// the FIFO drain by each holding one begin/end pair. The engine gate
+// flips only on 0↔1 transitions so the other flow isn't interrupted.
+//
+// originBeat sets `recordStartBeat` for per-event offset computation
+// in drainRecordFIFO. For arrangement recording that's the user's
+// press-record beat; for looper punch-in it's the cycle start (0).
+// Only the first beginCapture in a session sets originBeat — callers
+// are responsible for ensuring the two flows don't overlap (see the
+// guards in startRecordMode and toggleLoopRecord).
+void PerformanceCoordinator::beginCapture(double originBeat) {
+    if (!audioEngine) return;
+    captureRefCount++;
+    if (captureRefCount == 1) {
+        recordStartBeat = originBeat;
+        audioEngine->resetRecordDiag();
+        diagFifoPops = 0;
+        diagDroppedNegativeOffset = 0;
+        lastRecordDiagLogMs = 0.0;
+        audioEngine->setRecording(true);
+        isRecording = true;
+    }
+}
+
+void PerformanceCoordinator::endCapture() {
+    if (!audioEngine || captureRefCount == 0) return;
+    captureRefCount--;
+    if (captureRefCount == 0) {
+        audioEngine->setRecording(false);
+        isRecording = false;
+    }
 }
 
 void PerformanceCoordinator::drainRecordFIFO() {
@@ -594,8 +670,12 @@ void PerformanceCoordinator::drainRecordFIFO() {
     auto& fifo = audioEngine->getRecordFIFO();
     RecordedMidiEvent event;
     while (fifo.pop(event)) {
+        ++diagFifoPops;
         double beatOffset = event.beat - recordStartBeat;
-        if (beatOffset < 0.0) continue;
+        if (beatOffset < 0.0) {
+            ++diagDroppedNegativeOffset;
+            continue;
+        }
 
         MidiEventState re;
         re.beatOffset = beatOffset;
@@ -632,13 +712,12 @@ void PerformanceCoordinator::syncTempoFromState() {
         sequencerImpl->setLoopEnabled(false);
     }
 
-    // Push looper-mode state into the arrangement scanner so it knows
+    // Push app-mode state into the arrangement scanner so it knows
     // to dispatch to the loop-playback path. Cycle length is cycleEnd
-    // (normalized to start=0 by the StateAPI invariants).
-    if (song) {
-        arrangementImpl.updateLooperMode(song->looperModeActive,
-                                          song->looperModeActive ? song->cycleEnd : 0.0);
-    }
+    // from the current song (normalized to start=0 by StateAPI invariants).
+    bool looperMode = stateAPI->getMode() == AppMode::Looper;
+    arrangementImpl.updateLooperMode(looperMode,
+                                      looperMode && song ? song->cycleEnd : 0.0);
 
     perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d\n",
             stateAPI->getSongTempo(), num, den);
@@ -856,6 +935,12 @@ void PerformanceCoordinator::toggleLoopRecord(const TrackId& trackId) {
     auto& entry = loopRecordStates[trackId.str()];
     switch (entry.state) {
         case LoopRecordState::Off:
+            // Refuse to arm while arrangement recording is running —
+            // see beginCapture's comment on the shared FIFO.
+            if (arrangementRecordingActive) {
+                perfLog("[Looper] arm refused — arrangement recording in progress\n");
+                return;
+            }
             entry.state = LoopRecordState::Armed;
             perfLog("[Looper] armed track %s for loop recording\n", trackId.c_str());
             break;
@@ -871,6 +956,40 @@ void PerformanceCoordinator::toggleLoopRecord(const TrackId& trackId) {
             entry.state = LoopRecordState::Recording;
             perfLog("[Looper] punch-out cancelled for track %s\n", trackId.c_str());
             break;
+    }
+}
+
+void PerformanceCoordinator::forceStopLoopRecord(const TrackId& trackId) {
+    auto it = loopRecordStates.find(trackId.str());
+    if (it == loopRecordStates.end()) return;
+    auto& entry = it->second;
+
+    switch (entry.state) {
+        case LoopRecordState::Off:
+            return;
+        case LoopRecordState::Armed:
+            entry.state = LoopRecordState::Off;
+            perfLog("[Looper] disarmed track %s (force stop)\n", trackId.c_str());
+            return;
+        case LoopRecordState::Recording:
+        case LoopRecordState::StopPending: {
+            double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
+            if (entry.cyclesRecorded == 0) {
+                arrangementImpl.discardLastLoopRecording(trackId);
+                perfLog("[Looper] aborted incomplete recording on %s\n",
+                        trackId.c_str());
+            } else {
+                double lengthBeats = entry.cyclesRecorded * cycleLen;
+                arrangementImpl.stopLoopRecording(trackId, lengthBeats);
+                perfLog("[Looper] force-stop on %s (length %.2f, cycles=%d)\n",
+                        trackId.c_str(), lengthBeats, entry.cyclesRecorded);
+            }
+            endCapture();
+            entry.state = LoopRecordState::Off;
+            entry.punchInBeat = 0.0;
+            entry.cyclesRecorded = 0;
+            return;
+        }
     }
 }
 
@@ -890,29 +1009,42 @@ void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
     // Pending take swaps land first (phase 3a). Then loop-record
     // transitions — this ordering means a punch-in that fires at the
     // same wrap as a take swap gets a fresh slate to record into.
+    double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
     for (auto& [trackIdStr, entry] : loopRecordStates) {
         TrackId trackId{trackIdStr};
         switch (entry.state) {
             case LoopRecordState::Armed:
+                // Open capture with origin=0 so events land on their
+                // cycle-relative beat (setMode(Looper) forces
+                // cycleStart=0 on the current song).
+                beginCapture(0.0);
                 entry.state = LoopRecordState::Recording;
                 entry.punchInBeat = wrapBeat;
+                entry.cyclesRecorded = 0;
                 arrangementImpl.startLoopRecording(trackId);
                 perfLog("[Looper] punch-in on %s at beat %.2f\n",
                         trackId.c_str(), wrapBeat);
                 break;
+            case LoopRecordState::Recording:
+                // Still recording — another full cycle has just elapsed.
+                entry.cyclesRecorded++;
+                break;
             case LoopRecordState::StopPending: {
-                double lengthBeats = wrapBeat - entry.punchInBeat;
-                if (lengthBeats < 0.0) lengthBeats = 0.0;
+                // Count the cycle that just ended, then finalize. The
+                // captured length is cycle-quantized because punch-in
+                // and punch-out both land on wrap boundaries.
+                entry.cyclesRecorded++;
+                double lengthBeats = entry.cyclesRecorded * cycleLen;
                 arrangementImpl.stopLoopRecording(trackId, lengthBeats);
                 entry.state = LoopRecordState::Off;
                 entry.punchInBeat = 0.0;
+                entry.cyclesRecorded = 0;
+                endCapture();
                 perfLog("[Looper] punch-out on %s at beat %.2f (length %.2f)\n",
                         trackId.c_str(), wrapBeat, lengthBeats);
                 break;
             }
             case LoopRecordState::Off:
-            case LoopRecordState::Recording:
-                // No transition; Recording continues to capture events.
                 break;
         }
     }
@@ -1433,11 +1565,13 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
     // Watch for Track or Effect Updated events — LoadStatus may have changed to Loaded
     if (event.action != StateEvent::Updated) return;
 
-    // Song Updated — may be a cycle-length change from setCycleLength /
-    // setLooperModeActive. Push state → sequencer so the playback clock
-    // reflects the new cycle, and so the next save() snapshot (which
-    // reads from sequencer) matches what state already says.
-    if (event.entity == StateEvent::Song) {
+    // Song Updated — may be a cycle-length change from setCycleLength,
+    // or a cycle flip triggered by setMode. Push state → sequencer so
+    // the playback clock reflects the new cycle, and so the next save()
+    // snapshot (which reads from sequencer) matches what state says.
+    // App Updated — mode changed. Also re-sync so the arrangement
+    // scanner dispatches to the right pool.
+    if (event.entity == StateEvent::Song || event.entity == StateEvent::App) {
         syncTempoFromState();
         return;
     }

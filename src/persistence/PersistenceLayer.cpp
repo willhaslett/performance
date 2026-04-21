@@ -117,8 +117,7 @@ void PersistenceLayer::createSchema() {
             time_sig_den INTEGER DEFAULT 4,
             cycle_start REAL DEFAULT 0.0,
             cycle_end REAL DEFAULT 0.0,
-            cycle_enabled INTEGER DEFAULT 0,
-            looper_mode_active INTEGER DEFAULT 0
+            cycle_enabled INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -221,11 +220,10 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN channel_count INTEGER DEFAULT 2", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
 
-    // Live-looping: regions get a pool discriminator ('arrangement' | 'loop'),
-    // songs get a looper_mode_active flag. See docs/LIVE_LOOPING.md.
+    // Live-looping: regions get a pool discriminator ('arrangement' | 'loop').
+    // See docs/LIVE_LOOPING.md. (App mode lives on AppState, not per-song —
+    // persisted via the config key-value dict; see docs/PANE_MODE_MODEL.md.)
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN pool TEXT NOT NULL DEFAULT 'arrangement'",
-                 nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN looper_mode_active INTEGER DEFAULT 0",
                  nullptr, nullptr, nullptr);
 
     // Action events table
@@ -335,6 +333,17 @@ void PersistenceLayer::loadInto(StateAPI& state) {
         loaded.currentSongId = loaded.songs[0].id;
     }
 
+    // Resolve currentMode from config. Unknown/missing defaults to
+    // Arrangement (the same as the AppState field default), which is
+    // also the right behavior on a first launch.
+    auto modeIt = loaded.config.find("app_mode");
+    if (modeIt != loaded.config.end()) {
+        loaded.currentMode = (modeIt->second == "looper")
+                                 ? AppMode::Looper
+                                 : AppMode::Arrangement;
+        loaded.config.erase(modeIt);
+    }
+
     // Atomic swap — fires one event, EngineSync rebuilds
     state.replaceState(std::move(loaded));
     perfLog("[Persistence] State loaded from database\n");
@@ -383,7 +392,7 @@ void PersistenceLayer::readActions(AppState& out) {
 }
 
 void PersistenceLayer::readSongs(AppState& out) {
-    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, looper_mode_active FROM songs");
+    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
         song.id = SongId{col_str(songStmt, 0)};
@@ -399,7 +408,6 @@ void PersistenceLayer::readSongs(AppState& out) {
         song.cycleStart = sqlite3_column_double(songStmt, 7);
         song.cycleEnd = sqlite3_column_double(songStmt, 8);
         song.cycleEnabled = sqlite3_column_int(songStmt, 9) != 0;
-        song.looperModeActive = sqlite3_column_int(songStmt, 10) != 0;
 
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, color, output_target, input_monitoring FROM tracks WHERE song_id = ? ORDER BY position");
@@ -792,7 +800,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         int songTsNum = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].numerator;
         int songTsDen = song.timeSigEvents.empty() ? 4 : song.timeSigEvents[0].denominator;
 
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, looper_mode_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -806,7 +814,6 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 8, song.cycleStart);
         sqlite3_bind_double(stmt, 9, song.cycleEnd);
         sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
-        sqlite3_bind_int(stmt, 11, song.looperModeActive ? 1 : 0);
         stepWrite(stmt, "save");
 
         // Busses (before tracks, since sends reference busses)
@@ -1055,6 +1062,15 @@ void PersistenceLayer::saveConfig(const StateAPI& state) {
     if (!state.appState().currentSongId.empty()) {
         auto* stmt = prepare("INSERT INTO config (key, value) VALUES ('current_song_id', ?)");
         sqlite3_bind_text(stmt, 1, state.appState().currentSongId.c_str(), -1, SQLITE_TRANSIENT);
+        stepWrite(stmt, "save");
+    }
+    // App mode is a typed AppState field; persist via config to keep
+    // schema simple. See docs/PANE_MODE_MODEL.md.
+    {
+        const char* modeStr = (state.appState().currentMode == AppMode::Looper)
+                                  ? "looper" : "arrangement";
+        auto* stmt = prepare("INSERT INTO config (key, value) VALUES ('app_mode', ?)");
+        sqlite3_bind_text(stmt, 1, modeStr, -1, SQLITE_STATIC);
         stepWrite(stmt, "save");
     }
 

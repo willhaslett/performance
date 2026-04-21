@@ -71,6 +71,12 @@ public:
     // happen in onCycleWrap, which is called from the coordinator's
     // timer when the audio-thread beat wraps backward.
     void toggleLoopRecord(const TrackId& trackId);
+    // Escape hatch for stuck or intentional-stop scenarios. Armed →
+    // Off with no capture. Recording/StopPending → Off; if at least
+    // one full cycle was captured, finalize the take with that
+    // length; otherwise drop the take (and its freshly-created loop
+    // region, if we just added it). Always balances `endCapture`.
+    void forceStopLoopRecord(const TrackId& trackId);
     std::string getLoopRecordState(const TrackId& trackId) const;
 
     // --- Persistence ---
@@ -183,8 +189,16 @@ private:
     bool startupChooserNeeded = false;
 
     // Recording state
-    bool recordModeActive = false;  // user explicitly requested recording
-    bool isRecording = false;
+    bool recordModeActive = false;      // user explicitly requested arrangement recording
+    bool isRecording = false;           // any capture flow active (arrangement || looper)
+    int captureRefCount = 0;            // refcount across flows; flips engine gate on 0↔1
+    bool arrangementRecordingActive = false;  // true while the arrangement flow owns a session
+    // Turn MIDI capture on/off via refcount. Each caller (arrangement
+    // startRecording, looper punch-in) is responsible for one begin/end
+    // pair. Engine gates are only flipped on 0↔1 transitions so flows
+    // can coexist without trampling each other.
+    void beginCapture(double originBeat);
+    void endCapture();
     std::map<std::pair<int,int>, double> openNotes;  // {noteNumber, channel} → beatOffset
     std::vector<TrackId> recordingTrackIds;              // MIDI tracks being recorded into
     struct AudioRecordSession {
@@ -195,6 +209,10 @@ private:
     };
     std::vector<AudioRecordSession> audioRecordSessions;
     double recordStartBeat = 0.0;
+    // Diagnostics — debugging the "no events captured" issue.
+    int diagFifoPops = 0;
+    int diagDroppedNegativeOffset = 0;
+    double lastRecordDiagLogMs = 0.0;
     void startRecording();
     void stopRecording();
     void drainRecordFIFO();
@@ -208,6 +226,7 @@ private:
     struct LoopRecordEntry {
         LoopRecordState state = LoopRecordState::Off;
         double punchInBeat = 0.0;   // global beat at which current recording began
+        int cyclesRecorded = 0;     // wraps observed while Recording
     };
     std::map<std::string /*TrackId*/, LoopRecordEntry> loopRecordStates;
     void onCycleWrap(double wrapBeat);   // called from timer when beat wraps

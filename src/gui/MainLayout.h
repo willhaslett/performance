@@ -40,6 +40,7 @@ class MainLayout : public juce::Component, public juce::DragAndDropContainer {
 public:
     MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
                PerformanceCoordinator& coordinator);
+    ~MainLayout() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -108,6 +109,7 @@ private:
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;
+    int stateSubId = -1;   // Song Updated reverse-sync (see docs/PANE_MODE_MODEL.md)
     static constexpr int toolbarHeight = 36;
     static constexpr int minPaneSize = 100;
 

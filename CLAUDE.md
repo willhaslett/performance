@@ -14,6 +14,8 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
 - `docs/LIVE_LOOPING.md` — live-looping design + phased plan. **In progress:** Phases 1–4 landed, initial click-testing underway, Phase 5 not started. Read before touching looper pane, `track.loops`, `pendingTakeId`, or cycle-wrap logic.
+- `docs/PANE_MODE_MODEL.md` — Left-slot-as-mode-picker decision: `looperModeActive` is driven by Left-slot pane content (Produce/Looper/Perform mutually exclusive). Read before touching pane visibility, `looperModeActive`, or anything that flips Produce↔Looper.
+- `docs/LIVE_INPUT_AND_FOCUS.md` — **In-flight design, not yet implemented.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Load-bearing for anything touching live MIDI dispatch, the Looper pane, or track `R`/`I` semantics. Living doc until merged to main.
 
 User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 
