@@ -4453,6 +4453,105 @@ public:
 static LooperTakeSwapTests looperTakeSwapTests;
 
 // ============================================================================
+// Live looper — Phase 3b: loop recording (Arrangement helpers)
+// ============================================================================
+
+class LooperRecordTests : public juce::UnitTest {
+public:
+    LooperRecordTests() : juce::UnitTest("LooperRecord") {}
+
+    void runTest() override {
+        beginTest("startLoopRecording creates loop region on first call");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t;
+            t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            expectEquals((int) tracks[0].loops.size(), 0);
+
+            auto* region = arr.startLoopRecording(TrackId{"t1"});
+            expect(region != nullptr);
+            expectEquals((int) tracks[0].loops.size(), 1);
+            expectEquals((int) region->takes.size(), 1);  // first take
+            expect(arr.isRecording());
+        }
+
+        beginTest("captured events route to new take; stopLoopRecording sets length");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            auto* region = arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            expect(!arr.isRecording());
+            expectEquals(region->lengthBeats, 4.0);
+
+            auto* take = region->activeTake();
+            expect(take != nullptr);
+            expectEquals((int) take->events.size(), 2);
+            expect(region->activeTakeId == take->id);
+        }
+
+        beginTest("second punch-in appends a take; previous takes persist");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            // Pass 1
+            arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 60, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 60, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            auto take1Id = tracks[0].loops[0].activeTakeId;
+
+            // Pass 2
+            arr.startLoopRecording(TrackId{"t1"});
+            arr.addRecordedEvent({ 0.0, 0x90, 1, 64, 100 });
+            arr.addRecordedEvent({ 0.5, 0x80, 1, 64, 0 });
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+
+            auto& region = tracks[0].loops[0];
+            expectEquals((int) region.takes.size(), 2);   // both persist
+            expect(region.activeTakeId != take1Id);       // latest is active
+
+            // Active take has the second pass's pitch.
+            auto* active = region.activeTake();
+            expect(active != nullptr);
+            expectEquals((int) active->events.size(), 2);
+            expectEquals(active->events[0].data1, 64);
+        }
+
+        beginTest("stopLoopRecording handles a track with no in-flight recording gracefully");
+        {
+            std::vector<TrackState> tracks;
+            TrackState t; t.id = TrackId{"t1"};
+            tracks.push_back(std::move(t));
+            Arrangement arr;
+            arr.setTracks(&tracks);
+
+            // No startLoopRecording — just call stop. Should no-op.
+            arr.stopLoopRecording(TrackId{"t1"}, 4.0);
+            expectEquals((int) tracks[0].loops.size(), 0);
+        }
+    }
+};
+
+static LooperRecordTests looperRecordTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

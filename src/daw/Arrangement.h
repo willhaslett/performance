@@ -70,6 +70,19 @@ public:
     void stopRecording();
     bool isRecording() const { return !recordingTakes.empty(); }
 
+    // --- Loop recording (Looper mode) ---
+    // Creates (if absent) the track's single loop region at startBeat=0
+    // and adds a new take to it. Routes incoming recorded events into
+    // the new take via the shared recordingTakes list; lengthBeats is
+    // updated at stopLoopRecording.
+    //
+    // `stopLoopRecording` sets the loop region's lengthBeats from the
+    // caller-supplied value (typically punch-out beat − punch-in beat
+    // in the performance timeline) and promotes the new take to active.
+    // Previous takes remain on disk; performer can swap back to them.
+    RegionState* startLoopRecording(const TrackId& trackId);
+    void stopLoopRecording(const TrackId& trackId, double lengthBeats);
+
     // --- Derived views ---
     static std::vector<NoteView> buildNoteList(const TakeState& take, double regionLength);
     // Convenience: build from region's active take

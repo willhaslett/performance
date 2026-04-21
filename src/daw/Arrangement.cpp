@@ -535,6 +535,64 @@ void Arrangement::stopRecording() {
     // TODO: inject synthetic noteOffs for unclosed notes at stop beat
 }
 
+// --- Loop recording ---
+//
+// Unlike arrangement recording (which creates a new region per pass),
+// loop recording adds a new take to the track's single loop region.
+// The region is created lazily on the first punch-in and persists
+// across subsequent captures; `activeTakeId` moves to the latest.
+RegionState* Arrangement::startLoopRecording(const TrackId& trackId) {
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
+    for (auto& t : *songTracks) {
+        if (t.id != trackId) continue;
+
+        // Ensure there's a loop region; create one if the track has none.
+        RegionState* region = t.loops.empty() ? nullptr : &t.loops[0];
+        if (!region) {
+            RegionState r;
+            r.id = RegionId{generateId()};
+            r.type = "midi";
+            r.startBeat = 0.0;
+            r.lengthBeats = 0.0;  // finalized in stopLoopRecording
+            t.loops.push_back(std::move(r));
+            region = &t.loops[0];
+        }
+
+        // Append a new take and route captured events into it.
+        TakeState take;
+        take.id = TakeId{generateId()};
+        take.name = "Take " + std::to_string(region->takes.size() + 1);
+        region->takes.push_back(std::move(take));
+        recordingTakes.push_back(&region->takes.back());
+        return region;
+    }
+    return nullptr;
+}
+
+void Arrangement::stopLoopRecording(const TrackId& trackId, double lengthBeats) {
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
+    for (auto& t : *songTracks) {
+        if (t.id != trackId) continue;
+        if (t.loops.empty()) return;
+        auto& region = t.loops[0];
+        if (region.takes.empty()) return;
+
+        auto* newTake = &region.takes.back();
+        // Remove this take from the recording set (if present).
+        recordingTakes.erase(
+            std::remove(recordingTakes.begin(), recordingTakes.end(), newTake),
+            recordingTakes.end());
+
+        std::sort(newTake->events.begin(), newTake->events.end(),
+                  [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
+        // Promote the freshly-recorded take to active. Previous takes
+        // persist; performer can swap back to them via setActiveTake.
+        region.activeTakeId = newTake->id;
+        region.lengthBeats = lengthBeats;
+        return;
+    }
+}
+
 std::vector<NoteView> Arrangement::buildNoteList(const TakeState& take, double regionLength) {
     std::vector<NoteView> notes;
     std::map<std::pair<int,int>, int> openNotes;
