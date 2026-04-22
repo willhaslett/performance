@@ -276,28 +276,28 @@ void TrackStrip::rebuildEffectSlots() {
 void TrackStrip::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    // Strip background — one color for the whole strip, driven by the
-    // same (muted, focused, selected) rule used by Produce and Looper.
-    // See docs/LIVE_INPUT_AND_FOCUS.md.
-    juce::Colour stripBg = Theme::color(Theme::Color::bgSurface);
-    if (auto* t = state.findTrack(TrackId{trackId.toStdString()}))
-        stripBg = TrackUi::rowBgForTrack(state, *t);
-    g.setColour(stripBg);
-    g.fillRect(bounds);
+    // Flat strip bg.
+    TrackState const* trackPtr = state.findTrack(TrackId{trackId.toStdString()});
+    if (trackPtr) {
+        TrackUi::paintTrackBgFlatForTrack(g, bounds, state, *trackPtr);
+    } else {
+        g.setColour(Theme::color(Theme::Color::bgSurface));
+        g.fillRect(bounds);
+    }
 
     // Header
     headerBounds = juce::Rectangle<int>(bounds.getX(), bounds.getY(),
                                          bounds.getWidth(), Theme::headerHeight);
 
-    g.setColour(stripBg);
-    g.fillRect(headerBounds);
-
-    // Type accent — 2px top stripe. Action tracks get no stripe (they don't show in the mixer anyway).
+    // Type accent — top stripe. Thickens on focus as the "this is the
+    // track I'm playing into" affordance. Action tracks get no stripe.
     if (sourceType == TrackSourceType::Instrument || sourceType == TrackSourceType::AudioInput) {
+        bool focused = trackPtr && state.getFocusedTrackId() == trackPtr->id;
+        int thickness = focused ? 4 : 2;
         g.setColour(Theme::color(sourceType == TrackSourceType::Instrument
                                  ? Theme::Color::typeInstrument
                                  : Theme::Color::typeAudio));
-        g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
+        g.fillRect(bounds.getX(), bounds.getY(), bounds.getWidth(), thickness);
     }
 
     // Header: track name + type indicator + menu dots

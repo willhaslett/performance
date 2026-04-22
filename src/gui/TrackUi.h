@@ -14,26 +14,28 @@
 // so pane click handlers are trivial one-liners.
 namespace TrackUi {
 
-// Row background shade for a track. Priority: muted > focused > selected >
-// active. One color per track-state combination; applied uniformly to the
-// track's header + timeline/strip so the row reads as a single unit.
-inline uint32_t rowBgToken(bool muted, bool focused, bool selected) {
-    if (muted)    return Theme::Color::bgRowMuted;
-    if (focused)  return Theme::Color::bgRowFocused;
-    if (selected) return Theme::Color::bgRowSelected;
-    return Theme::Color::bgRowActive;
+// Flat track-row background: one color per state (muted > focused >
+// selected > active). Used as the base fill for every pane. Focus
+// emphasis is a separate header-region gradient; callers layer it on
+// top when appropriate — see paintFocusHeaderGradient.
+inline void paintTrackBgFlat(juce::Graphics& g, juce::Rectangle<int> bounds,
+                               bool muted, bool focused, bool selected) {
+    auto token = muted    ? Theme::Color::bgRowMuted
+               : focused  ? Theme::Color::bgRowFocused
+               : selected ? Theme::Color::bgRowSelected
+                          : Theme::Color::bgRowActive;
+    g.setColour(Theme::color(token));
+    g.fillRect(bounds);
 }
 
-inline juce::Colour rowBg(bool muted, bool focused, bool selected) {
-    return Theme::color(rowBgToken(muted, focused, selected));
-}
-
-// Resolve the row background for a specific track by reading state.
-inline juce::Colour rowBgForTrack(StateAPI& state, const TrackState& t) {
+// Convenience: paint the flat row bg for a specific track based on
+// current focus/selection state.
+inline void paintTrackBgFlatForTrack(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                       StateAPI& state, const TrackState& t) {
     bool focused = state.getFocusedTrackId() == t.id;
     auto selected = state.selectedTrackIds();
     bool isSelected = std::find(selected.begin(), selected.end(), t.id) != selected.end();
-    return rowBg(t.muted, focused, isSelected);
+    paintTrackBgFlat(g, bounds, t.muted, focused, isSelected);
 }
 
 // Plain/Cmd/Shift click policy for track rows / mixer strips / looper rows.

@@ -692,11 +692,12 @@ ProducePane::RegionVisuals ProducePane::regionVisuals(const TrackState& t,
 
 void ProducePane::paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
                                 const TrackRowVisuals& v) {
-    // Single background shade per (muted, focused, selected) tuple — the
-    // row reads as a single unit. See TrackUi::rowBgToken.
-    g.setColour(TrackUi::rowBg(v.audibility == Audibility::Muted,
-                                v.focused, v.selected));
-    g.fillRect(bounds);
+    // Flat bg only. Focus halo is painted separately at the header
+    // call-site (paintTrackHeaders) — NOT here — because this function
+    // also paints the timeline-lane bg (paintGrid), where a gradient
+    // would be wrong.
+    TrackUi::paintTrackBgFlat(g, bounds, v.audibility == Audibility::Muted,
+                               v.focused, v.selected);
 }
 
 int ProducePane::rowHeightFor(const TrackState& t) const {
@@ -759,13 +760,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         auto vis = trackRowVisuals(*trackState);
         paintTrackRow(g, row, vis);
 
-        // Type accent — 3px left-edge stripe (header-only). Action tracks get no stripe.
+        // Type accent — left-edge stripe. Thickens on focus as the
+        // "this is the track I'm playing into" affordance.
+        // Action tracks get no stripe.
         if (vis.type != TrackSourceType::Action) {
             auto accentColor = vis.type == TrackSourceType::AudioInput
                                 ? Theme::Color::typeAudio
                                 : Theme::Color::typeInstrument;
+            int thickness = vis.focused ? 4 : 3;
             g.setColour(Theme::color(accentColor));
-            g.fillRect(row.getX(), row.getY(), 3, row.getHeight());
+            g.fillRect(row.getX(), row.getY(), thickness, row.getHeight());
         }
 
         // Row separators

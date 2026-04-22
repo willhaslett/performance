@@ -182,8 +182,22 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     // Row background — one color for the whole row (header + timeline),
     // driven by the shared TrackUi rule so Produce / Mixer / Looper all
     // shade the same track identically.
-    g.setColour(TrackUi::rowBgForTrack(state, t));
-    g.fillRect(row.rowBounds);
+    // Flat row bg (same rule as Produce/Mixer).
+    TrackUi::paintTrackBgFlatForTrack(g, row.rowBounds, state, t);
+
+    // Type accent — left-edge stripe. Thickens on focus as the "this is
+    // the track I'm playing into" affordance, matching ProducePane.
+    // Action tracks are filtered out upstream and don't appear here.
+    if (t.sourceType == TrackSourceType::Instrument
+        || t.sourceType == TrackSourceType::AudioInput) {
+        bool focused = state.getFocusedTrackId() == t.id;
+        int thickness = focused ? 4 : 3;
+        g.setColour(Theme::color(t.sourceType == TrackSourceType::Instrument
+                                   ? Theme::Color::typeInstrument
+                                   : Theme::Color::typeAudio));
+        g.fillRect(row.rowBounds.getX(), row.rowBounds.getY(),
+                   thickness, row.rowBounds.getHeight());
+    }
 
     // Divider between header and timeline.
     g.setColour(Theme::color(Theme::Color::borderSubtle));

@@ -17,8 +17,8 @@ namespace Theme {
         inline uint32_t bgSurfaceRaised = 0xff333333;  // region fills
         inline uint32_t bgRowActive     = 0xff1e1e1e;  // track row (unmuted, unselected, unfocused) — base case
         inline uint32_t bgRowMuted      = 0xff1a1a1a;  // track row when muted (recedes toward bgPanel)
-        inline uint32_t bgRowSelected   = 0xff262626;  // track row when selected (not focused) — subtly lighter than bgRowActive
-        inline uint32_t bgRowFocused    = 0xff333333;  // track row when focused — distinctly lighter; the "track I'm playing into"
+        inline uint32_t bgRowSelected   = 0xff202020;  // track row when selected (not focused) — subtly lighter than bgRowActive
+        inline uint32_t bgRowFocused    = 0xff242424;  // track row when focused — lighter than active, below bgSlot so inset surfaces (slots, regions) retain clear contrast
         inline uint32_t bgSlot          = 0xff2a2a2a;  // passive inset surfaces
         inline uint32_t bgControl       = 0xff2d2d2d;  // interactive control base
         inline uint32_t bgControlHover  = 0xff333333;  // interactive control hover
