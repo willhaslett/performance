@@ -752,6 +752,25 @@ void AudioEngine::setTrackInputMonitoring(const juce::String& trackId, bool enab
     if (it == tracks.end()) return;
     if (it->second.inputMonitoring == enabled) return;
     it->second.inputMonitoring = enabled;
+
+    // For INSTRUMENT tracks, "input monitoring" means "this plugin
+    // receives live MIDI." Drive the existing midiEnabled flag that
+    // gates the midiInputNode → instrumentNode graph connection.
+    // For audio tracks, midiEnabled is unused and inputMonitoring
+    // gates audio-in → output wiring via rebuildConnections.
+    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    if (it->second.sourceType == TrackSourceType::Instrument) {
+        if (!enabled) {
+            // Flush any hanging notes before the connection is removed.
+            for (int ch = 1; ch <= 16; ++ch) {
+                auto msg = juce::MidiMessage::allNotesOff(ch);
+                msg.setTimeStamp(juce::Time::getMillisecondCounterHiRes() * 0.001);
+                player->getMidiMessageCollector().addMessageToQueue(msg);
+            }
+        }
+        it->second.midiEnabled = enabled;
+    }
+
     rebuildConnections();
     perfLog("[Engine] Input monitoring %s for track \"%s\"\n",
             enabled ? "enabled" : "disabled", trackId.toRawUTF8());

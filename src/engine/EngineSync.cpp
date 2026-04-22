@@ -128,6 +128,11 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
 
     engine.createTrackWithId(juce::String(track->id.str()), juce::String(track->name));
     engine.setTrackGain(juce::String(track->id.str()), track->outputGain);
+    // Apply persisted input monitoring. For instrument tracks this
+    // gates live-MIDI routing to the plugin (setTrackInputMonitoring
+    // drives midiEnabled internally). Without this, persisted focus
+    // would silently revert to broadcast on reload.
+    engine.setTrackInputMonitoring(juce::String(track->id.str()), track->inputMonitoring);
 
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
