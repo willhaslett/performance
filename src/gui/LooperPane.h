@@ -67,8 +67,9 @@ private:
         juce::Rectangle<int> rowBounds;
         juce::Rectangle<int> headerBounds;
         juce::Rectangle<int> timelineBounds;
-        juce::Rectangle<int> recordButton;
-        juce::Rectangle<int> stopButton;     // explicit stop, always finalizes/aborts
+        juce::Rectangle<int> recordButton;   // retained for back-compat; unused since phase 5a
+        juce::Rectangle<int> stopButton;     // retained for back-compat; unused since phase 5a
+        juce::Rectangle<int> armButton;      // R — toggles record-arm
         juce::Rectangle<int> muteButton;
         juce::Rectangle<int> takeSelector;   // clickable area for take picker
     };

@@ -143,6 +143,18 @@ capture already works. Skipping this phase.
 
 Covered separately. Depends on phase 5 being in place.
 
+## Known bugs (surfaced during phase 5a click-testing)
+
+- **Stuck notes when stopping playback mid-note.** If the performer holds
+  a key (or a recorded loop sustains a note across the transport-stop),
+  the note hangs after the transport stops. `stopPlayback` sets
+  `needsNoteFlush` and the next processBlock walks `activeNotes` to send
+  per-channel noteOffs via every `MidiSourceNode` plus into the live
+  midi buffer, so in theory the held note should be released. Needs
+  investigation — possibly a race between the flush and the processBlock
+  that immediately follows, or a subset of notes (e.g. live-input-only)
+  isn't making it into `activeNotes`. Blocker for ship; not fixed yet.
+
 ## Open questions
 
 - **Default `I` on new instrument tracks.** Options:

@@ -170,8 +170,8 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 ## Backlog
 
 **High priority (0.1.0 candidates):**
-- **Per-track live MIDI routing** — phases 3–5 of `docs/LIVE_INPUT_AND_FOCUS.md`. Stops the "all plugins hear every note" resource+UX problem. The single biggest thing between now and 0.1.0.
-- **Boss-style loop length** — phase 6 of `docs/LIVE_INPUT_AND_FOCUS.md` (depends on phase 5). First-tap-sets-length; fixes the multi-cycle display bug.
+- **Stuck notes on transport stop** — if the performer holds a key or a recorded loop sustains a note across transport stop, it hangs. Needs investigation; noted in `docs/LIVE_INPUT_AND_FOCUS.md` open items. Blocker for ship.
+- **Boss-style loop length** — phase 6 of `docs/LIVE_INPUT_AND_FOCUS.md`. First-tap-sets-length; fixes the multi-cycle display bug.
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.

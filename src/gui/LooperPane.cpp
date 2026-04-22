@@ -100,7 +100,11 @@ void LooperPane::rebuildRowGeoms() {
         int yTop = hdr.getY();
         g.recordButton = {};   // retained in geom for back-compat; unused
         g.stopButton   = {};
-        g.muteButton   = { hdr.getX(), yTop + (recButtonSize - 20) / 2, mutePillWidth, 20 };
+        int pillY = yTop + (recButtonSize - 20) / 2;
+        int xCursor = hdr.getX();
+        g.armButton  = { xCursor, pillY, mutePillWidth, 20 };
+        xCursor += mutePillWidth + Theme::spacingS;
+        g.muteButton = { xCursor, pillY, mutePillWidth, 20 };
 
         // Take selector — second line, below mute. Fills available
         // width in the header minus margins.
@@ -216,6 +220,19 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
                                       : Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(t.name, nameArea, juce::Justification::centredLeft);
+
+    // Arm pill — same style as Produce's R pill. Needed here because
+    // recording is session-level (press transport record) and it only
+    // punches in on armed tracks; the performer needs to arm from wherever
+    // they're looking. See docs/LIVE_INPUT_AND_FOCUS.md phase 5a.
+    auto armBtn = row.armButton.toFloat();
+    g.setColour(t.armed ? Theme::color(Theme::Color::pillArm)
+                        : Theme::color(Theme::Color::bgControl));
+    g.fillRoundedRectangle(armBtn, 4.0f);
+    g.setColour(t.armed ? Theme::color(Theme::Color::textOnColor)
+                        : Theme::color(Theme::Color::textDim));
+    g.setFont(Theme::font(Theme::fontSizeSm));
+    g.drawText("R", row.armButton, juce::Justification::centred);
 
     // Mute pill — same style as Produce's M pill.
     auto muteBtn = row.muteButton.toFloat();
@@ -408,6 +425,11 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
         // (docs/LIVE_INPUT_AND_FOCUS.md phase 5). Per-row buttons have
         // been removed — click handling for them is deliberately gone.
 
+        if (row.armButton.contains(pos)) {
+            auto* t = state.findTrack(row.trackId);
+            if (t) state.setTrackArmed(row.trackId, !t->armed);
+            return;
+        }
         if (row.muteButton.contains(pos)) {
             bool now = !state.isTrackMuted(row.trackId);
             state.setTrackMuted(row.trackId, now);
