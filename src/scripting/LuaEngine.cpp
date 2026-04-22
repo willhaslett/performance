@@ -384,19 +384,13 @@ void LuaEngine::registerAPI() {
     });
 
     // Loop recording. `toggleLoopRecord` is a latching button: tap
-    // once to arm, again to punch out. Resolves the track by display
-    // name to stay consistent with other track-targeted bindings.
-    lua.set_function("toggleLoopRecord", [&state, &coord](const std::string& trackName) {
-        auto trackId = state.findTrackIdByName(trackName);
-        if (trackId.empty()) {
-            throw std::runtime_error("toggleLoopRecord: no track named '" + trackName + "'");
-        }
-        coord.toggleLoopRecord(trackId);
+    // once to arm, again to punch out. Session-level — all armed
+    // instrument tracks move through the states together.
+    lua.set_function("toggleLoopRecord", [&coord]() {
+        coord.toggleLoopRecord();
     });
-    lua.set_function("getLoopRecordState", [&state, &coord](const std::string& trackName) -> std::string {
-        auto trackId = state.findTrackIdByName(trackName);
-        if (trackId.empty()) return "off";
-        return coord.getLoopRecordState(trackId);
+    lua.set_function("getLoopRecordState", [&coord]() -> std::string {
+        return coord.getLoopRecordState();
     });
 
     // Offline render (bounce) to a stereo WAV file. Returns a one-line

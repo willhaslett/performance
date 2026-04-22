@@ -24,8 +24,8 @@ class PerformanceCoordinator;
 //
 // The UI is secondary to MIDI bindings — the primary performer
 // interface is hardware controls mapped to the same Lua functions this
-// pane's click handlers call (toggleLoopRecord, setPendingTake,
-// setCycleLength).
+// pane's click handlers call (setTrackArmed, toggleLoopRecord,
+// setPendingTake, setCycleLength).
 class LooperPane : public juce::Component,
                    private juce::Timer {
 public:

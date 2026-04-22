@@ -62,7 +62,9 @@ public:
     void unloadSong();
 
     // --- Live looping (see docs/LIVE_LOOPING.md) ---
-    // Toggle loop-record state on a track. Transitions:
+    // Loop recording is a single session-level state machine. All
+    // armed instrument tracks move through the states together —
+    // there is no per-track substate. Transitions:
     //   Off → Armed         (user taps record; waits for next cycle wrap)
     //   Armed → Off         (user cancels before wrap)
     //   Recording → StopPending  (user taps record again during capture)
@@ -70,14 +72,14 @@ public:
     // Wrap-driven transitions (Armed → Recording, StopPending → Off)
     // happen in onCycleWrap, which is called from the coordinator's
     // timer when the audio-thread beat wraps backward.
-    void toggleLoopRecord(const TrackId& trackId);
+    void toggleLoopRecord();
     // Escape hatch for stuck or intentional-stop scenarios. Armed →
     // Off with no capture. Recording/StopPending → Off; if at least
-    // one full cycle was captured, finalize the take with that
-    // length; otherwise drop the take (and its freshly-created loop
-    // region, if we just added it). Always balances `endCapture`.
-    void forceStopLoopRecord(const TrackId& trackId);
-    std::string getLoopRecordState(const TrackId& trackId) const;
+    // one full cycle was captured, finalize each in-flight take with
+    // that length; otherwise drop the take (and its freshly-created
+    // loop region, if we just added it). Balances `endCapture`.
+    void forceStopLoopRecord();
+    std::string getLoopRecordState() const;
 
     // --- Persistence ---
     void save();  // flush state to SQLite
@@ -162,10 +164,7 @@ public:
     // looper punch-in state. Used by the transport record button to drive
     // its toggle so "stop" fires on the second press in either mode.
     bool isInRecordMode() const {
-        if (recordModeActive) return true;
-        for (auto& [tid, entry] : loopRecordStates)
-            if (entry.state != LoopRecordState::Off) return true;
-        return false;
+        return recordModeActive || sessionLoopState != LoopRecordState::Off;
     }
 
     // --- Logging ---
@@ -228,15 +227,12 @@ private:
     void loadAudioFilesIntoEngine();
     void syncTempoFromState();
 
-    // Loop recording — runtime state per track, driven by the
-    // cycle-wrap hook. See docs/LIVE_LOOPING.md.
+    // Loop recording — single session-level state machine, driven by
+    // the cycle-wrap hook. See docs/LIVE_LOOPING.md.
     enum class LoopRecordState { Off, Armed, Recording, StopPending };
-    struct LoopRecordEntry {
-        LoopRecordState state = LoopRecordState::Off;
-        double punchInBeat = 0.0;   // global beat at which current recording began
-        int cyclesRecorded = 0;     // wraps observed while Recording
-    };
-    std::map<std::string /*TrackId*/, LoopRecordEntry> loopRecordStates;
+    LoopRecordState sessionLoopState = LoopRecordState::Off;
+    int sessionCyclesRecorded = 0;                 // wraps observed while Recording
+    std::vector<TrackId> sessionRecordingTrackIds; // tracks capturing this session
     void onCycleWrap(double wrapBeat);   // called from timer when beat wraps
 
     void timerCallback() override;

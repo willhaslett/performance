@@ -297,12 +297,8 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             // loop-record session — the cycle-wrap handler can't fire
             // once the sequencer isn't advancing, so without this the
             // state machine would hang in Armed/Recording/StopPending.
-            // Collect ids first to avoid mutating the map while iterating.
-            std::vector<TrackId> active;
-            for (auto& [tid, entry] : loopRecordStates)
-                if (entry.state != LoopRecordState::Off)
-                    active.push_back(TrackId{tid});
-            for (auto& tid : active) forceStopLoopRecord(tid);
+            if (sessionLoopState != LoopRecordState::Off)
+                forceStopLoopRecord();
         }
     });
 
@@ -448,24 +444,29 @@ void PerformanceCoordinator::timerCallback() {
 void PerformanceCoordinator::startRecordMode() {
     if (!sequencerImpl || !stateAPI) return;
 
-    // In Looper mode, "record" is per-armed-instrument loop recording.
-    // Iterate armed instrument tracks and toggle each into Armed — they
-    // punch in together at the next cycle wrap. No-op on non-instrument
-    // tracks. Starts transport if stopped so wraps can actually fire.
-    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    // In Looper mode, "record" arms the whole session. All armed
+    // instrument tracks punch in together at the next cycle wrap;
+    // the actual track list is captured then (see onCycleWrap). Bail
+    // early if no instrument is armed — otherwise we'd latch Armed
+    // with nothing to record. Starts transport if stopped so wraps
+    // can actually fire. See docs/LIVE_INPUT_AND_FOCUS.md.
     if (stateAPI->getMode() == AppMode::Looper) {
+        if (sessionLoopState != LoopRecordState::Off) {
+            // Already armed/recording — treat as a no-op toggle-in.
+            return;
+        }
         int armed = 0;
         for (auto& t : stateAPI->listTracks()) {
             auto* ts = stateAPI->findTrack(t.id);
             if (!ts || !ts->armed) continue;
             if (ts->sourceType != TrackSourceType::Instrument) continue;
-            toggleLoopRecord(t.id);   // Off → Armed
             armed++;
         }
         if (armed == 0) {
             perfLog("[Coordinator] startRecordMode (Looper): no armed instrument tracks — no-op\n");
             return;
         }
+        toggleLoopRecord();  // Off → Armed
         if (!sequencerImpl->isPlaying())
             sequencerImpl->play();
         return;
@@ -473,12 +474,9 @@ void PerformanceCoordinator::startRecordMode() {
 
     // Arrangement mode — refuse if a stray looper session is somehow
     // still active (shouldn't happen, but defensive).
-    for (auto& [tid, entry] : loopRecordStates) {
-        if (entry.state != LoopRecordState::Off) {
-            perfLog("[Coordinator] startRecordMode refused — looper recording in progress (track=%s)\n",
-                    tid.c_str());
-            return;
-        }
+    if (sessionLoopState != LoopRecordState::Off) {
+        perfLog("[Coordinator] startRecordMode refused — looper recording in progress\n");
+        return;
     }
     recordModeActive = true;
     if (!sequencerImpl->isPlaying())
@@ -494,15 +492,13 @@ void PerformanceCoordinator::reloadAudioFiles() {
 void PerformanceCoordinator::stopRecordMode() {
     if (!stateAPI) return;
 
-    // In Looper mode, stopping means "punch out at next wrap" for every
-    // armed instrument track that's currently loop-recording.
+    // In Looper mode, stopping means "punch out at next wrap" — the
+    // whole session exits together. Armed → Off (cancel);
+    // Recording → StopPending (punch out at next wrap).
     if (stateAPI->getMode() == AppMode::Looper) {
-        for (auto& [tid, entry] : loopRecordStates) {
-            if (entry.state == LoopRecordState::Armed
-                || entry.state == LoopRecordState::Recording) {
-                toggleLoopRecord(TrackId{tid});
-                // Armed → Off (cancel), Recording → StopPending (punch out next wrap).
-            }
+        if (sessionLoopState == LoopRecordState::Armed
+            || sessionLoopState == LoopRecordState::Recording) {
+            toggleLoopRecord();
         }
         return;
     }
@@ -679,7 +675,8 @@ void PerformanceCoordinator::stopRecording() {
 // press-record beat; for looper punch-in it's the cycle start (0).
 // Only the first beginCapture in a session sets originBeat — callers
 // are responsible for ensuring the two flows don't overlap (see the
-// guards in startRecordMode and toggleLoopRecord).
+// guards in startRecordMode and toggleLoopRecord that refuse when
+// the other flow is active).
 void PerformanceCoordinator::beginCapture(double originBeat) {
     if (!audioEngine) return;
     captureRefCount++;
@@ -973,10 +970,14 @@ void PerformanceCoordinator::unloadSong() {
 // length — happens in onCycleWrap, which runs when the audio-thread
 // beat wraps backward. That way punch-in/out always land on musical
 // boundaries without the caller thinking about timing.
+//
+// There is one session-level state machine, not one per track. All
+// armed instrument tracks move through the states together; the set
+// of tracks being captured is locked in at Armed → Recording and
+// stored in sessionRecordingTrackIds.
 
-void PerformanceCoordinator::toggleLoopRecord(const TrackId& trackId) {
-    auto& entry = loopRecordStates[trackId.str()];
-    switch (entry.state) {
+void PerformanceCoordinator::toggleLoopRecord() {
+    switch (sessionLoopState) {
         case LoopRecordState::Off:
             // Refuse to arm while arrangement recording is running —
             // see beginCapture's comment on the shared FIFO.
@@ -984,62 +985,59 @@ void PerformanceCoordinator::toggleLoopRecord(const TrackId& trackId) {
                 perfLog("[Looper] arm refused — arrangement recording in progress\n");
                 return;
             }
-            entry.state = LoopRecordState::Armed;
-            perfLog("[Looper] armed track %s for loop recording\n", trackId.c_str());
+            sessionLoopState = LoopRecordState::Armed;
+            perfLog("[Looper] armed session for loop recording\n");
             break;
         case LoopRecordState::Armed:
-            entry.state = LoopRecordState::Off;
-            perfLog("[Looper] disarmed track %s\n", trackId.c_str());
+            sessionLoopState = LoopRecordState::Off;
+            perfLog("[Looper] disarmed session\n");
             break;
         case LoopRecordState::Recording:
-            entry.state = LoopRecordState::StopPending;
-            perfLog("[Looper] punch-out queued for track %s (next wrap)\n", trackId.c_str());
+            sessionLoopState = LoopRecordState::StopPending;
+            perfLog("[Looper] punch-out queued for session (next wrap)\n");
             break;
         case LoopRecordState::StopPending:
-            entry.state = LoopRecordState::Recording;
-            perfLog("[Looper] punch-out cancelled for track %s\n", trackId.c_str());
+            sessionLoopState = LoopRecordState::Recording;
+            perfLog("[Looper] punch-out cancelled for session\n");
             break;
     }
 }
 
-void PerformanceCoordinator::forceStopLoopRecord(const TrackId& trackId) {
-    auto it = loopRecordStates.find(trackId.str());
-    if (it == loopRecordStates.end()) return;
-    auto& entry = it->second;
-
-    switch (entry.state) {
+void PerformanceCoordinator::forceStopLoopRecord() {
+    switch (sessionLoopState) {
         case LoopRecordState::Off:
             return;
         case LoopRecordState::Armed:
-            entry.state = LoopRecordState::Off;
-            perfLog("[Looper] disarmed track %s (force stop)\n", trackId.c_str());
+            sessionLoopState = LoopRecordState::Off;
+            perfLog("[Looper] disarmed session (force stop)\n");
             return;
         case LoopRecordState::Recording:
         case LoopRecordState::StopPending: {
             double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
-            if (entry.cyclesRecorded == 0) {
-                arrangementImpl.discardLastLoopRecording(trackId);
-                perfLog("[Looper] aborted incomplete recording on %s\n",
-                        trackId.c_str());
+            if (sessionCyclesRecorded == 0) {
+                for (auto& tid : sessionRecordingTrackIds)
+                    arrangementImpl.discardLastLoopRecording(tid);
+                perfLog("[Looper] aborted incomplete recording (%d tracks)\n",
+                        (int)sessionRecordingTrackIds.size());
             } else {
-                double lengthBeats = entry.cyclesRecorded * cycleLen;
-                arrangementImpl.stopLoopRecording(trackId, lengthBeats);
-                perfLog("[Looper] force-stop on %s (length %.2f, cycles=%d)\n",
-                        trackId.c_str(), lengthBeats, entry.cyclesRecorded);
+                double lengthBeats = sessionCyclesRecorded * cycleLen;
+                for (auto& tid : sessionRecordingTrackIds)
+                    arrangementImpl.stopLoopRecording(tid, lengthBeats);
+                perfLog("[Looper] force-stop (length %.2f, cycles=%d, tracks=%d)\n",
+                        lengthBeats, sessionCyclesRecorded,
+                        (int)sessionRecordingTrackIds.size());
             }
             endCapture();
-            entry.state = LoopRecordState::Off;
-            entry.punchInBeat = 0.0;
-            entry.cyclesRecorded = 0;
+            sessionLoopState = LoopRecordState::Off;
+            sessionCyclesRecorded = 0;
+            sessionRecordingTrackIds.clear();
             return;
         }
     }
 }
 
-std::string PerformanceCoordinator::getLoopRecordState(const TrackId& trackId) const {
-    auto it = loopRecordStates.find(trackId.str());
-    if (it == loopRecordStates.end()) return "off";
-    switch (it->second.state) {
+std::string PerformanceCoordinator::getLoopRecordState() const {
+    switch (sessionLoopState) {
         case LoopRecordState::Off:          return "off";
         case LoopRecordState::Armed:        return "armed";
         case LoopRecordState::Recording:    return "recording";
@@ -1053,43 +1051,56 @@ void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
     // transitions — this ordering means a punch-in that fires at the
     // same wrap as a take swap gets a fresh slate to record into.
     double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
-    for (auto& [trackIdStr, entry] : loopRecordStates) {
-        TrackId trackId{trackIdStr};
-        switch (entry.state) {
-            case LoopRecordState::Armed:
-                // Open capture with origin=0 so events land on their
-                // cycle-relative beat (setMode(Looper) forces
-                // cycleStart=0 on the current song).
-                beginCapture(0.0);
-                entry.state = LoopRecordState::Recording;
-                entry.punchInBeat = wrapBeat;
-                entry.cyclesRecorded = 0;
-                arrangementImpl.startLoopRecording(trackId);
-                perfLog("[Looper] punch-in on %s at beat %.2f\n",
-                        trackId.c_str(), wrapBeat);
-                break;
-            case LoopRecordState::Recording:
-                // Still recording — another full cycle has just elapsed.
-                entry.cyclesRecorded++;
-                break;
-            case LoopRecordState::StopPending: {
-                // Count the cycle that just ended, then finalize. The
-                // captured length is cycle-quantized because punch-in
-                // and punch-out both land on wrap boundaries.
-                entry.cyclesRecorded++;
-                double lengthBeats = entry.cyclesRecorded * cycleLen;
-                arrangementImpl.stopLoopRecording(trackId, lengthBeats);
-                entry.state = LoopRecordState::Off;
-                entry.punchInBeat = 0.0;
-                entry.cyclesRecorded = 0;
-                endCapture();
-                perfLog("[Looper] punch-out on %s at beat %.2f (length %.2f)\n",
-                        trackId.c_str(), wrapBeat, lengthBeats);
-                break;
+    switch (sessionLoopState) {
+        case LoopRecordState::Armed: {
+            // Lock in the track list now — anything armed at this
+            // moment captures. Changes to arm-state mid-recording
+            // don't add or remove tracks from the in-flight session.
+            sessionRecordingTrackIds.clear();
+            if (stateAPI) {
+                for (auto& t : stateAPI->listTracks()) {
+                    auto* ts = stateAPI->findTrack(t.id);
+                    if (!ts || !ts->armed) continue;
+                    if (ts->sourceType != TrackSourceType::Instrument) continue;
+                    sessionRecordingTrackIds.push_back(t.id);
+                }
             }
-            case LoopRecordState::Off:
-                break;
+            if (sessionRecordingTrackIds.empty()) {
+                // Nothing to record — drop back to Off quietly.
+                sessionLoopState = LoopRecordState::Off;
+                perfLog("[Looper] punch-in aborted at wrap %.2f — no armed tracks\n", wrapBeat);
+                return;
+            }
+            // Open capture with origin=0 so events land on their
+            // cycle-relative beat (setMode(Looper) forces
+            // cycleStart=0 on the current song).
+            beginCapture(0.0);
+            sessionLoopState = LoopRecordState::Recording;
+            sessionCyclesRecorded = 0;
+            for (auto& tid : sessionRecordingTrackIds)
+                arrangementImpl.startLoopRecording(tid);
+            perfLog("[Looper] session punch-in at beat %.2f (%d tracks)\n",
+                    wrapBeat, (int)sessionRecordingTrackIds.size());
+            break;
         }
+        case LoopRecordState::Recording:
+            sessionCyclesRecorded++;
+            break;
+        case LoopRecordState::StopPending: {
+            sessionCyclesRecorded++;
+            double lengthBeats = sessionCyclesRecorded * cycleLen;
+            for (auto& tid : sessionRecordingTrackIds)
+                arrangementImpl.stopLoopRecording(tid, lengthBeats);
+            endCapture();
+            perfLog("[Looper] session punch-out at beat %.2f (length %.2f, tracks=%d)\n",
+                    wrapBeat, lengthBeats, (int)sessionRecordingTrackIds.size());
+            sessionLoopState = LoopRecordState::Off;
+            sessionCyclesRecorded = 0;
+            sessionRecordingTrackIds.clear();
+            break;
+        }
+        case LoopRecordState::Off:
+            break;
     }
 }
 
