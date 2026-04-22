@@ -446,10 +446,33 @@ void PerformanceCoordinator::timerCallback() {
 }
 
 void PerformanceCoordinator::startRecordMode() {
-    if (!sequencerImpl) return;
-    // Refuse while any looper track is armed/recording/stop-pending —
-    // the two flows share FIFO + recordStartBeat, and mixing them
-    // produces takes with the wrong event offsets.
+    if (!sequencerImpl || !stateAPI) return;
+
+    // In Looper mode, "record" is per-armed-instrument loop recording.
+    // Iterate armed instrument tracks and toggle each into Armed — they
+    // punch in together at the next cycle wrap. No-op on non-instrument
+    // tracks. Starts transport if stopped so wraps can actually fire.
+    // See docs/LIVE_INPUT_AND_FOCUS.md.
+    if (stateAPI->getMode() == AppMode::Looper) {
+        int armed = 0;
+        for (auto& t : stateAPI->listTracks()) {
+            auto* ts = stateAPI->findTrack(t.id);
+            if (!ts || !ts->armed) continue;
+            if (ts->sourceType != TrackSourceType::Instrument) continue;
+            toggleLoopRecord(t.id);   // Off → Armed
+            armed++;
+        }
+        if (armed == 0) {
+            perfLog("[Coordinator] startRecordMode (Looper): no armed instrument tracks — no-op\n");
+            return;
+        }
+        if (!sequencerImpl->isPlaying())
+            sequencerImpl->play();
+        return;
+    }
+
+    // Arrangement mode — refuse if a stray looper session is somehow
+    // still active (shouldn't happen, but defensive).
     for (auto& [tid, entry] : loopRecordStates) {
         if (entry.state != LoopRecordState::Off) {
             perfLog("[Coordinator] startRecordMode refused — looper recording in progress (track=%s)\n",
@@ -469,6 +492,21 @@ void PerformanceCoordinator::reloadAudioFiles() {
 }
 
 void PerformanceCoordinator::stopRecordMode() {
+    if (!stateAPI) return;
+
+    // In Looper mode, stopping means "punch out at next wrap" for every
+    // armed instrument track that's currently loop-recording.
+    if (stateAPI->getMode() == AppMode::Looper) {
+        for (auto& [tid, entry] : loopRecordStates) {
+            if (entry.state == LoopRecordState::Armed
+                || entry.state == LoopRecordState::Recording) {
+                toggleLoopRecord(TrackId{tid});
+                // Armed → Off (cancel), Recording → StopPending (punch out next wrap).
+            }
+        }
+        return;
+    }
+
     if (!recordModeActive) return;
     recordModeActive = false;
     stopRecording();

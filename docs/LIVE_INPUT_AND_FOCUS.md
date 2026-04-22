@@ -124,10 +124,12 @@ The pieces compose cleanly; each phase leaves the tree buildable.
 
 ### Phase 4 — Capture FIFO: per-track
 
-- `RecordedMidiEvent` gains `trackId`.
-- Audio-thread push tags with trackId.
-- `drainRecordFIFO` dispatches per-track.
-- `R=on, I=off` silent-capture works.
+~~`RecordedMidiEvent` gains a `trackId` tag; drain dispatches per-track.~~
+**Not needed.** When phase 3b landed, the existing `Arrangement::recordingTakes`
+list already appended events to every armed track's take independently,
+which gives multi-track capture for free. And capture is upstream of the
+routing gate in `GraphWrapper::processBlock`, so `R=on, I=off` silent
+capture already works. Skipping this phase.
 
 ### Phase 5 — Looper session-level record
 

@@ -158,7 +158,15 @@ public:
     void startRecordMode();   // enter record mode and start playback
     void stopRecordMode();    // exit record mode (keeps playing)
     void reloadAudioFiles();  // re-scan regions and load audio files into engine
-    bool isInRecordMode() const { return recordModeActive; }
+    // True if any recording flow is active — arrangement recording or any
+    // looper punch-in state. Used by the transport record button to drive
+    // its toggle so "stop" fires on the second press in either mode.
+    bool isInRecordMode() const {
+        if (recordModeActive) return true;
+        for (auto& [tid, entry] : loopRecordStates)
+            if (entry.state != LoopRecordState::Off) return true;
+        return false;
+    }
 
     // --- Logging ---
     void log(const juce::String& message);

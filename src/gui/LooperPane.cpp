@@ -88,19 +88,22 @@ void LooperPane::rebuildRowGeoms() {
         g.timelineBounds = g.rowBounds.withTrimmedLeft(headerWidth);
 
         // Header elements (left to right, top row):
-        //   [record btn] [mute pill]        (inside header)
+        //   [mute pill]                     (inside header)
         //   [take selector]                 (second line)
+        //
+        // Recording is session-level via transport record (see
+        // docs/LIVE_INPUT_AND_FOCUS.md phase 5) — no per-row record
+        // button. Arm tracks via the R pill in Produce; press the
+        // transport record in the toolbar to punch in on armed tracks
+        // at next cycle wrap.
         auto hdr = g.headerBounds.reduced(Theme::spacingM, Theme::spacingS);
-        int xCursor = hdr.getX();
         int yTop = hdr.getY();
-        g.recordButton = { xCursor, yTop, recButtonSize, recButtonSize };
-        xCursor += recButtonSize + Theme::spacingS;
-        g.stopButton   = { xCursor, yTop, recButtonSize, recButtonSize };
-        xCursor += recButtonSize + Theme::spacingS;
-        g.muteButton   = { xCursor, yTop + (recButtonSize - 20) / 2, mutePillWidth, 20 };
+        g.recordButton = {};   // retained in geom for back-compat; unused
+        g.stopButton   = {};
+        g.muteButton   = { hdr.getX(), yTop + (recButtonSize - 20) / 2, mutePillWidth, 20 };
 
-        // Take selector — second line, below the buttons. Fills
-        // available width in the header minus margins.
+        // Take selector — second line, below mute. Fills available
+        // width in the header minus margins.
         int secondY = yTop + recButtonSize + Theme::spacingS;
         g.takeSelector = { hdr.getX(), secondY,
                            hdr.getWidth(), 22 };
@@ -204,7 +207,7 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     g.fillRect(headerWidth - 1, row.rowBounds.getY(),
                1, row.rowBounds.getHeight());
 
-    // Track name, top-right of the mute pill (after record + stop + mute).
+    // Track name, right of the mute pill.
     auto nameArea = row.headerBounds.withTrimmedLeft(row.muteButton.getRight()
                                                         + Theme::spacingS)
                                      .withHeight(recButtonSize + 8)
@@ -213,47 +216,6 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
                                       : Theme::Color::textPrimary));
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(t.name, nameArea, juce::Justification::centredLeft);
-
-    // Record button — matches Produce's transport record aesthetic.
-    auto recState = coord.getLoopRecordState(t.id);
-    juce::Colour recColor = Theme::color(Theme::Color::textDim);
-    bool recFilled = false;
-    if (recState == "armed") {
-        recColor = Theme::color(Theme::Color::transportRec);
-        // Pulse while waiting for wrap.
-        double phase = (juce::Time::getMillisecondCounterHiRes() / 500.0);
-        recColor = recColor.withAlpha(0.4f + 0.6f * (float) std::abs(std::sin(phase)));
-    } else if (recState == "recording") {
-        recColor = Theme::color(Theme::Color::transportRec);
-        recFilled = true;
-    } else if (recState == "stop-pending") {
-        recColor = Theme::color(Theme::Color::transportRec);
-        recFilled = true;
-        double phase = (juce::Time::getMillisecondCounterHiRes() / 500.0);
-        recColor = recColor.withAlpha(0.4f + 0.6f * (float) std::abs(std::sin(phase)));
-    }
-    auto recBtn = row.recordButton.toFloat();
-    if (recFilled) {
-        g.setColour(recColor);
-        g.fillEllipse(recBtn);
-    } else {
-        g.setColour(recColor);
-        g.drawEllipse(recBtn.reduced(1.0f), 2.0f);
-    }
-
-    // Stop button — always a filled square inside a circle. Dim when
-    // state is Off, full when there's something to stop.
-    bool canStop = (recState != "off");
-    auto stopBtn = row.stopButton.toFloat();
-    juce::Colour stopColor = Theme::color(canStop ? Theme::Color::textPrimary
-                                                  : Theme::Color::textDim);
-    g.setColour(stopColor);
-    g.drawEllipse(stopBtn.reduced(1.0f), 2.0f);
-    // Inner square — two-thirds the ellipse for a classic "stop" glyph.
-    auto innerSize = stopBtn.getWidth() * 0.42f;
-    auto innerRect = juce::Rectangle<float>(innerSize, innerSize)
-                        .withCentre(stopBtn.getCentre());
-    g.fillRect(innerRect);
 
     // Mute pill — same style as Produce's M pill.
     auto muteBtn = row.muteButton.toFloat();
@@ -442,16 +404,10 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     for (auto& row : rowGeoms) {
         if (!row.rowBounds.contains(pos)) continue;
 
-        if (row.recordButton.contains(pos)) {
-            coord.toggleLoopRecord(row.trackId);
-            repaint();
-            return;
-        }
-        if (row.stopButton.contains(pos)) {
-            coord.forceStopLoopRecord(row.trackId);
-            repaint();
-            return;
-        }
+        // Record + stop are session-level via the transport bar now
+        // (docs/LIVE_INPUT_AND_FOCUS.md phase 5). Per-row buttons have
+        // been removed — click handling for them is deliberately gone.
+
         if (row.muteButton.contains(pos)) {
             bool now = !state.isTrackMuted(row.trackId);
             state.setTrackMuted(row.trackId, now);
