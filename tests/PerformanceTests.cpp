@@ -4560,12 +4560,20 @@ public:
     TrackFocusTests() : juce::UnitTest("TrackFocus") {}
 
     void runTest() override {
-        beginTest("focus defaults empty; setter stores and emits");
+        beginTest("focus defaults empty with no tracks");
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            auto trackId = s.createTrack("T");
+            // No tracks created → focus stays at default.
             expect(s.getFocusedTrackId().empty());
+        }
+
+        beginTest("setFocusedTrackId emits on change + stores");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");   // auto-focuses to t1
+            auto t2 = s.createTrack("T2");   // auto-focuses to t2
 
             int eventCount = 0;
             std::string lastEntityId;
@@ -4576,10 +4584,11 @@ public:
                 }
             });
 
-            s.setFocusedTrackId(trackId);
-            expect(s.getFocusedTrackId() == trackId);
+            // Now change focus back to t1 — fires one event.
+            s.setFocusedTrackId(t1);
+            expect(s.getFocusedTrackId() == t1);
             expectEquals(eventCount, 1);
-            expectEquals(juce::String(lastEntityId), juce::String(trackId.str()));
+            expectEquals(juce::String(lastEntityId), juce::String(t1.str()));
 
             s.events().unsubscribe(subId);
         }
@@ -4588,21 +4597,106 @@ public:
         {
             TestCoordinator tc;
             auto& s = tc.state();
-            auto trackId = s.createTrack("T");
-            s.setFocusedTrackId(trackId);
+            auto t1 = s.createTrack("T1");
+            auto t2 = s.createTrack("T2");   // focus now on t2
 
             int eventCount = 0;
             int subId = s.events().subscribe([&](const StateEvent& ev) {
                 if (ev.entity == StateEvent::Focus) eventCount++;
             });
 
-            s.setFocusedTrackId(trackId);   // same value — no-op
+            s.setFocusedTrackId(t2);   // same value — no-op
             expectEquals(eventCount, 0);
 
-            s.setFocusedTrackId(TrackId{}); // clear — real change, emits
+            s.setFocusedTrackId(t1);   // real change, emits
             expectEquals(eventCount, 1);
 
             s.events().unsubscribe(subId);
+        }
+
+        beginTest("creating a track moves focus to it");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto trackA = s.createTrack("A");
+            expect(s.getFocusedTrackId() == trackA);
+            auto trackB = s.createTrack("B");
+            expect(s.getFocusedTrackId() == trackB);
+        }
+
+        beginTest("focusing an instrument snaps I on focused + off on other instruments");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");   // focus → A, A.I = on
+            auto b = s.createTrack("B");   // focus → B, A.I = off, B.I = on
+            auto c = s.createTrack("C");   // focus → C, A.I = off, B.I = off, C.I = on
+
+            expect(s.findTrack(a)->inputMonitoring == false);
+            expect(s.findTrack(b)->inputMonitoring == false);
+            expect(s.findTrack(c)->inputMonitoring == true);
+
+            // Re-focusing an older instrument snaps again.
+            s.setFocusedTrackId(a);
+            expect(s.findTrack(a)->inputMonitoring == true);
+            expect(s.findTrack(b)->inputMonitoring == false);
+            expect(s.findTrack(c)->inputMonitoring == false);
+        }
+
+        beginTest("audio tracks default to I=off and focus doesn't snap them");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto instr = s.createTrack("Instrument");
+            expect(s.findTrack(instr)->inputMonitoring == true);
+
+            // Create audio track — focus moves to it, I=false by default,
+            // no snap fires for audio tracks so the instrument's I stays on.
+            auto aud = s.createAudioInputTrack("Mic", -1, 0);
+            expect(s.getFocusedTrackId() == aud);
+            expect(s.findTrack(aud)->inputMonitoring == false);   // safe default
+            expect(s.findTrack(instr)->inputMonitoring == true);  // unchanged
+
+            // Re-focus the audio track: still no snap on anyone.
+            auto instr2 = s.createTrack("Instr2");
+            // After creating instr2, focus moved, instrument snap fired —
+            // instr.I went to false, instr2.I is true.
+            expect(s.findTrack(instr)->inputMonitoring == false);
+            expect(s.findTrack(instr2)->inputMonitoring == true);
+
+            s.setFocusedTrackId(aud);
+            // Audio focus: no instrument-I changes at all.
+            expect(s.findTrack(instr)->inputMonitoring == false);
+            expect(s.findTrack(instr2)->inputMonitoring == true);
+            expect(s.findTrack(aud)->inputMonitoring == false);
+        }
+
+        beginTest("I pill toggle persists until next focus change");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            auto b = s.createTrack("B");
+            // B has focus, I=true on B and false on A.
+            expect(s.findTrack(a)->inputMonitoring == false);
+
+            // User toggles I on A for multi-listen.
+            s.setTrackInputMonitoring(a, true);
+            expect(s.findTrack(a)->inputMonitoring == true);
+            expect(s.findTrack(b)->inputMonitoring == true);
+
+            // Focus stays on B (focus unchanged), multi-listen persists.
+            expect(s.getFocusedTrackId() == b);
+
+            // Clicking B again = focus stays B, snap doesn't re-fire (idempotent).
+            s.setFocusedTrackId(b);
+            expect(s.findTrack(a)->inputMonitoring == true);
+            expect(s.findTrack(b)->inputMonitoring == true);
+
+            // Clicking A = snap fires, A=on, B=off.
+            s.setFocusedTrackId(a);
+            expect(s.findTrack(a)->inputMonitoring == true);
+            expect(s.findTrack(b)->inputMonitoring == false);
         }
 
         beginTest("focus persists per-song across coordinator restart");

@@ -445,9 +445,15 @@ TrackId StateAPI::createTrack(const std::string& name) {
     t.name = name;
     t.position = (int)s.tracks.size();
     s.tracks.push_back(std::move(t));
+    auto newId = s.tracks.back().id;
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
-    return s.tracks.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, newId.str(), "" });
+    // Focus-on-create (docs/LIVE_INPUT_AND_FOCUS.md). For instruments,
+    // setFocusedTrackId's type-aware snap turns I on for this new track
+    // and off for other instruments — the user hears only the one they
+    // just created.
+    setFocusedTrackId(newId);
+    return newId;
 }
 
 TrackId StateAPI::createAudioInputTrack(const std::string& name, int inputChannelStart,
@@ -462,10 +468,18 @@ TrackId StateAPI::createAudioInputTrack(const std::string& name, int inputChanne
     t.channelMode = (inputChannelCount == 1) ? ChannelMode::Mono : ChannelMode::Stereo;
     t.inputChannelStart = inputChannelStart;
     t.inputChannelCount = inputChannelCount;
+    // Audio tracks default to I=off — feedback-protection convention
+    // (see runtime/CLAUDE.md and docs/LIVE_INPUT_AND_FOCUS.md). Users
+    // enable input monitoring explicitly once levels are verified.
+    t.inputMonitoring = false;
     s.tracks.push_back(std::move(t));
+    auto newId = s.tracks.back().id;
     markDirty();
-    eventBus.emit({ StateEvent::Created, StateEvent::Track, s.tracks.back().id.str(), "" });
-    return s.tracks.back().id;
+    eventBus.emit({ StateEvent::Created, StateEvent::Track, newId.str(), "" });
+    // Focus-on-create. For audio tracks, the type-aware snap is a
+    // no-op — I stays wherever the user put it (just false, here).
+    setFocusedTrackId(newId);
+    return newId;
 }
 
 TrackId StateAPI::createActionTrack(const std::string& name) {
@@ -1136,6 +1150,33 @@ void StateAPI::setFocusedTrackId(const TrackId& trackId) {
     if (s->focusedTrackId == trackId) return;
     pushUndo();
     s->focusedTrackId = trackId;
+
+    // Type-aware I snap (see docs/LIVE_INPUT_AND_FOCUS.md).
+    //
+    // Focusing an INSTRUMENT track flips its inputMonitoring on and
+    // every other instrument's off — only one plugin receives live
+    // MIDI in the default case. Feedback isn't a risk for MIDI routing,
+    // so auto-snap is safe here.
+    //
+    // Focusing an AUDIO track does NOT touch inputMonitoring on any
+    // track — audio passthrough can cause speaker feedback, and Logic's
+    // convention (and ours) requires explicit user opt-in. Users toggle
+    // the I pill manually on audio tracks once levels are verified.
+    //
+    // Focusing an ACTION track is a no-op for routing either way.
+    auto* focused = findTrack(trackId);
+    if (focused && focused->sourceType == TrackSourceType::Instrument) {
+        for (auto& t : s->tracks) {
+            if (t.sourceType != TrackSourceType::Instrument) continue;
+            bool shouldListen = (t.id == trackId);
+            if (t.inputMonitoring != shouldListen) {
+                t.inputMonitoring = shouldListen;
+                eventBus.emit({ StateEvent::Updated, StateEvent::Track,
+                                 t.id.str(), "" });
+            }
+        }
+    }
+
     StateEvent ev;
     ev.action = StateEvent::Updated;
     ev.entity = StateEvent::Focus;
