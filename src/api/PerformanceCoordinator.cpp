@@ -889,6 +889,11 @@ std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
     if (auto* s = stateAPI->currentSong())
         arrangementImpl.setTracks(&s->tracks);
 
+    // Focus-on-create moved focus to whichever track was created last
+    // (the Audio In). The default-song intent is for the user to play
+    // into the Electric Piano, so restore focus there.
+    stateAPI->setFocusedTrackId(trackId);
+
     perfLog("[Coordinator] Created default song '%s' with DLS Electric Piano + Audio In\n",
             name.c_str());
     return songId.str();
