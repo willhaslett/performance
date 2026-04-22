@@ -41,19 +41,15 @@ inline void paintTrackBgFlatForTrack(juce::Graphics& g, juce::Rectangle<int> bou
 // Plain/Cmd/Shift click policy for track rows / mixer strips / looper rows.
 // See docs/LIVE_INPUT_AND_FOCUS.md for the full rules.
 //
-// Plain click   → focus=T, selection=[T], I=T only, I=off on others.
+// Plain click   → focus=T, selection=[T]. setFocusedTrackId internally
+//                 performs the type-aware I snap (instruments only).
 // Cmd-click     → toggle T in selection; focus + I unchanged.
-// Shift-click   → range-select from current to T (for now, same as Cmd since
-//                 we don't own the range anchor; caller may pass a richer
-//                 policy if it has one).
+// Shift-click   → range-select from current to T (for now, same as Cmd
+//                 since we don't own the range anchor; caller may pass
+//                 a richer policy if it has one).
 //
 // `modifiers` is JUCE's ModifierKeys; commandModifier is ⌘ on macOS, shift
-// is ⇧. I-snapping is deferred behind a feature flag until phase 3 engine
-// work lands — for now the function sets focus+selection only (plain click
-// still reflects user intent correctly; I routing just doesn't do anything
-// yet). When phase 3 lands, flip `kSnapInputMonitoring` to true.
-static constexpr bool kSnapInputMonitoring = false;
-
+// is ⇧.
 inline void handleTrackClick(StateAPI& state, const TrackId& trackId,
                               const juce::ModifierKeys& modifiers) {
     if (modifiers.isCommandDown()) {
@@ -68,16 +64,10 @@ inline void handleTrackClick(StateAPI& state, const TrackId& trackId,
         return;
     }
     // Plain click: reset selection to just this track, and move focus here.
+    // setFocusedTrackId handles the type-aware I snap for instruments.
     state.clearSelection();
     state.selectTrack(trackId, /*addToSelection=*/false);
     state.setFocusedTrackId(trackId);
-    if constexpr (kSnapInputMonitoring) {
-        // Phase 3 will enable this: snap I to this-only across all tracks.
-        // Left as a no-op today to keep the engine behavior unchanged.
-        for (auto& t : state.listTracks()) {
-            state.setTrackInputMonitoring(t.id, t.id == trackId);
-        }
-    }
 }
 
 }  // namespace TrackUi

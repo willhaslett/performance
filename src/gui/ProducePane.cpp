@@ -835,7 +835,12 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         }
 
         inputMonitorBounds[i] = {};
-        if (vis.type == TrackSourceType::AudioInput) {
+        if (vis.type == TrackSourceType::AudioInput
+            || vis.type == TrackSourceType::Instrument) {
+            // I pill: audio = "pass input through to output"; instrument =
+            // "this plugin receives live MIDI." See docs/LIVE_INPUT_AND_FOCUS.md.
+            // Auto-flipped on focus change for instruments; always user-explicit
+            // for audio (feedback protection).
             drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput,
                      isHoveredRow && hoveredPill == HoveredPill::Input);
         }
@@ -1898,9 +1903,13 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 return;
             }
 
-            // Input monitoring "I" — only for audio input tracks
+            // Input monitoring "I" — audio input and instrument tracks.
+            // Audio: toggles audio-in → output passthrough.
+            // Instrument: toggles whether the plugin hears live MIDI.
+            // See docs/LIVE_INPUT_AND_FOCUS.md.
             if (trackState
-                && trackState->sourceType == TrackSourceType::AudioInput
+                && (trackState->sourceType == TrackSourceType::AudioInput
+                    || trackState->sourceType == TrackSourceType::Instrument)
                 && idx < (int)inputMonitorBounds.size()
                 && !inputMonitorBounds[idx].isEmpty()
                 && inputMonitorBounds[idx].expanded(4).contains(event.getPosition())) {
