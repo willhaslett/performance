@@ -317,6 +317,21 @@ void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
             auto* take = r.activeTake();
             if (!take) continue;
 
+            // Skip regions whose take is currently being recorded into.
+            // The user hears their live MIDI via midiInputNode → plugin
+            // already; if we ALSO scan-emit this region we duplicate the
+            // events AND fire a synthetic noteOff at the boundary
+            // (regionLen = lastEvent + 0.1, which marches just behind
+            // every new note), which kills the live voice and makes the
+            // performance sound staccato. The recorded events still
+            // land via the FIFO drain — only the scanner's view of the
+            // in-flight region is suppressed. Region "wakes up" in
+            // scan as soon as recording stops and recordingTakes empties.
+            bool takeIsRecording = std::find(recordingTakes.begin(),
+                                              recordingTakes.end(), take)
+                                     != recordingTakes.end();
+            if (takeIsRecording) continue;
+
             for (int rep = 0; rep < maxReps; ++rep) {
                 double repBase = r.startBeat + rep * r.lengthBeats;
                 if (repBase >= effectiveEnd || repBase >= currentBeat) break;
