@@ -13,9 +13,9 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/BUNDLED_PLUGINS.md` — first-launch plugin pack. The "ruled out" list is load-bearing — free-plugin licenses are narrow and easy to violate.
 - `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
-- `docs/LIVE_LOOPING.md` — live-looping data model + phased plan. Phases 1–4 landed (state model, playback dispatch, recording with refcounted capture, Looper pane). Single-cycle recording end-to-end works; multi-cycle display bug known and re-scoped via `LIVE_INPUT_AND_FOCUS.md` phase 6 (Boss-style first-tap-sets-length). Read before touching `track.loops`, `pendingTakeId`, cycle-wrap logic, or the Looper pane.
+- `docs/LIVE_LOOPING.md` — original live-looping data model + phased plan. Largely superseded by `LIVE_INPUT_AND_FOCUS.md` phase 6 (Boss-style first-tap-sets-length, per-track gesture queue, undo/redo, panic reset). Read before touching `track.loops`, `pendingTakeId`, cycle-wrap logic, or the Looper pane.
 - `docs/PANE_MODE_MODEL.md` — mode lives as `AppMode` on `AppState` (not `SongState`). Left-slot pane content is the current GUI policy that drives the mode flag. Read before touching pane visibility, `currentMode`, or the Produce↔Looper interaction.
-- `docs/LIVE_INPUT_AND_FOCUS.md` — **Living doc, in-flight.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Phases 1–2 landed (state field + click rules + focus highlight); phases 3–6 not yet implemented. Load-bearing for live MIDI dispatch, track `R`/`I` semantics, and looper recording flow.
+- `docs/LIVE_INPUT_AND_FOCUS.md` — **Living doc, in-flight.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Phases 1–5 landed; phase 6 (Boss-style looper) landed in pieces — 6.1 state-model layer, 6.2 coordinator wiring + Lua/MIDI bindings, 6.b bootstrap mode + panic reset. Still ahead inside phase 6: rip out the OLD R-arming machinery (now bridged), GUI cleanup of LooperPane (remove R pill from looper rows, drop take selector since takes collapsed to undo history), I-snap rule (additive everywhere), action-label rename. Load-bearing for live MIDI dispatch, track `R`/`I` semantics, and looper recording flow.
 
 User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 
@@ -39,15 +39,15 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-21, the **architectural foundation is settled and the two "reward-per-hour" features (bundled plugins, composer) have shipped.** Since then, live looping has been an active line: the data model, playback dispatch, refcounted capture gates, and Looper pane all landed. Single-cycle recording works end-to-end. The *mode* concept got refactored out of `SongState` and onto `AppState` as typed `AppMode { Arrangement, Looper }` (see `docs/PANE_MODE_MODEL.md`). A deeper design for per-track MIDI routing and the singular focused-track concept is in flight (see `docs/LIVE_INPUT_AND_FOCUS.md`); phases 1–2 have landed (state field, click rules, focus visual across Produce/Mixer/Looper).
+As of 2026-04-25, the **architectural foundation is settled, the two "reward-per-hour" features (bundled plugins, composer) shipped, and the looper redesign is functionally complete via the Boss-style flow.** End-to-end the performer can: reset → focus a track → tap replace pad → play → tap again to set the cycle length → focus next track → tap replace/overdub. Per-track gesture queue with single-cycle capture, undo/redo (10 deep), panic reset (UI button + bindable). Bootstrap mode (cycleEnd=0) auto-starts transport on first tap. Lua + MIDI bindable. Click-testing in flight on Will's KeyLab.
 
-**0.1.0 plan — current state.** Architecture + reward features settled. Live-looping needs enough of `LIVE_INPUT_AND_FOCUS.md` landed to make the performer workflow actually clean (right now live MIDI still broadcasts to every loaded plugin, which is a showstopper for multi-track looper use). Then distribution proof + perfuce.com + tag.
+**0.1.0 plan — current state.** Architecture + reward features settled. Looper functionally complete; remaining is polish (rip out OLD R-arming, LooperPane GUI cleanup, I-snap rule additive everywhere, action-label rename) plus running the round on real KeyLab use. Then distribution proof + perfuce.com + tag.
 
 Remaining sequence:
 
 1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* See `docs/BUNDLED_PLUGINS.md`.
 2. ~~**Composer integration.**~~ *Shipped (2026-04-20).* See `docs/COMPOSER_INTEGRATION.md`.
-3. **Live looping workflow complete enough to ship.** Recording path works; UX is the question. Dependencies on `LIVE_INPUT_AND_FOCUS.md` phases 3 (per-track MIDI routing), 5 (session-level global record), 6 (Boss-style first-tap-sets-length). Phase 4 (capture FIFO trackId tagging) falls out of 3. Everything else is polish.
+3. **Looper polish + KeyLab miles.** Functional core landed (commits `d397e01` 6.1, `52bb325` 6.2, `56547c6` 6.b). Remaining: drop the OLD R-arming bridge once bootstrap is proven, GUI cleanup (R pill + take selector come out of LooperPane), I-snap rule (additive everywhere — already that way in PerformPane apparently, just propagate), `getLoopActionState` indicator on the GUI, action-label rename ("Loop: replace" instead of "Loop: replace (next wrap)" since bootstrap also covers it). Producer-mode bug hunt happening now.
 4. **perfuce.com rebuild.** Tester onboarding copy, example prompts, demo videos. Gated on video capture.
 5. **Distribution proof** (second-machine install, ~1 hour).
 6. **Tag + release.**
@@ -170,8 +170,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 ## Backlog
 
 **High priority (0.1.0 candidates):**
-- **Stuck notes on transport stop** — if the performer holds a key or a recorded loop sustains a note across transport stop, it hangs. Needs investigation; noted in `docs/LIVE_INPUT_AND_FOCUS.md` open items. Blocker for ship.
-- **Boss-style loop length** — phase 6 of `docs/LIVE_INPUT_AND_FOCUS.md`. First-tap-sets-length; fixes the multi-cycle display bug.
+- **Stuck notes on transport stop** — Looper-only, intermittent, stop-mid-note hangs. `[LoopDump]` diagnostic logging in tree (commit `d017823`). Theory: noteOff-before-noteOn ordering after sort, possibly due to cycle-wrap-during-recording producing cycle-relative beats that re-order events. Deferred until it crops up again post phase-6 work.
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
