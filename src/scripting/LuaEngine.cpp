@@ -383,14 +383,39 @@ void LuaEngine::registerAPI() {
         state.setPendingTake(RegionId{regionId}, TakeId{takeId});
     });
 
-    // Loop recording. `toggleLoopRecord` is a latching button: tap
-    // once to arm, again to punch out. Session-level — all armed
-    // instrument tracks move through the states together.
+    // Loop recording — bootstrap (R-arming) flow. Used to establish
+    // the cycle on first recording. Toggles arm/recording state for
+    // every armed instrument track. Will be replaced by an explicit
+    // bootstrap gesture pair when phase 6.b lands; for now it doubles
+    // as the way to make a first take.
     lua.set_function("toggleLoopRecord", [&coord]() {
         coord.toggleLoopRecord();
     });
     lua.set_function("getLoopRecordState", [&coord]() -> std::string {
         return coord.getLoopRecordState();
+    });
+
+    // Phase 6 — performer-facing per-track gestures. All target the
+    // currently-focused track; no-op if no focus. Queued at gesture
+    // time, fire at the next cycle wrap, capture for one cycle, then
+    // commit. See docs/LIVE_INPUT_AND_FOCUS.md.
+    lua.set_function("replaceLoop", [&state]() { state.replaceLoop(); });
+    lua.set_function("overdubLoop", [&state]() { state.overdubLoop(); });
+    lua.set_function("undoLoop",    [&state]() { state.undoLoop(); });
+    lua.set_function("redoLoop",    [&state]() { state.redoLoop(); });
+    lua.set_function("clearLoop",   [&state]() { state.clearLoop(); });
+    lua.set_function("clearAllLoops", [&state]() { state.clearAllLoops(); });
+    lua.set_function("getLoopActionState", [&state]() -> std::string {
+        auto tid = state.getFocusedTrackId();
+        if (tid.empty()) return "no-focus";
+        switch (state.getLoopAction(tid)) {
+            case LoopAction::None:             return "none";
+            case LoopAction::ReplaceQueued:    return "replace-queued";
+            case LoopAction::OverdubQueued:    return "overdub-queued";
+            case LoopAction::CapturingReplace: return "capturing-replace";
+            case LoopAction::CapturingOverdub: return "capturing-overdub";
+        }
+        return "unknown";
     });
 
     // Offline render (bounce) to a stereo WAV file. Returns a one-line

@@ -58,9 +58,10 @@ public:
     int commitPendingTakeSwaps();
 
     // --- Looper actions (Phase 6 — see docs/LIVE_INPUT_AND_FOCUS.md) ---
-    // Per-track queued gestures. The performer fires a gesture during
-    // loop playback; the queued action transitions to Capturing at the
-    // next cycle wrap, runs for one cycle, then commits.
+    // Performer-facing gestures. All target the currently-focused
+    // track; if no track is focused they're no-ops. The queued action
+    // transitions to Capturing at the next cycle wrap, runs for one
+    // cycle, then commits.
     //
     // Re-pressing the SAME gesture during ReplaceQueued/OverdubQueued
     // cancels the queue (back to None). Pressing the OTHER gesture
@@ -68,16 +69,19 @@ public:
     // ignored — the playhead is moving and the action is committed.
     static constexpr int kMaxLoopUndo = 10;
 
-    void replaceLoop(const TrackId& trackId);
-    void overdubLoop(const TrackId& trackId);
+    void replaceLoop();
+    void overdubLoop();
+
+    // Coordinator-internal hooks. Invoked from onCycleWrap, take an
+    // explicit trackId because the coordinator already knows which
+    // track to drive (it consults focused track at wrap time).
 
     // Flip ReplaceQueued → CapturingReplace and OverdubQueued →
-    // CapturingOverdub. Called by the coordinator at the cycle wrap
-    // when the capture window opens. No-op for any other state.
+    // CapturingOverdub. No-op for any other state.
     void beginLoopCapture(const TrackId& trackId);
 
-    // Snapshot-and-mutate. Called by the coordinator at the END of the
-    // capture cycle, after draining the captured events from the FIFO.
+    // Snapshot-and-mutate. Called after draining captured events from
+    // the FIFO at the end of the capture cycle.
     // CapturingReplace: events become the new content.
     // CapturingOverdub: events are merged into the existing content.
     // Pushes the previous events to undoStack; clears redoStack.
@@ -85,16 +89,16 @@ public:
     void commitLoopAction(const TrackId& trackId,
                           std::vector<MidiEventState> capturedEvents);
 
-    // Undo/redo: pop one snapshot, push current to the other stack,
-    // restore. No-op if respective stack is empty.
-    void undoLoop(const TrackId& trackId);
-    void redoLoop(const TrackId& trackId);
+    // Discard an in-flight Capturing* state without committing —
+    // used when transport stops mid-capture. No undo snapshot, no
+    // events change, just resets loopAction to None.
+    void cancelLoopCapture(const TrackId& trackId);
 
-    // Snapshot-and-empty. Doesn't touch cycleEnd or the loop region itself.
-    void clearLoop(const TrackId& trackId);
-
-    // Clear every track's loop content and reset cycleEnd to 0 — back
-    // to bootstrap mode. Each track's previous events go to its undoStack.
+    // Undo / redo / per-track clear are also performer-facing — they
+    // target the focused track. clearAllLoops is session-wide.
+    void undoLoop();
+    void redoLoop();
+    void clearLoop();
     void clearAllLoops();
 
     // Read-only accessors for GUI / tests.

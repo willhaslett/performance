@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 class AudioEngine;
@@ -234,6 +235,18 @@ private:
     int sessionCyclesRecorded = 0;                 // wraps observed while Recording
     std::vector<TrackId> sessionRecordingTrackIds; // tracks capturing this session
     void onCycleWrap(double wrapBeat);   // called from timer when beat wraps
+
+    // Phase 6 looper — per-track gesture capture. Single capture in
+    // flight at a time (target = focused track at wrap time). Events
+    // drained from the FIFO during the capture cycle are appended here;
+    // commitLoopAction reads them at the next wrap. See
+    // docs/LIVE_INPUT_AND_FOCUS.md phase 6.
+    struct LoopCaptureSlot {
+        TrackId trackId;
+        std::vector<MidiEventState> events;
+    };
+    std::optional<LoopCaptureSlot> activeLoopCapture;
+    void dispatchLoopGestures(double wrapBeat);  // called from onCycleWrap
 
     void timerCallback() override;
     void populatePluginCatalog();

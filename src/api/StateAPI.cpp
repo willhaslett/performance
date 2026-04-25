@@ -500,13 +500,17 @@ static void queueLoopAction(StateAPI& state, const TrackId& trackId,
         region->loopAction = newKind;            // queue or switch
 }
 
-void StateAPI::replaceLoop(const TrackId& trackId) {
+void StateAPI::replaceLoop() {
+    auto trackId = getFocusedTrackId();
+    if (trackId.empty()) return;
     queueLoopAction(*this, trackId, LoopAction::ReplaceQueued,
                     [this]{ return generateId(); });
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
-void StateAPI::overdubLoop(const TrackId& trackId) {
+void StateAPI::overdubLoop() {
+    auto trackId = getFocusedTrackId();
+    if (trackId.empty()) return;
     queueLoopAction(*this, trackId, LoopAction::OverdubQueued,
                     [this]{ return generateId(); });
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
@@ -521,6 +525,16 @@ void StateAPI::beginLoopCapture(const TrackId& trackId) {
     else if (region.loopAction == LoopAction::OverdubQueued)
         region.loopAction = LoopAction::CapturingOverdub;
     else return;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::cancelLoopCapture(const TrackId& trackId) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    if (region.loopAction != LoopAction::CapturingReplace
+     && region.loopAction != LoopAction::CapturingOverdub) return;
+    region.loopAction = LoopAction::None;
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
@@ -549,7 +563,9 @@ void StateAPI::commitLoopAction(const TrackId& trackId,
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
-void StateAPI::undoLoop(const TrackId& trackId) {
+void StateAPI::undoLoop() {
+    auto trackId = getFocusedTrackId();
+    if (trackId.empty()) return;
     auto* t = findTrack(trackId);
     if (!t || t->loops.empty()) return;
     auto& region = t->loops[0];
@@ -564,7 +580,9 @@ void StateAPI::undoLoop(const TrackId& trackId) {
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
-void StateAPI::redoLoop(const TrackId& trackId) {
+void StateAPI::redoLoop() {
+    auto trackId = getFocusedTrackId();
+    if (trackId.empty()) return;
     auto* t = findTrack(trackId);
     if (!t || t->loops.empty()) return;
     auto& region = t->loops[0];
@@ -579,7 +597,9 @@ void StateAPI::redoLoop(const TrackId& trackId) {
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
-void StateAPI::clearLoop(const TrackId& trackId) {
+void StateAPI::clearLoop() {
+    auto trackId = getFocusedTrackId();
+    if (trackId.empty()) return;
     auto* t = findTrack(trackId);
     if (!t || t->loops.empty()) return;
     auto& region = t->loops[0];

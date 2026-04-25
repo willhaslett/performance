@@ -4566,7 +4566,8 @@ public:
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             expectEquals((int) tc.state().findTrack(trackId)->loops.size(), 0);
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             auto* t = tc.state().findTrack(trackId);
             expectEquals((int) t->loops.size(), 1);
             expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
@@ -4576,14 +4577,16 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::None);
 
-            tc.state().overdubLoop(trackId);
+            tc.state().overdubLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::OverdubQueued);
-            tc.state().overdubLoop(trackId);
+            tc.state().overdubLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::None);
         }
 
@@ -4591,10 +4594,11 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
-            tc.state().overdubLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
+            tc.state().overdubLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::OverdubQueued);
-            tc.state().replaceLoop(trackId);
+            tc.state().replaceLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
         }
 
@@ -4602,12 +4606,13 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
-            tc.state().replaceLoop(trackId);  // ignored
+            tc.state().replaceLoop();  // ignored
             expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
-            tc.state().overdubLoop(trackId);  // ignored
+            tc.state().overdubLoop();  // ignored
             expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
         }
 
@@ -4615,13 +4620,15 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
 
             // Reset and try overdub.
             auto trackId2 = tc.state().createTrack("T2");
-            tc.state().overdubLoop(trackId2);
+            tc.state().setFocusedTrackId(trackId2);
+            tc.state().overdubLoop();
             tc.state().beginLoopCapture(trackId2);
             expect(tc.state().getLoopAction(trackId2) == LoopAction::CapturingOverdub);
         }
@@ -4630,8 +4637,10 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
-            tc.state().replaceLoop(trackId);  // cancel
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();  // cancel
             tc.state().beginLoopCapture(trackId);
             expect(tc.state().getLoopAction(trackId) == LoopAction::None);
         }
@@ -4640,7 +4649,8 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
 
             std::vector<MidiEventState> captured = {
@@ -4662,14 +4672,15 @@ public:
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             // Seed with an initial replace.
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, {
                 { 0.0, 0x90, 1, 60, 100 }, { 2.0, 0x80, 1, 60, 0 }
             });
 
             // Overdub adds two more, interleaved in time.
-            tc.state().overdubLoop(trackId);
+            tc.state().overdubLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, {
                 { 1.0, 0x90, 1, 64, 100 }, { 3.0, 0x80, 1, 64, 0 }
@@ -4689,7 +4700,8 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             // Did NOT call beginLoopCapture.
             tc.state().commitLoopAction(trackId, {
                 { 0.0, 0x90, 1, 60, 100 }
@@ -4703,18 +4715,19 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, {
                 { 0.0, 0x90, 1, 60, 100 }
             });
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
 
-            tc.state().undoLoop(trackId);
+            tc.state().undoLoop();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 0);
             expectEquals(tc.state().getLoopRedoDepth(trackId), 1);
 
-            tc.state().redoLoop(trackId);
+            tc.state().redoLoop();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
             expectEquals(tc.state().getLoopRedoDepth(trackId), 0);
         }
@@ -4723,13 +4736,15 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 60, 100 } });
-            tc.state().undoLoop(trackId);
+            tc.state().undoLoop();
             expectEquals(tc.state().getLoopRedoDepth(trackId), 1);
 
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 64, 100 } });
             expectEquals(tc.state().getLoopRedoDepth(trackId), 0);  // wiped
@@ -4741,7 +4756,8 @@ public:
             auto trackId = tc.state().createTrack("T");
             // Push 12 commits — undoStack should cap at 10.
             for (int i = 0; i < 12; ++i) {
-                tc.state().replaceLoop(trackId);
+                tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
                 tc.state().beginLoopCapture(trackId);
                 tc.state().commitLoopAction(trackId, {
                     { 0.0, 0x90, 1, 60 + i, 100 }
@@ -4757,11 +4773,12 @@ public:
             tc.state().setMode(AppMode::Looper);
             tc.state().setCycleLength(16.0);
 
-            tc.state().replaceLoop(trackId);
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
             tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 60, 100 } });
 
-            tc.state().clearLoop(trackId);
+            tc.state().clearLoop();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 0);
             expectEquals(tc.state().getLoopUndoDepth(trackId), 2);  // commit + clear
             expectEquals(tc.state().currentSong()->cycleEnd, 16.0);  // untouched
@@ -4777,7 +4794,8 @@ public:
 
             // Seed both with content.
             for (auto& tid : { t1, t2 }) {
-                tc.state().replaceLoop(tid);
+                tc.state().setFocusedTrackId(tid);
+                tc.state().replaceLoop();
                 tc.state().beginLoopCapture(tid);
                 tc.state().commitLoopAction(tid, { { 0.0, 0x90, 1, 60, 100 } });
             }
@@ -4797,10 +4815,11 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            tc.state().replaceLoop(trackId);  // creates region but no commit
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();  // creates region but no commit
             // undoStack is empty. Should not crash.
-            tc.state().undoLoop(trackId);
-            tc.state().redoLoop(trackId);
+            tc.state().undoLoop();
+            tc.state().redoLoop();
             expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
         }
     }

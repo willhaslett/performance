@@ -329,6 +329,14 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             // state machine would hang in Armed/Recording/StopPending.
             if (sessionLoopState != LoopRecordState::Off)
                 forceStopLoopRecord();
+            // Phase 6: drop any in-flight gesture capture. Partial-cycle
+            // captures aren't musically meaningful — the user expected
+            // a full cycle. Reset state and release the engine refcount.
+            if (activeLoopCapture.has_value()) {
+                stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
+                activeLoopCapture.reset();
+                endCapture();
+            }
         }
     });
 
@@ -749,6 +757,14 @@ void PerformanceCoordinator::drainRecordFIFO() {
         re.data1 = event.data1;
         re.data2 = event.data2;
         arrangementImpl.addRecordedEvent(re);
+
+        // Phase 6 — also feed the gesture capture slot if one is open.
+        // Single-track capture; events go to the slot regardless of
+        // which I-on track was sounding. The slot's track was set to
+        // focused-at-wrap-time in dispatchLoopGestures.
+        if (activeLoopCapture.has_value())
+            activeLoopCapture->events.push_back(re);
+
         perfLog("[Coordinator] Recorded event: status=0x%02x data1=%d beat=%.3f\n",
                 re.status, re.data1, re.beatOffset);
 
@@ -1132,6 +1148,52 @@ void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
         case LoopRecordState::Off:
             break;
     }
+
+    // Phase 6 — per-track gesture dispatch. Runs every wrap so that
+    // queued replace/overdub gestures fired from Lua, MIDI bindings,
+    // or eventually the GUI find their cycle boundary. Independent of
+    // the bootstrap-mode (R-arming) machinery above; the two coexist
+    // until R-arming is removed.
+    dispatchLoopGestures(wrapBeat);
+}
+
+// Performer fired replaceLoop()/overdubLoop() during playback. The
+// state holds the queued kind on the focused track's loop region; we
+// transition Queued → Capturing here, run for one cycle while
+// drainRecordFIFO appends to activeLoopCapture.events, then commit at
+// the next wrap. Single capture in flight at a time — focused-track
+// targeting collapses the multi-track question.
+void PerformanceCoordinator::dispatchLoopGestures(double wrapBeat) {
+    if (!stateAPI) return;
+
+    // Step 1: commit the in-flight capture (if any). The track being
+    // captured is whatever was focused at last wrap — we stored it on
+    // activeLoopCapture, not the current focus, because the user may
+    // have moved focus mid-cycle.
+    if (activeLoopCapture.has_value()) {
+        auto tid = activeLoopCapture->trackId;
+        auto events = std::move(activeLoopCapture->events);
+        activeLoopCapture.reset();
+        stateAPI->commitLoopAction(tid, std::move(events));
+        endCapture();
+        perfLog("[Looper] gesture commit on %s at wrap %.2f (events=%zu)\n",
+                tid.c_str(), wrapBeat, events.size());
+    }
+
+    // Step 2: open a new capture if the focused track has a queued
+    // action. Bootstrap mode (no cycle yet) doesn't reach here — the
+    // sequencer's wrap callback only fires when cycleEnd > 0.
+    auto focusedId = stateAPI->getFocusedTrackId();
+    if (focusedId.empty()) return;
+    auto act = stateAPI->getLoopAction(focusedId);
+    if (act != LoopAction::ReplaceQueued && act != LoopAction::OverdubQueued) return;
+
+    stateAPI->beginLoopCapture(focusedId);
+    activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
+    beginCapture(0.0);  // origin=0 — events land on cycle-relative beats
+    perfLog("[Looper] gesture punch-in on %s at wrap %.2f (kind=%s)\n",
+            focusedId.c_str(), wrapBeat,
+            act == LoopAction::ReplaceQueued ? "replace" : "overdub");
 }
 
 // --- Persistence ---
@@ -1813,6 +1875,29 @@ void PerformanceCoordinator::registerBuiltinActions() {
                                      AA::placeholder("easing") }),
         }),
         2);
+    // Phase 6 looper gestures — momentary one-shots, fire on press
+    // (value > 0) only so a release event doesn't immediately cancel
+    // the queue. All target the focused track. See
+    // docs/LIVE_INPUT_AND_FOCUS.md.
+    stateAPI->registerAction("replaceLoop", "Loop: replace (next wrap)",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then replaceLoop() end"));
+    stateAPI->registerAction("overdubLoop", "Loop: overdub (next wrap)",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then overdubLoop() end"));
+    stateAPI->registerAction("undoLoop", "Loop: undo",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then undoLoop() end"));
+    stateAPI->registerAction("redoLoop", "Loop: redo",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then redoLoop() end"));
+    stateAPI->registerAction("clearLoop", "Loop: clear focused track",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then clearLoop() end"));
+    stateAPI->registerAction("clearAllLoops", "Loop: clear all + reset cycle",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then clearAllLoops() end"));
+
     // trackVolume: CC fader → cubic curve → target channel gain.
     // Cubic gives more resolution at low gains (useful for subtle control).
     // The channel arg can resolve to a track, bus, or master.
