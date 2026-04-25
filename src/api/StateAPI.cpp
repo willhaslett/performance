@@ -435,6 +435,195 @@ int StateAPI::commitPendingTakeSwaps() {
     return swapped;
 }
 
+// --- Looper actions (Phase 6) ---
+
+// Helpers — local to this translation unit. Not in StateAPI.h.
+namespace {
+
+// Returns the (single) loop region for the track, creating it lazily
+// if absent. Loops always have exactly one take; the take's `events`
+// vector is the loop content. Returns nullptr if the track doesn't
+// exist.
+RegionState* getOrCreateLoopRegion(StateAPI& state, TrackState* t,
+                                    std::function<std::string()> mintId) {
+    if (!t) return nullptr;
+    if (!t->loops.empty()) return &t->loops[0];
+    RegionState r;
+    r.id = RegionId{mintId()};
+    r.type = "midi";
+    r.startBeat = 0.0;
+    r.lengthBeats = 0.0;
+    TakeState take;
+    take.id = TakeId{mintId()};
+    r.takes.push_back(std::move(take));
+    r.activeTakeId = r.takes.front().id;
+    t->loops.push_back(std::move(r));
+    return &t->loops[0];
+    (void)state;
+}
+
+// Push the current events vector onto undoStack (capped). Clears
+// redoStack — any new mutation invalidates the redo path.
+void pushUndoSnapshot(RegionState& region, const std::vector<MidiEventState>& events) {
+    region.undoStack.push_back(events);
+    while ((int)region.undoStack.size() > StateAPI::kMaxLoopUndo)
+        region.undoStack.pop_front();
+    region.redoStack.clear();
+}
+
+// Sort events by beatOffset. std::sort is not stable, but events
+// captured live always have distinct sample-positions so beatOffsets
+// differ by at least one sample — equivalent results in practice.
+void sortByBeat(std::vector<MidiEventState>& events) {
+    std::sort(events.begin(), events.end(),
+              [](auto& a, auto& b) { return a.beatOffset < b.beatOffset; });
+}
+
+}  // namespace
+
+// Re-pressing the SAME queued gesture cancels (back to None);
+// pressing the OTHER switches the queued kind; either during a
+// Capturing* state is ignored — the playhead is moving and we're
+// committed.
+static void queueLoopAction(StateAPI& state, const TrackId& trackId,
+                             LoopAction newKind,
+                             std::function<std::string()> mintId) {
+    auto* t = state.findTrack(trackId);
+    if (!t) return;
+    auto* region = getOrCreateLoopRegion(state, t, std::move(mintId));
+    if (!region) return;
+    if (region->loopAction == LoopAction::CapturingReplace
+     || region->loopAction == LoopAction::CapturingOverdub) return;
+    if (region->loopAction == newKind)
+        region->loopAction = LoopAction::None;  // cancel
+    else
+        region->loopAction = newKind;            // queue or switch
+}
+
+void StateAPI::replaceLoop(const TrackId& trackId) {
+    queueLoopAction(*this, trackId, LoopAction::ReplaceQueued,
+                    [this]{ return generateId(); });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::overdubLoop(const TrackId& trackId) {
+    queueLoopAction(*this, trackId, LoopAction::OverdubQueued,
+                    [this]{ return generateId(); });
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::beginLoopCapture(const TrackId& trackId) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    if (region.loopAction == LoopAction::ReplaceQueued)
+        region.loopAction = LoopAction::CapturingReplace;
+    else if (region.loopAction == LoopAction::OverdubQueued)
+        region.loopAction = LoopAction::CapturingOverdub;
+    else return;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::commitLoopAction(const TrackId& trackId,
+                                 std::vector<MidiEventState> capturedEvents) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    bool isReplace = (region.loopAction == LoopAction::CapturingReplace);
+    bool isOverdub = (region.loopAction == LoopAction::CapturingOverdub);
+    if (!isReplace && !isOverdub) return;
+    auto* take = region.activeTake();
+    if (!take) return;
+
+    pushUndoSnapshot(region, take->events);
+
+    if (isReplace) {
+        take->events = std::move(capturedEvents);
+    } else {
+        take->events.insert(take->events.end(),
+                            capturedEvents.begin(), capturedEvents.end());
+    }
+    sortByBeat(take->events);
+
+    region.loopAction = LoopAction::None;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::undoLoop(const TrackId& trackId) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    if (region.undoStack.empty()) return;
+    auto* take = region.activeTake();
+    if (!take) return;
+    region.redoStack.push_back(take->events);
+    while ((int)region.redoStack.size() > kMaxLoopUndo)
+        region.redoStack.pop_front();
+    take->events = std::move(region.undoStack.back());
+    region.undoStack.pop_back();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::redoLoop(const TrackId& trackId) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    if (region.redoStack.empty()) return;
+    auto* take = region.activeTake();
+    if (!take) return;
+    region.undoStack.push_back(take->events);
+    while ((int)region.undoStack.size() > kMaxLoopUndo)
+        region.undoStack.pop_front();
+    take->events = std::move(region.redoStack.back());
+    region.redoStack.pop_back();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::clearLoop(const TrackId& trackId) {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return;
+    auto& region = t->loops[0];
+    auto* take = region.activeTake();
+    if (!take) return;
+    pushUndoSnapshot(region, take->events);
+    take->events.clear();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+}
+
+void StateAPI::clearAllLoops() {
+    auto* s = currentSong();
+    if (!s) return;
+    for (auto& t : s->tracks) {
+        if (t.loops.empty()) continue;
+        auto& region = t.loops[0];
+        auto* take = region.activeTake();
+        if (!take) continue;
+        pushUndoSnapshot(region, take->events);
+        take->events.clear();
+    }
+    s->cycleEnd = 0.0;
+    s->cycleEnabled = false;
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s->id.str(), "" });
+}
+
+LoopAction StateAPI::getLoopAction(const TrackId& trackId) const {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return LoopAction::None;
+    return t->loops[0].loopAction;
+}
+
+int StateAPI::getLoopUndoDepth(const TrackId& trackId) const {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return 0;
+    return (int)t->loops[0].undoStack.size();
+}
+
+int StateAPI::getLoopRedoDepth(const TrackId& trackId) const {
+    auto* t = findTrack(trackId);
+    if (!t || t->loops.empty()) return 0;
+    return (int)t->loops[0].redoStack.size();
+}
+
 // --- Tracks ---
 
 TrackId StateAPI::createTrack(const std::string& name) {

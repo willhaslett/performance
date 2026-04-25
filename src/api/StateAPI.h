@@ -57,6 +57,51 @@ public:
     // Returns the number of regions whose active take changed.
     int commitPendingTakeSwaps();
 
+    // --- Looper actions (Phase 6 — see docs/LIVE_INPUT_AND_FOCUS.md) ---
+    // Per-track queued gestures. The performer fires a gesture during
+    // loop playback; the queued action transitions to Capturing at the
+    // next cycle wrap, runs for one cycle, then commits.
+    //
+    // Re-pressing the SAME gesture during ReplaceQueued/OverdubQueued
+    // cancels the queue (back to None). Pressing the OTHER gesture
+    // switches the queued kind. Either gesture during Capturing is
+    // ignored — the playhead is moving and the action is committed.
+    static constexpr int kMaxLoopUndo = 10;
+
+    void replaceLoop(const TrackId& trackId);
+    void overdubLoop(const TrackId& trackId);
+
+    // Flip ReplaceQueued → CapturingReplace and OverdubQueued →
+    // CapturingOverdub. Called by the coordinator at the cycle wrap
+    // when the capture window opens. No-op for any other state.
+    void beginLoopCapture(const TrackId& trackId);
+
+    // Snapshot-and-mutate. Called by the coordinator at the END of the
+    // capture cycle, after draining the captured events from the FIFO.
+    // CapturingReplace: events become the new content.
+    // CapturingOverdub: events are merged into the existing content.
+    // Pushes the previous events to undoStack; clears redoStack.
+    // No-op if not in a Capturing* state or no loop region.
+    void commitLoopAction(const TrackId& trackId,
+                          std::vector<MidiEventState> capturedEvents);
+
+    // Undo/redo: pop one snapshot, push current to the other stack,
+    // restore. No-op if respective stack is empty.
+    void undoLoop(const TrackId& trackId);
+    void redoLoop(const TrackId& trackId);
+
+    // Snapshot-and-empty. Doesn't touch cycleEnd or the loop region itself.
+    void clearLoop(const TrackId& trackId);
+
+    // Clear every track's loop content and reset cycleEnd to 0 — back
+    // to bootstrap mode. Each track's previous events go to its undoStack.
+    void clearAllLoops();
+
+    // Read-only accessors for GUI / tests.
+    LoopAction getLoopAction(const TrackId& trackId) const;
+    int getLoopUndoDepth(const TrackId& trackId) const;
+    int getLoopRedoDepth(const TrackId& trackId) const;
+
     // --- Tracks ---
     TrackId createTrack(const std::string& name);  // virtual instrument track
     TrackId createAudioInputTrack(const std::string& name, int inputChannelStart,

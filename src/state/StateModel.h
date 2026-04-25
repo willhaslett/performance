@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -165,6 +166,23 @@ struct TakeState {
     PeakData peakData;
 };
 
+// Looper-only: queued or in-flight action on a track's loop region.
+// See docs/LIVE_INPUT_AND_FOCUS.md phase 6. The performer fires a
+// gesture during loop playback; the action is queued until the next
+// cycle wrap, where it transitions to Capturing* for one cycle, then
+// commits and returns to None. Replaces the per-track LoopRecordState
+// machine from earlier phases — there is no R-arming anymore in the
+// looper, just per-action queues.
+//   None             - no pending action (track is just playing)
+//   ReplaceQueued    - at next wrap, become CapturingReplace
+//   OverdubQueued    - at next wrap, become CapturingOverdub
+//   CapturingReplace - in capture cycle; on commit, captured events
+//                      replace existing content
+//   CapturingOverdub - in capture cycle; on commit, captured events
+//                      are merged into existing content
+enum class LoopAction { None, ReplaceQueued, OverdubQueued,
+                        CapturingReplace, CapturingOverdub };
+
 // A region is a time-positioned container of takes on a track.
 struct RegionState {
     RegionId id;
@@ -180,6 +198,17 @@ struct RegionState {
     double loopEndBeat = 0.0;  // 0 = auto (extend to next region), >0 = explicit end
     double quantize = 0.0;     // non-destructive quantize grid in beats (0 = off)
     std::vector<TakeState> takes;
+
+    // --- Looper-only runtime state. Not persisted. ---
+    // Queued action for the next cycle wrap; transitions to Capturing
+    // there, then back to None on commit one cycle later.
+    LoopAction loopAction = LoopAction::None;
+    // Undo/redo: snapshots of the events vector. Push current to undoStack
+    // on replace/overdub/clear; on undo, pop undo + push current to redo.
+    // Capped at kMaxLoopUndo (10) entries. Performance safety net only —
+    // not a long-term composition tool, hence runtime-only.
+    std::deque<std::vector<MidiEventState>> undoStack;
+    std::deque<std::vector<MidiEventState>> redoStack;
 
     // Convenience: get the active take
     TakeState* activeTake() {
