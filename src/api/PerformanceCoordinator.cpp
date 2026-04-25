@@ -289,6 +289,36 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
                                         loopOn, loopS, loopE);
             if (recordModeActive)
                 startRecording();
+
+            // Diagnostic: on playback start in Looper mode, dump the
+            // event list of every track's active loop take. Lets us
+            // confirm what the scanner is about to play and spot
+            // ordering anomalies (noteOff-before-noteOn, etc.) that
+            // would cause stuck-note hangs. Remove once the loop
+            // playback hang investigation is done.
+            if (stateAPI && stateAPI->getMode() == AppMode::Looper) {
+                auto* song = stateAPI->currentSong();
+                if (song) {
+                    perfLog("[LoopDump] playback start (Looper) — cycleEnd=%.3f\n",
+                            song->cycleEnd);
+                    for (auto& t : song->tracks) {
+                        if (t.loops.empty()) continue;
+                        auto& r = t.loops[0];
+                        auto* take = r.activeTake();
+                        if (!take) continue;
+                        perfLog("[LoopDump] track=%s \"%s\" loopLen=%.3f take=%s events=%zu\n",
+                                t.id.c_str(), t.name.c_str(),
+                                r.lengthBeats, take->id.str().c_str(),
+                                take->events.size());
+                        for (size_t i = 0; i < take->events.size(); ++i) {
+                            auto& e = take->events[i];
+                            const char* kind = e.isNoteOn() ? "ON " : e.isNoteOff() ? "OFF" : "---";
+                            perfLog("[LoopDump]   [%zu] beat=%.4f status=0x%02x ch=%d note=%d vel=%d %s\n",
+                                    i, e.beatOffset, e.status, e.channel, e.data1, e.data2, kind);
+                        }
+                    }
+                }
+            }
         } else {
             audioEngine->stopPlayback();
             stopRecording();

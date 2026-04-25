@@ -613,6 +613,19 @@ void Arrangement::stopLoopRecording(const TrackId& trackId, double lengthBeats) 
         // persist; performer can swap back to them via setActiveTake.
         region.activeTakeId = newTake->id;
         region.lengthBeats = lengthBeats;
+        // Diagnostic: dump the sorted event list so we can spot ordering
+        // anomalies (noteOff-before-noteOn, duplicate noteOns, etc.)
+        // that would cause stuck-note playback. Remove once the loop
+        // recording/playback hang investigation is done.
+        perfLog("[LoopDump] stopLoopRecording track=%s take=%s lengthBeats=%.3f events=%zu\n",
+                trackId.c_str(), newTake->id.str().c_str(),
+                lengthBeats, newTake->events.size());
+        for (size_t i = 0; i < newTake->events.size(); ++i) {
+            auto& e = newTake->events[i];
+            const char* kind = e.isNoteOn() ? "ON " : e.isNoteOff() ? "OFF" : "---";
+            perfLog("[LoopDump]   [%zu] beat=%.4f status=0x%02x ch=%d note=%d vel=%d %s\n",
+                    i, e.beatOffset, e.status, e.channel, e.data1, e.data2, kind);
+        }
         return;
     }
 }
