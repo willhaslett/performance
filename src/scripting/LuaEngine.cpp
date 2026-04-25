@@ -399,12 +399,13 @@ void LuaEngine::registerAPI() {
     // currently-focused track; no-op if no focus. Queued at gesture
     // time, fire at the next cycle wrap, capture for one cycle, then
     // commit. See docs/LIVE_INPUT_AND_FOCUS.md.
-    lua.set_function("replaceLoop", [&state]() { state.replaceLoop(); });
-    lua.set_function("overdubLoop", [&state]() { state.overdubLoop(); });
+    lua.set_function("replaceLoop", [&coord]() { coord.replaceLoopGesture(); });
+    lua.set_function("overdubLoop", [&coord]() { coord.overdubLoopGesture(); });
     lua.set_function("undoLoop",    [&state]() { state.undoLoop(); });
     lua.set_function("redoLoop",    [&state]() { state.redoLoop(); });
     lua.set_function("clearLoop",   [&state]() { state.clearLoop(); });
     lua.set_function("clearAllLoops", [&state]() { state.clearAllLoops(); });
+    lua.set_function("resetLooperSession", [&coord]() { coord.resetLooperSession(); });
     lua.set_function("getLoopActionState", [&state]() -> std::string {
         auto tid = state.getFocusedTrackId();
         if (tid.empty()) return "no-focus";

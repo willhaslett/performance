@@ -610,6 +610,19 @@ void StateAPI::clearLoop() {
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
+void StateAPI::resetLoopRuntime() {
+    auto* s = currentSong();
+    if (!s) return;
+    for (auto& t : s->tracks) {
+        if (t.loops.empty()) continue;
+        auto& region = t.loops[0];
+        region.loopAction = LoopAction::None;
+        region.undoStack.clear();
+        region.redoStack.clear();
+    }
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s->id.str(), "" });
+}
+
 void StateAPI::clearAllLoops() {
     auto* s = currentSong();
     if (!s) return;

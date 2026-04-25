@@ -82,6 +82,27 @@ public:
     void forceStopLoopRecord();
     std::string getLoopRecordState() const;
 
+    // Panic-button reset for the entire looper session. Stops
+    // transport, drops any in-flight capture (gesture or bootstrap),
+    // resets every per-track loopAction + undo/redo stack to a
+    // clean slate, clears all loop event content, and resets
+    // cycleEnd to 0 (back to bootstrap mode). Use when the session
+    // is in some confused state and you want a guaranteed
+    // known-good starting point.
+    void resetLooperSession();
+
+    // Phase 6 performer entry points. These wrap the StateAPI gestures
+    // with bootstrap-mode awareness:
+    //   cycleEnd == 0 (no cycle yet): tap-to-tap. First call starts
+    //     immediate capture from beat 0 with transport rolling; second
+    //     call sets cycleEnd from elapsed beats and commits.
+    //   cycleEnd > 0 (established): normal queued behavior — gesture
+    //     queues replace/overdub at next wrap.
+    // Either gesture (replace or overdub) bootstraps; after first
+    // bootstrap the actions diverge as designed.
+    void replaceLoopGesture();
+    void overdubLoopGesture();
+
     // --- Persistence ---
     void save();  // flush state to SQLite
     void captureProcessorState();  // grab all plugin binary blobs into state
@@ -247,6 +268,11 @@ private:
     };
     std::optional<LoopCaptureSlot> activeLoopCapture;
     void dispatchLoopGestures(double wrapBeat);  // called from onCycleWrap
+
+    // Bootstrap state — true between first and second tap-to-tap
+    // gesture when cycleEnd was 0. While active, captured events
+    // accumulate in activeLoopCapture and the cycle hasn't been set.
+    bool bootstrapActive = false;
 
     void timerCallback() override;
     void populatePluginCatalog();

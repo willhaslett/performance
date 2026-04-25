@@ -75,6 +75,7 @@ private:
     };
     std::vector<RowGeom> rowGeoms;
     juce::Rectangle<int> cycleLengthField;   // top-bar control
+    juce::Rectangle<int> resetButton;        // top-bar PANIC reset
     void rebuildRowGeoms();
 
     // ---- Paint helpers ----

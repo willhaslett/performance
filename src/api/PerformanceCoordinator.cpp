@@ -1082,6 +1082,136 @@ void PerformanceCoordinator::forceStopLoopRecord() {
     }
 }
 
+void PerformanceCoordinator::replaceLoopGesture() {
+    if (!stateAPI) return;
+    auto focusedId = stateAPI->getFocusedTrackId();
+    if (focusedId.empty()) {
+        perfLog("[Looper] replace gesture ignored — no focused track\n");
+        return;
+    }
+    double cycleEnd = stateAPI->getCycleLength();
+
+    // Established mode — normal queued path. The state's replaceLoop
+    // toggles the queue (cancel if same gesture); coordinator's
+    // dispatchLoopGestures fires it at the next wrap.
+    if (cycleEnd > 0.0 && !bootstrapActive) {
+        stateAPI->replaceLoop();
+        return;
+    }
+
+    // Bootstrap mode. Two cases: (a) first tap — open capture and
+    // start the transport from beat 0. (b) second tap — close capture,
+    // set cycleEnd from elapsed beats, commit events, transport keeps
+    // rolling so the new loop plays seamlessly at the natural wrap.
+    if (!bootstrapActive) {
+        // First tap — start bootstrap.
+        if (!sequencerImpl) return;
+        // Reset transport to beat 0 then start playing. We force a
+        // fresh start so elapsed beats == cycle length.
+        if (sequencerImpl->isPlaying()) sequencerImpl->stop();
+        sequencerImpl->setBeatPosition(0.0);
+        sequencerImpl->play();
+        // Open capture immediately (no wait for wrap — there is no wrap).
+        beginCapture(0.0);
+        activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
+        // Drive the state machine straight to CapturingReplace so the
+        // GUI and getLoopActionState() reflect the in-flight state.
+        stateAPI->replaceLoop();        // Off → ReplaceQueued
+        stateAPI->beginLoopCapture(focusedId); // ReplaceQueued → CapturingReplace
+        bootstrapActive = true;
+        perfLog("[Looper] bootstrap punch-in on %s — recording first cycle\n",
+                focusedId.c_str());
+        return;
+    }
+
+    // Second tap — close bootstrap. Compute elapsed beats from the
+    // sequencer (we started at 0, so getBeatPosition is the duration).
+    double elapsed = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    if (elapsed <= 0.0) {
+        perfLog("[Looper] bootstrap punch-out aborted — elapsed=0\n");
+        return;
+    }
+    auto tid = activeLoopCapture.has_value()
+                ? activeLoopCapture->trackId : focusedId;
+    auto events = activeLoopCapture.has_value()
+                    ? std::move(activeLoopCapture->events)
+                    : std::vector<MidiEventState>{};
+    activeLoopCapture.reset();
+    bootstrapActive = false;
+
+    // Commit BEFORE setting cycle so the take's events land. The
+    // commit clears loopAction back to None.
+    stateAPI->commitLoopAction(tid, std::move(events));
+    endCapture();
+
+    // Set cycleEnd from elapsed; setCycleLength enforces the loop-mode
+    // invariants (cycleStart=0, cycleEnabled=true) and bumps Song.
+    stateAPI->setCycleLength(elapsed);
+
+    // Set the freshly-captured region's lengthBeats to match cycleEnd,
+    // so playback's modular wrap is correct.
+    if (auto* t = stateAPI->findTrack(tid))
+        if (!t->loops.empty())
+            t->loops[0].lengthBeats = elapsed;
+
+    perfLog("[Looper] bootstrap punch-out on %s — cycleEnd=%.3f, events=committed\n",
+            tid.c_str(), elapsed);
+}
+
+void PerformanceCoordinator::overdubLoopGesture() {
+    if (!stateAPI) return;
+    double cycleEnd = stateAPI->getCycleLength();
+    if (cycleEnd > 0.0 && !bootstrapActive) {
+        stateAPI->overdubLoop();
+        return;
+    }
+    // In bootstrap mode, overdub behaves as replace — there's nothing
+    // to overdub onto. Friendlier than ignoring the gesture.
+    replaceLoopGesture();
+}
+
+void PerformanceCoordinator::resetLooperSession() {
+    perfLog("[Looper] resetLooperSession — wiping all looper state\n");
+
+    // 1. Stop transport so no further wraps fire while we tear down.
+    if (sequencerImpl && sequencerImpl->isPlaying())
+        sequencerImpl->stop();
+
+    // 2. Drop any in-flight gesture capture. cancelLoopCapture in
+    //    state resets loopAction; release the engine refcount.
+    if (activeLoopCapture.has_value()) {
+        if (stateAPI) stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
+        activeLoopCapture.reset();
+        endCapture();
+    }
+    bootstrapActive = false;
+
+    // 3. Drain the OLD R-arming session machine. Use the existing
+    //    forceStopLoopRecord path (it handles in-flight finalization
+    //    safely whatever state it's in).
+    if (sessionLoopState != LoopRecordState::Off)
+        forceStopLoopRecord();
+
+    // 4. Wipe per-track looper runtime: queued/capturing flags +
+    //    undo/redo stacks. Then DELETE every loop region outright
+    //    (not just empty events — regions persist across saves and
+    //    keep painting empty bars; the panic button should leave
+    //    nothing behind on the timeline) and reset cycleEnd to 0.
+    if (stateAPI) {
+        stateAPI->resetLoopRuntime();
+        if (auto* song = stateAPI->currentSong()) {
+            for (auto& t : song->tracks)
+                t.loops.clear();
+            song->cycleEnd = 0.0;
+            song->cycleEnabled = false;
+            stateAPI->events().emit({ StateEvent::Updated, StateEvent::Song,
+                                       song->id.str(), "" });
+        }
+    }
+
+    perfLog("[Looper] resetLooperSession — done; ready for fresh bootstrap\n");
+}
+
 std::string PerformanceCoordinator::getLoopRecordState() const {
     switch (sessionLoopState) {
         case LoopRecordState::Off:          return "off";
@@ -1897,6 +2027,9 @@ void PerformanceCoordinator::registerBuiltinActions() {
     stateAPI->registerAction("clearAllLoops", "Loop: clear all + reset cycle",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then clearAllLoops() end"));
+    stateAPI->registerAction("resetLooperSession", "Loop: PANIC reset everything",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then resetLooperSession() end"));
 
     // trackVolume: CC fader → cubic curve → target channel gain.
     // Cubic gives more resolution at low gains (useful for subtle control).

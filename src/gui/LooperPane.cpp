@@ -116,8 +116,11 @@ void LooperPane::rebuildRowGeoms() {
         y += rowHeight + rowGap;
     }
 
-    // Top-bar control — cycle length pill on the right.
+    // Top-bar controls — cycle length pill on the right, PANIC reset
+    // immediately to its left (cycle field stays at the corner since
+    // reset is a rare action and shouldn't grab the prime spot).
     cycleLengthField = { getWidth() - 160, 8, 140, 24 };
+    resetButton      = { cycleLengthField.getX() - 80, 8, 70, 24 };
 }
 
 // ---- Paint ----------------------------------------------------------------
@@ -171,17 +174,29 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
         }
     }
 
-    // Cycle-length editor pill on the right. Shows "<N> bars" — click
-    // opens a picker.
-    double cyc = cycleBeats();
-    int bars = (int) std::round(cyc / kBeatsPerBar);
+    // Cycle-length editor pill on the right. Shows "<N> bars" — or
+    // "no cycle" in bootstrap mode (cycleEnd == 0). Click opens picker.
+    double actualCyc = state.getCycleLength();
     g.setColour(Theme::color(Theme::Color::bgControl));
     g.fillRoundedRectangle(cycleLengthField.toFloat(), 4.0f);
-    g.setColour(Theme::color(Theme::Color::textPrimary));
+    g.setColour(Theme::color(actualCyc > 0.0
+                                 ? Theme::Color::textPrimary
+                                 : Theme::Color::textSecondary));
     g.setFont(Theme::font(Theme::fontSizeMd));
-    g.drawText("cycle: " + juce::String(bars) + " bars", cycleLengthField,
-               juce::Justification::centred);
+    juce::String label;
+    if (actualCyc > 0.0) {
+        int bars = (int) std::round(actualCyc / kBeatsPerBar);
+        label = "cycle: " + juce::String(bars) + " bars";
+    } else {
+        label = "no cycle yet";
+    }
+    g.drawText(label, cycleLengthField, juce::Justification::centred);
 
+    // PANIC reset button — wipes everything and returns to bootstrap.
+    g.setColour(Theme::color(Theme::Color::bgControl));
+    g.fillRoundedRectangle(resetButton.toFloat(), 4.0f);
+    g.setColour(Theme::color(Theme::Color::textSecondary));
+    g.drawText("reset", resetButton, juce::Justification::centred);
 }
 
 void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
@@ -415,6 +430,22 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     // Top bar — cycle length edit.
     if (cycleLengthField.contains(pos)) {
         showCycleLengthMenu();
+        return;
+    }
+    // Top bar — PANIC reset. Confirms before wiping.
+    if (resetButton.contains(pos)) {
+        juce::AlertWindow::showAsync(
+            juce::MessageBoxOptions()
+                .withIconType(juce::MessageBoxIconType::WarningIcon)
+                .withTitle("Reset looper session?")
+                .withMessage("Stops transport, wipes every track's loop content "
+                             "and undo history, and resets the cycle length. "
+                             "This is the panic button — there's no undo for the reset itself.")
+                .withButton("Reset")
+                .withButton("Cancel"),
+            [this](int result) {
+                if (result == 1) coord.resetLooperSession();
+            });
         return;
     }
 

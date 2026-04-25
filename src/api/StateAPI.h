@@ -101,6 +101,12 @@ public:
     void clearLoop();
     void clearAllLoops();
 
+    // Wipe per-track looper runtime: every loop region's loopAction
+    // back to None, undoStack and redoStack emptied. Doesn't touch
+    // events. Used by the panic-button reset path that wants a clean
+    // state machine without inheriting prior undo history.
+    void resetLoopRuntime();
+
     // Read-only accessors for GUI / tests.
     LoopAction getLoopAction(const TrackId& trackId) const;
     int getLoopUndoDepth(const TrackId& trackId) const;
