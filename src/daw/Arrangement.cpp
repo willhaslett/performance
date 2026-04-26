@@ -278,10 +278,13 @@ RegionState* Arrangement::findRegion(const RegionId& regionId) const {
     return nullptr;
 }
 
-// Compute effective loop end for a region (next region start, or explicit loopEndBeat)
+// Compute effective loop end for a region (next region start, or explicit loopEndBeat).
+// When there's no next region on the track, the loop runs indefinitely — Logic-style.
+// The audio scan bounds iteration by the playhead's `currentBeat` per block, so an
+// unbounded effectiveEnd doesn't blow up; the inner loop short-circuits as soon as
+// repBase >= currentBeat.
 static double computeLoopEnd(const RegionState& r, const std::vector<RegionState>& allRegions) {
     if (r.loopEndBeat > 0.0) return r.loopEndBeat;
-    // Find next region on same track that starts after this one
     double regionEnd = r.startBeat + r.lengthBeats;
     double nearest = 1e9;
     for (auto& other : allRegions) {
@@ -289,7 +292,7 @@ static double computeLoopEnd(const RegionState& r, const std::vector<RegionState
         if (other.startBeat >= regionEnd)
             nearest = std::min(nearest, other.startBeat);
     }
-    return nearest < 1e8 ? nearest : regionEnd + r.lengthBeats * 8;  // cap at 8 reps if no next region
+    return nearest < 1e8 ? nearest : 1e9;  // unbounded — playhead bounds the actual scan
 }
 
 void Arrangement::scanMidiEvents(double prevBeat, double currentBeat,
@@ -311,8 +314,16 @@ void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
             double effectiveEnd = r.looped ? computeLoopEnd(r, t.regions) : regionEnd;
             if (effectiveEnd <= prevBeat || r.startBeat >= currentBeat) continue;
 
-            // Number of repetitions to scan
+            // Number of repetitions to scan. effectiveEnd is unbounded when
+            // a looped region has no following region on its track — the
+            // inner loop short-circuits via `repBase >= currentBeat`, so
+            // we don't actually iterate to infinity. firstRep skips ahead
+            // to the rep that overlaps the scan window so we don't burn
+            // time on a continue-loop for long-running playback.
             int maxReps = r.looped ? (int)std::ceil((effectiveEnd - r.startBeat) / r.lengthBeats) : 1;
+            int firstRep = 0;
+            if (r.looped && prevBeat > r.startBeat && r.lengthBeats > 0)
+                firstRep = std::max(0, (int)std::floor((prevBeat - r.startBeat) / r.lengthBeats));
 
             auto* take = r.activeTake();
             if (!take) continue;
@@ -332,7 +343,7 @@ void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
                                      != recordingTakes.end();
             if (takeIsRecording) continue;
 
-            for (int rep = 0; rep < maxReps; ++rep) {
+            for (int rep = firstRep; rep < maxReps; ++rep) {
                 double repBase = r.startBeat + rep * r.lengthBeats;
                 if (repBase >= effectiveEnd || repBase >= currentBeat) break;
                 if (repBase + r.lengthBeats <= prevBeat) continue;

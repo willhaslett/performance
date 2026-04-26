@@ -2465,6 +2465,32 @@ public:
             expectWithinAbsoluteError(beats[0], 48.0, 0.001);
         }
 
+        beginTest("Looped region with no following region loops indefinitely");
+        {
+            // Regression: this used to cap at 8 reps when no next region
+            // existed on the track, so a looped 1-beat region would stop
+            // emitting events after beat 8. Should now emit indefinitely.
+            TestContext ctx({"t1"});
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 0.0, 1.0);
+            r->looped = true;
+            r->loopEndBeat = 0.0;  // unset → use computeLoopEnd
+
+            auto& take = r->takes.back();
+            take.events.push_back({ 0.0, 0x90, 1, 60, 100 });
+
+            // Scan well past the old 9-rep cap.
+            std::vector<double> noteOnBeats;
+            ctx.arr.scanMidiEvents(0.0, 50.0,
+                [&](const TrackId&, const MidiEventState& ev, double beat) {
+                    if ((ev.status & 0xF0) == 0x90) noteOnBeats.push_back(beat);
+                });
+
+            // Should have 50 noteOns (one per beat), not 9.
+            expectEquals((int)noteOnBeats.size(), 50);
+            expectWithinAbsoluteError(noteOnBeats[0], 0.0, 0.01);
+            expectWithinAbsoluteError(noteOnBeats[49], 49.0, 0.01);
+        }
+
         beginTest("Looped region repeats events");
         {
             TestContext ctx({"t1"});

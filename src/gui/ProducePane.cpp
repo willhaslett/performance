@@ -927,7 +927,13 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                 int rw = std::max(4, (int)(r->lengthBeats * pixelsPerBeat));
                 auto regionBounds = juce::Rectangle<int>(rx, rowY + 2, rw, rowH - 4);
 
-                // Compute full visual extent including ghost loops
+                // Compute full visual extent including ghost loops. When
+                // there's no next region on the track we fall back to the
+                // viewport's right edge (plus the next rep that crosses it)
+                // so the loop visibly extends to wherever the user has
+                // scrolled — Logic-style "loops indefinitely until the next
+                // region." Bounding by viewport keeps the ghost-render
+                // loop bounded too.
                 double visualEnd = r->startBeat + r->lengthBeats;
                 if (r->looped) {
                     double le = r->loopEndBeat;
@@ -936,7 +942,16 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                         for (auto* other : regions)
                             if (other != r && !other->muted && other->startBeat >= visualEnd)
                                 le = std::min(le, other->startBeat);
-                        if (le > 1e8) le = r->startBeat + r->lengthBeats * 9;
+                        if (le > 1e8) {
+                            // No next region — extend to the right edge of
+                            // the visible content area, rounded up to the
+                            // next rep boundary so the rightmost ghost is
+                            // fully drawn.
+                            double rightEdgeBeat = xToBeat(area.getRight());
+                            double beatsFromStart = std::max(0.0, rightEdgeBeat - r->startBeat);
+                            int nReps = (int)std::ceil(beatsFromStart / r->lengthBeats);
+                            le = r->startBeat + std::max(1, nReps) * r->lengthBeats;
+                        }
                     }
                     visualEnd = le;
                 }
