@@ -2435,6 +2435,36 @@ public:
             expectWithinAbsoluteError(captured[1].first, 1.0, 0.01);
         }
 
+        beginTest("Quantize snaps to GLOBAL grid, not region-local");
+        {
+            // The bug we're guarding against: a region whose startBeat
+            // isn't on a grid boundary used to quantize events to a grid
+            // offset by region.startBeat % grid, so notes landed slightly
+            // off the timeline gridlines and out of sync with the
+            // metronome (which clicks at integer beats globally).
+            TestContext ctx({"t1"});
+            // Region starts at 47.95 (just before bar-13 boundary at 48
+            // in a 4/4 song). User played a note "on bar 13" but with
+            // typical 0.15-beat play latency, so it landed at global beat
+            // 48.10 → region-local beatOffset = 0.15.
+            auto* r = ctx.arr.addMidiRegion(TrackId{"t1"}, 47.95, 4.0);
+            r->quantize = 1.0;  // snap to quarter notes
+
+            auto& take = r->takes.back();
+            take.events.push_back({ 0.15, 0x90, 1, 60, 100 });   // global 48.10
+            take.events.push_back({ 1.15, 0x80, 1, 60, 0 });
+
+            std::vector<double> beats;
+            ctx.arr.scanMidiEvents(47.0, 50.0,
+                [&](const TrackId&, const MidiEventState& ev, double beat) {
+                    if ((ev.status & 0xF0) == 0x90) beats.push_back(beat);
+                });
+
+            expectEquals((int)beats.size(), 1);
+            // Should snap to 48.0 (bar 13), NOT 47.95 (region origin).
+            expectWithinAbsoluteError(beats[0], 48.0, 0.001);
+        }
+
         beginTest("Looped region repeats events");
         {
             TestContext ctx({"t1"});

@@ -356,6 +356,12 @@ void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
                 };
 
                 if (r.quantize > 0.0) {
+                    // Quantize in GLOBAL beat space, not region-local —
+                    // otherwise quantized notes snap to a grid offset by
+                    // (region.startBeat % grid), so they land slightly off
+                    // the timeline gridlines and out of sync with the
+                    // metronome. Round trip: region-local offset → global
+                    // → round to grid → back to region-local.
                     std::map<int, double> noteShifts;
                     for (auto& event : take->events) {
                         double offset = event.beatOffset;
@@ -368,7 +374,9 @@ void Arrangement::scanArrangementEvents(double prevBeat, double currentBeat,
 
                         double quantized = offset;
                         if (isNoteOn) {
-                            quantized = std::round(offset / r.quantize) * r.quantize;
+                            double absOffset = repBase + offset;
+                            double absQuant = std::round(absOffset / r.quantize) * r.quantize;
+                            quantized = absQuant - repBase;
                             noteShifts[noteKey] = quantized - offset;
                         } else if (isNoteOff) {
                             auto it = noteShifts.find(noteKey);

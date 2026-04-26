@@ -983,8 +983,13 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             // Skip notes outside region bounds (trimmed away)
                             if (note.beatOffset < 0.0 || note.beatOffset >= r->lengthBeats) continue;
                             double dispOffset = note.beatOffset;
-                            if (r->quantize > 0.0)
-                                dispOffset = std::round(dispOffset / r->quantize) * r->quantize;
+                            if (r->quantize > 0.0) {
+                                // Quantize in GLOBAL beat space — same rule as
+                                // the audio path in Arrangement::scanArrangementEvents.
+                                double absOffset = r->startBeat + dispOffset;
+                                double absQuant = std::round(absOffset / r->quantize) * r->quantize;
+                                dispOffset = absQuant - r->startBeat;
+                            }
                             float nx = (float)rx + (float)(dispOffset * pixelsPerBeat);
                             float nw = std::max(1.5f, (float)(note.durationBeats * pixelsPerBeat));
                             float ny = inner.getBottom() - ((note.noteNumber - lo) + 0.5f) * ((float)inner.getHeight() / span);
