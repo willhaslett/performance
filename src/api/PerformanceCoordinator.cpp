@@ -1084,6 +1084,13 @@ void PerformanceCoordinator::forceStopLoopRecord() {
 
 void PerformanceCoordinator::replaceLoopGesture() {
     if (!stateAPI) return;
+    // Looper-only — outside the looper this gesture has no meaning,
+    // and bootstrap-mode side effects (stop transport, reset to 0,
+    // open capture) would be destructive in Producer.
+    if (stateAPI->getMode() != AppMode::Looper) {
+        perfLog("[Looper] replace gesture ignored — not in Looper mode\n");
+        return;
+    }
     auto focusedId = stateAPI->getFocusedTrackId();
     if (focusedId.empty()) {
         perfLog("[Looper] replace gesture ignored — no focused track\n");
@@ -1160,6 +1167,10 @@ void PerformanceCoordinator::replaceLoopGesture() {
 
 void PerformanceCoordinator::overdubLoopGesture() {
     if (!stateAPI) return;
+    if (stateAPI->getMode() != AppMode::Looper) {
+        perfLog("[Looper] overdub gesture ignored — not in Looper mode\n");
+        return;
+    }
     double cycleEnd = stateAPI->getCycleLength();
     if (cycleEnd > 0.0 && !bootstrapActive) {
         stateAPI->overdubLoop();

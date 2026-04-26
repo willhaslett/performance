@@ -170,6 +170,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 ## Backlog
 
 **High priority (0.1.0 candidates):**
+- **Out-of-process AU plugin hosting — STABILITY MUST-HAVE.** Today AUs run in-process via JUCE's default `AudioPluginInstance`; any plugin segfault (Kontakt 8 took us down on 2026-04-25) propagates straight to the host. Logic Pro hasn't been killed by plugins in years because Apple's `AUPluginHostingService` runs each plugin in its own XPC subprocess. Without this we cannot ship to performers — a single bad sample-load in Kontakt = whole session lost. Likely lift: investigate JUCE's support (or lack thereof) for the macOS AU sandboxing API, then either wire it in or build our own out-of-process host. Confirmed survival on 2026-04-25 because the JUCE `applicationCrashHandler` caught the signal and ran `coordinator->save()` — but the user lost their in-flight session and had to relaunch. Not acceptable for live performance.
 - **Stuck notes on transport stop** — Looper-only, intermittent, stop-mid-note hangs. `[LoopDump]` diagnostic logging in tree (commit `d017823`). Theory: noteOff-before-noteOn ordering after sort, possibly due to cycle-wrap-during-recording producing cycle-relative beats that re-order events. Deferred until it crops up again post phase-6 work.
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
