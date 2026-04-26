@@ -232,6 +232,7 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 - NEVER use names as keys or identity. UUIDs everywhere — every track, bus, effect, send gets one at creation; names are display-only. Names resolve to UUIDs once at Lua/Claude entry.
 - When adding a new settable value: add to StateModel, add StateAPI method, handle in EngineSync.
 - Fail loud: use `PERF_ASSERT` and the asserting helpers `song()`/`track()`/`bus()`/`device()` in StateAPI. Don't paper over programming errors.
+- **Beat math: storage is region-local, math is global.** `MidiEventState.beatOffset` is the beat offset from the parent region's `startBeat` (storage convention — keeps regions movable). But any operation that aligns to a musical grid — quantize, snap-to-bar, scoring, anything that does `round(x / grid)` — MUST convert to global beats first (`region.startBeat + beatOffset`) or the grid ends up offset by `region.startBeat % grid` and notes land off the timeline. This bit us 2026-04-26 (commit ef486b4 fixed quantize). Same rule applies in both audio and visual code paths — they have to agree.
 
 ### Key state-model facts
 

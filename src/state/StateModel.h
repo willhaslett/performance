@@ -137,8 +137,23 @@ struct SendState {
 };
 
 // A single MIDI event (noteOn, noteOff, CC, aftertouch, etc.)
+//
+// CONVENTION — read carefully before doing arithmetic on `beatOffset`.
+// This field is REGION-LOCAL: it's the beat offset from the parent
+// region's `startBeat`. Storing region-local lets regions move,
+// duplicate, and split cleanly because their events come along.
+//
+// THE HAZARD: any operation that aligns events to a global musical
+// grid (quantize, snap to bar, scoring) must convert to GLOBAL beats
+// first, otherwise the grid ends up offset by `region.startBeat % grid`
+// and notes land off the timeline gridlines / out of sync with the
+// metronome. This bit us on 2026-04-26 (commit ef486b4 fixed
+// quantize). Anywhere you compute `round(beatOffset / something)`,
+// `beatOffset % something`, or anything else that assumes a fixed
+// origin: convert to `region.startBeat + beatOffset` first, do the
+// math, then convert back if you need a region-local result.
 struct MidiEventState {
-    double beatOffset = 0.0;
+    double beatOffset = 0.0;   // REGION-LOCAL beat offset; see comment above
     int status = 0x90;
     int channel = 1;
     int data1 = 60;
