@@ -224,12 +224,20 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
         }
 
         auto savedBuffer = stateAPI->getConfig("audio_buffer_size");
+        int bufSize = 0;
         if (!savedBuffer.empty()) {
-            int bufSize = std::stoi(savedBuffer);
-            if (setup.bufferSize != bufSize) {
-                setup.bufferSize = bufSize;
-                changed = true;
-            }
+            bufSize = std::stoi(savedBuffer);
+        } else {
+            // First-launch default — 128 samples ≈ 2.9 ms at 44.1 kHz.
+            // Performers care about latency over reliability for live
+            // play; if a device can't sustain it the user can raise it
+            // in Settings, which persists.
+            bufSize = 128;
+            persistAfter = true;
+        }
+        if (setup.bufferSize != bufSize) {
+            setup.bufferSize = bufSize;
+            changed = true;
         }
 
         if (changed) {
@@ -249,6 +257,8 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
                 stateAPI->setConfig("audio_output_device", effective.outputDeviceName.toStdString());
             if (effective.inputDeviceName.isNotEmpty() && savedInput.empty())
                 stateAPI->setConfig("audio_input_device", effective.inputDeviceName.toStdString());
+            if (savedBuffer.empty() && effective.bufferSize > 0)
+                stateAPI->setConfig("audio_buffer_size", std::to_string(effective.bufferSize));
         }
     }
 
