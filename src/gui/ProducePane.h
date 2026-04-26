@@ -117,10 +117,11 @@ private:
     juce::Rectangle<int> playButtonBounds;
     juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
+    juce::Rectangle<int> showActionTrackButtonBounds;  // view group, sits between transport + LCD
 
     // Transport button hover tracking
-    enum class TransportGlyph { Rewind, Stop, Play, Record, Cycle };
-    enum class HoveredTransport { None, Rewind, Stop, Play, Record, Cycle };
+    enum class TransportGlyph { Rewind, Stop, Play, Record, Cycle, EventsToggle };
+    enum class HoveredTransport { None, Rewind, Stop, Play, Record, Cycle, EventsToggle };
     HoveredTransport hoveredTransport = HoveredTransport::None;
 
     // Draws container (rest / hover / active) + glyph. activeCol is the fill

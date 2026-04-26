@@ -44,6 +44,11 @@ public:
     void mouseMove(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
     void mouseUp(const juce::MouseEvent&) override;
+    // Click anywhere outside the popup → dismiss. Without this the
+    // picker can latch open with no obvious way out (esc only works
+    // when the picker still holds keyboard focus, which it loses
+    // the moment the user clicks back into the main window).
+    void inputAttemptWhenModal() override;
 
     int  getDesiredHeight() const;
     static constexpr int panelWidth = 420;

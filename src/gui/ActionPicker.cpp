@@ -66,6 +66,14 @@ bool ActionPicker::keyPressed(const juce::KeyPress& key) {
     return false;
 }
 
+void ActionPicker::inputAttemptWhenModal() {
+    // User clicked anywhere outside the picker — dismiss. Same effect
+    // as Escape from PickAction mode. From FillParams it also dismisses
+    // outright (no two-step "back to pick first" — outside-click means
+    // "I'm done, get out").
+    if (onDismiss) onDismiss();
+}
+
 int ActionPicker::getDesiredHeight() const {
     if (mode == Mode::FillParams && form)
         return form->getDesiredHeight();
@@ -172,6 +180,10 @@ void ActionPicker::launch(StateAPI& state, juce::Point<int> screenPos,
     picker->setVisible(true);
     picker->setAlwaysOnTop(true);
     picker->grabKeyboardFocus();
+    // Modal so click-outside fires inputAttemptWhenModal → dismiss,
+    // and so escape doesn't get intercepted by whatever was focused
+    // before the popup opened.
+    picker->enterModalState(false);
 
     // Defer destruction to next message-loop tick — caller chains run through
     // nested lambdas (button click → form callback → picker callback → cleanup),
@@ -198,6 +210,10 @@ void ActionPicker::launchEdit(StateAPI& state, juce::Point<int> screenPos,
     picker->setVisible(true);
     picker->setAlwaysOnTop(true);
     picker->grabKeyboardFocus();
+    // Modal so click-outside fires inputAttemptWhenModal → dismiss,
+    // and so escape doesn't get intercepted by whatever was focused
+    // before the popup opened.
+    picker->enterModalState(false);
 
     auto deferredDelete = [picker]() {
         juce::MessageManager::callAsync([picker]() { delete picker; });

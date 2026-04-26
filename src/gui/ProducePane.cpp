@@ -356,6 +356,17 @@ void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> b
     case TransportGlyph::Record:
         g.fillEllipse(boundsF.reduced(7.0f));
         break;
+    case TransportGlyph::EventsToggle: {
+        // Three small dots representing events on a timeline.
+        const float dotR = 1.6f;
+        const float spacing = inner.getWidth() / 4.0f;
+        float cy = inner.getCentreY();
+        for (int i = 0; i < 3; ++i) {
+            float dx = inner.getX() + spacing * (i + 1);
+            g.fillEllipse(dx - dotR, cy - dotR, dotR * 2.0f, dotR * 2.0f);
+        }
+        break;
+    }
     case TransportGlyph::Cycle: {
         // Two interlocking arcs forming a loop (Logic-style), drawn as filled
         // closed paths so they match the visual weight of the other glyphs.
@@ -475,6 +486,27 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     cycleButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
     paintTransportButton(g, cycleButtonBounds, TransportGlyph::Cycle,
                          looping, hoveredTransport == HoveredTransport::Cycle,
+                         Theme::color(Theme::Color::accent));
+    btnX += btnSize + groupPad;
+
+    // --- View group: a separate container right of the transport group,
+    // for buttons that toggle UI visibility (currently just the Events
+    // track). Same Logic-style group container, one button wide for now;
+    // future view toggles slot in next to the EventsToggle.
+    int viewGroupGap = 12;
+    int viewBtnX = btnX + viewGroupGap + groupPad;
+    auto viewGroupBounds = juce::Rectangle<int>(
+        viewBtnX - groupPad, btnY - groupPad,
+        btnSize + 2 * groupPad,
+        btnSize + 2 * groupPad);
+    g.setColour(Theme::color(Theme::Color::bgControl));
+    g.fillRoundedRectangle(viewGroupBounds.toFloat(), 6.0f);
+
+    bool showActionTrack = state && state->getConfig("show_action_track") == "1";
+    showActionTrackButtonBounds = juce::Rectangle<int>(viewBtnX, btnY, btnSize, btnSize);
+    paintTransportButton(g, showActionTrackButtonBounds, TransportGlyph::EventsToggle,
+                         showActionTrack,
+                         hoveredTransport == HoveredTransport::EventsToggle,
                          Theme::color(Theme::Color::accent));
 
     // --- Position display (LCD centered on grid area) ---
@@ -701,9 +733,14 @@ void ProducePane::paintTrackRow(juce::Graphics& g, juce::Rectangle<int> bounds,
 }
 
 int ProducePane::rowHeightFor(const TrackState& t) const {
-    return t.sourceType == TrackSourceType::Action
-            ? std::max(16, trackRowHeight / 2)
-            : trackRowHeight;
+    if (t.sourceType == TrackSourceType::Action) {
+        // Hidden by default — toggled from the transport bar's view group.
+        // Stored in config so it persists per-install.
+        bool show = state && state->getConfig("show_action_track") == "1";
+        if (!show) return 0;
+        return std::max(16, trackRowHeight / 2);
+    }
+    return trackRowHeight;
 }
 
 int ProducePane::rowYFor(size_t trackIndex) const {
@@ -2194,6 +2231,12 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         repaint();
         return;
     }
+    if (state && showActionTrackButtonBounds.contains(event.getPosition())) {
+        bool show = state->getConfig("show_action_track") == "1";
+        state->setConfig("show_action_track", show ? "0" : "1");
+        repaint();
+        return;
+    }
 }
 
 void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
@@ -2251,6 +2294,7 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
     else if (playButtonBounds.contains(mp))   newHover = HoveredTransport::Play;
     else if (recordButtonBounds.contains(mp)) newHover = HoveredTransport::Record;
     else if (cycleButtonBounds.contains(mp))  newHover = HoveredTransport::Cycle;
+    else if (showActionTrackButtonBounds.contains(mp)) newHover = HoveredTransport::EventsToggle;
     if (newHover != hoveredTransport) {
         hoveredTransport = newHover;
         repaint();
