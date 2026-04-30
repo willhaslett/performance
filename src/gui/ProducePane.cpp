@@ -8,6 +8,19 @@
 #include "engine/Log.h"
 #include <map>
 
+// Minimum row height that still fits the two-row track header layout
+// (top pad + name row + gap + pill row + bottom pad). Computed from
+// the same constants paintTrackHeaders uses, so changing those values
+// automatically reshapes the floor and the keyboard-zoom cap below
+// can't drop the layout into collision.
+static int minTrackRowHeight() {
+    return 4                       // top pad (matches row1Y)
+         + Theme::headerHeight     // name row
+         + 4                       // gap (matches row2Y - row1H)
+         + Theme::pillSize         // pill row
+         + 4;                      // bottom pad
+}
+
 ProducePane::ProducePane() {
     setWantsKeyboardFocus(true);
 
@@ -55,7 +68,7 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
         auto ppb = state->getConfig("zoom_pixels_per_beat");
         if (!ppb.empty()) pixelsPerBeat = std::stod(ppb);
         auto trh = state->getConfig("zoom_track_row_height");
-        if (!trh.empty()) trackRowHeight = std::max(72, std::stoi(trh));
+        if (!trh.empty()) trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
 
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
@@ -817,10 +830,16 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawLine((float)area.getX(), (float)(y + rowH),
                    (float)area.getRight(), (float)(y + rowH), 0.5f);
 
-        // Row 1: track name
+        // Row 1: track name — vertically centered as part of a stacked
+        // (name, gap, pills) block. At larger row heights extra space
+        // splits evenly above and below; at the floor (minTrackRowHeight)
+        // reduces to the minimum top/bottom pad of 4 each.
         // Uses Theme::headerHeight so the name block matches mixer strip headers.
-        int row1Y = y + 4;
+        const int interRowGap = 4;
         int row1H = Theme::headerHeight;
+        int contentH = row1H + interRowGap + Theme::pillSize;
+        int topPad = std::max(4, (rowH - contentH) / 2);
+        int row1Y = y + topPad;
         int cx = area.getX() + 8;
 
         g.setColour(Theme::color(Theme::Color::textPrimary));
@@ -829,8 +848,8 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
         g.drawText(juce::String(t.name), area.getX() + Theme::spacingM, row1Y, nameRight - (area.getX() + Theme::spacingM), row1H,
                    juce::Justification::centredLeft);
 
-        // Row 2: pill buttons (M S R I) — 10px gap below name row
-        int row2Y = row1Y + row1H + 10;
+        // Row 2: pill buttons (M S R I) — gap below the name row.
+        int row2Y = row1Y + row1H + interRowGap;
         int cy_row = row2Y + Theme::pillSize / 2;
         cx = area.getX() + 8;
 
@@ -2524,11 +2543,11 @@ bool ProducePane::keyPressed(const juce::KeyPress& key) {
             saveZoomState(); repaint(); return true;
         }
         if (c == 'J' || c == 'j') {
-            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight * 1.3));
+            trackRowHeight = juce::jlimit(minTrackRowHeight(), 200, (int)(trackRowHeight * 1.3));
             saveZoomState(); repaint(); return true;
         }
         if (c == 'K' || c == 'k') {
-            trackRowHeight = juce::jlimit(24, 120, (int)(trackRowHeight / 1.3));
+            trackRowHeight = juce::jlimit(minTrackRowHeight(), 200, (int)(trackRowHeight / 1.3));
             saveZoomState(); repaint(); return true;
         }
     }
