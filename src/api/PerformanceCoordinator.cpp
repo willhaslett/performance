@@ -197,28 +197,59 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
                 savedOutput.c_str(), setup.outputDeviceName.toRawUTF8(),
                 savedInput.c_str(), setup.inputDeviceName.toRawUTF8());
 
-        if (!savedOutput.empty() && setup.outputDeviceName != juce::String(savedOutput)) {
+        // Resolve saved output device. If the saved name doesn't exist
+        // (e.g., Scarlett 2i2 was selected last session but not plugged
+        // in this time) fall through to the system-default path —
+        // otherwise we'd ask CoreAudio for a missing device, get back
+        // a null current device, and the engine would have no audio
+        // callback at all.
+        auto* deviceType = dm.getCurrentDeviceTypeObject();
+        auto outputDeviceNames = deviceType ? deviceType->getDeviceNames(false)
+                                            : juce::StringArray{};
+        auto inputDeviceNames  = deviceType ? deviceType->getDeviceNames(true)
+                                            : juce::StringArray{};
+
+        bool savedOutputAvailable = !savedOutput.empty()
+            && outputDeviceNames.contains(juce::String(savedOutput));
+        if (!savedOutput.empty() && !savedOutputAvailable) {
+            perfLog("[Coordinator] Saved output device '%s' not available — falling back to system default\n",
+                    savedOutput.c_str());
+        }
+
+        if (savedOutputAvailable && setup.outputDeviceName != juce::String(savedOutput)) {
             setup.outputDeviceName = juce::String(savedOutput);
             changed = true;
-        } else if (savedOutput.empty()) {
-            // First-launch (or post-reset) path. Ensure an output device is selected
-            // by explicitly querying CoreAudio's default. `initialiseWithDefaultDevices`
-            // usually handles this, but on some configurations (aggregate devices,
-            // mic-permission denials) it can leave the setup without a usable selection.
-            auto* type = dm.getCurrentDeviceTypeObject();
-            if (type && (setup.outputDeviceName.isEmpty() || !dm.getCurrentAudioDevice())) {
-                auto names = type->getDeviceNames(false);
-                int defaultIdx = type->getDefaultDeviceIndex(false);
-                if (defaultIdx >= 0 && defaultIdx < names.size()) {
-                    setup.outputDeviceName = names[defaultIdx];
+        } else if (!savedOutputAvailable) {
+            // First-launch / saved-device-missing path. Pick system default
+            // explicitly. `initialiseWithDefaultDevices` usually handles this,
+            // but on some configurations (aggregate devices, mic-permission
+            // denials) it can leave the setup without a usable selection.
+            // We DON'T persist here when the user had a saved device — the
+            // user might re-plug their interface and expect it to come back.
+            if (deviceType && (setup.outputDeviceName.isEmpty()
+                                || !dm.getCurrentAudioDevice()
+                                || !savedOutput.empty())) {
+                int defaultIdx = deviceType->getDefaultDeviceIndex(false);
+                if (defaultIdx >= 0 && defaultIdx < outputDeviceNames.size()) {
+                    setup.outputDeviceName = outputDeviceNames[defaultIdx];
                     changed = true;
-                    perfLog("[Coordinator] First-launch: auto-selected system default output '%s'\n",
+                    perfLog("[Coordinator] Auto-selected system default output '%s'\n",
                             setup.outputDeviceName.toRawUTF8());
                 }
             }
-            persistAfter = true;
+            // Only persist on a true first launch (no saved value). If the
+            // user has a saved device that's just not plugged in right now,
+            // keep the saved name so plugging it back in restores it.
+            if (savedOutput.empty()) persistAfter = true;
         }
-        if (!savedInput.empty() && setup.inputDeviceName != juce::String(savedInput)) {
+
+        bool savedInputAvailable = !savedInput.empty()
+            && inputDeviceNames.contains(juce::String(savedInput));
+        if (!savedInput.empty() && !savedInputAvailable) {
+            perfLog("[Coordinator] Saved input device '%s' not available — leaving JUCE default\n",
+                    savedInput.c_str());
+        }
+        if (savedInputAvailable && setup.inputDeviceName != juce::String(savedInput)) {
             setup.inputDeviceName = juce::String(savedInput);
             changed = true;
         }
