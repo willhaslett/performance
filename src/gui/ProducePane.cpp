@@ -274,7 +274,7 @@ void ProducePane::paint(juce::Graphics& g) {
             return ts ? rowHeightFor(*ts) : trackRowHeight;
         };
 
-        int indicatorY = gridTop + rowYFor((size_t)dragTargetIndex);
+        int indicatorY = gridTop + rowYFor((size_t)dragTargetIndex) - trackScrollY;
         if (dragTargetIndex > dragTrackIndex)
             indicatorY += heightAt(dragTargetIndex);
 
@@ -283,7 +283,7 @@ void ProducePane::paint(juce::Graphics& g) {
         g.fillRect(0, indicatorY - 2, getWidth(), 5);
 
         // Dim the source track row
-        int srcY = gridTop + rowYFor((size_t)dragTrackIndex);
+        int srcY = gridTop + rowYFor((size_t)dragTrackIndex) - trackScrollY;
         g.setColour(Theme::color(Theme::Color::overlayDim));
         g.fillRect(0, srcY, getWidth(), heightAt(dragTrackIndex));
     }
@@ -756,6 +756,18 @@ int ProducePane::rowHeightFor(const TrackState& t) const {
     return trackRowHeight;
 }
 
+int ProducePane::totalTrackContentHeight() const {
+    if (!state) return 0;
+    auto tracks = state->listTracks();
+    return rowYFor(tracks.size());
+}
+
+void ProducePane::clampTrackScrollY() {
+    int visible = std::max(0, getHeight() - transportHeight - rulerHeight);
+    int maxScroll = std::max(0, totalTrackContentHeight() - visible);
+    trackScrollY = juce::jlimit(0, maxScroll, trackScrollY);
+}
+
 int ProducePane::rowYFor(size_t trackIndex) const {
     if (!state) return 0;
     auto tracks = state->listTracks();
@@ -792,7 +804,12 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
     if (!state) return;
 
-    int y = area.getY();
+    // Clip rows to the headers area so a scrolled row doesn't bleed
+    // into the transport / ruler above.
+    juce::Graphics::ScopedSaveState sss(g);
+    g.reduceClipRegion(area);
+
+    int y = area.getY() - trackScrollY;
 
     auto tracks = state->listTracks();
     muteBounds.resize(tracks.size());
@@ -918,7 +935,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     // Track lane backgrounds — paintTrackRow owns row colour + selection.
     // Inset the left edge by 1px so fills don't overdraw the track-header
     // column's right border (drawn earlier in paintTrackHeaders at x=area.getX()).
-    int laneY = area.getY();
+    int laneY = area.getY() - trackScrollY;
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto* trkState = state->findTrack(tracks[i].id);
         if (!trkState) { laneY += trackRowHeight; continue; }
@@ -931,9 +948,10 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
 
     // Grid lines — bar lines darker, beat lines lighter.
     // Clip vertically to the track-content region so gridlines don't bleed
-    // into the empty area below the last track.
+    // into the empty area below the last track. Account for the scroll
+    // offset so lines extend only as far as visible content.
     int gridLinesBottom = std::min(area.getBottom(),
-                                   area.getY() + rowYFor(tracks.size()));
+                                   area.getY() - trackScrollY + rowYFor(tracks.size()));
     int startBar = (int)(startBeat / beatsPerBar());
     int endBar = (int)(endBeat / beatsPerBar()) + 1;
 
@@ -950,7 +968,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     }
 
     // Track row separators
-    int y = area.getY();
+    int y = area.getY() - trackScrollY;
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto* trkState = state->findTrack(tracks[i].id);
         y += trkState ? rowHeightFor(*trkState) : trackRowHeight;
@@ -964,7 +982,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
     actionHitRects.clear();
     ghostEdgeRects.clear();
     if (arrangement) {
-        int regionRowY = area.getY();
+        int regionRowY = area.getY() - trackScrollY;
         for (size_t ti = 0; ti < tracks.size(); ++ti) {
             auto regions = arrangement->regionsForTrack(tracks[ti].id);
             std::sort(regions.begin(), regions.end(),
@@ -1201,7 +1219,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             if (!trkState || trkState->sourceType != TrackSourceType::Action) continue;
             if (trkState->actionData.empty()) continue;
 
-            int rowY = area.getY() + rowYFor(ti);
+            int rowY = area.getY() + rowYFor(ti) - trackScrollY;
             int rowH = rowHeightFor(*trkState);
             float centreY = (float)(rowY + rowH / 2);
             float sphereR = std::min(5.0f, (float)rowH * 0.25f);
@@ -1296,7 +1314,7 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
             if (srcRegion) {
                 int gx = beatToX(dragCurrentBeat);
                 int gw = std::max(4, (int)(srcRegion->lengthBeats * pixelsPerBeat));
-                int drawY = area.getY() + rowYFor((size_t)std::max(0, dragCurrentTrackIdx));
+                int drawY = area.getY() + rowYFor((size_t)std::max(0, dragCurrentTrackIdx)) - trackScrollY;
                 int targetH = trackRowHeight;
                 if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
                     auto* tgt = state ? state->findTrack(tracks[dragCurrentTrackIdx].id) : nullptr;
@@ -1372,6 +1390,10 @@ void ProducePane::paintPlayhead(juce::Graphics& g, juce::Rectangle<int> area) {
 }
 
 void ProducePane::resized() {
+    // Pane height changed — re-clamp the vertical scroll so we don't
+    // sit past the new bottom (e.g. window grew, less scrollable now).
+    clampTrackScrollY();
+
     // Position metronome slider at the right end of the transport bar
     int sliderW = 70;
     int labelW = 24;
@@ -1386,7 +1408,10 @@ int ProducePane::getTrackIndexAtY(int y) const {
     int gridTop = transportHeight + rulerHeight;
     if (y < gridTop || !state) return -1;
     auto tracks = state->listTracks();
-    int cursor = gridTop;
+    // Walk in content-space coordinates: shift the cursor up by the
+    // current scroll so that screen-y maps to the right row when the
+    // user has scrolled.
+    int cursor = gridTop - trackScrollY;
     for (size_t i = 0; i < tracks.size(); ++i) {
         auto* ts = state->findTrack(tracks[i].id);
         int h = ts ? rowHeightFor(*ts) : trackRowHeight;
@@ -2293,7 +2318,7 @@ void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
     int gridTop = transportHeight + rulerHeight;
     auto* ts = state->findTrack(tracks[idx].id);
     int rowH = ts ? rowHeightFor(*ts) : trackRowHeight;
-    auto editBounds = juce::Rectangle<int>(28, gridTop + rowYFor((size_t)idx) + 4,
+    auto editBounds = juce::Rectangle<int>(28, gridTop + rowYFor((size_t)idx) - trackScrollY + 4,
                                             trackHeaderWidth - 32, rowH - 8);
     auto trackId = tracks[idx].id;
     nameEditor.onCommit = [this, trackId](const juce::String& newName) {
@@ -2408,11 +2433,17 @@ void ProducePane::mouseWheelMove(const juce::MouseEvent& event,
         pixelsPerBeat = juce::jlimit(5.0, 100.0, pixelsPerBeat + wheel.deltaY * 10);
         saveZoomState();
     } else {
-        // Horizontal scroll (two-finger swipe or deltaX)
-        if (std::abs(wheel.deltaX) > std::abs(wheel.deltaY))
+        // Two-axis trackpad scrolling, macOS conventions:
+        //   deltaX → horizontal (beats)
+        //   deltaY → vertical   (track scroll, pixel-based)
+        if (wheel.deltaX != 0.0f)
             scrollBeat = std::max(0.0, scrollBeat - wheel.deltaX * 4);
-        else
-            scrollBeat = std::max(0.0, scrollBeat - wheel.deltaY * 4);
+        if (wheel.deltaY != 0.0f) {
+            // JUCE deltaY is in "lines"; multiply by ~rowHeight for a
+            // proportional feel without being too jumpy.
+            trackScrollY -= (int)(wheel.deltaY * trackRowHeight);
+            clampTrackScrollY();
+        }
     }
     repaint();
 }

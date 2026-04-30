@@ -52,7 +52,9 @@ private:
     double pixelsPerBeat = 30.0;
     bool snapToGrid = true;  // TODO: toolbar toggle
     double scrollBeat = 0.0;  // horizontal scroll position in beats
-    int scrollTrack = 0;       // vertical scroll (future)
+    int trackScrollY = 0;      // vertical scroll offset, pixels; 0 = top
+    int totalTrackContentHeight() const;
+    void clampTrackScrollY();   // 0 ≤ trackScrollY ≤ max(0, contentH - visibleH)
 
     // Convert beat to x pixel
     int beatToX(double beat) const;
