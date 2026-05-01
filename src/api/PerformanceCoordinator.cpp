@@ -909,15 +909,39 @@ void PerformanceCoordinator::computeAudioPeaks(TakeState& take) {
 }
 
 void PerformanceCoordinator::shutdown() {
+    auto t0 = juce::Time::getMillisecondCounterHiRes();
     stopTimer();
     if (stateAPI && stateSubscriptionId >= 0)
         stateAPI->events().unsubscribe(stateSubscriptionId);
-    // Full save on shutdown — captures processor state and flushes
+
+    // Full save on shutdown. Two perf moves vs. naive: (1) skip
+    // captureProcessorState if autosave just ran one — getStateInformation
+    // on heavy samplers (Kontakt, Keyscape) can take hundreds of ms each
+    // and is the dominant cost at quit. (2) Skip the .bak.db backup —
+    // backups protect against partial writes; clean shutdown isn't a
+    // partial-write risk.
     if (stateAPI && persistence) {
-        captureProcessorState();
-        if (!persistence->saveFrom(*stateAPI))
+        auto now = juce::Time::getMillisecondCounterHiRes();
+        const double captureFreshnessMs = 5000.0;  // last 5s counts as fresh
+        bool captureFresh = lastCaptureMs > 0.0
+                          && (now - lastCaptureMs) < captureFreshnessMs;
+        if (!captureFresh) {
+            auto cs0 = juce::Time::getMillisecondCounterHiRes();
+            captureProcessorState();
+            perfLog("[Coordinator] Shutdown captureProcessorState %.0f ms\n",
+                    juce::Time::getMillisecondCounterHiRes() - cs0);
+        } else {
+            perfLog("[Coordinator] Shutdown: skipping captureProcessorState (autosave %.0f ms ago)\n",
+                    now - lastCaptureMs);
+        }
+        auto sv0 = juce::Time::getMillisecondCounterHiRes();
+        if (!persistence->saveFrom(*stateAPI, /*createBackup=*/false))
             perfLog("[Coordinator] Shutdown save FAILED — session may not be fully persisted\n");
+        perfLog("[Coordinator] Shutdown saveFrom %.0f ms\n",
+                juce::Time::getMillisecondCounterHiRes() - sv0);
     }
+
+    auto teardown0 = juce::Time::getMillisecondCounterHiRes();
     songRuntime.reset();
     midiEngine.reset();
     engineSync.reset();
@@ -926,6 +950,10 @@ void PerformanceCoordinator::shutdown() {
     automationEngine.reset();
     persistence.reset();
     stateAPI.reset();
+    perfLog("[Coordinator] Shutdown engine teardown %.0f ms\n",
+            juce::Time::getMillisecondCounterHiRes() - teardown0);
+    perfLog("[Coordinator] Shutdown total %.0f ms\n",
+            juce::Time::getMillisecondCounterHiRes() - t0);
 }
 
 StateAPI& PerformanceCoordinator::state() { return *stateAPI; }
@@ -1466,6 +1494,7 @@ void PerformanceCoordinator::captureProcessorState() {
         stateAPI->markDirty();
         perfLog("[Coordinator] Captured %d processor states\n", captured);
     }
+    lastCaptureMs = juce::Time::getMillisecondCounterHiRes();
 }
 
 void PerformanceCoordinator::onUndoRedoRestore() {

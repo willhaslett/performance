@@ -21,7 +21,11 @@ public:
     // (BEGIN / COMMIT failure, etc.). On failure, the transaction has been
     // rolled back and the DB is unchanged from before saveFrom was called.
     // Details are logged.
-    bool saveFrom(const StateAPI& state);
+    // `createBackup` controls whether the .bak.db sidecar is refreshed
+    // before the main save. Default true (covers crash-mid-save). Pass
+    // false on a clean shutdown — there's no risk of partial write and
+    // the backup is the single largest fixed cost when the DB is large.
+    bool saveFrom(const StateAPI& state, bool createBackup = true);
 
 private:
     sqlite3* db = nullptr;

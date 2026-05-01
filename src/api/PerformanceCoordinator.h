@@ -214,6 +214,9 @@ private:
     // Debounced autosave — tracks the time of the most recent state mutation.
     // timerCallback saves when (now - lastStateChangeMs) > 3 seconds AND dirty.
     double lastStateChangeMs = 0.0;
+    // Wall-clock ms of the most recent captureProcessorState. Used to
+    // skip a redundant capture on shutdown if autosave just did one.
+    double lastCaptureMs = 0.0;
     int autosaveSubscriptionId = -1;
     bool startupChooserNeeded = false;
 

@@ -654,13 +654,13 @@ void PersistenceLayer::readConfig(AppState& out) {
 // Save
 // ============================================================================
 
-bool PersistenceLayer::saveFrom(const StateAPI& state) {
+bool PersistenceLayer::saveFrom(const StateAPI& state, bool createBackup) {
     // Backup DB before save using the SQLite backup API. A naive
     // juce::File::copyFileTo only copies the main .db file — in WAL mode
     // (which we use), the authoritative data lives in the -wal sidecar,
     // so a file copy produces a schema-only empty backup. sqlite3_backup_*
     // captures the full database including uncommitted WAL pages.
-    if (!dbPath.empty() && db) {
+    if (createBackup && !dbPath.empty() && db) {
         auto bakPath = juce::File(dbPath)
                            .getSiblingFile(juce::File(dbPath).getFileNameWithoutExtension() + ".bak.db");
         bakPath.deleteFile();
