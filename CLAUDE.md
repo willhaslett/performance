@@ -4,6 +4,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 
 **Load-bearing side docs — read before touching the relevant area:**
 
+- `docs/PRODUCT.md` — positioning + the four bets (just-enough production, looper, AI composition, performance setup). Smell tests for features. The "is this in scope?" check. Living draft, re-read quarterly.
 - `DEV_HISTORY.md` — changelog, completed work, test inventory. `git log` is still authoritative for *what* changed; this is context that doesn't fit in commit messages.
 - `docs/INCIDENT_2026-04-18_PERSISTENCE.md` — first-session data-loss retro + architectural hardening plan. Load-bearing when scoping 0.2.x work.
 - `docs/ACTION_ALGEBRA.md` — compositional action core. Read before adding/modifying built-in actions or touching bounce.
