@@ -172,20 +172,31 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 **High priority (0.1.0 candidates):**
 - **Out-of-process AU plugin hosting — STABILITY MUST-HAVE.** Today AUs run in-process via JUCE's default `AudioPluginInstance`; any plugin segfault (Kontakt 8 took us down on 2026-04-25) propagates straight to the host. Logic Pro hasn't been killed by plugins in years because Apple's `AUPluginHostingService` runs each plugin in its own XPC subprocess. Without this we cannot ship to performers — a single bad sample-load in Kontakt = whole session lost. Likely lift: investigate JUCE's support (or lack thereof) for the macOS AU sandboxing API, then either wire it in or build our own out-of-process host. Confirmed survival on 2026-04-25 because the JUCE `applicationCrashHandler` caught the signal and ran `coordinator->save()` — but the user lost their in-flight session and had to relaunch. Not acceptable for live performance.
 - **Stuck notes on transport stop** — Looper-only, intermittent, stop-mid-note hangs. `[LoopDump]` diagnostic logging in tree (commit `d017823`). Theory: noteOff-before-noteOn ordering after sort, possibly due to cycle-wrap-during-recording producing cycle-relative beats that re-order events. Deferred until it crops up again post phase-6 work.
+- **Track-arming/monitoring/selecting overhaul (Logic-style).** Current behavior is clunky — needs a systematic pass against Logic's behavior to replicate the conventions (click selects, R arms, I monitors, exclusive vs additive rules across modifiers, etc.). Affects Producer, Mixer, Looper. Not one fix; a small design pass plus a bunch of small wires.
+- **Track rename in-place across all panes.** Producer pops a big modal box; Mixer opens an editor offset from the existing label with the original still partially visible underneath; Looper renaming doesn't work at all. Standard double-click-name → inline TextEditor in the same spot.
+- **Musical-typing modal swallows transport keys.** R, Space, Return (and probably others) stop working while the musical-typing window is open. Should be as full-featured as possible alongside MT — only collide on the keys MT actually owns for note input.
+- **Musical-typing octave + velocity controls broken.** Buttons don't respond. Also need keyboard shortcuts (up/down) with on-screen labels showing the bindings.
+- **m / i shortcuts on the focused track** — quick toggles for mute and input-monitoring without clicking the pills.
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
 
 **Deferred / lower priority:**
+- **Producer events-track toggle as triangle in the top-left header rect.** Currently lives as a "..." button in the transport view group; gets squeezed when the chat pane is open. Move to the empty rectangle above the track-headers column / left of the timeline, render as an expand/collapse triangle.
+- **Movable left/right pane divider.** Currently fixed at the per-content preferred widths.
+- **Audio track default input on create.** Creating an audio track should default `inputChannelStart` to "Input 1" (first input on the current device) instead of unset. Keep `inputMonitoring=false` to preserve feedback safety.
+- **Remove "Save" from the menu / UI.** Autosave covers everything; the menu item just confuses users into thinking saving is something they need to do. ⌘S can stay as "force flush now" if it's harmless, but the menu visibility is the thing.
 - **Failed plugin load feedback** — show plugin name in error color when load fails.
 - **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
 - **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
 
 **Longer-term:**
-- Refactor oversized GUI files (ProducePane ~2520 lines).
+- **MIDI region editor.** No way to edit recorded MIDI today. Needs piano-roll editing (note insert/move/delete/quantize-per-note/velocity/length). Big surface; we won't build the whole thing soon.
+- **Audio region editor.** Same gap on the audio side. We don't want to build a wave editor from scratch — investigate whether to embed something or punt to "edit in your DAW of choice."
+- Refactor oversized GUI files (ProducePane ~2700 lines).
 - MIDI effects (transpose, channel filter, arpeggiator).
 - Fader/knob drag stops at screen edge.
-- Background plugin state capture (getStateInformation off message thread).
+- Background plugin state capture (getStateInformation off message thread). Would also drop quit time below the current ~1.3s engine-teardown floor (commit `15149da` for context).
 - Settings window MIDI tab content.
 - ⌘O Songs palette (type-to-filter overlay for performance-time song switching).
 
