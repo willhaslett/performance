@@ -1082,6 +1082,10 @@ bool PerformanceCoordinator::isInRecordMode() const {
     return false;
 }
 
+void PerformanceCoordinator::togglePlay() {
+    if (sequencerImpl) sequencerImpl->togglePlayStop();
+}
+
 void PerformanceCoordinator::replaceLoopGesture() {
     if (!stateAPI) return;
     // Looper-only — outside the looper this gesture has no meaning,
@@ -1641,6 +1645,11 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     static const std::set<std::string> continuousActions = { "trackVolume" };
     if (value == 0.0f && !continuousActions.count(actionName)) return;
 
+    // Notify any GUI listening for action fires (e.g. activity lights
+    // on the looper button group). Single chokepoint for all dispatch
+    // sources — Lua, MIDI bindings, GUI clicks all flow through here.
+    if (onActionFired) onActionFired(actionName);
+
     // Check for custom Lua action first
     auto* actionInfo = stateAPI->findActionByName(actionName);
     if (actionInfo && !actionInfo->luaCode.empty() && luaExecutor) {
@@ -1968,6 +1977,21 @@ void PerformanceCoordinator::registerBuiltinActions() {
     stateAPI->registerAction("resetLooperSession", "Loop: PANIC reset everything",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then resetLooperSession() end"));
+
+    // Transport + focus + per-track-mute. Mode-agnostic but most useful
+    // alongside the looper gestures (the looper button group binds them).
+    stateAPI->registerAction("togglePlay", "Transport: play / stop",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then togglePlay() end"));
+    stateAPI->registerAction("focusPrevTrack", "Focus: previous track",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then focusPrevTrack() end"));
+    stateAPI->registerAction("focusNextTrack", "Focus: next track",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then focusNextTrack() end"));
+    stateAPI->registerAction("toggleFocusedMute", "Focus: toggle mute",
+        std::vector<ParamSchema>{},
+        AA::lua("if value > 0 then toggleFocusedMute() end"));
 
     // trackVolume: CC fader → cubic curve → target channel gain.
     // Cubic gives more resolution at low gains (useful for subtle control).

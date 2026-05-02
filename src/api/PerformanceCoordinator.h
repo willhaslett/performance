@@ -83,6 +83,16 @@ public:
     // bootstrap the actions diverge as designed.
     void replaceLoopGesture();
     void overdubLoopGesture();
+    // Toggle transport play/stop. Mode-agnostic — works in Producer
+    // and Looper both. Routes through the sequencer.
+    void togglePlay();
+
+    // Fires whenever an action gets dispatched, with the action's name.
+    // Used by GUIs to flash activity indicators in sync with both GUI
+    // clicks and MIDI binding fires (single source of truth — every
+    // dispatch path goes through executeAction). Set by MainLayout (or
+    // any GUI host) at startup; nullable.
+    std::function<void(const std::string& actionName)> onActionFired;
 
     // --- Persistence ---
     void save();  // flush state to SQLite

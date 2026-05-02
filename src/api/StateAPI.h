@@ -266,6 +266,14 @@ public:
     // to clear. See docs/LIVE_INPUT_AND_FOCUS.md.
     void setFocusedTrackId(const TrackId& trackId);
     TrackId getFocusedTrackId() const;
+    // Move focus one track up/down with wrap-around. Skips Action
+    // tracks (no live-play target). No-op if the song has fewer than
+    // two non-action tracks. No-op outside of having a current song.
+    void focusPrevTrack();
+    void focusNextTrack();
+    // Convenience: toggle mute on the focused track. No-op when
+    // there's no focused track.
+    void toggleFocusedMute();
 
     // --- Config ---
     void setConfig(const std::string& key, const std::string& value);

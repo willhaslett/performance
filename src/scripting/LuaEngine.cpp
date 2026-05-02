@@ -394,6 +394,13 @@ void LuaEngine::registerAPI() {
     lua.set_function("clearLoop",   [&state]() { state.clearLoop(); });
     lua.set_function("clearAllLoops", [&state]() { state.clearAllLoops(); });
     lua.set_function("resetLooperSession", [&coord]() { coord.resetLooperSession(); });
+
+    // Transport + focus + focused-track mute. Useful alongside the
+    // looper gestures, but mode-agnostic — they work in Producer too.
+    lua.set_function("togglePlay",      [&coord]() { coord.togglePlay(); });
+    lua.set_function("focusPrevTrack",  [&state]() { state.focusPrevTrack(); });
+    lua.set_function("focusNextTrack",  [&state]() { state.focusNextTrack(); });
+    lua.set_function("toggleFocusedMute", [&state]() { state.toggleFocusedMute(); });
     lua.set_function("getLoopActionState", [&state]() -> std::string {
         auto tid = state.getFocusedTrackId();
         if (tid.empty()) return "no-focus";

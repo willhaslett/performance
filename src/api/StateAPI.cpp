@@ -1411,6 +1411,52 @@ TrackId StateAPI::getFocusedTrackId() const {
     return s ? s->focusedTrackId : TrackId{};
 }
 
+namespace {
+// Build the focusable-track ordering: instrument + audio-input
+// tracks in song order. Action tracks aren't focus targets — there's
+// nothing to play into.
+std::vector<TrackId> focusableTrackIds(const SongState& s) {
+    std::vector<TrackId> out;
+    out.reserve(s.tracks.size());
+    for (auto& t : s.tracks)
+        if (t.sourceType != TrackSourceType::Action)
+            out.push_back(t.id);
+    return out;
+}
+}  // namespace
+
+void StateAPI::focusPrevTrack() {
+    auto* s = currentSong();
+    if (!s) return;
+    auto ids = focusableTrackIds(*s);
+    if (ids.size() < 2) return;
+    auto curr = s->focusedTrackId;
+    int idx = -1;
+    for (int i = 0; i < (int)ids.size(); ++i)
+        if (ids[i] == curr) { idx = i; break; }
+    int next = (idx <= 0) ? (int)ids.size() - 1 : idx - 1;
+    setFocusedTrackId(ids[next]);
+}
+
+void StateAPI::focusNextTrack() {
+    auto* s = currentSong();
+    if (!s) return;
+    auto ids = focusableTrackIds(*s);
+    if (ids.size() < 2) return;
+    auto curr = s->focusedTrackId;
+    int idx = -1;
+    for (int i = 0; i < (int)ids.size(); ++i)
+        if (ids[i] == curr) { idx = i; break; }
+    int next = (idx < 0) ? 0 : (idx + 1) % (int)ids.size();
+    setFocusedTrackId(ids[next]);
+}
+
+void StateAPI::toggleFocusedMute() {
+    auto tid = getFocusedTrackId();
+    if (tid.empty()) return;
+    setTrackMuted(tid, !isTrackMuted(tid));
+}
+
 std::vector<BusId> StateAPI::selectedBusIds() const {
     auto* s = currentSong();
     return s ? s->selectedBusIds : std::vector<BusId>{};
