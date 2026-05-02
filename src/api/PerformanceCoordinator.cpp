@@ -1177,10 +1177,17 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
         return;
     }
 
-    // Start edge. If transport isn't playing, kick it off — and for the
-    // very first loop (no master cycle yet) snap the playhead to 0 so
-    // elapsed-beats == loop-length cleanly. With an existing master we
-    // leave the playhead alone so other tracks stay aligned.
+    // Start edge. Open an undo transaction that spans both edges so a
+    // single Cmd-Z undoes the entire recording (region creation + events
+    // + lengthBeats + master cycle if first loop) as one step. Without
+    // this each StateAPI mutation would be its own snapshot and the
+    // user would need 3+ undos to back out a single take.
+    stateAPI->beginTransaction();
+
+    // If transport isn't playing, kick it off — and for the very first
+    // loop (no master cycle yet) snap the playhead to 0 so elapsed
+    // beats == loop length cleanly. With an existing master we leave
+    // the playhead alone so other tracks stay aligned.
     auto* song = stateAPI->currentSong();
     bool firstLoop = ! song || song->cycleEnd <= song->cycleStart;
     if (! sequencerImpl->isPlaying()) {
@@ -1225,6 +1232,8 @@ void PerformanceCoordinator::finishLoopCapture() {
                 t->loops[0].lengthBeats = elapsed;
     }
 
+    if (stateAPI) stateAPI->endTransaction();
+
     perfLog("[Looper] commit on %s — elapsed=%.3f beats, events=%zu%s\n",
             tid.c_str(), elapsed, events.size(),
             firstLoop ? " (set master cycle)" : "");
@@ -1238,9 +1247,14 @@ void PerformanceCoordinator::resetLooperSession() {
         sequencerImpl->stop();
 
     // 2. Drop any in-flight gesture capture. cancelLoopCapture in
-    //    state resets loopAction; release the engine refcount.
+    //    state resets loopAction; release the engine refcount. Close
+    //    any open undo transaction so the next mutation isn't grouped
+    //    with the abandoned recording.
     if (activeLoopCapture.has_value()) {
-        if (stateAPI) stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
+        if (stateAPI) {
+            stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
+            stateAPI->endTransaction();
+        }
         activeLoopCapture.reset();
         endCapture();
     }

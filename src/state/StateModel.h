@@ -211,15 +211,12 @@ struct RegionState {
     std::vector<TakeState> takes;
 
     // --- Looper-only runtime state. Not persisted. ---
-    // Queued action for the next cycle wrap; transitions to Capturing
-    // there, then back to None on commit one cycle later.
+    // Performer-facing capture state machine — None / CapturingReplace /
+    // CapturingOverdub. Set by replaceLoop/overdubLoop; cleared by
+    // commitLoopAction. Undo/redo isn't tracked here — it goes through
+    // the app-level UndoHistory, which already snapshots cycle length,
+    // events, and lengthBeats together (one undo step = one commit).
     LoopAction loopAction = LoopAction::None;
-    // Undo/redo: snapshots of the events vector. Push current to undoStack
-    // on replace/overdub/clear; on undo, pop undo + push current to redo.
-    // Capped at kMaxLoopUndo (10) entries. Performance safety net only —
-    // not a long-term composition tool, hence runtime-only.
-    std::deque<std::vector<MidiEventState>> undoStack;
-    std::deque<std::vector<MidiEventState>> redoStack;
 
     // Convenience: get the active take
     TakeState* activeTake() {

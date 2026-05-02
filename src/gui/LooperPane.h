@@ -76,9 +76,16 @@ private:
         juce::Rectangle<int> inputButton;
     };
     std::vector<RowGeom> rowGeoms;
-    juce::Rectangle<int> cycleLengthField;   // top-bar control
+    // Top-bar LCD-style block: TIME / BPM. Mirrors the Producer LCD's
+    // analogous cells (same digit font, same labels, same BPM click-to-
+    // edit dialog) so tempo is visible and adjustable from either pane.
+    juce::Rectangle<int> lcdBounds;
+    juce::Rectangle<int> timeCell;
+    juce::Rectangle<int> bpmClickBounds;
     juce::Rectangle<int> resetButton;        // top-bar PANIC reset (kept separate for confirm dialog)
     juce::Rectangle<int> learnPill;          // top-bar MIDI Learn toggle
+
+    void showBpmEditor();
 
     // MIDI Learn state — owned by the pane, not the buttons. While
     // `learnMode` is true, bindable cells switch from "click fires" to

@@ -76,20 +76,17 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     overdubBtn->setShowRecordDot(true);
     addAndMakeVisible(*overdubBtn);
 
+    // Loop undo/redo route through app-level UndoHistory so a single
+    // snapshot covers events + lengthBeats + cycle. The Looper buttons
+    // are convenience surface that fires the same path as Cmd-Z/Cmd-⇧Z.
     undoBtn = std::make_unique<BindableButton>(state, coord, "undoLoop", "undo");
     undoBtn->setCornerStyle(BindableButton::Mid);
-    undoBtn->setEnabledPredicate([this] {
-        auto fid = state.getFocusedTrackId();
-        return !fid.empty() && state.getLoopUndoDepth(fid) > 0;
-    });
+    undoBtn->setEnabledPredicate([this] { return state.canUndo(); });
     addAndMakeVisible(*undoBtn);
 
     redoBtn = std::make_unique<BindableButton>(state, coord, "redoLoop", "redo");
     redoBtn->setCornerStyle(BindableButton::Mid);
-    redoBtn->setEnabledPredicate([this] {
-        auto fid = state.getFocusedTrackId();
-        return !fid.empty() && state.getLoopRedoDepth(fid) > 0;
-    });
+    redoBtn->setEnabledPredicate([this] { return state.canRedo(); });
     addAndMakeVisible(*redoBtn);
 
     muteBtn = std::make_unique<BindableButton>(state, coord, "toggleFocusedMute", "mute");
@@ -236,23 +233,21 @@ void LooperPane::rebuildRowGeoms() {
     int topBarMid = topBarHeight / 2;
     int pillH = 24;
     int pillY = topBarMid - pillH / 2;
-    cycleLengthField = { getWidth() - 160, pillY, 140, pillH };
-    resetButton      = { cycleLengthField.getX() - 80, pillY, 70, pillH };
-    learnPill        = { resetButton.getX() - 110, pillY, 100, pillH };
 
     int bbH = BindableButton::desiredHeight;
     int bbY = topBarMid - bbH / 2;
-    const int playWidth      = 56;
-    const int playToStripGap = 12;  // breathing room between standalone play and the strip
-    const int wideBtn        = 84;  // replace, overdub (longer label, plus record dot)
-    const int narrowBtn      = 60;  // undo, redo, mute, clear
-    const int iconBtn        = 40;  // focus prev/next
+    const int playWidth        = 56;
+    const int playToStripGap   = 12;  // breathing room between standalone play and the strip
+    const int wideBtn          = 84;  // replace, overdub (longer label, plus record dot)
+    const int narrowBtn        = 60;  // undo, redo, mute, clear
+    const int iconBtn          = 40;  // focus prev/next
+    const int stripToControlsGap = 16;
+    const int controlGap       = 8;
 
-    int stripW = wideBtn * 2 + narrowBtn * 4 + iconBtn * 2;
-    int bindablesW = playWidth + playToStripGap + stripW;
-
-    int rightEdge = learnPill.getX() - 16;
-    int x = rightEdge - bindablesW;
+    // Left-anchor the whole top bar so the play button's left edge sits
+    // flush with the right edge of the track-header column. Everything
+    // else flows right with the same relative spacing as before.
+    int x = headerWidth;
 
     playBtn->setBounds(x, bbY, playWidth, bbH);
     x += playWidth + playToStripGap;
@@ -264,7 +259,25 @@ void LooperPane::rebuildRowGeoms() {
     muteBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
     clearBtn->setBounds(x, bbY, narrowBtn, bbH); x += narrowBtn;
     focusPrevBtn->setBounds(x, bbY, iconBtn, bbH); x += iconBtn;
-    focusNextBtn->setBounds(x, bbY, iconBtn, bbH);
+    focusNextBtn->setBounds(x, bbY, iconBtn, bbH); x += iconBtn;
+
+    x += stripToControlsGap;
+
+    learnPill = { x, pillY, 100, pillH };  x += 100 + controlGap;
+    resetButton = { x, pillY, 70, pillH };  x += 70 + controlGap;
+
+    // LCD block — TIME + BPM cells. Same digit/label style as Producer.
+    // TIME width matches Producer's TIME cell (180px) so the
+    // "H:MM:SS.mmm" digits don't overflow into ellipses.
+    const int timeCellW = 180;
+    const int bpmCellW  = 64;
+    const int lcdW      = timeCellW + bpmCellW + 4;
+    const int lcdH      = 36;
+    int lcdY = topBarMid - lcdH / 2;
+    lcdBounds = { x, lcdY, lcdW, lcdH };
+    int cellX = lcdBounds.getX() + 2;
+    timeCell       = { cellX, lcdBounds.getY(), timeCellW, lcdBounds.getHeight() }; cellX += timeCellW;
+    bpmClickBounds = { cellX, lcdBounds.getY(), bpmCellW,  lcdBounds.getHeight() };
 }
 
 // ---- Paint ----------------------------------------------------------------
@@ -299,26 +312,57 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     // (Cycle progress is shown by an in-timeline fill behind the
     // playhead — see paintPlayhead. The top-bar strip is gone.)
 
-    // Loop-length readout (right). Shows the master length in seconds
-    // — set by the first commit. Reads "—" before the first commit.
-    // Display only; no picker (Boss-RC: length is captured, not chosen).
-    double actualCyc = state.getCycleLength();
-    double bpm = state.getSongTempo();
-    double bps = bpm > 0.0 ? bpm / 60.0 : 2.0;
-    g.setColour(Theme::color(Theme::Color::bgControl));
-    g.fillRoundedRectangle(cycleLengthField.toFloat(), 4.0f);
-    g.setColour(Theme::color(actualCyc > 0.0
-                                 ? Theme::Color::textPrimary
-                                 : Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeMd));
-    juce::String label;
-    if (actualCyc > 0.0) {
-        double seconds = actualCyc / bps;
-        label = "loop: " + juce::String(seconds, 2) + " s";
-    } else {
-        label = juce::String::fromUTF8("loop: \xe2\x80\x94");  // em dash
+    // Top-bar LCD block — TIME (wall-clock from beat 0) and BPM
+    // (clickable). Mirrors the Producer's matching cells; tempo lives
+    // on the song so changes here flip the Producer's display too.
+    {
+        auto lcdBg     = Theme::color(Theme::Color::bgControl);
+        auto lcdBorder = Theme::color(Theme::Color::border);
+        auto lcdDigit  = Theme::color(Theme::Color::lcdDigit);
+        g.setColour(lcdBg);
+        g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
+        g.setColour(lcdBorder);
+        g.drawRoundedRectangle(lcdBounds.toFloat(), 4.0f, 1.0f);
+
+        auto monoMd    = Theme::fontMono(Theme::fontSizeLcdMd);
+        auto labelFont = Theme::font(Theme::fontSizeLcdLabel);
+
+        auto drawCell = [&](juce::Rectangle<int> bounds, const char* digits,
+                             const char* label, juce::Colour digitCol) {
+            int digitTop = bounds.getY() + 2;
+            int digitH   = bounds.getHeight() - 14;
+            int labelY   = bounds.getBottom() - 13;
+            g.setFont(monoMd);
+            g.setColour(digitCol);
+            g.drawText(digits, bounds.getX(), digitTop, bounds.getWidth(), digitH,
+                       juce::Justification::centred);
+            g.setColour(Theme::color(Theme::Color::textDim));
+            g.setFont(labelFont);
+            g.drawText(label, bounds.getX(), labelY, bounds.getWidth(), 12,
+                       juce::Justification::centred);
+        };
+
+        double bpm   = state.getSongTempo();
+        double bps   = bpm > 0.0 ? bpm / 60.0 : 2.0;
+        double beat  = sequencer ? sequencer->getBeatPosition() : 0.0;
+        char buf[24];
+
+        // TIME — HH:MM:SS.ms wall-clock from transport zero.
+        double totalSeconds = beat / bps;
+        int hrs  = (int)(totalSeconds / 3600.0);
+        int mins = (int)(std::fmod(totalSeconds, 3600.0) / 60.0);
+        int secs = (int)std::fmod(totalSeconds, 60.0);
+        int ms   = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
+        snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
+        drawCell(timeCell, buf, "TIME", lcdDigit);
+
+        // Separator + BPM (clickable).
+        g.setColour(lcdBorder);
+        g.drawLine((float) timeCell.getRight(), (float)(lcdBounds.getY() + 4),
+                   (float) timeCell.getRight(), (float)(lcdBounds.getBottom() - 4), 1.0f);
+        snprintf(buf, sizeof(buf), "%.1f", bpm);
+        drawCell(bpmClickBounds, buf, "BPM", lcdDigit);
     }
-    g.drawText(label, cycleLengthField, juce::Justification::centred);
 
     // PANIC reset button — wipes everything and returns to bootstrap.
     g.setColour(Theme::color(Theme::Color::bgControl));
@@ -625,8 +669,11 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     grabKeyboardFocus();
     auto pos = e.getPosition();
 
-    // (Loop length is captured by tap-to-stop, not chosen — the readout
-    // pill is display-only.)
+    if (bpmClickBounds.contains(pos)) {
+        showBpmEditor();
+        return;
+    }
+    // (TIME cell is display-only — readout, no click semantics.)
     // Top bar — MIDI Learn toggle.
     if (learnPill.contains(pos)) {
         toggleLearnMode();
@@ -738,6 +785,28 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
         }
     }
     return false;
+}
+
+// ---- LCD editors (BPM, Time Sig) ----------------------------------------
+// Match the Producer's tempo / time-sig dialogs by intent — same input
+// validation ranges, same StateAPI calls — so changes from either pane
+// land in the same song state.
+
+void LooperPane::showBpmEditor() {
+    auto* dlg = new juce::AlertWindow("Set Tempo", "", juce::MessageBoxIconType::NoIcon);
+    dlg->addTextEditor("bpm", juce::String(state.getSongTempo(), 1), "BPM");
+    dlg->addButton("OK", 1);
+    dlg->addButton("Cancel", 0);
+    auto* statePtr = &state;
+    dlg->enterModalState(true, juce::ModalCallbackFunction::create(
+        [dlg, statePtr](int result) {
+            if (result == 1) {
+                double bpm = dlg->getTextEditorContents("bpm").getDoubleValue();
+                if (bpm >= 20.0 && bpm <= 300.0)
+                    statePtr->setSongTempo(bpm);
+            }
+            delete dlg;
+        }));
 }
 
 // ---- MIDI Learn -----------------------------------------------------------

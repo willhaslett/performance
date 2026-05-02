@@ -4675,8 +4675,9 @@ public:
             expectEquals((int) take->events.size(), 2);
             expectEquals(take->events[0].data1, 60);
             expect(tc.state().getLoopAction(trackId) == LoopAction::None);
-            // Empty events were snapshot'd to undoStack on first capture.
-            expectEquals(tc.state().getLoopUndoDepth(trackId), 1);
+            // commitLoopAction snapshots app-level undo so the user can
+            // back the whole commit out (events + lengthBeats + cycle).
+            expect(tc.state().canUndo());
         }
 
         beginTest("commit Overdub: existing events plus captured, sorted");
@@ -4703,7 +4704,8 @@ public:
             expectEquals(take->events[1].beatOffset, 1.0);
             expectEquals(take->events[2].beatOffset, 2.0);
             expectEquals(take->events[3].beatOffset, 3.0);
-            expectEquals(tc.state().getLoopUndoDepth(trackId), 2);
+            // Two commits → two undo snapshots (app-level).
+            expect(tc.state().canUndo());
         }
 
         beginTest("commit outside Capturing* state is a no-op");
@@ -4720,56 +4722,13 @@ public:
             expectEquals((int) t->loops.size(), 0);
         }
 
-        beginTest("undo restores previous events; redo brings them back");
-        {
-            TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            tc.state().setFocusedTrackId(trackId);
-            tc.state().replaceLoop();
-            tc.state().commitLoopAction(trackId, {
-                { 0.0, 0x90, 1, 60, 100 }
-            });
-            expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
+        // Loop undo/redo go through the app-level UndoHistory now (one
+        // snapshot covers events + lengthBeats + cycle). The dedicated
+        // app-level UndoHistoryTests cover the mechanism end-to-end;
+        // here we only verify the looper-side hookups push/pop snapshots
+        // through commits and clears.
 
-            tc.state().undoLoop();
-            expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 0);
-            expectEquals(tc.state().getLoopRedoDepth(trackId), 1);
-
-            tc.state().redoLoop();
-            expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
-            expectEquals(tc.state().getLoopRedoDepth(trackId), 0);
-        }
-
-        beginTest("new commit after undo clears redoStack");
-        {
-            TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            tc.state().setFocusedTrackId(trackId);
-            tc.state().replaceLoop();
-            tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 60, 100 } });
-            tc.state().undoLoop();
-            expectEquals(tc.state().getLoopRedoDepth(trackId), 1);
-
-            tc.state().replaceLoop();
-            tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 64, 100 } });
-            expectEquals(tc.state().getLoopRedoDepth(trackId), 0);  // wiped
-        }
-
-        beginTest("undo/redo bounded at kMaxLoopUndo (10)");
-        {
-            TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            tc.state().setFocusedTrackId(trackId);
-            for (int i = 0; i < 12; ++i) {
-                tc.state().replaceLoop();
-                tc.state().commitLoopAction(trackId, {
-                    { 0.0, 0x90, 1, 60 + i, 100 }
-                });
-            }
-            expectEquals(tc.state().getLoopUndoDepth(trackId), StateAPI::kMaxLoopUndo);
-        }
-
-        beginTest("clearLoop pushes undo, empties events; cycleEnd untouched");
+        beginTest("clearLoop pushes app-level undo, empties events; cycleEnd untouched");
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
@@ -4782,11 +4741,15 @@ public:
 
             tc.state().clearLoop();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 0);
-            expectEquals(tc.state().getLoopUndoDepth(trackId), 2);  // commit + clear
+            expect(tc.state().canUndo());
             expectEquals(tc.state().currentSong()->cycleEnd, 16.0);  // untouched
+
+            // Undo brings the events back.
+            tc.state().undo();
+            expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
         }
 
-        beginTest("clearAllLoops resets cycleEnd and snapshots every track");
+        beginTest("clearAllLoops resets cycleEnd and is undoable");
         {
             TestCoordinator tc;
             auto t1 = tc.state().createTrack("T1");
@@ -4794,7 +4757,6 @@ public:
             tc.state().setMode(AppMode::Looper);
             tc.state().setCycleLength(16.0);
 
-            // Seed both with content.
             for (auto& tid : { t1, t2 }) {
                 tc.state().setFocusedTrackId(tid);
                 tc.state().replaceLoop();
@@ -4806,21 +4768,44 @@ public:
             for (auto& tid : { t1, t2 }) {
                 auto* t = tc.state().findTrack(tid);
                 expectEquals((int) t->loops[0].activeTake()->events.size(), 0);
-                expectGreaterOrEqual(tc.state().getLoopUndoDepth(tid), 1);
             }
             expectEquals(tc.state().currentSong()->cycleEnd, 0.0);
-            expect(!tc.state().currentSong()->cycleEnabled);
+            expect(! tc.state().currentSong()->cycleEnabled);
+
+            // One undo restores the cleared state.
+            tc.state().undo();
+            expectEquals(tc.state().currentSong()->cycleEnd, 16.0);
         }
 
-        beginTest("undo with empty undoStack is a no-op (no crash)");
+        beginTest("undo on a fresh commit also undoes master cycle");
         {
+            // The motivating bug: after the very first commit (which
+            // sets master cycle from elapsed beats), a single undo must
+            // take the looper all the way back to its initial no-cycle
+            // state — events gone AND cycleEnd back to 0. Goes through
+            // the coordinator's gesture toggle so the transaction that
+            // wraps start→stop is exercised.
             TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            tc.state().setFocusedTrackId(trackId);
-            tc.state().replaceLoop();  // CapturingReplace, no commit yet
-            tc.state().undoLoop();
-            tc.state().redoLoop();
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto trackId = s.createTrack("T");
+            s.setMode(AppMode::Looper);
+            expectEquals(s.currentSong()->cycleEnd, 0.0);
+
+            s.setFocusedTrackId(trackId);
+            coord.replaceLoopGesture();          // start: transport plays, CapturingReplace
+            coord.sequencer()->setBeatPosition(8.0);
+            coord.replaceLoopGesture();          // stop: commit + setCycleLength(8)
+            expectWithinAbsoluteError(s.currentSong()->cycleEnd, 8.0, 1e-6);
+            expect(s.canUndo());
+
+            s.undo();
+            expectEquals(s.currentSong()->cycleEnd, 0.0);
+            auto* t = s.findTrack(trackId);
+            expect(! t || t->loops.empty()
+                   || t->loops[0].activeTake()->events.empty());
+
+            coord.resetLooperSession();   // tidy teardown
         }
     }
 };

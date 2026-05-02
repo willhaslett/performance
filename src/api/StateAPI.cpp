@@ -464,15 +464,6 @@ RegionState* getOrCreateLoopRegion(StateAPI& state, TrackState* t,
     (void)state;
 }
 
-// Push the current events vector onto undoStack (capped). Clears
-// redoStack — any new mutation invalidates the redo path.
-void pushUndoSnapshot(RegionState& region, const std::vector<MidiEventState>& events) {
-    region.undoStack.push_back(events);
-    while ((int)region.undoStack.size() > StateAPI::kMaxLoopUndo)
-        region.undoStack.pop_front();
-    region.redoStack.clear();
-}
-
 // Sort events by beatOffset. std::sort is not stable, but events
 // captured live always have distinct sample-positions so beatOffsets
 // differ by at least one sample — equivalent results in practice.
@@ -538,7 +529,7 @@ void StateAPI::commitLoopAction(const TrackId& trackId,
     auto* take = region.activeTake();
     if (!take) return;
 
-    pushUndoSnapshot(region, take->events);
+    pushUndo();   // app-level snapshot — captures cycle, lengthBeats, events together
 
     if (isReplace) {
         take->events = std::move(capturedEvents);
@@ -563,40 +554,6 @@ void StateAPI::commitLoopAction(const TrackId& trackId,
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
-void StateAPI::undoLoop() {
-    auto trackId = getFocusedTrackId();
-    if (trackId.empty()) return;
-    auto* t = findTrack(trackId);
-    if (!t || t->loops.empty()) return;
-    auto& region = t->loops[0];
-    if (region.undoStack.empty()) return;
-    auto* take = region.activeTake();
-    if (!take) return;
-    region.redoStack.push_back(take->events);
-    while ((int)region.redoStack.size() > kMaxLoopUndo)
-        region.redoStack.pop_front();
-    take->events = std::move(region.undoStack.back());
-    region.undoStack.pop_back();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
-}
-
-void StateAPI::redoLoop() {
-    auto trackId = getFocusedTrackId();
-    if (trackId.empty()) return;
-    auto* t = findTrack(trackId);
-    if (!t || t->loops.empty()) return;
-    auto& region = t->loops[0];
-    if (region.redoStack.empty()) return;
-    auto* take = region.activeTake();
-    if (!take) return;
-    region.undoStack.push_back(take->events);
-    while ((int)region.undoStack.size() > kMaxLoopUndo)
-        region.undoStack.pop_front();
-    take->events = std::move(region.redoStack.back());
-    region.redoStack.pop_back();
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
-}
-
 void StateAPI::clearLoop() {
     auto trackId = getFocusedTrackId();
     if (trackId.empty()) return;
@@ -605,7 +562,7 @@ void StateAPI::clearLoop() {
     auto& region = t->loops[0];
     auto* take = region.activeTake();
     if (!take) return;
-    pushUndoSnapshot(region, take->events);
+    pushUndo();
     take->events.clear();
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
@@ -617,8 +574,6 @@ void StateAPI::resetLoopRuntime() {
         if (t.loops.empty()) continue;
         auto& region = t.loops[0];
         region.loopAction = LoopAction::None;
-        region.undoStack.clear();
-        region.redoStack.clear();
     }
     eventBus.emit({ StateEvent::Updated, StateEvent::Song, s->id.str(), "" });
 }
@@ -626,12 +581,12 @@ void StateAPI::resetLoopRuntime() {
 void StateAPI::clearAllLoops() {
     auto* s = currentSong();
     if (!s) return;
+    pushUndo();
     for (auto& t : s->tracks) {
         if (t.loops.empty()) continue;
         auto& region = t.loops[0];
         auto* take = region.activeTake();
         if (!take) continue;
-        pushUndoSnapshot(region, take->events);
         take->events.clear();
     }
     s->cycleEnd = 0.0;
@@ -643,18 +598,6 @@ LoopAction StateAPI::getLoopAction(const TrackId& trackId) const {
     auto* t = findTrack(trackId);
     if (!t || t->loops.empty()) return LoopAction::None;
     return t->loops[0].loopAction;
-}
-
-int StateAPI::getLoopUndoDepth(const TrackId& trackId) const {
-    auto* t = findTrack(trackId);
-    if (!t || t->loops.empty()) return 0;
-    return (int)t->loops[0].undoStack.size();
-}
-
-int StateAPI::getLoopRedoDepth(const TrackId& trackId) const {
-    auto* t = findTrack(trackId);
-    if (!t || t->loops.empty()) return 0;
-    return (int)t->loops[0].redoStack.size();
 }
 
 // --- Tracks ---

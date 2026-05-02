@@ -389,8 +389,11 @@ void LuaEngine::registerAPI() {
     // commit. See docs/LIVE_INPUT_AND_FOCUS.md.
     lua.set_function("replaceLoop", [&coord]() { coord.replaceLoopGesture(); });
     lua.set_function("overdubLoop", [&coord]() { coord.overdubLoopGesture(); });
-    lua.set_function("undoLoop",    [&state]() { state.undoLoop(); });
-    lua.set_function("redoLoop",    [&state]() { state.redoLoop(); });
+    // Looper undo/redo deliberately call app-level undo — same backing
+    // history as Cmd-Z, so cycle length / lengthBeats / events are
+    // restored together.
+    lua.set_function("undoLoop",    [&state]() { state.undo(); });
+    lua.set_function("redoLoop",    [&state]() { state.redo(); });
     lua.set_function("clearLoop",   [&state]() { state.clearLoop(); });
     lua.set_function("clearAllLoops", [&state]() { state.clearAllLoops(); });
     lua.set_function("resetLooperSession", [&coord]() { coord.resetLooperSession(); });

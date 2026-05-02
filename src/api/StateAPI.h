@@ -65,8 +65,6 @@ public:
     // (replaceLoopGesture / overdubLoopGesture) by calling
     // commitLoopAction. From any non-None state these methods no-op —
     // the gesture toggle is the coordinator's job.
-    static constexpr int kMaxLoopUndo = 10;
-
     void replaceLoop();
     void overdubLoop();
 
@@ -74,7 +72,8 @@ public:
     // the FIFO at the end of the capture cycle.
     // CapturingReplace: events become the new content.
     // CapturingOverdub: events are merged into the existing content.
-    // Pushes the previous events to undoStack; clears redoStack.
+    // Pushes a single app-level undo snapshot before mutating, so a
+    // subsequent undo() restores events + lengthBeats + cycle together.
     // No-op if not in a Capturing* state or no loop region.
     void commitLoopAction(const TrackId& trackId,
                           std::vector<MidiEventState> capturedEvents);
@@ -84,23 +83,21 @@ public:
     // events change, just resets loopAction to None.
     void cancelLoopCapture(const TrackId& trackId);
 
-    // Undo / redo / per-track clear are also performer-facing — they
-    // target the focused track. clearAllLoops is session-wide.
-    void undoLoop();
-    void redoLoop();
+    // Per-track clear targets the focused track; clearAllLoops is
+    // session-wide. Both push an app-level undo snapshot, so the
+    // ordinary `undo()` / `redo()` path restores them along with cycle
+    // length and any other state that changed.
     void clearLoop();
     void clearAllLoops();
 
     // Wipe per-track looper runtime: every loop region's loopAction
-    // back to None, undoStack and redoStack emptied. Doesn't touch
-    // events. Used by the panic-button reset path that wants a clean
-    // state machine without inheriting prior undo history.
+    // back to None. Doesn't touch events. Used by the panic-button
+    // reset path that wants a clean state machine without dropping
+    // captured content.
     void resetLoopRuntime();
 
-    // Read-only accessors for GUI / tests.
+    // Read-only accessor for GUI / tests.
     LoopAction getLoopAction(const TrackId& trackId) const;
-    int getLoopUndoDepth(const TrackId& trackId) const;
-    int getLoopRedoDepth(const TrackId& trackId) const;
 
     // --- Tracks ---
     TrackId createTrack(const std::string& name);  // virtual instrument track
