@@ -70,6 +70,13 @@ void ProducePane::setState(StateAPI* s, SequencerAPI* seq, Arrangement* arr) {
         auto trh = state->getConfig("zoom_track_row_height");
         if (!trh.empty()) trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
 
+        // Snap-to-grid toggle. Default on (most edits land cleanly on the
+        // grid). Turned off when the user wants to position the playhead
+        // freely — measuring audio latency from the recorded waveform, for
+        // instance, where to-the-sample placement matters.
+        auto snap = state->getConfig("snap_to_grid");
+        if (!snap.empty()) snapToGrid = (snap == "1");
+
         stateSubscriptionId = state->events().subscribe([this](const StateEvent& event) {
             if (event.entity == StateEvent::Track || event.entity == StateEvent::Config)
                 juce::MessageManager::callAsync([this] { repaint(); });
@@ -380,6 +387,20 @@ void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> b
         }
         break;
     }
+    case TransportGlyph::SnapToggle: {
+        // Four short vertical bars — a tiny "grid" glyph. When snap is
+        // off, the inactive (dimmer) state of paintTransportButton's
+        // standard color treatment communicates that already.
+        const float barW = 1.4f;
+        const float spacing = inner.getWidth() / 5.0f;
+        float top = inner.getY() + inner.getHeight() * 0.20f;
+        float bot = inner.getBottom() - inner.getHeight() * 0.20f;
+        for (int i = 0; i < 4; ++i) {
+            float x = inner.getX() + spacing * (i + 1) - barW * 0.5f;
+            g.fillRect(x, top, barW, bot - top);
+        }
+        break;
+    }
     case TransportGlyph::Cycle: {
         // Two interlocking arcs forming a loop (Logic-style), drawn as filled
         // closed paths so they match the visual weight of the other glyphs.
@@ -503,14 +524,15 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     btnX += btnSize + groupPad;
 
     // --- View group: a separate container right of the transport group,
-    // for buttons that toggle UI visibility (currently just the Events
-    // track). Same Logic-style group container, one button wide for now;
-    // future view toggles slot in next to the EventsToggle.
+    // for buttons that toggle UI visibility. Houses EventsToggle (Action
+    // track on/off) and SnapToggle (playhead snap on/off — turned off
+    // when measuring latency / placing the head sample-accurately).
     int viewGroupGap = 12;
     int viewBtnX = btnX + viewGroupGap + groupPad;
+    int viewBtnCount = 2;
     auto viewGroupBounds = juce::Rectangle<int>(
         viewBtnX - groupPad, btnY - groupPad,
-        btnSize + 2 * groupPad,
+        viewBtnCount * btnSize + (viewBtnCount - 1) * btnGap + 2 * groupPad,
         btnSize + 2 * groupPad);
     g.setColour(Theme::color(Theme::Color::bgControl));
     g.fillRoundedRectangle(viewGroupBounds.toFloat(), 6.0f);
@@ -520,6 +542,13 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     paintTransportButton(g, showActionTrackButtonBounds, TransportGlyph::EventsToggle,
                          showActionTrack,
                          hoveredTransport == HoveredTransport::EventsToggle,
+                         Theme::color(Theme::Color::accent));
+
+    int snapBtnX = showActionTrackButtonBounds.getRight() + btnGap;
+    snapToggleButtonBounds = juce::Rectangle<int>(snapBtnX, btnY, btnSize, btnSize);
+    paintTransportButton(g, snapToggleButtonBounds, TransportGlyph::SnapToggle,
+                         snapToGrid,
+                         hoveredTransport == HoveredTransport::SnapToggle,
                          Theme::color(Theme::Color::accent));
 
     // --- Position display (LCD centered on grid area) ---
@@ -2281,6 +2310,12 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         repaint();
         return;
     }
+    if (snapToggleButtonBounds.contains(event.getPosition())) {
+        snapToGrid = !snapToGrid;
+        if (state) state->setConfig("snap_to_grid", snapToGrid ? "1" : "0");
+        repaint();
+        return;
+    }
 }
 
 void ProducePane::mouseDoubleClick(const juce::MouseEvent& event) {
@@ -2339,6 +2374,7 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
     else if (recordButtonBounds.contains(mp)) newHover = HoveredTransport::Record;
     else if (cycleButtonBounds.contains(mp))  newHover = HoveredTransport::Cycle;
     else if (showActionTrackButtonBounds.contains(mp)) newHover = HoveredTransport::EventsToggle;
+    else if (snapToggleButtonBounds.contains(mp)) newHover = HoveredTransport::SnapToggle;
     if (newHover != hoveredTransport) {
         hoveredTransport = newHover;
         repaint();

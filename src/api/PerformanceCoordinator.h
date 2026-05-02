@@ -278,6 +278,18 @@ private:
     std::optional<LoopCaptureSlot> activeLoopCapture;
     void dispatchLoopGestures(double wrapBeat);  // called from onCycleWrap
 
+    // Per-mode playhead memory. The transport (InternalSequencer) is a
+    // single shared clock; without this, playing in Looper for 5 minutes
+    // and then switching back to Producer leaves the playhead at bar 143.
+    // Stored in seconds (not beats) so a tempo change between leaving
+    // and re-entering Arrangement preserves the wall-clock position the
+    // user left, not a different musical position. Looper always re-
+    // enters at beat 0 — its playhead is cycle-relative, so absolute
+    // position outside the cycle is meaningless.
+    AppMode lastSeenMode = AppMode::Arrangement;
+    double stashedArrangementSeconds = 0.0;
+    void handleModeChange();  // called from event subscription
+
     // Bootstrap state — true between first and second tap-to-tap
     // gesture when cycleEnd was 0. While active, captured events
     // accumulate in activeLoopCapture and the cycle hasn't been set.

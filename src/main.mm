@@ -279,6 +279,7 @@ public:
         else if (index == 3) {  // View
             menu.addItem(shortcut(CommandIDs::viewSidebar, "Sidebar", "view.sidebar"));
             menu.addItem(shortcut(50, "Produce", "view.produce"));
+            menu.addItem(shortcut(55, "Looper", "view.looper"));
             menu.addItem(shortcut(51, "Mappings", "view.mappings"));
             menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", "view.mixer"));
             menu.addItem(shortcut(52, "Chat", "view.chat"));
@@ -441,6 +442,7 @@ public:
         case 51: if (kb) layout.handleGlobalKey(kb->getKey("view.mappings")); break;
         case 52: if (kb) layout.handleGlobalKey(kb->getKey("view.chat")); break;
         case 53: if (kb) layout.handleGlobalKey(kb->getKey("view.logs")); break;
+        case 55: if (kb) layout.handleGlobalKey(kb->getKey("view.looper")); break;
         case 54: juce::File("/tmp/performance.log").revealToUser(); break;
         case CommandIDs::viewMusicalTyping: layout.handleGlobalKey(KeyBindings::musicalTyping); break;
         case CommandIDs::viewZoomIn:
@@ -906,7 +908,7 @@ private:
 
         // File
         k.registerCommand("file.newSong", "File", ("New " + UiTerms::docSingular).toStdString(), noKey);
-        k.registerCommand("file.save", "File", "Save", KB::save);
+        k.registerCommand("file.save", "File", "Save", noKey);  // unbound — autosave covers it; ⌘S now toggles Sidebar
         k.registerCommand("file.closeSong", "File", ("Close " + UiTerms::docSingular).toStdString(), noKey);
         k.registerCommand("file.settings", "File", "Settings", KB::settings);
 
@@ -943,8 +945,7 @@ private:
             juce::KeyPress('H', juce::ModifierKeys::shiftModifier, 0));
 
         // View
-        k.registerCommand("view.sidebar", "View", "Sidebar",
-            juce::KeyPress('p', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.sidebar", "View", "Sidebar", KB::toggleSidebar);
         k.registerCommand("view.mixer", "View", "Mixer",
             juce::KeyPress('o', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.musicalTyping", "View", "Musical Typing", KB::musicalTyping);
@@ -958,6 +959,7 @@ private:
             juce::KeyPress('k', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.produce", "View", "Produce",
             juce::KeyPress('y', juce::ModifierKeys::commandModifier, 0));
+        k.registerCommand("view.looper", "View", "Looper", KB::toggleLooper);
         k.registerCommand("view.mappings", "View", "Mappings",
             juce::KeyPress('u', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.chat", "View", "Chat",

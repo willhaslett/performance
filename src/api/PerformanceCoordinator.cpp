@@ -1113,6 +1113,37 @@ void PerformanceCoordinator::togglePlay() {
     if (sequencerImpl) sequencerImpl->togglePlayStop();
 }
 
+void PerformanceCoordinator::handleModeChange() {
+    if (!stateAPI || !sequencerImpl) return;
+    auto newMode = stateAPI->getMode();
+    if (newMode == lastSeenMode) return;
+
+    // Always stop the transport across a mode flip — both modes share
+    // one clock and one playhead, and letting it advance through a mode
+    // switch is exactly the surprise we're avoiding (Looper drives the
+    // wall beat → Producer thinks "I'm at bar 143").
+    if (sequencerImpl->isPlaying()) sequencerImpl->stop();
+
+    // Read tempo from state (SSOT), not from the sequencer. setMode emits
+    // Song *and* App events; the Song handler runs first and rewrites the
+    // sequencer's tempo from song state. Reading sequencer here on the
+    // App branch can therefore see a stale value if the song tempo lags.
+    double bpm = stateAPI->getSongTempo();
+    double bps = bpm > 0.0 ? bpm / 60.0 : 2.0;  // 120bpm fallback if tempo missing
+
+    if (lastSeenMode == AppMode::Arrangement && newMode == AppMode::Looper) {
+        // Stash where the user was in Arrangement (in seconds — survives
+        // tempo changes) and reset the transport to 0 for the looper.
+        stashedArrangementSeconds = sequencerImpl->getBeatPosition() / bps;
+        sequencerImpl->setBeatPosition(0.0);
+    } else if (lastSeenMode == AppMode::Looper && newMode == AppMode::Arrangement) {
+        // Restore Arrangement to where the user left it.
+        sequencerImpl->setBeatPosition(stashedArrangementSeconds * bps);
+    }
+
+    lastSeenMode = newMode;
+}
+
 void PerformanceCoordinator::replaceLoopGesture() {
     if (!stateAPI) return;
     // Looper-only — outside the looper this gesture has no meaning,
@@ -1826,6 +1857,7 @@ void PerformanceCoordinator::onStateEvent(const StateEvent& event) {
     // App Updated — mode changed. Also re-sync so the arrangement
     // scanner dispatches to the right pool.
     if (event.entity == StateEvent::Song || event.entity == StateEvent::App) {
+        if (event.entity == StateEvent::App) handleModeChange();
         syncTempoFromState();
         return;
     }

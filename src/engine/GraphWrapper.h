@@ -278,9 +278,17 @@ public:
                         }
                     });
 
-                // Drive audio file nodes — check which regions cover prevBeat
+                // Drive audio file nodes — check which regions cover prevBeat.
+                // Mode-gated: in Looper mode, the arrangement pool's audio
+                // regions must not play (track.loops is the active pool, and
+                // audio looping isn't wired yet — so there's nothing to play
+                // from loops; skipping arrangement is the correct behavior).
+                // Without this, switching to Looper while an audio region was
+                // armed under the playhead leaks Producer audio through the
+                // looper transport.
+                const bool looperActive = arr->isLooperModeActive();
                 for (auto& [trkId, afNode] : trackAudioFileNodes) {
-                    if (!afNode || !afNode->hasFiles()) {
+                    if (!afNode || !afNode->hasFiles() || looperActive) {
                         if (afNode) afNode->setActive(false);
                         continue;
                     }

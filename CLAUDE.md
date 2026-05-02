@@ -16,7 +16,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
 - `docs/LIVE_LOOPING.md` — original live-looping data model + phased plan. Largely superseded by `LIVE_INPUT_AND_FOCUS.md` phase 6 (Boss-style first-tap-sets-length, per-track gesture queue, undo/redo, panic reset). Read before touching `track.loops`, `pendingTakeId`, cycle-wrap logic, or the Looper pane.
 - `docs/PANE_MODE_MODEL.md` — mode lives as `AppMode` on `AppState` (not `SongState`). Left-slot pane content is the current GUI policy that drives the mode flag. Read before touching pane visibility, `currentMode`, or the Produce↔Looper interaction.
-- `docs/LIVE_INPUT_AND_FOCUS.md` — **Living doc, in-flight.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Phases 1–5 landed; phase 6 (Boss-style looper) landed in pieces — 6.1 state-model layer, 6.2 coordinator wiring + Lua/MIDI bindings, 6.b bootstrap mode + panic reset. Still ahead inside phase 6: rip out the OLD R-arming machinery (now bridged), GUI cleanup of LooperPane (remove R pill from looper rows, drop take selector since takes collapsed to undo history), I-snap rule (additive everywhere), action-label rename. Load-bearing for live MIDI dispatch, track `R`/`I` semantics, and looper recording flow.
+- `docs/LIVE_INPUT_AND_FOCUS.md` — **Living doc, in-flight.** Per-track live MIDI routing, singular focused-track concept, looper redesign around armed-set + global record. Phases 1–5 landed; phase 6 (Boss-style looper) functionally complete: state-model layer, coordinator gestures (replace/overdub/undo/redo/clear), bootstrap mode, panic reset, MIDI Learn pill in LooperPane, in-flight note rendering during capture. Still open: action-label rename ("Loop: replace" rather than "Loop: replace (next wrap)"), I-snap-everywhere propagation, audio looping (audio FIFO path through gestures — currently MIDI-only). Load-bearing for live MIDI dispatch, track `R`/`I` semantics, and looper recording flow.
 
 User-testing artifacts (round plans, session notes, tester profiles, feedback) live in the separate private repo `willhaslett/performance-testing`.
 
@@ -32,7 +32,7 @@ User-testing artifacts (round plans, session notes, tester profiles, feedback) l
 
 **Toolbar:** minimal — just build info (commit hash, selectable/copyable TextEditor, `textDim`/`fontSizeSm`) right-aligned. When the commit is tagged, the tag appears alongside. Commit hash is regenerated on every build via `cmake/GenerateBuildVersion.cmake` → `build/generated/BuildVersion.h`, and auto-appends `-dirty` when there are uncommitted changes. No reconfigure needed to refresh it. Every log file also records `[App] Build version=... commit=... tag=... dirty=...` on startup.
 
-**Reset script:** `bin/reset` — scorched-earth reset of `~/.config/performance/` preserving `keys/` (notarization + telemetry config) and `plugin-cache.xml` (AU scan cache). Does not touch `~/Library/Application Support/com.performance.app/install.json`, so a reset keeps the same installation identity. Simulates "reset song library," not "fresh install."
+**Reset script:** `bin/reset` — surgical wipe of `~/.config/performance/`. Preserves `keys/`, `plugin-cache.xml`, AND the `devices` + `device_controls` rows in `state.db` (re-pairing MIDI hardware every reset is tedious in testing). Everything else gets cleared via `sqlite3` DELETE on the song-side tables (state.db file stays in place; schema_version survives so the app behaves as a known DB with zero songs → triggers default-song creation). Doesn't touch `~/Library/Application Support/com.performance.app/install.json`, so install identity persists. Simulates "reset song library," not "fresh install."
 
 ## 0.1.0 Release Plan
 
@@ -40,18 +40,24 @@ Target: first beta, roughly a week out. Not a rush. Ship gate: §1–3 done, §4
 
 ### Current focus / recommended sequence
 
-As of 2026-04-25, the **architectural foundation is settled, the two "reward-per-hour" features (bundled plugins, composer) shipped, and the looper redesign is functionally complete via the Boss-style flow.** End-to-end the performer can: reset → focus a track → tap replace pad → play → tap again to set the cycle length → focus next track → tap replace/overdub. Per-track gesture queue with single-cycle capture, undo/redo (10 deep), panic reset (UI button + bindable). Bootstrap mode (cycleEnd=0) auto-starts transport on first tap. Lua + MIDI bindable. Click-testing in flight on Will's KeyLab.
+As of 2026-05-02, the **architectural foundation is settled, both reward features (bundled plugins, composer) shipped, and the looper is feature-complete for MIDI** — Boss-style flow end-to-end: reset → focus track → tap replace → play → second tap sets cycle length → focus next track → tap replace/overdub. Per-track gesture queue with single-cycle capture, undo/redo (10 deep), panic reset (UI + bindable). MIDI Learn pill in the Looper pane lets testers bind hardware to gesture cells without leaving the pane. In-flight notes paint live during capture. R-arming machinery removed; LooperPane GUI cleanup done; OLD-pill / take-selector gone.
 
-**0.1.0 plan — current state.** Architecture + reward features settled. Looper functionally complete; remaining is polish (rip out OLD R-arming, LooperPane GUI cleanup, I-snap rule additive everywhere, action-label rename) plus running the round on real KeyLab use. Then distribution proof + perfuce.com + tag.
+**Today's structural fixes** (bag of related correctness issues that turned up during click-testing, all on `main` un-tagged):
+- Mode-gated audio dispatch — Producer audio regions no longer leak through when transport runs in Looper mode (was: GraphWrapper's `regionsForTrack` bypassed the looperActive flag that the MIDI scanner already used).
+- Mode-switch transport stop + per-mode playhead memory — switching panes now stops the shared transport and stashes/restores Arrangement's beat in seconds. Looper always re-enters at beat 0 (cycle-relative). Avoids the "play in Looper for 5 min, switch to Producer, find playhead at bar 143" surprise.
+- Snap-to-grid toggle in the Producer transport bar (View group, alongside the Events toggle). Persists in `snap_to_grid` config. Needed before chasing the audio-latency measurement.
+- Keybinding rework — ⌘P moved from Sidebar to Looper; ⌘S took over Sidebar; Save lost its ⌘S binding (autosave covers it). Sidebar pane list reordered to match keyboard left→right: Y/U/I/O/P (Produce, Perform, Chat, Mixer, Looper).
+- Phantom cycle-wrap fix from the prior day — `lastSequencerBeat` was assigned the pre-sync uiBeat, causing recordings to commit one frame after punch-in.
 
-Remaining sequence:
+**Remaining sequence:**
 
 1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* See `docs/BUNDLED_PLUGINS.md`.
 2. ~~**Composer integration.**~~ *Shipped (2026-04-20).* See `docs/COMPOSER_INTEGRATION.md`.
-3. **Looper polish + KeyLab miles.** Functional core landed (commits `d397e01` 6.1, `52bb325` 6.2, `56547c6` 6.b). Remaining: drop the OLD R-arming bridge once bootstrap is proven, GUI cleanup (R pill + take selector come out of LooperPane), I-snap rule (additive everywhere — already that way in PerformPane apparently, just propagate), `getLoopActionState` indicator on the GUI, action-label rename ("Loop: replace" instead of "Loop: replace (next wrap)" since bootstrap also covers it). Producer-mode bug hunt happening now.
-4. **perfuce.com rebuild.** Tester onboarding copy, example prompts, demo videos. Gated on video capture.
-5. **Distribution proof** (second-machine install, ~1 hour).
-6. **Tag + release.**
+3. **Looper functional polish + KeyLab miles.** Still open: bootstrap-after-PANIC-reset issue (Play and Replace appear no-op after in-app reset — under investigation, may be focused-track or transport state); audio looping unwired (gestures are MIDI-only — see `getInFlightLoopCapture` and `drainRecordFIFO` MIDI gate); action-label rename. Then more KeyLab time.
+4. **Audio latency** — measured ~85ms one-way at 128 samples (much higher than expected ~3ms). Snap-toggle is in to enable measurement; root-cause work pending. Could be a 0.1.0 blocker depending on cause.
+5. **perfuce.com rebuild.** Tester onboarding copy, example prompts, demo videos. Gated on video capture.
+6. **Distribution proof** (second-machine install, ~1 hour).
+7. **Tag + release.**
 
 ### 1. Distribution proof
 
@@ -125,7 +131,7 @@ The immediate goal is getting the app in the hands of 4 musician friends. Focus 
 
 Flat categorized list (no tabs, no tree). Two sections with title-case headers at `fontSizeLg`:
 
-**View** — one row per pane with a monospaced keybinding hint right of a fixed-width label column. Rows: Produce ⌘Y · Looper · Perform ⌘U · Chat ⌘I · Mixer ⌘O. Sidebar itself is not a row — toggle via ⌘P or the View menu. Active panes are indicated by text color only (no accent bar, no row highlight — pane visibility is self-evident). Looper doesn't have a keyboard shortcut yet; all single-letter ⌘ keys in the neighborhood are taken (⌘L is `view.zoomIn`). Clicking "Produce" or "Looper" is mutually exclusive — both flip `AppMode` via the `MainLayout::setPaneContent` bridge (see `docs/PANE_MODE_MODEL.md`).
+**View** — one row per pane with a monospaced keybinding hint right of a fixed-width label column. Rows in keyboard order Y/U/I/O/P: Produce ⌘Y · Perform ⌘U · Chat ⌘I · Mixer ⌘O · Looper ⌘P. Sidebar itself is not a row — toggle via ⌘S or the View menu. Active panes are indicated by text color only (no accent bar, no row highlight — pane visibility is self-evident). Clicking "Produce" or "Looper" is mutually exclusive — both flip `AppMode` via the `MainLayout::setPaneContent` bridge (see `docs/PANE_MODE_MODEL.md`).
 
 **Songs** — list of all songs (click to load) + "+ New Song" action button. Current song stays highlighted with `bgListActive` (brighter than `bgSelection` — a separate token because the list-selection context doesn't have embedded pills to contrast against).
 
@@ -172,6 +178,9 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 
 **High priority (0.1.0 candidates):**
 - **Out-of-process AU plugin hosting — STABILITY MUST-HAVE.** Today AUs run in-process via JUCE's default `AudioPluginInstance`; any plugin segfault (Kontakt 8 took us down on 2026-04-25) propagates straight to the host. Logic Pro hasn't been killed by plugins in years because Apple's `AUPluginHostingService` runs each plugin in its own XPC subprocess. Without this we cannot ship to performers — a single bad sample-load in Kontakt = whole session lost. Likely lift: investigate JUCE's support (or lack thereof) for the macOS AU sandboxing API, then either wire it in or build our own out-of-process host. Confirmed survival on 2026-04-25 because the JUCE `applicationCrashHandler` caught the signal and ran `coordinator->save()` — but the user lost their in-flight session and had to relaunch. Not acceptable for live performance.
+- **Looper bootstrap stuck after PANIC reset.** After clicking the in-app reset, neither Play nor Replace appear to do anything. Theories: focused-track preserved but transport / sequencer loop state in a half-cleared state; or paint/visibility issue masking a working state machine. Diagnosed but not fixed yet. Blocker for the 0.1.0 looper story.
+- **Audio looping is unwired.** Replace/Overdub gestures only capture MIDI today (`drainRecordFIFO` explicitly gates the push to instrument tracks). Audio tracks accept the gesture and the visual pulses, but no audio is captured. Wiring it = parallel to the arrangement audio FIFO path (`PerformanceCoordinator.cpp:610-641`); ~50–100 lines.
+- **Audio latency, both directions** (~85ms one-way at 128 samples — much higher than expected ~3ms). Snap-toggle landed so the Producer playhead can be placed sample-accurate for measuring. Suspect buffer doubling somewhere in the input → graph → output path, or AU tail-time not accounted for. Could be a 0.1.0 blocker.
 - **Stuck notes on transport stop** — Looper-only, intermittent, stop-mid-note hangs. `[LoopDump]` diagnostic logging in tree (commit `d017823`). Theory: noteOff-before-noteOn ordering after sort, possibly due to cycle-wrap-during-recording producing cycle-relative beats that re-order events. Deferred until it crops up again post phase-6 work.
 - **Track-arming/monitoring/selecting overhaul (Logic-style).** Current behavior is clunky — needs a systematic pass against Logic's behavior to replicate the conventions (click selects, R arms, I monitors, exclusive vs additive rules across modifiers, etc.). Affects Producer, Mixer, Looper. Not one fix; a small design pass plus a bunch of small wires.
 - **Track rename in-place across all panes.** Producer pops a big modal box; Mixer opens an editor offset from the existing label with the original still partially visible underneath; Looper renaming doesn't work at all. Standard double-click-name → inline TextEditor in the same spot.
@@ -181,6 +190,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
+- **Left pane top-bar squeezed when right pane is wide.** Producer / Looper / Perform top bars overflow / overlap when the right (chat) pane is wide enough. Needs a layout decision — does the top-bar collapse content (e.g. icon-only at narrow widths), wrap to two rows, set a max width on the right pane, or make the divider hard-snap before the left pane crosses a usability threshold? Affects all three panes; design pass first, then implement.
 
 **Deferred / lower priority:**
 - **MIDI hot-plug not working.** Plugging or unplugging a MIDI device while the app is running doesn't trigger device list refresh — performer has to relaunch. Likely needs a CoreMIDI client notification subscription with a callback into MIDIEngine that re-runs initialise() / refreshMidiDevices().
@@ -188,7 +198,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **Producer events-track toggle as triangle in the top-left header rect.** Currently lives as a "..." button in the transport view group; gets squeezed when the chat pane is open. Move to the empty rectangle above the track-headers column / left of the timeline, render as an expand/collapse triangle.
 - **Movable left/right pane divider.** Currently fixed at the per-content preferred widths.
 - **Audio track default input on create.** Creating an audio track should default `inputChannelStart` to "Input 1" (first input on the current device) instead of unset. Keep `inputMonitoring=false` to preserve feedback safety.
-- **Remove "Save" from the menu / UI.** Autosave covers everything; the menu item just confuses users into thinking saving is something they need to do. ⌘S can stay as "force flush now" if it's harmless, but the menu visibility is the thing.
+- **Remove "Save" from the menu / UI.** ⌘S binding already removed (now toggles Sidebar). Menu item still visible — drop it; autosave covers everything.
 - **Failed plugin load feedback** — show plugin name in error color when load fails.
 - **TempoMap + TimeSignatureMap** — runtime evaluation of tempo/time-sig change events.
 - **Theme picker UI** — menu or settings entry to switch themes. `availableThemes()` is ready.
@@ -255,7 +265,8 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 - `armed` and `inputMonitoring` persist; `muted`, `soloed`, `recordModeActive` are runtime only. Recording is explicit: armed tracks record only when record mode is active.
 - **`AppMode`** lives on `AppState` (not `SongState`). Values: `Arrangement` / `Looper`. Controls engine dispatch in `Arrangement::scanMidiEvents`. Entering `Looper` forces `cycleEnabled=true` + `cycleStart=0` on the current song; leaving resets `cycleEnabled`. See `docs/PANE_MODE_MODEL.md`.
 - **`focusedTrackId`** is a singular per-song pointer at "the track I'm playing into right now" — distinct from `selectedTrackIds` (plural set, for grouped UI actions). Emitted as `StateEvent::Focus`. Phase 1 of `docs/LIVE_INPUT_AND_FOCUS.md`; engine-level routing (phase 3) not yet wired.
-- `track.regions` (arrangement pool) and `track.loops` (looper pool) are fully independent collections on `TrackState`. `AppMode::Looper` engine dispatch reads `loops`; `Arrangement` reads `regions`. No runtime cross-pollination — region copying is a design-time action.
+- `track.regions` (arrangement pool) and `track.loops` (looper pool) are fully independent collections on `TrackState`. `AppMode::Looper` engine dispatch reads `loops`; `Arrangement` reads `regions`. No runtime cross-pollination — region copying is a design-time action. The mode gate applies to **both MIDI and audio dispatch** in `GraphWrapper::processBlock` (audio file regions in the arrangement pool are silenced when `looperActive=true` — without this, switching to Looper mid-arrangement-playback leaks Producer audio).
+- **One transport, mode-gated.** `InternalSequencer` is the singular clock — there is no per-pane transport. Switching `AppMode` therefore stops the transport (avoiding "play in Looper for 5 min, switch to Producer, find playhead at bar 143") and applies a per-mode playhead memory: leaving Arrangement stashes the beat in **seconds** (tempo-change resilient), entering Arrangement restores from that stash, entering Looper snaps to 0 (looper is cycle-relative — absolute beat outside the cycle is meaningless). The whole flip lives in `PerformanceCoordinator::handleModeChange` driven off the App-Updated event from `setMode`.
 - Regions are take folders. `MidiEventState` is raw events; notes derived via `buildNoteList()`.
 - Action track: one per song (auto-created), no regions — events stored directly with absolute beat positions.
 
@@ -274,7 +285,7 @@ Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. 
 
 - **EngineSync** (`src/engine/EngineSync.*`) — pure event subscriber. Zero public methods.
 - **AudioEngine** (`src/engine/AudioEngine.*`) — JUCE AudioProcessorGraph. UUID-keyed. Pure view of state.
-- **GraphWrapper** (`src/engine/GraphWrapper.h`) — wraps graph for per-buffer MIDI scheduling and recording.
+- **GraphWrapper** (`src/engine/GraphWrapper.h`) — wraps graph for per-buffer MIDI scheduling, audio file region playback, and recording. Both MIDI and audio dispatch consult `arr->isLooperModeActive()` so arrangement content is silenced while in Looper mode.
 - **MidiSourceNode**, **AudioFileNode** — per-track sequencer playback nodes.
 - **RecordFIFO**, **AudioRecordFIFO**, **AudioWriterThread** — lock-free SPSC capture + WAV writer with live peaks.
 - **MIDIEngine** (`src/engine/MIDIEngine.*`) — MIDI input, learn mode (port-aware single-shot), routing, monitoring callback (single — last setter wins).
@@ -301,7 +312,7 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 - **Sidebar** — flat View + Songs list (see Active Work § Sidebar for details).
 - **PerformPane** — thin composer wrapping **ControllersPane** (MIDI device tree, learn mode) + **SongMappingsPane** (Atemporal + Score bindings) with an internal draggable divider. Drag-and-drop between all areas. Learn mode is port-aware single-shot. Stub bindings (no action) persist.
 - **DebugPane**, **LogPane**, **SettingsWindow** (Cmd+, — Audio / MIDI / About tabs, About shows install ID + diagnostics toggle), **ChatView**, **ClaudeClient**.
-- **KeyBindingManager** — 36 commands across File/Edit/Transport/View/Region/Track. User overrides in config. `KeyBindingEditor` modal for rebinding. Pane toggles: ⌘Y Produce, ⌘U Mappings, ⌘I Chat, ⌘⇧L Logs, ⌘O Mixer, ⌘P Sidebar.
+- **KeyBindingManager** — commands across File/Edit/Transport/View/Region/Track. User overrides in config. `KeyBindingEditor` modal for rebinding. Defaults match keyboard left→right for pane toggles: ⌘Y Produce · ⌘U Mappings · ⌘I Chat · ⌘O Mixer · ⌘P Looper · ⌘S Sidebar · ⌘⇧L Logs. Save (`file.save`) is registered with no key — autosave covers it.
 
 ### Theme
 
@@ -351,4 +362,4 @@ On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/perform
 
 ## Tests
 
-Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, 165 tests, all isolated. `MockAudioEngine` for EngineSync verification. BundledPluginInstaller tests use a file-path test hook (`setInstallManifestFileForTests`) to redirect the install-manifest path to a temp dir. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`.
+Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, ~250 tests, all isolated. `MockAudioEngine` for EngineSync verification. `TestCoordinator` wraps a real `PerformanceCoordinator` against a temp DB for integration tests. BundledPluginInstaller tests use a file-path test hook (`setInstallManifestFileForTests`) to redirect the install-manifest path to a temp dir. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`. Tests that start the transport via the coordinator must call `resetLooperSession` (or `sequencer()->stop()`) before scope exit — otherwise the audio thread can segfault during teardown. Known coverage gaps: MIDI Learn end-to-end flow, mode-gated audio dispatch in `GraphWrapper` (audio-thread; needs a graph mock), phantom-cycle-wrap fix.

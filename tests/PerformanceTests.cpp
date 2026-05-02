@@ -5062,6 +5062,433 @@ public:
 static TrackFocusTests trackFocusTests;
 
 // ============================================================================
+// Focus navigation gestures — focusPrev/Next wrap-around with Action skip,
+// plus toggleFocusedMute. Bound as Looper-pane buttons + bindable actions.
+// ============================================================================
+class FocusNavigationTests : public juce::UnitTest {
+public:
+    FocusNavigationTests() : juce::UnitTest("FocusNavigation") {}
+
+    void runTest() override {
+        beginTest("focusNextTrack wraps from last to first");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            auto b = s.createTrack("B");
+            auto c = s.createTrack("C");
+            s.setFocusedTrackId(c);
+            s.focusNextTrack();
+            expect(s.getFocusedTrackId() == a);
+        }
+
+        beginTest("focusPrevTrack wraps from first to last");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            auto b = s.createTrack("B");
+            auto c = s.createTrack("C");
+            s.setFocusedTrackId(a);
+            s.focusPrevTrack();
+            expect(s.getFocusedTrackId() == c);
+        }
+
+        beginTest("both skip Action tracks");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            // Action track lives at the start of every song already (created
+            // by TestCoordinator::createSong → createActionTrack); the
+            // skip behaviour should keep focus on instrument tracks only.
+            auto b = s.createTrack("B");
+            s.setFocusedTrackId(a);
+            s.focusNextTrack();
+            expect(s.getFocusedTrackId() == b);
+            s.focusNextTrack();
+            expect(s.getFocusedTrackId() == a);  // wrapped past Action
+        }
+
+        beginTest("no-op with fewer than two non-action tracks");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("Only");
+            s.setFocusedTrackId(a);
+            s.focusNextTrack();
+            expect(s.getFocusedTrackId() == a);  // unchanged
+            s.focusPrevTrack();
+            expect(s.getFocusedTrackId() == a);
+        }
+
+        beginTest("toggleFocusedMute flips muted on focused track");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            auto b = s.createTrack("B");
+            s.setFocusedTrackId(b);
+            expect(! s.isTrackMuted(b));
+            s.toggleFocusedMute();
+            expect(s.isTrackMuted(b));
+            // The other track is untouched.
+            expect(! s.isTrackMuted(a));
+            s.toggleFocusedMute();
+            expect(! s.isTrackMuted(b));
+        }
+
+        beginTest("toggleFocusedMute is a no-op when no focus");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            // Explicitly clear focus (createTrack auto-focuses).
+            s.setFocusedTrackId(TrackId{});
+            s.toggleFocusedMute();
+            expect(! s.isTrackMuted(a));  // didn't mute anything
+        }
+    }
+};
+
+static FocusNavigationTests focusNavigationTests;
+
+// ============================================================================
+// Action-fire listener fan-out — coordinator's multi-listener registration
+// for action dispatch. Replaces the prior single-callback model so every
+// BindableButton can subscribe to the same chokepoint without stomping.
+// ============================================================================
+class ActionFireListenerTests : public juce::UnitTest {
+public:
+    ActionFireListenerTests() : juce::UnitTest("ActionFireListener") {}
+
+    void runTest() override {
+        beginTest("registered listener fires on executeAction; ids are unique");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            std::vector<std::string> seen;
+            int idA = coord.addActionFireListener(
+                [&](const std::string& name) { seen.push_back("A:" + name); });
+            int idB = coord.addActionFireListener(
+                [&](const std::string& name) { seen.push_back("B:" + name); });
+            expect(idA != idB);
+
+            // togglePlay is a built-in action and doesn't depend on focus.
+            coord.executeAction("togglePlay", juce::var(), 1.0f);
+
+            expect(seen.size() == 2);
+            expect(seen[0] == "A:togglePlay" || seen[1] == "A:togglePlay");
+            expect(seen[0] == "B:togglePlay" || seen[1] == "B:togglePlay");
+
+            // Cleanup; toggle once more to put transport back at rest.
+            coord.removeActionFireListener(idA);
+            coord.removeActionFireListener(idB);
+            if (coord.sequencer() && coord.sequencer()->isPlaying())
+                coord.executeAction("togglePlay", juce::var(), 1.0f);
+        }
+
+        beginTest("removed listener stops firing");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            int hits = 0;
+            int id = coord.addActionFireListener(
+                [&](const std::string&) { hits++; });
+            coord.executeAction("togglePlay", juce::var(), 1.0f);
+            expect(hits == 1);
+            coord.removeActionFireListener(id);
+            coord.executeAction("togglePlay", juce::var(), 1.0f);
+            expect(hits == 1);  // unchanged after removal
+            // Clean up transport state.
+            if (coord.sequencer() && coord.sequencer()->isPlaying())
+                coord.executeAction("togglePlay", juce::var(), 1.0f);
+        }
+    }
+};
+
+static ActionFireListenerTests actionFireListenerTests;
+
+// ============================================================================
+// Coordinator-level looper gestures — the bootstrap-vs-established cycle
+// branching, focus / mode bail-outs, and resetLooperSession contract that
+// sit above the StateAPI primitives covered in LooperBossTests.
+// ============================================================================
+class CoordinatorLooperGestureTests : public juce::UnitTest {
+public:
+    CoordinatorLooperGestureTests() : juce::UnitTest("CoordinatorLooperGesture") {}
+
+    void runTest() override {
+        beginTest("established cycle: replaceLoopGesture only queues, no transport, no capture");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);  // sets cycleEnd to default 16
+
+            coord.replaceLoopGesture();
+
+            expect(s.getLoopAction(t1) == LoopAction::ReplaceQueued);
+            expect(! coord.getInFlightLoopCapture().has_value());
+            expect(coord.sequencer() && ! coord.sequencer()->isPlaying());
+        }
+
+        beginTest("re-pressing replace cancels the queue");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+
+            coord.replaceLoopGesture();  // → ReplaceQueued
+            coord.replaceLoopGesture();  // → cancel back to None
+
+            expect(s.getLoopAction(t1) == LoopAction::None);
+        }
+
+        beginTest("bootstrap path: cycleEnd=0 starts capture and transport immediately");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            coord.resetLooperSession();   // wipes loops + cycleEnd → 0
+            s.setFocusedTrackId(t1);      // focus survives reset
+
+            coord.replaceLoopGesture();
+
+            expect(s.getLoopAction(t1) == LoopAction::CapturingReplace);
+            expect(coord.getInFlightLoopCapture().has_value());
+            expect(coord.getInFlightLoopCapture()->trackId == t1);
+            expect(coord.sequencer() && coord.sequencer()->isPlaying());
+
+            // Stop transport + drop in-flight capture before TestCoordinator
+            // teardown — leaving CoreAudio running into shutdown can segfault
+            // the audio thread on activeLoopCapture as it's being destroyed.
+            coord.resetLooperSession();
+        }
+
+        beginTest("bail when no focused track");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            s.setFocusedTrackId(TrackId{});   // explicit clear
+
+            coord.replaceLoopGesture();
+
+            expect(s.getLoopAction(t1) == LoopAction::None);
+            expect(! coord.getInFlightLoopCapture().has_value());
+        }
+
+        beginTest("bail when not in Looper mode");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            // mode left at Arrangement default
+
+            coord.replaceLoopGesture();
+
+            expect(s.getLoopAction(t1) == LoopAction::None);
+        }
+
+        beginTest("overdub gesture in established cycle queues OverdubQueued");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+
+            coord.overdubLoopGesture();
+
+            expect(s.getLoopAction(t1) == LoopAction::OverdubQueued);
+        }
+
+        beginTest("resetLooperSession clears loops, cycleEnd, in-flight capture, and stops transport");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            coord.resetLooperSession();
+            s.setFocusedTrackId(t1);
+            coord.replaceLoopGesture();   // bootstrap punch-in
+
+            expect(coord.sequencer()->isPlaying());
+            expect(coord.getInFlightLoopCapture().has_value());
+
+            coord.resetLooperSession();
+
+            expect(! coord.sequencer()->isPlaying());
+            expect(! coord.getInFlightLoopCapture().has_value());
+            auto* track = s.findTrack(t1);
+            expect(track && track->loops.empty());
+            auto* song = s.currentSong();
+            expect(song && song->cycleEnd == 0.0);
+        }
+    }
+};
+
+static CoordinatorLooperGestureTests coordinatorLooperGestureTests;
+
+// ============================================================================
+// Mode-switch behavior — handleModeChange stops the (single) transport
+// across a mode flip and stashes per-mode playhead position in seconds so
+// it survives tempo changes. Looper always re-enters at beat 0.
+// ============================================================================
+class ModeSwitchTests : public juce::UnitTest {
+public:
+    ModeSwitchTests() : juce::UnitTest("ModeSwitch") {}
+
+    void runTest() override {
+        beginTest("switching to Looper stops transport and snaps beat to 0");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            s.createTrack("T1");
+            // Park the transport mid-arrangement and start it.
+            coord.sequencer()->setBeatPosition(8.0);
+            coord.sequencer()->play();
+            expect(coord.sequencer()->isPlaying());
+
+            s.setMode(AppMode::Looper);
+
+            expect(! coord.sequencer()->isPlaying());
+            expectWithinAbsoluteError(coord.sequencer()->getBeatPosition(), 0.0, 1e-6);
+        }
+
+        beginTest("switching back to Arrangement restores the stashed beat");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            s.createTrack("T1");
+            coord.sequencer()->setBeatPosition(12.0);
+
+            s.setMode(AppMode::Looper);
+            expectWithinAbsoluteError(coord.sequencer()->getBeatPosition(), 0.0, 1e-6);
+
+            // Move around inside Looper-land — should not affect the stash.
+            coord.sequencer()->setBeatPosition(3.5);
+
+            s.setMode(AppMode::Arrangement);
+            expectWithinAbsoluteError(coord.sequencer()->getBeatPosition(), 12.0, 1e-6);
+        }
+
+        beginTest("stash is in seconds — survives tempo change between leave and return");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            s.createTrack("T1");
+            // Default tempo is 120 bpm → 2 beats/sec. Park at beat 8 = 4 sec.
+            // Tempo lives on song state (SSOT) — handleModeChange reads it
+            // from there, so the sequencer-side setTempo backdoor wouldn't
+            // simulate a real tempo change.
+            s.setSongTempo(120.0);
+            coord.sequencer()->setBeatPosition(8.0);
+
+            s.setMode(AppMode::Looper);
+            // Halve the tempo while in Looper. 4 sec is now beat 4.
+            s.setSongTempo(60.0);
+
+            s.setMode(AppMode::Arrangement);
+            expectWithinAbsoluteError(coord.sequencer()->getBeatPosition(), 4.0, 1e-6);
+        }
+
+        beginTest("switching to the same mode is a no-op (no transport stop)");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            coord.sequencer()->setBeatPosition(2.0);
+            coord.sequencer()->play();
+
+            s.setMode(AppMode::Looper);  // no-op
+
+            expect(coord.sequencer()->isPlaying());
+            expectWithinAbsoluteError(coord.sequencer()->getBeatPosition(), 2.0, 0.5);
+            // wide tolerance: real audio engine may have advanced a tick
+
+            coord.sequencer()->stop();   // tidy teardown
+        }
+    }
+};
+
+static ModeSwitchTests modeSwitchTests;
+
+// ============================================================================
+// commitLoopAction lengthBeats fix — established-cycle commits land with
+// the loop region's lengthBeats=0 (set at creation). The commit now
+// stamps it from the current cycle so the playback path can wrap and the
+// GUI can render the captured content.
+// ============================================================================
+class LooperCommitLengthTests : public juce::UnitTest {
+public:
+    LooperCommitLengthTests() : juce::UnitTest("LooperCommitLength") {}
+
+    void runTest() override {
+        beginTest("commit stamps lengthBeats from current cycle when 0");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);   // cycleEnd → 16
+            s.setFocusedTrackId(t1);
+
+            s.replaceLoop();              // creates region, lengthBeats=0
+            s.beginLoopCapture(t1);       // → CapturingReplace
+
+            // One captured event; cycleEnd is 16 from setMode.
+            std::vector<MidiEventState> events;
+            MidiEventState e;
+            e.beatOffset = 4.0;
+            e.status = 0x90; e.channel = 1; e.data1 = 60; e.data2 = 100;
+            events.push_back(e);
+
+            s.commitLoopAction(t1, std::move(events));
+
+            auto* track = s.findTrack(t1);
+            expect(track && track->loops.size() == 1);
+            expectWithinAbsoluteError(track->loops[0].lengthBeats, 16.0, 1e-6);
+        }
+
+        beginTest("commit preserves an existing non-zero lengthBeats");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            s.setFocusedTrackId(t1);
+
+            s.replaceLoop();
+            s.beginLoopCapture(t1);
+            // Pretend the bootstrap path already set length explicitly.
+            s.findTrack(t1)->loops[0].lengthBeats = 7.5;
+
+            s.commitLoopAction(t1, {});
+
+            expectWithinAbsoluteError(
+                s.findTrack(t1)->loops[0].lengthBeats, 7.5, 1e-6);
+        }
+    }
+};
+
+static LooperCommitLengthTests looperCommitLengthTests;
+
+// ============================================================================
 // Test runner — main()
 // ============================================================================
 

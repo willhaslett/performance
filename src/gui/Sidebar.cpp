@@ -41,13 +41,15 @@ void Sidebar::rebuild() {
     items.back().bounds = { 0, y, getWidth(), sectionHeight };
     y += sectionHeight;
 
+    // Order matches the keyboard row (left → right): Y · U · I · O · P.
+    // Sidebar itself is ⌘S (handled in the View menu, not listed here).
     juce::String cmd = juce::String::fromUTF8("\xe2\x8c\x98");
     for (auto& v : std::vector<std::tuple<std::string, juce::String, juce::String>>{
         {"produce",  "Produce",  cmd + "Y"},
-        {"looper",   "Looper",   ""},
         {"perform",  "Perform",  cmd + "U"},
         {"chat",     "Chat",     cmd + "I"},
         {"mixer",    "Mixer",    cmd + "O"},
+        {"looper",   "Looper",   cmd + "P"},
     }) {
         auto& [id, label, shortcut] = v;
         items.push_back({ Item::ViewToggle, label, id, {}, shortcut });

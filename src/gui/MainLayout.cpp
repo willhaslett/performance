@@ -599,6 +599,12 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
                        current == PaneContent::Produce ? PaneContent::Hidden : PaneContent::Produce);
         return true;
     }
+    if (matches("view.looper", key)) {
+        auto current = getPaneContent(PaneSlot::Left);
+        setPaneContent(PaneSlot::Left,
+                       current == PaneContent::Looper ? PaneContent::Hidden : PaneContent::Looper);
+        return true;
+    }
     if (matches("view.mappings", key)) {
         auto current = getPaneContent(PaneSlot::Left);
         setPaneContent(PaneSlot::Left,
