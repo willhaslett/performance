@@ -496,7 +496,13 @@ void PerformanceCoordinator::timerCallback() {
             lastActionScanBeat = uiBeat;
         }
 
-        lastSequencerBeat = uiBeat;
+        // Record the position the wrap detector should compare against
+        // next frame. When playing, that's the audio-thread's beat (the
+        // value we just synced into the sequencer); using stale uiBeat
+        // here makes the next frame see audioBeat < lastSequencerBeat
+        // and fire a phantom wrap, collapsing a Looper recording cycle
+        // to a single frame.
+        lastSequencerBeat = sequencerImpl->getBeatPosition();
         lastSequencerTimeMs = juce::Time::getMillisecondCounterHiRes();
     }
 
@@ -768,12 +774,16 @@ void PerformanceCoordinator::drainRecordFIFO() {
         re.data2 = event.data2;
         arrangementImpl.addRecordedEvent(re);
 
-        // Phase 6 — also feed the gesture capture slot if one is open.
-        // Single-track capture; events go to the slot regardless of
-        // which I-on track was sounding. The slot's track was set to
-        // focused-at-wrap-time in dispatchLoopGestures.
-        if (activeLoopCapture.has_value())
-            activeLoopCapture->events.push_back(re);
+        // Phase 6 — also feed the gesture capture slot if one is open
+        // AND it targets an instrument track. Audio tracks accept the
+        // same gesture (so the lane visual still pulses / fills), but
+        // capturing audio is the audio FIFO's job; MIDI events would
+        // be nonsense content on an audio loop.
+        if (activeLoopCapture.has_value()) {
+            auto* targetTrack = stateAPI ? stateAPI->findTrack(activeLoopCapture->trackId) : nullptr;
+            if (targetTrack && targetTrack->sourceType == TrackSourceType::Instrument)
+                activeLoopCapture->events.push_back(re);
+        }
 
         perfLog("[Coordinator] Recorded event: status=0x%02x data1=%d beat=%.3f\n",
                 re.status, re.data1, re.beatOffset);
@@ -1080,6 +1090,13 @@ bool PerformanceCoordinator::isInRecordMode() const {
             return true;
     }
     return false;
+}
+
+std::optional<PerformanceCoordinator::InFlightLoopCapture>
+PerformanceCoordinator::getInFlightLoopCapture() const {
+    if (!activeLoopCapture.has_value()) return std::nullopt;
+    return InFlightLoopCapture{ activeLoopCapture->trackId,
+                                 &activeLoopCapture->events };
 }
 
 int PerformanceCoordinator::addActionFireListener(ActionFireListener listener) {

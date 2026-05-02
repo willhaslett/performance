@@ -182,6 +182,18 @@ public:
     // toggle so a second press fires "stop" in any mode.
     bool isInRecordMode() const;
 
+    // Read-only snapshot of an in-flight Looper gesture capture, for
+    // the GUI to render notes as they're recorded. Returns nullptr when
+    // no capture is open. Caller must consume on the message thread —
+    // the underlying vector is mutated by drainRecordFIFO on that same
+    // thread, so reads are safe but the pointer must not outlive the
+    // call.
+    struct InFlightLoopCapture {
+        TrackId trackId;
+        const std::vector<MidiEventState>* events;
+    };
+    std::optional<InFlightLoopCapture> getInFlightLoopCapture() const;
+
     // --- Logging ---
     void log(const juce::String& message);
 

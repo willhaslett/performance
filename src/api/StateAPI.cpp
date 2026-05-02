@@ -559,6 +559,17 @@ void StateAPI::commitLoopAction(const TrackId& trackId,
     }
     sortByBeat(take->events);
 
+    // Established-cycle commits land here with the loop region still at
+    // lengthBeats=0 (set at creation in getOrCreateLoopRegion). Adopt
+    // the current cycle length so playback wraps correctly and the GUI
+    // can render the captured content. Bootstrap commits set the length
+    // explicitly in PerformanceCoordinator from elapsed beats.
+    if (region.lengthBeats <= 0.0) {
+        if (auto* s = currentSong())
+            if (s->cycleEnd > s->cycleStart)
+                region.lengthBeats = s->cycleEnd - s->cycleStart;
+    }
+
     region.loopAction = LoopAction::None;
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }

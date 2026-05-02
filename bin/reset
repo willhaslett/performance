@@ -1,38 +1,60 @@
 #!/bin/bash
 # Full reset — simulates a first-ever launch.
-# Removes ALL user state, caches, recordings, presets, and databases.
-# Preserves only ~/.config/performance/keys/ (notarization credentials).
+# Wipes user state, caches, recordings, presets, and song-side DB
+# content. Preserves:
+#   - ~/.config/performance/keys/      (notarization + telemetry config)
+#   - ~/.config/performance/plugin-cache.xml  (AU scan results — re-scan can hang on bad plugins)
+#   - the devices + device_controls tables in state.db (registered MIDI
+#     hardware + control mappings — re-pairing every reset is tedious)
 #
-# The app recreates everything it needs on next launch:
-# - state.db (fresh schema)
-# - plugin-cache.xml (re-scans AU plugins, takes a few seconds)
-# - themes/ (factory themes baked into binary)
-# - Default "Untitled" song with DLS Electric Piano + Audio In
+# The app recreates everything else on next launch:
+# - default "Untitled" song with DLS Electric Piano + Audio In
+# - plugin catalog (re-populated from plugin-cache.xml)
+# - actions, presets, config rows
 
 set -euo pipefail
 
 CONFIG_DIR="$HOME/.config/performance"
+DB="$CONFIG_DIR/state.db"
 
 if [ ! -d "$CONFIG_DIR" ]; then
     echo "Nothing to reset — $CONFIG_DIR doesn't exist."
     exit 0
 fi
 
-echo "Resetting $CONFIG_DIR (preserving keys/)..."
+echo "Resetting $CONFIG_DIR (preserving keys/, plugin-cache.xml, MIDI device mappings)..."
 
-# Preserve keys/ (notarization credentials) and plugin-cache.xml
-# (AU scan results — re-scanning from scratch can hang on bad plugins).
-PRESERVE_TMP=$(mktemp -d)
-[ -d "$CONFIG_DIR/keys" ] && cp -r "$CONFIG_DIR/keys" "$PRESERVE_TMP/"
-[ -f "$CONFIG_DIR/plugin-cache.xml" ] && cp "$CONFIG_DIR/plugin-cache.xml" "$PRESERVE_TMP/"
+# Surgical wipe of state.db — keep devices + device_controls, drop
+# everything else. schema_version stays so the app sees a known DB and
+# proceeds with the normal startup path; zero songs triggers the default
+# "Untitled" creation.
+if [ -f "$DB" ]; then
+    sqlite3 "$DB" <<'SQL'
+DELETE FROM take_events;
+DELETE FROM takes;
+DELETE FROM regions;
+DELETE FROM action_events;
+DELETE FROM bindings;
+DELETE FROM sends;
+DELETE FROM effects;
+DELETE FROM busses;
+DELETE FROM tracks;
+DELETE FROM song_devices;
+DELETE FROM songs;
+DELETE FROM presets;
+DELETE FROM plugins;
+DELETE FROM actions;
+DELETE FROM config;
+VACUUM;
+SQL
+fi
 
-# Nuke everything
-rm -rf "$CONFIG_DIR"
-
-# Restore preserved items
-mkdir -p "$CONFIG_DIR"
-[ -d "$PRESERVE_TMP/keys" ] && mv "$PRESERVE_TMP/keys" "$CONFIG_DIR/"
-[ -f "$PRESERVE_TMP/plugin-cache.xml" ] && mv "$PRESERVE_TMP/plugin-cache.xml" "$CONFIG_DIR/"
-rm -rf "$PRESERVE_TMP"
+# Filesystem-level wipe — preset blobs, track presets, user themes,
+# .bak backup, and anything else outside the preservation list.
+find "$CONFIG_DIR" -mindepth 1 -maxdepth 1 \
+    ! -name keys \
+    ! -name plugin-cache.xml \
+    ! -name state.db \
+    -exec rm -rf {} +
 
 echo "Done. Restart the app for a fresh first-launch experience."

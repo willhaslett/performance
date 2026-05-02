@@ -40,22 +40,14 @@ bool BindableButton::isLit() const {
     return juce::Time::currentTimeMillis() < litUntilMs;
 }
 
-juce::Rectangle<int> BindableButton::bindingRowBounds() const {
-    auto b = getLocalBounds();
-    return b.removeFromBottom(18).reduced(4, 2);
-}
-
-juce::String BindableButton::currentBindingName() const {
+std::optional<BindingState> BindableButton::findBindingForAction() const {
     auto* a = state.findActionByName(actionName.toStdString());
-    if (!a) return {};
+    if (!a) return std::nullopt;
     auto bindings = state.effectiveBindings();
-    for (auto& b : bindings) {
-        if (b.actionId != a->id) continue;
-        if (!b.description.empty()) return juce::String(b.description);
-        // Fallback: synthesize "<type> <ch> <num>"
-        return juce::String(b.controlType) + " " + juce::String(b.number);
-    }
-    return {};
+    for (auto& b : bindings)
+        if (b.actionId == a->id)
+            return b;
+    return std::nullopt;
 }
 
 void BindableButton::paintCellBackground(juce::Graphics& g, juce::Colour fill) {
@@ -122,13 +114,21 @@ void BindableButton::paint(juce::Graphics& g) {
     bool active = isActive();
     bool enabled = isEnabled();
     bool lit = isLit();
+    bool learnMode = isLearnMode();
+    bool armed = isArmed();
 
-    // Cell background. Active = subtle inset (slightly darker), not the
-    // big accent fill. The functional state (e.g. queued/capturing for
-    // a looper action) shows in the lane, not the button.
-    juce::Colour bg = active
-                       ? Theme::color(Theme::Color::bgControl).darker(0.25f)
-                       : Theme::color(Theme::Color::bgControl);
+    // Cell background. In learn mode we subtly shift to bgSlot so the
+    // whole strip reads as "armable surface, not action surface" without
+    // blowing out the visual. Active = subtle inset (slightly darker),
+    // not the big accent fill.
+    juce::Colour bg;
+    if (learnMode) {
+        bg = Theme::color(Theme::Color::bgSlot);
+    } else if (active) {
+        bg = Theme::color(Theme::Color::bgControl).darker(0.25f);
+    } else {
+        bg = Theme::color(Theme::Color::bgControl);
+    }
     paintCellBackground(g, bg);
 
     // Optional top color stripe — category hint (e.g. Replace/Overdub
@@ -146,15 +146,13 @@ void BindableButton::paint(juce::Graphics& g) {
         g.fillRect(getWidth() - 1, 4, 1, getHeight() - 8);
     }
 
-    // Three rows top-to-bottom: label / binding / trigger light.
-    // We carve them out of the local area so the layout stays
-    // proportional if the cell ever resizes.
-    constexpr int triggerRowH = 8;
-    constexpr int bindingRowH = 18;
+    // Two rows top-to-bottom: label / status dot. Dot row is fixed
+    // height; label takes the rest. Removing the binding-name row
+    // bought us breathing room on label legibility.
+    constexpr int dotRowH = 12;
     auto area = getLocalBounds().reduced(2, 4);
-    auto triggerRow = area.removeFromBottom(triggerRowH);
-    auto bindingRow = area.removeFromBottom(bindingRowH);
-    auto labelRow   = area;  // remainder = top
+    auto dotRow   = area.removeFromBottom(dotRowH);
+    auto labelRow = area;  // remainder = top
 
     // --- Row 1: label / icon ---
     juce::Colour textColor = enabled ? Theme::color(Theme::Color::textPrimary)
@@ -178,25 +176,30 @@ void BindableButton::paint(juce::Graphics& g) {
         paintIcon(g, icon, textColor);
     }
 
-    // --- Row 2: binding readout / "+ set" ---
-    auto bindingName = currentBindingName();
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeXs));
-    g.drawText(bindingName.isEmpty() ? juce::String("+ set") : bindingName,
-               bindingRow, juce::Justification::centred);
+    // --- Row 2: status dot (binding state + activity flash) ---
+    // Priority: armed > lit (yellow flash) > bound > unbound. Armed
+    // wins so the user always sees which cell will catch the next
+    // MIDI event during learn.
+    bool bound = findBindingForAction().has_value();
+    juce::Colour dotColor;
+    if (armed)      dotColor = Theme::color(Theme::Color::bindingDotArmed);
+    else if (lit)   dotColor = Theme::color(Theme::Color::triggerLight);
+    else if (bound) dotColor = Theme::color(Theme::Color::bindingDotBound);
+    else            dotColor = Theme::color(Theme::Color::bindingDotUnbound);
 
-    // --- Row 3: trigger light (yellow flash on action-fire) ---
-    int dotSize = 6;
-    auto trigDot = triggerRow.withSizeKeepingCentre(dotSize, dotSize).toFloat();
-    g.setColour(lit ? Theme::color(Theme::Color::triggerLight)
-                    : Theme::color(Theme::Color::bgRecessed));
+    int dotSize = 8;
+    auto trigDot = dotRow.withSizeKeepingCentre(dotSize, dotSize).toFloat();
+    g.setColour(dotColor);
     g.fillEllipse(trigDot);
 }
 
 void BindableButton::mouseDown(const juce::MouseEvent& e) {
-    auto pos = e.getPosition();
-    if (bindingRowBounds().contains(pos)) {
-        showSetControlPopup();
+    if (e.mods.isPopupMenu()) {
+        showContextMenu();
+        return;
+    }
+    if (isLearnMode()) {
+        if (onArmRequest) onArmRequest();
         return;
     }
     if (!isEnabled()) return;
@@ -205,24 +208,44 @@ void BindableButton::mouseDown(const juce::MouseEvent& e) {
     coord.executeAction(actionName.toStdString(), juce::var(), 1.0f);
 }
 
-void BindableButton::showSetControlPopup() {
-    // Stub for now — the real MIDI-Learn-first popup arrives in the
-    // next pass. Show a minimal menu so the surface is testable.
+void BindableButton::showContextMenu() {
+    auto binding = findBindingForAction();
     juce::PopupMenu menu;
-    auto bindingName = currentBindingName();
-    if (bindingName.isNotEmpty())
-        menu.addItem(1, "Bound to: " + bindingName, false);
-    else
-        menu.addItem(1, "(no control bound)", false);
+    if (binding) {
+        juce::String name = binding->description.empty()
+            ? juce::String(binding->controlType) + " " + juce::String(binding->number)
+            : juce::String(binding->description);
+        menu.addItem(1, "Bound to: " + name, false);
+        menu.addSeparator();
+        menu.addItem(2, "Re-bind\xe2\x80\xa6");
+        menu.addItem(3, "Unbind");
+    } else {
+        menu.addItem(2, "Bind\xe2\x80\xa6");
+    }
     menu.addSeparator();
-    menu.addItem(2, "Open Mappings\xe2\x80\xa6");  // ellipsis
+    menu.addItem(4, "Open Mappings\xe2\x80\xa6");
+
     auto self = juce::Component::SafePointer<BindableButton>(this);
+    auto bindingId = binding ? binding->id : BindingId{};
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
-        [self](int result) {
-            if (result == 2) {
-                // Future: open Perform pane scrolled to this action.
-                // For now, no-op — the user can navigate manually.
+        [self, bindingId](int result) {
+            if (!self) return;
+            switch (result) {
+                case 2:
+                    // Bind / Re-bind: arm via the host pane's learn flow
+                    // if it provided one. Otherwise no-op (host pane
+                    // hasn't opted into learn yet).
+                    if (self->onArmRequest) self->onArmRequest();
+                    break;
+                case 3:
+                    if (! bindingId.empty())
+                        self->state.removeBinding(bindingId);
+                    self->repaint();
+                    break;
+                case 4:
+                    // Future: open Perform pane scrolled to this action.
+                    break;
+                default: break;
             }
-            (void) self;
         });
 }

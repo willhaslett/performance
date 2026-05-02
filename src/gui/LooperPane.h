@@ -78,6 +78,22 @@ private:
     std::vector<RowGeom> rowGeoms;
     juce::Rectangle<int> cycleLengthField;   // top-bar control
     juce::Rectangle<int> resetButton;        // top-bar PANIC reset (kept separate for confirm dialog)
+    juce::Rectangle<int> learnPill;          // top-bar MIDI Learn toggle
+
+    // MIDI Learn state — owned by the pane, not the buttons. While
+    // `learnMode` is true, bindable cells switch from "click fires" to
+    // "click arms the next MIDI event." `armedActionName` is the cell
+    // that will receive the next captured event; clicking another cell
+    // re-arms to that one (we only ever capture for one action at a
+    // time so the user can build a bank by clicking through the strip).
+    bool learnMode = false;
+    juce::String armedActionName;
+    void toggleLearnMode();
+    void exitLearnMode();
+    void armForLearn(const juce::String& actionName);
+    void onLearnCapture(const std::string& type, int channel, int number,
+                        const std::string& portName);
+    void rearmLearnCapture();
 
     // Bindable performer gesture buttons (top-bar group). One per
     // looper-relevant action; segmented in sub-groups by visual gap.
@@ -98,6 +114,13 @@ private:
     void paintTrackTimeline(juce::Graphics& g, const TrackState& t, const RowGeom& row);
     void paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                         const RegionState& loop);
+    // Lower-level renderer used by both the committed-loop path and the
+    // in-flight live-capture path (overlay during CapturingReplace /
+    // CapturingOverdub).
+    void paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
+                    const std::vector<MidiEventState>& events,
+                    double lengthBeats,
+                    juce::Colour color);
     void paintPlayhead(juce::Graphics& g);
     void paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds);
 

@@ -54,6 +54,14 @@ namespace Theme {
         // (BindableButton's bottom-row activity light). Same role as
         // the trigger-detection lights in PerformPane.
         inline uint32_t triggerLight    = 0xffe6c84a;
+        // BindableButton status dot — encodes binding state.
+        //   bindingDotUnbound: low-key neutral (no control assigned)
+        //   bindingDotBound:   muted green (a control is mapped)
+        //   bindingDotArmed:   accent (this button is the next learn target)
+        // Yellow flash overlays via triggerLight for ~200ms on action-fire.
+        inline uint32_t bindingDotUnbound = 0xff3a3a3a;
+        inline uint32_t bindingDotBound   = 0xff3a8a4a;
+        inline uint32_t bindingDotArmed   = 0xff2a6aaa;
 
         // Transport
         inline uint32_t transportPlay      = 0xff2a6a2a;

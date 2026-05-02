@@ -115,6 +115,21 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
                                                      BindableButton::Variant::IconArrowDown);
     focusNextBtn->setCornerStyle(BindableButton::Right);
     addAndMakeVisible(*focusNextBtn);
+
+    // Wire MIDI Learn predicates onto every bindable cell. Each cell
+    // asks "are we in learn mode? am I the armed target?" — both answers
+    // come from this pane's state. Click-to-arm goes through armForLearn,
+    // which kicks off the next-event capture.
+    BindableButton* allBtns[] = { playBtn.get(), replaceBtn.get(), overdubBtn.get(),
+                                   undoBtn.get(), redoBtn.get(), muteBtn.get(),
+                                   clearBtn.get(), focusPrevBtn.get(), focusNextBtn.get() };
+    for (auto* btn : allBtns) {
+        btn->setLearnPredicate([this] { return learnMode; });
+        juce::String name = btn->getActionName();
+        btn->setArmedPredicate([this, name] { return learnMode && armedActionName == name; });
+        btn->setOnArmRequest([this, name] { armForLearn(name); });
+    }
+
     stateSubId = state.events().subscribe([this](const StateEvent& ev) {
         if (ev.entity == StateEvent::Config) {
             // Producer (or anything else) changed the row-height config —
@@ -223,6 +238,7 @@ void LooperPane::rebuildRowGeoms() {
     int pillY = topBarMid - pillH / 2;
     cycleLengthField = { getWidth() - 160, pillY, 140, pillH };
     resetButton      = { cycleLengthField.getX() - 80, pillY, 70, pillH };
+    learnPill        = { resetButton.getX() - 110, pillY, 100, pillH };
 
     int bbH = BindableButton::desiredHeight;
     int bbY = topBarMid - bbH / 2;
@@ -235,7 +251,7 @@ void LooperPane::rebuildRowGeoms() {
     int stripW = wideBtn * 2 + narrowBtn * 4 + iconBtn * 2;
     int bindablesW = playWidth + playToStripGap + stripW;
 
-    int rightEdge = resetButton.getX() - 16;
+    int rightEdge = learnPill.getX() - 16;
     int x = rightEdge - bindablesW;
 
     playBtn->setBounds(x, bbY, playWidth, bbH);
@@ -306,6 +322,18 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.fillRoundedRectangle(resetButton.toFloat(), 4.0f);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.drawText("reset", resetButton, juce::Justification::centred);
+
+    // MIDI Learn toggle pill. On = accent fill ("the strip is now an
+    // armable surface"). Off = neutral. The bindable cells switch
+    // behavior automatically via the predicates set in the ctor.
+    g.setColour(learnMode ? Theme::color(Theme::Color::accent)
+                          : Theme::color(Theme::Color::bgControl));
+    g.fillRoundedRectangle(learnPill.toFloat(), 4.0f);
+    g.setColour(learnMode ? Theme::color(Theme::Color::textOnColor)
+                          : Theme::color(Theme::Color::textSecondary));
+    g.setFont(Theme::font(Theme::fontSizeMd));
+    g.drawText(learnMode ? "learning\xe2\x80\xa6" : "MIDI learn",
+               learnPill, juce::Justification::centred);
 
     // (Gesture buttons are BindableButton child components — they paint
     // themselves when JUCE walks the children. See constructor + the
@@ -383,21 +411,40 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
     (void) t;
     (void) row;
 
-    if (t.loops.empty()) {
+    // Pull the in-flight gesture capture (if it targets this track) so
+    // the user sees notes appear as they're played, not only after the
+    // cycle wraps. Always nullopt for non-instrument targets after the
+    // drain-side gate, but checking the type here keeps the lane
+    // unambiguous.
+    auto inFlight = coord.getInFlightLoopCapture();
+    bool hasInFlight = inFlight.has_value()
+                        && inFlight->trackId == t.id
+                        && inFlight->events
+                        && !inFlight->events->empty()
+                        && t.sourceType == TrackSourceType::Instrument;
+
+    // "no loop" hint is gated on actual recorded content (committed
+    // OR in-flight), not on the presence of a loop region — once
+    // there's something to show, show it.
+    auto* take = t.loops.empty() ? nullptr : t.loops[0].activeTake();
+    bool hasCommitted = take && !take->events.empty();
+    if (!hasCommitted && !hasInFlight) {
         paintEmptyRow(g, row.timelineBounds);
         return;
     }
-    auto& loop = t.loops[0];
+    // Loop region may not exist yet during a bootstrap-mode capture —
+    // synthesize an empty stand-in so the rest of the renderer has a
+    // shell. lengthBeats falls back to the cycle below.
+    static const RegionState kEmptyLoop{};
+    const RegionState& loop = t.loops.empty() ? kEmptyLoop : t.loops[0];
 
     // Render the loop's content repeated across the cycle per the
     // playback rule. If the loop is longer than the cycle, the tail
-    // past cycleBeats gets a faded overlay.
+    // past cycleBeats gets a faded overlay. lengthBeats can still be 0
+    // in the brief window between event capture and length assignment;
+    // fall back to the cycle so the take stays visible.
     double cyc = cycleBeats();
-    double loopLen = loop.lengthBeats;
-    if (loopLen <= 0.0) {
-        paintEmptyRow(g, row.timelineBounds);
-        return;
-    }
+    double loopLen = loop.lengthBeats > 0.0 ? loop.lengthBeats : cyc;
 
     int reps = (int) std::ceil(cyc / loopLen);
     for (int rep = 0; rep < reps; ++rep) {
@@ -421,6 +468,15 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
 
         paintLoopNotes(g, repBounds, loop);
 
+        // Live overlay: in-flight capture events painted on the first
+        // rep only (they're cycle-relative — see beginCapture(0.0)).
+        // Brighter than committed notes so the live activity reads as
+        // "this is happening right now."
+        if (rep == 0 && hasInFlight) {
+            paintNotes(g, repBounds, *inFlight->events, loopLen,
+                       Theme::color(Theme::Color::triggerLight).withAlpha(0.95f));
+        }
+
         // Fade tail: if this repetition is only partial (loopLen >
         // remaining cycle), stripe it to show "preserved but silent."
         if (repEnd < repStart + loopLen) {
@@ -435,13 +491,22 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
 void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                                   const RegionState& loop) {
     auto* take = loop.activeTake();
-    if (!take || take->events.empty()) return;
+    if (!take) return;
+    paintNotes(g, bounds, take->events, loop.lengthBeats,
+               Theme::color(Theme::Color::textPrimary).withAlpha(0.85f));
+}
+
+void LooperPane::paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
+                              const std::vector<MidiEventState>& events,
+                              double lengthBeats,
+                              juce::Colour color) {
+    if (events.empty() || lengthBeats <= 0.0) return;
 
     // Simple piano-roll-ish render: find pitch range, map beats to x,
     // pitches to y. Keeps the pane understandable without importing
     // ProducePane's full-fidelity renderer.
     int minPitch = 127, maxPitch = 0;
-    for (auto& e : take->events) {
+    for (auto& e : events) {
         if ((e.status & 0xF0) != 0x90 || e.data2 == 0) continue;
         if (e.data1 < minPitch) minPitch = e.data1;
         if (e.data1 > maxPitch) maxPitch = e.data1;
@@ -452,7 +517,7 @@ void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
     struct Note { double startBeat, endBeat; int pitch; };
     std::vector<Note> notes;
     std::map<int, double> open;
-    for (auto& e : take->events) {
+    for (auto& e : events) {
         if ((e.status & 0xF0) == 0x90 && e.data2 > 0) {
             open[e.data1] = e.beatOffset;
         } else if ((e.status & 0xF0) == 0x80
@@ -464,14 +529,16 @@ void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
             }
         }
     }
-    for (auto& [pitch, onBeat] : open) {
-        notes.push_back({ onBeat, loop.lengthBeats, pitch });
-    }
+    // In-flight notes that haven't seen a noteOff yet — extend to the
+    // end of the loop so the user sees the in-progress bar growing
+    // toward the playhead.
+    for (auto& [pitch, onBeat] : open)
+        notes.push_back({ onBeat, lengthBeats, pitch });
 
-    g.setColour(Theme::color(Theme::Color::textPrimary).withAlpha(0.85f));
+    g.setColour(color);
     for (auto& n : notes) {
-        double xFrac0 = n.startBeat / loop.lengthBeats;
-        double xFrac1 = n.endBeat   / loop.lengthBeats;
+        double xFrac0 = n.startBeat / lengthBeats;
+        double xFrac1 = n.endBeat   / lengthBeats;
         int x0 = bounds.getX() + (int)(xFrac0 * bounds.getWidth());
         int x1 = bounds.getX() + (int)(xFrac1 * bounds.getWidth());
         double yFrac = 1.0 - ((double)(n.pitch - minPitch) / pitchRange);
@@ -526,17 +593,20 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
         auto act = state.getLoopAction(row.trackId);
         juce::Colour fill = neutral;
         switch (act) {
+            // Queued: pulse 0.10 → 0.28 alpha. Capturing: hold at the
+            // peak of the pulse so the visual reads "the strobe just
+            // settled in — recording is happening now."
             case LoopAction::ReplaceQueued:
                 fill = replaceColor.withAlpha(0.10f + 0.18f * pulse);
                 break;
             case LoopAction::CapturingReplace:
-                fill = replaceColor.withAlpha(0.40f);
+                fill = replaceColor.withAlpha(0.28f);
                 break;
             case LoopAction::OverdubQueued:
                 fill = overdubColor.withAlpha(0.10f + 0.18f * pulse);
                 break;
             case LoopAction::CapturingOverdub:
-                fill = overdubColor.withAlpha(0.40f);
+                fill = overdubColor.withAlpha(0.28f);
                 break;
             default:
                 break;
@@ -560,6 +630,11 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     // Top bar — cycle length edit.
     if (cycleLengthField.contains(pos)) {
         showCycleLengthMenu();
+        return;
+    }
+    // Top bar — MIDI Learn toggle.
+    if (learnPill.contains(pos)) {
+        toggleLearnMode();
         return;
     }
     // Top bar — PANIC reset. Confirms before wiping.
@@ -644,6 +719,11 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
     //   m  — toggle mute on selected track
     //   [  — decrement cycle length by one bar
     //   ]  — increment cycle length by one bar
+    // Escape exits MIDI Learn mode without binding anything.
+    if (key.isKeyCode(juce::KeyPress::escapeKey) && learnMode) {
+        exitLearnMode();
+        return true;
+    }
     if (key.isKeyCode('[')) {
         double cur = cycleBeats();
         int bars = std::max(1, (int) std::round(cur / kBeatsPerBar) - 1);
@@ -678,4 +758,107 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
         }
     }
     return false;
+}
+
+// ---- MIDI Learn -----------------------------------------------------------
+
+void LooperPane::toggleLearnMode() {
+    if (learnMode) exitLearnMode();
+    else {
+        learnMode = true;
+        armedActionName.clear();   // nothing armed until the user clicks a cell
+        repaint();
+    }
+}
+
+void LooperPane::exitLearnMode() {
+    learnMode = false;
+    armedActionName.clear();
+    coord.cancelMidiLearn();
+    repaint();
+}
+
+void LooperPane::armForLearn(const juce::String& actionName) {
+    armedActionName = actionName;
+    rearmLearnCapture();
+    repaint();
+}
+
+void LooperPane::rearmLearnCapture() {
+    // Empty deviceId = listen across every enabled MIDI input.
+    coord.startMidiLearn("",
+        [safe = juce::Component::SafePointer<LooperPane>(this)]
+        (const std::string& type, int ch, int num, const std::string& port) {
+            juce::MessageManager::callAsync([safe, type, ch, num, port]() {
+                if (safe) safe->onLearnCapture(type, ch, num, port);
+            });
+        });
+}
+
+void LooperPane::onLearnCapture(const std::string& type, int channel, int number,
+                                 const std::string& portName) {
+    // Bail if state changed under us mid-capture.
+    if (!learnMode || armedActionName.isEmpty()) return;
+
+    // Resolve / register the source device. Mirrors ControllersPane's
+    // learn flow so devices end up in the same registry. IAC loopback
+    // is noise — re-arm and ignore.
+    DeviceId deviceId;
+    if (!portName.empty()) {
+        if (juce::String(portName).containsIgnoreCase("IAC Driver")) {
+            rearmLearnCapture();
+            return;
+        }
+        if (auto* dev = state.findDeviceByPortName(portName)) {
+            deviceId = dev->id;
+        } else {
+            deviceId = state.registerDevice(portName, portName);
+        }
+    }
+    if (deviceId.empty()) {
+        rearmLearnCapture();
+        return;
+    }
+
+    // Make sure the control exists on the device — if not, register a
+    // default-named control for it so it shows up in Mappings later.
+    bool haveControl = false;
+    if (auto* dev = state.findDevice(deviceId)) {
+        for (auto& ctrl : dev->controls)
+            if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
+                haveControl = true; break;
+            }
+    }
+    if (!haveControl) {
+        juce::String defaultName = (type == "cc")   ? "CC " + juce::String(number)
+                                  : (type == "note") ? "Note " + juce::String(number)
+                                                     : juce::String("Control");
+        state.addDeviceControl(deviceId, defaultName.toStdString(), type, channel, number);
+    }
+
+    auto* a = state.findActionByName(armedActionName.toStdString());
+    auto* song = state.currentSong();
+    if (!a || !song) {
+        armedActionName.clear();
+        repaint();
+        return;
+    }
+
+    // 1:1 binding per action (the rule the user picked earlier in the
+    // gesture-button design discussion). Drop any existing song-scoped
+    // bindings for this action before adding the new one.
+    for (auto& b : state.bindingsForSong(song->id))
+        if (b.actionId == a->id) state.removeBinding(b.id);
+
+    juce::String desc = (type == "cc")   ? "CC " + juce::String(number)
+                       : (type == "note") ? "Note " + juce::String(number)
+                                          : juce::String(type);
+    state.addBinding(song->id, type, channel, number, a->id, "[]",
+                      desc.toStdString(), deviceId);
+
+    // Stay in learn mode but clear the armed cell — the user can click
+    // another to keep building a bank without leaving the mode.
+    armedActionName.clear();
+    coord.cancelMidiLearn();
+    repaint();
 }
