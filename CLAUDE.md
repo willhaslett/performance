@@ -183,6 +183,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
 
 **Deferred / lower priority:**
+- **MIDI hot-plug not working.** Plugging or unplugging a MIDI device while the app is running doesn't trigger device list refresh — performer has to relaunch. Likely needs a CoreMIDI client notification subscription with a callback into MIDIEngine that re-runs initialise() / refreshMidiDevices().
 - **Audio waveform overflows track lane bounds on loud signals.** Today the waveform paints at whatever amplitude the peaks have, with no scaling — loud signals spill above and below the lane. Should scale so peak amplitude == lane height (minus 1–2 px padding), with the max corresponding to "just about to clip" (full-scale ≈ -0.5 dBFS or so). Anything louder gets visually clipped at the lane bounds.
 - **Producer events-track toggle as triangle in the top-left header rect.** Currently lives as a "..." button in the transport view group; gets squeezed when the chat pane is open. Move to the empty rectangle above the track-headers column / left of the timeline, render as an expand/collapse triangle.
 - **Movable left/right pane divider.** Currently fixed at the per-content preferred widths.
