@@ -1,0 +1,6 @@
+#!/bin/sh
+# Launch the freshly-built Debug app from a stable callable path.
+# Used by Alfred / Raycast / Shortcuts / hand for a hotkey-driven
+# launch that doesn't care which directory you call it from.
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+open -n "$DIR/build/Performance_artefacts/Debug/Performance.app"
