@@ -87,30 +87,21 @@ void LooperPane::rebuildRowGeoms() {
         g.headerBounds = g.rowBounds.withWidth(headerWidth);
         g.timelineBounds = g.rowBounds.withTrimmedLeft(headerWidth);
 
-        // Header elements (left to right, top row):
-        //   [mute pill]                     (inside header)
-        //   [take selector]                 (second line)
-        //
-        // Recording is session-level via transport record (see
-        // docs/LIVE_INPUT_AND_FOCUS.md phase 5) — no per-row record
-        // button. Arm tracks via the R pill in Produce; press the
-        // transport record in the toolbar to punch in on armed tracks
-        // at next cycle wrap.
+        // Header layout — gesture-driven looper has only the mute pill
+        // on the row. Recording is performer-driven via the focused-track
+        // gesture (replace / overdub / undo / redo), bound to MIDI pads
+        // or fired from the transport record button. The R pill (arming)
+        // is gone — there's nothing to arm — and the take selector is
+        // gone since the new model has one events stream per track with
+        // an undo/redo history rather than parallel takes.
         auto hdr = g.headerBounds.reduced(Theme::spacingM, Theme::spacingS);
         int yTop = hdr.getY();
         g.recordButton = {};   // retained in geom for back-compat; unused
         g.stopButton   = {};
+        g.armButton    = {};   // dropped with R-arming
+        g.takeSelector = {};   // dropped with takes-as-undo collapse
         int pillY = yTop + (recButtonSize - 20) / 2;
-        int xCursor = hdr.getX();
-        g.armButton  = { xCursor, pillY, mutePillWidth, 20 };
-        xCursor += mutePillWidth + Theme::spacingS;
-        g.muteButton = { xCursor, pillY, mutePillWidth, 20 };
-
-        // Take selector — second line, below mute. Fills available
-        // width in the header minus margins.
-        int secondY = yTop + recButtonSize + Theme::spacingS;
-        g.takeSelector = { hdr.getX(), secondY,
-                           hdr.getWidth(), 22 };
+        g.muteButton = { hdr.getX(), pillY, mutePillWidth, 20 };
 
         rowGeoms.push_back(g);
         y += rowHeight + rowGap;
@@ -236,19 +227,6 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     g.setFont(Theme::font(Theme::fontSizeMd));
     g.drawText(t.name, nameArea, juce::Justification::centredLeft);
 
-    // Arm pill — same style as Produce's R pill. Needed here because
-    // recording is session-level (press transport record) and it only
-    // punches in on armed tracks; the performer needs to arm from wherever
-    // they're looking. See docs/LIVE_INPUT_AND_FOCUS.md phase 5a.
-    auto armBtn = row.armButton.toFloat();
-    g.setColour(t.armed ? Theme::color(Theme::Color::pillArm)
-                        : Theme::color(Theme::Color::bgControl));
-    g.fillRoundedRectangle(armBtn, 4.0f);
-    g.setColour(t.armed ? Theme::color(Theme::Color::textOnColor)
-                        : Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText("R", row.armButton, juce::Justification::centred);
-
     // Mute pill — same style as Produce's M pill.
     auto muteBtn = row.muteButton.toFloat();
     g.setColour(t.muted ? Theme::color(Theme::Color::pillMute)
@@ -259,34 +237,28 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     g.setFont(Theme::font(Theme::fontSizeSm));
     g.drawText("M", row.muteButton, juce::Justification::centred);
 
-    // Take selector — shows the active take name or "—" if no loop.
-    const RegionState* loop = t.loops.empty() ? nullptr : &t.loops[0];
-    juce::String takeLabel;
-    if (!loop) {
-        takeLabel = "no loop";
-    } else {
-        const TakeState* active = loop->activeTake();
-        juce::String pendingSuffix;
-        if (!loop->pendingTakeId.empty() && loop->pendingTakeId != loop->activeTakeId) {
-            for (auto& tk : loop->takes) {
-                if (tk.id == loop->pendingTakeId) {
-                    pendingSuffix = "  → " + juce::String(tk.name);
-                    break;
-                }
-            }
+    // Gesture-state badge — when this track has a queued or in-flight
+    // looper action, label it so the performer can see what's about to
+    // happen (or what's currently happening). Dim text for queued,
+    // bright + accent for capturing.
+    auto loopAct = state.getLoopAction(t.id);
+    if (loopAct != LoopAction::None) {
+        const char* label = "";
+        bool capturing = false;
+        switch (loopAct) {
+            case LoopAction::ReplaceQueued:    label = "REPLACE QUEUED";    break;
+            case LoopAction::OverdubQueued:    label = "OVERDUB QUEUED";    break;
+            case LoopAction::CapturingReplace: label = "REPLACING…"; capturing = true; break;
+            case LoopAction::CapturingOverdub: label = "OVERDUBBING…"; capturing = true; break;
+            default: break;
         }
-        takeLabel = active ? juce::String(active->name) : juce::String("take");
-        takeLabel += "   (" + juce::String((int) loop->takes.size()) + " take"
-                    + (loop->takes.size() == 1 ? "" : "s") + ")" + pendingSuffix;
+        auto badgeArea = nameArea.withTrimmedLeft(0)
+                                  .translated(0, recButtonSize / 2 + 4);
+        g.setColour(capturing ? Theme::color(Theme::Color::accent)
+                              : Theme::color(Theme::Color::textSecondary));
+        g.setFont(Theme::font(Theme::fontSizeXs));
+        g.drawText(label, badgeArea, juce::Justification::centredLeft);
     }
-    g.setColour(Theme::color(Theme::Color::bgSlot));
-    g.fillRoundedRectangle(row.takeSelector.toFloat(), 4.0f);
-    g.setColour(Theme::color(loop ? Theme::Color::textSecondary
-                                   : Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText(takeLabel,
-               row.takeSelector.reduced(Theme::spacingS, 0),
-               juce::Justification::centredLeft);
 }
 
 void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
@@ -453,21 +425,12 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
         if (!row.rowBounds.contains(pos)) continue;
 
         // Record + stop are session-level via the transport bar now
-        // (docs/LIVE_INPUT_AND_FOCUS.md phase 5). Per-row buttons have
-        // been removed — click handling for them is deliberately gone.
+        // Per-track record/arm/take affordances are gone (phase 6
+        // gesture model). Only the mute pill is interactive on the row.
 
-        if (row.armButton.contains(pos)) {
-            auto* t = state.findTrack(row.trackId);
-            if (t) state.setTrackArmed(row.trackId, !t->armed);
-            return;
-        }
         if (row.muteButton.contains(pos)) {
             bool now = !state.isTrackMuted(row.trackId);
             state.setTrackMuted(row.trackId, now);
-            return;
-        }
-        if (row.takeSelector.contains(pos)) {
-            showTakeMenu(row.trackId);
             return;
         }
         // Click on the row's background (not on a specific control) —
@@ -481,33 +444,6 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
 
 void LooperPane::mouseMove(const juce::MouseEvent&) {
     // TODO: hover states. Minimal for v1.
-}
-
-void LooperPane::showTakeMenu(const TrackId& trackId) {
-    auto* t = state.findTrack(trackId);
-    if (!t || t->loops.empty()) return;
-    auto& loop = t->loops[0];
-    if (loop.takes.empty()) return;
-
-    juce::PopupMenu menu;
-    for (size_t i = 0; i < loop.takes.size(); ++i) {
-        auto& take = loop.takes[i];
-        bool isActive = take.id == loop.activeTakeId;
-        bool isPending = take.id == loop.pendingTakeId;
-        juce::String label = juce::String(take.name);
-        if (isActive)  label += "   (current)";
-        if (isPending) label += "   (queued)";
-        menu.addItem((int) i + 1, label, true, isActive);
-    }
-    RegionId loopId = loop.id;
-    std::vector<TakeId> takeIds;
-    for (auto& tk : loop.takes) takeIds.push_back(tk.id);
-
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-        [this, loopId, takeIds](int result) {
-            if (result <= 0 || result > (int) takeIds.size()) return;
-            state.setPendingTake(loopId, takeIds[result - 1]);
-        });
 }
 
 void LooperPane::showCycleLengthMenu() {

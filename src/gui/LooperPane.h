@@ -88,7 +88,6 @@ private:
     void paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds);
 
     // ---- Interaction ----
-    void showTakeMenu(const TrackId& trackId);
     void showCycleLengthMenu();
 
     // Beat-to-pixel mapping using the current cycle length.

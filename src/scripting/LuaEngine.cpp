@@ -383,18 +383,6 @@ void LuaEngine::registerAPI() {
         state.setPendingTake(RegionId{regionId}, TakeId{takeId});
     });
 
-    // Loop recording — bootstrap (R-arming) flow. Used to establish
-    // the cycle on first recording. Toggles arm/recording state for
-    // every armed instrument track. Will be replaced by an explicit
-    // bootstrap gesture pair when phase 6.b lands; for now it doubles
-    // as the way to make a first take.
-    lua.set_function("toggleLoopRecord", [&coord]() {
-        coord.toggleLoopRecord();
-    });
-    lua.set_function("getLoopRecordState", [&coord]() -> std::string {
-        return coord.getLoopRecordState();
-    });
-
     // Phase 6 — performer-facing per-track gestures. All target the
     // currently-focused track; no-op if no focus. Queued at gesture
     // time, fire at the next cycle wrap, capture for one cycle, then

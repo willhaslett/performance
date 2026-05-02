@@ -365,19 +365,15 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             stopRecording();
             recordModeActive = false;
             // Transport stop is an implicit punch-out for any active
-            // loop-record session — the cycle-wrap handler can't fire
-            // once the sequencer isn't advancing, so without this the
-            // state machine would hang in Armed/Recording/StopPending.
-            if (sessionLoopState != LoopRecordState::Off)
-                forceStopLoopRecord();
-            // Phase 6: drop any in-flight gesture capture. Partial-cycle
-            // captures aren't musically meaningful — the user expected
-            // a full cycle. Reset state and release the engine refcount.
+            // looper gesture — the cycle-wrap handler can't fire once
+            // the sequencer isn't advancing, so we'd otherwise leave
+            // the state machine stuck mid-capture.
             if (activeLoopCapture.has_value()) {
                 stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
                 activeLoopCapture.reset();
                 endCapture();
             }
+            bootstrapActive = false;
         }
     });
 
@@ -523,40 +519,15 @@ void PerformanceCoordinator::timerCallback() {
 void PerformanceCoordinator::startRecordMode() {
     if (!sequencerImpl || !stateAPI) return;
 
-    // In Looper mode, "record" arms the whole session. All armed
-    // instrument tracks punch in together at the next cycle wrap;
-    // the actual track list is captured then (see onCycleWrap). Bail
-    // early if no instrument is armed — otherwise we'd latch Armed
-    // with nothing to record. Starts transport if stopped so wraps
-    // can actually fire. See docs/LIVE_INPUT_AND_FOCUS.md.
+    // In Looper mode, the transport record button is a wrapper around
+    // the focused-track replace gesture — same behavior whether the
+    // user presses it from the GUI or hits a bound pad.
     if (stateAPI->getMode() == AppMode::Looper) {
-        if (sessionLoopState != LoopRecordState::Off) {
-            // Already armed/recording — treat as a no-op toggle-in.
-            return;
-        }
-        int armed = 0;
-        for (auto& t : stateAPI->listTracks()) {
-            auto* ts = stateAPI->findTrack(t.id);
-            if (!ts || !ts->armed) continue;
-            if (ts->sourceType != TrackSourceType::Instrument) continue;
-            armed++;
-        }
-        if (armed == 0) {
-            perfLog("[Coordinator] startRecordMode (Looper): no armed instrument tracks — no-op\n");
-            return;
-        }
-        toggleLoopRecord();  // Off → Armed
-        if (!sequencerImpl->isPlaying())
-            sequencerImpl->play();
+        replaceLoopGesture();
         return;
     }
 
-    // Arrangement mode — refuse if a stray looper session is somehow
-    // still active (shouldn't happen, but defensive).
-    if (sessionLoopState != LoopRecordState::Off) {
-        perfLog("[Coordinator] startRecordMode refused — looper recording in progress\n");
-        return;
-    }
+    // Arrangement mode — classic record-arm-and-roll.
     recordModeActive = true;
     if (!sequencerImpl->isPlaying())
         sequencerImpl->play();  // transport callback will call startRecording()
@@ -571,14 +542,12 @@ void PerformanceCoordinator::reloadAudioFiles() {
 void PerformanceCoordinator::stopRecordMode() {
     if (!stateAPI) return;
 
-    // In Looper mode, stopping means "punch out at next wrap" — the
-    // whole session exits together. Armed → Off (cancel);
-    // Recording → StopPending (punch out at next wrap).
+    // In Looper mode, the same gesture that started the action is the
+    // one that ends it (replace twice cancels a queue, replace during
+    // capture is ignored since the playhead is moving). Route through
+    // the gesture entry point.
     if (stateAPI->getMode() == AppMode::Looper) {
-        if (sessionLoopState == LoopRecordState::Armed
-            || sessionLoopState == LoopRecordState::Recording) {
-            toggleLoopRecord();
-        }
+        replaceLoopGesture();
         return;
     }
 
@@ -1078,77 +1047,24 @@ void PerformanceCoordinator::unloadSong() {
     songRuntime->clearBindings();
 }
 
-// --- Loop recording (see docs/LIVE_LOOPING.md) ---
+// --- Loop recording entry points (see docs/LIVE_INPUT_AND_FOCUS.md) ---
 //
-// The "toggle" action transitions state per the diagram in the header.
-// Actual recording work — creating takes, routing events, finalizing
-// length — happens in onCycleWrap, which runs when the audio-thread
-// beat wraps backward. That way punch-in/out always land on musical
-// boundaries without the caller thinking about timing.
-//
-// There is one session-level state machine, not one per track. All
-// armed instrument tracks move through the states together; the set
-// of tracks being captured is locked in at Armed → Recording and
-// stored in sessionRecordingTrackIds.
+// The whole flow is gesture-driven: replaceLoopGesture / overdubLoopGesture
+// (defined below) are the public entry points. They route to the StateAPI
+// queue methods in established mode and to bootstrap-cycle-establishing
+// behavior when there's no cycle yet. The actual capture work happens at
+// the next cycle wrap in onCycleWrap → dispatchLoopGestures.
 
-void PerformanceCoordinator::toggleLoopRecord() {
-    switch (sessionLoopState) {
-        case LoopRecordState::Off:
-            // Refuse to arm while arrangement recording is running —
-            // see beginCapture's comment on the shared FIFO.
-            if (arrangementRecordingActive) {
-                perfLog("[Looper] arm refused — arrangement recording in progress\n");
-                return;
-            }
-            sessionLoopState = LoopRecordState::Armed;
-            perfLog("[Looper] armed session for loop recording\n");
-            break;
-        case LoopRecordState::Armed:
-            sessionLoopState = LoopRecordState::Off;
-            perfLog("[Looper] disarmed session\n");
-            break;
-        case LoopRecordState::Recording:
-            sessionLoopState = LoopRecordState::StopPending;
-            perfLog("[Looper] punch-out queued for session (next wrap)\n");
-            break;
-        case LoopRecordState::StopPending:
-            sessionLoopState = LoopRecordState::Recording;
-            perfLog("[Looper] punch-out cancelled for session\n");
-            break;
+bool PerformanceCoordinator::isInRecordMode() const {
+    if (recordModeActive) return true;
+    if (bootstrapActive) return true;
+    if (activeLoopCapture.has_value()) return true;
+    if (stateAPI) {
+        auto fid = stateAPI->getFocusedTrackId();
+        if (!fid.empty() && stateAPI->getLoopAction(fid) != LoopAction::None)
+            return true;
     }
-}
-
-void PerformanceCoordinator::forceStopLoopRecord() {
-    switch (sessionLoopState) {
-        case LoopRecordState::Off:
-            return;
-        case LoopRecordState::Armed:
-            sessionLoopState = LoopRecordState::Off;
-            perfLog("[Looper] disarmed session (force stop)\n");
-            return;
-        case LoopRecordState::Recording:
-        case LoopRecordState::StopPending: {
-            double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
-            if (sessionCyclesRecorded == 0) {
-                for (auto& tid : sessionRecordingTrackIds)
-                    arrangementImpl.discardLastLoopRecording(tid);
-                perfLog("[Looper] aborted incomplete recording (%d tracks)\n",
-                        (int)sessionRecordingTrackIds.size());
-            } else {
-                double lengthBeats = sessionCyclesRecorded * cycleLen;
-                for (auto& tid : sessionRecordingTrackIds)
-                    arrangementImpl.stopLoopRecording(tid, lengthBeats);
-                perfLog("[Looper] force-stop (length %.2f, cycles=%d, tracks=%d)\n",
-                        lengthBeats, sessionCyclesRecorded,
-                        (int)sessionRecordingTrackIds.size());
-            }
-            endCapture();
-            sessionLoopState = LoopRecordState::Off;
-            sessionCyclesRecorded = 0;
-            sessionRecordingTrackIds.clear();
-            return;
-        }
-    }
+    return false;
 }
 
 void PerformanceCoordinator::replaceLoopGesture() {
@@ -1266,13 +1182,7 @@ void PerformanceCoordinator::resetLooperSession() {
     }
     bootstrapActive = false;
 
-    // 3. Drain the OLD R-arming session machine. Use the existing
-    //    forceStopLoopRecord path (it handles in-flight finalization
-    //    safely whatever state it's in).
-    if (sessionLoopState != LoopRecordState::Off)
-        forceStopLoopRecord();
-
-    // 4. Wipe per-track looper runtime: queued/capturing flags +
+    // 3. Wipe per-track looper runtime: queued/capturing flags +
     //    undo/redo stacks. Then DELETE every loop region outright
     //    (not just empty events — regions persist across saves and
     //    keep painting empty bars; the panic button should leave
@@ -1292,78 +1202,10 @@ void PerformanceCoordinator::resetLooperSession() {
     perfLog("[Looper] resetLooperSession — done; ready for fresh bootstrap\n");
 }
 
-std::string PerformanceCoordinator::getLoopRecordState() const {
-    switch (sessionLoopState) {
-        case LoopRecordState::Off:          return "off";
-        case LoopRecordState::Armed:        return "armed";
-        case LoopRecordState::Recording:    return "recording";
-        case LoopRecordState::StopPending:  return "stop-pending";
-    }
-    return "off";
-}
-
 void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
-    // Pending take swaps land first (phase 3a). Then loop-record
-    // transitions — this ordering means a punch-in that fires at the
-    // same wrap as a take swap gets a fresh slate to record into.
-    double cycleLen = stateAPI ? stateAPI->getCycleLength() : 0.0;
-    switch (sessionLoopState) {
-        case LoopRecordState::Armed: {
-            // Lock in the track list now — anything armed at this
-            // moment captures. Changes to arm-state mid-recording
-            // don't add or remove tracks from the in-flight session.
-            sessionRecordingTrackIds.clear();
-            if (stateAPI) {
-                for (auto& t : stateAPI->listTracks()) {
-                    auto* ts = stateAPI->findTrack(t.id);
-                    if (!ts || !ts->armed) continue;
-                    if (ts->sourceType != TrackSourceType::Instrument) continue;
-                    sessionRecordingTrackIds.push_back(t.id);
-                }
-            }
-            if (sessionRecordingTrackIds.empty()) {
-                // Nothing to record — drop back to Off quietly.
-                sessionLoopState = LoopRecordState::Off;
-                perfLog("[Looper] punch-in aborted at wrap %.2f — no armed tracks\n", wrapBeat);
-                return;
-            }
-            // Open capture with origin=0 so events land on their
-            // cycle-relative beat (setMode(Looper) forces
-            // cycleStart=0 on the current song).
-            beginCapture(0.0);
-            sessionLoopState = LoopRecordState::Recording;
-            sessionCyclesRecorded = 0;
-            for (auto& tid : sessionRecordingTrackIds)
-                arrangementImpl.startLoopRecording(tid);
-            perfLog("[Looper] session punch-in at beat %.2f (%d tracks)\n",
-                    wrapBeat, (int)sessionRecordingTrackIds.size());
-            break;
-        }
-        case LoopRecordState::Recording:
-            sessionCyclesRecorded++;
-            break;
-        case LoopRecordState::StopPending: {
-            sessionCyclesRecorded++;
-            double lengthBeats = sessionCyclesRecorded * cycleLen;
-            for (auto& tid : sessionRecordingTrackIds)
-                arrangementImpl.stopLoopRecording(tid, lengthBeats);
-            endCapture();
-            perfLog("[Looper] session punch-out at beat %.2f (length %.2f, tracks=%d)\n",
-                    wrapBeat, lengthBeats, (int)sessionRecordingTrackIds.size());
-            sessionLoopState = LoopRecordState::Off;
-            sessionCyclesRecorded = 0;
-            sessionRecordingTrackIds.clear();
-            break;
-        }
-        case LoopRecordState::Off:
-            break;
-    }
-
-    // Phase 6 — per-track gesture dispatch. Runs every wrap so that
-    // queued replace/overdub gestures fired from Lua, MIDI bindings,
-    // or eventually the GUI find their cycle boundary. Independent of
-    // the bootstrap-mode (R-arming) machinery above; the two coexist
-    // until R-arming is removed.
+    // Pending take swaps land first, then gesture dispatch. Any take
+    // swap firing on the same wrap as a punch-in gets a fresh slate
+    // to record into.
     dispatchLoopGestures(wrapBeat);
 }
 
@@ -2090,10 +1932,10 @@ void PerformanceCoordinator::registerBuiltinActions() {
     // (value > 0) only so a release event doesn't immediately cancel
     // the queue. All target the focused track. See
     // docs/LIVE_INPUT_AND_FOCUS.md.
-    stateAPI->registerAction("replaceLoop", "Loop: replace (next wrap)",
+    stateAPI->registerAction("replaceLoop", "Loop: replace",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then replaceLoop() end"));
-    stateAPI->registerAction("overdubLoop", "Loop: overdub (next wrap)",
+    stateAPI->registerAction("overdubLoop", "Loop: overdub",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then overdubLoop() end"));
     stateAPI->registerAction("undoLoop", "Loop: undo",

@@ -63,25 +63,6 @@ public:
     void unloadSong();
 
     // --- Live looping (see docs/LIVE_LOOPING.md) ---
-    // Loop recording is a single session-level state machine. All
-    // armed instrument tracks move through the states together —
-    // there is no per-track substate. Transitions:
-    //   Off → Armed         (user taps record; waits for next cycle wrap)
-    //   Armed → Off         (user cancels before wrap)
-    //   Recording → StopPending  (user taps record again during capture)
-    //   StopPending → Recording  (user cancels the stop before wrap)
-    // Wrap-driven transitions (Armed → Recording, StopPending → Off)
-    // happen in onCycleWrap, which is called from the coordinator's
-    // timer when the audio-thread beat wraps backward.
-    void toggleLoopRecord();
-    // Escape hatch for stuck or intentional-stop scenarios. Armed →
-    // Off with no capture. Recording/StopPending → Off; if at least
-    // one full cycle was captured, finalize each in-flight take with
-    // that length; otherwise drop the take (and its freshly-created
-    // loop region, if we just added it). Balances `endCapture`.
-    void forceStopLoopRecord();
-    std::string getLoopRecordState() const;
-
     // Panic-button reset for the entire looper session. Stops
     // transport, drops any in-flight capture (gesture or bootstrap),
     // resets every per-track loopAction + undo/redo stack to a
@@ -182,12 +163,11 @@ public:
     void startRecordMode();   // enter record mode and start playback
     void stopRecordMode();    // exit record mode (keeps playing)
     void reloadAudioFiles();  // re-scan regions and load audio files into engine
-    // True if any recording flow is active — arrangement recording or any
-    // looper punch-in state. Used by the transport record button to drive
-    // its toggle so "stop" fires on the second press in either mode.
-    bool isInRecordMode() const {
-        return recordModeActive || sessionLoopState != LoopRecordState::Off;
-    }
+    // True if any recording flow is active — arrangement recording, an
+    // in-flight looper bootstrap, or any focused-track loopAction other
+    // than None. Used by the transport record button to drive its
+    // toggle so a second press fires "stop" in any mode.
+    bool isInRecordMode() const;
 
     // --- Logging ---
     void log(const juce::String& message);
@@ -252,13 +232,10 @@ private:
     void loadAudioFilesIntoEngine();
     void syncTempoFromState();
 
-    // Loop recording — single session-level state machine, driven by
-    // the cycle-wrap hook. See docs/LIVE_LOOPING.md.
-    enum class LoopRecordState { Off, Armed, Recording, StopPending };
-    LoopRecordState sessionLoopState = LoopRecordState::Off;
-    int sessionCyclesRecorded = 0;                 // wraps observed while Recording
-    std::vector<TrackId> sessionRecordingTrackIds; // tracks capturing this session
-    void onCycleWrap(double wrapBeat);   // called from timer when beat wraps
+    // Cycle-wrap hook — fires from the message-thread timer when the
+    // audio-thread beat position wraps backward across the cycle
+    // boundary. Drives looper gesture commits / take swaps.
+    void onCycleWrap(double wrapBeat);
 
     // Phase 6 looper — per-track gesture capture. Single capture in
     // flight at a time (target = focused track at wrap time). Events
