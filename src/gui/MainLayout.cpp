@@ -142,6 +142,23 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         resized();
     };
 
+    // Center divider — between the Left and Right pane slots. Drag-to-
+    // resize. Stored width persists in config so it survives relaunch.
+    addAndMakeVisible(centerDivider);
+    centerDivider.onDragStart = [this]() {
+        // Use the actual rendered left-pane width as the drag baseline,
+        // not the override (which may be -1 = auto).
+        if (auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]))
+            dragStartLeftPaneWidth = leftComp->getWidth();
+        else
+            dragStartLeftPaneWidth = 0;
+    };
+    centerDivider.onDrag = [this](int delta) {
+        leftPaneWidthOverride = std::max(minPaneSize, dragStartLeftPaneWidth + delta);
+        this->state.setConfig("left_pane_width", std::to_string(leftPaneWidthOverride));
+        resized();
+    };
+
     // Default pane assignments
     paneAssignments[PaneSlot::Sidebar] = PaneContent::SidebarTree;
     paneAssignments[PaneSlot::Left] = PaneContent::Produce;
@@ -149,6 +166,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     paneAssignments[PaneSlot::Bottom] = PaneContent::Mixer;
 
     loadPaneConfig();
+    {
+        auto saved = state.getConfig("left_pane_width");
+        if (!saved.empty()) leftPaneWidthOverride = std::max(minPaneSize, std::stoi(saved));
+    }
 
     // Force-apply all assignments (make components visible)
     for (auto& [slot, content] : paneAssignments) {
@@ -430,6 +451,9 @@ void MainLayout::paint(juce::Graphics& g) {
     g.fillRect(toolbar);
     g.setColour(Theme::color(Theme::Color::border));
     g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
+
+    // (Vertical divider between Left and Right panes is centerDivider,
+    // a child Component — paints itself on top of everything.)
 }
 
 void MainLayout::resized() {
@@ -471,18 +495,34 @@ void MainLayout::resized() {
     if (hasLeft && hasRight) {
         auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
         auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
-        float prop = preferredLeftProportion(paneAssignments[PaneSlot::Left]);
-        int leftWidth = std::max(minPaneSize,
-                                  std::min(area.getWidth() - minPaneSize,
-                                           (int)(area.getWidth() * prop)));
+        // User override (drag) wins over the per-content preferred prop.
+        int leftWidth;
+        if (leftPaneWidthOverride > 0) {
+            leftWidth = leftPaneWidthOverride;
+        } else {
+            float prop = preferredLeftProportion(paneAssignments[PaneSlot::Left]);
+            leftWidth = (int)(area.getWidth() * prop);
+        }
+        leftWidth = std::max(minPaneSize,
+                              std::min(area.getWidth() - minPaneSize, leftWidth));
         if (leftComp) leftComp->setBounds(area.removeFromLeft(leftWidth));
         if (rightComp) rightComp->setBounds(area);
+        // Center divider — straddles the boundary between the two
+        // panes so it's visible no matter what content is in either slot.
+        centerDivider.setBounds(area.getX() - Divider::thickness, area.getY(),
+                                 Divider::thickness * 2, area.getHeight());
+        centerDivider.setVisible(true);
+        centerDivider.toFront(false);
     } else if (hasLeft) {
         auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
         if (leftComp) leftComp->setBounds(area);
+        centerDivider.setVisible(false);
     } else if (hasRight) {
         auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
         if (rightComp) rightComp->setBounds(area);
+        centerDivider.setVisible(false);
+    } else {
+        centerDivider.setVisible(false);
     }
 }
 

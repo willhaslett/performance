@@ -14,6 +14,14 @@ namespace {
 constexpr double kBeatsPerBar = 4.0;
 }
 
+// Minimum row height that still fits the two-row track header layout
+// (top pad + name row + gap + pill row + bottom pad). Same formula
+// the Producer uses; both panes share the zoom_track_row_height
+// config so their row heights stay in sync.
+static int minTrackRowHeight() {
+    return 4 + Theme::headerHeight + 4 + Theme::pillSize + 4;
+}
+
 LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     : state(s), engine(e), coord(c) {
     setOpaque(true);
@@ -21,7 +29,17 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     // (e.g. the toolbar build-info field) — otherwise global
     // shortcuts like spacebar get swallowed upstream.
     setWantsKeyboardFocus(true);
-    stateSubId = state.events().subscribe([this](const StateEvent&) {
+    // Pick up the row-height that Producer and Looper share via config.
+    auto trh = state.getConfig("zoom_track_row_height");
+    if (!trh.empty()) trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
+    stateSubId = state.events().subscribe([this](const StateEvent& ev) {
+        if (ev.entity == StateEvent::Config) {
+            // Producer (or anything else) changed the row-height config —
+            // pick it up and rebuild geometry.
+            auto trh = state.getConfig("zoom_track_row_height");
+            if (!trh.empty())
+                trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
+        }
         // Any state mutation can invalidate our rendering (loop
         // created, take swapped, mute toggled, etc.). Defer to the
         // message thread to be safe — events may fire from any thread.
@@ -81,30 +99,33 @@ void LooperPane::rebuildRowGeoms() {
         // Action tracks don't loop — filter them out of the looper view.
         if (t.sourceType == TrackSourceType::Action) continue;
 
+        int rowH = trackRowHeight;
         RowGeom g;
         g.trackId = t.id;
-        g.rowBounds = { 0, y, getWidth(), rowHeight };
+        g.rowBounds = { 0, y, getWidth(), rowH };
         g.headerBounds = g.rowBounds.withWidth(headerWidth);
         g.timelineBounds = g.rowBounds.withTrimmedLeft(headerWidth);
 
-        // Header layout — gesture-driven looper has only the mute pill
-        // on the row. Recording is performer-driven via the focused-track
-        // gesture (replace / overdub / undo / redo), bound to MIDI pads
-        // or fired from the transport record button. The R pill (arming)
-        // is gone — there's nothing to arm — and the take selector is
-        // gone since the new model has one events stream per track with
-        // an undo/redo history rather than parallel takes.
-        auto hdr = g.headerBounds.reduced(Theme::spacingM, Theme::spacingS);
-        int yTop = hdr.getY();
-        g.recordButton = {};   // retained in geom for back-compat; unused
-        g.stopButton   = {};
-        g.armButton    = {};   // dropped with R-arming
-        g.takeSelector = {};   // dropped with takes-as-undo collapse
-        int pillY = yTop + (recButtonSize - 20) / 2;
-        g.muteButton = { hdr.getX(), pillY, mutePillWidth, 20 };
+        // Header layout mirrors the Producer's two-row track header:
+        // name row on top, pill row below, vertically centered. Pills
+        // are M/S/I; no R (record-arming has no role in the gesture-
+        // driven looper) and no take selector (takes collapsed into
+        // per-track undo).
+        const int interRowGap = 4;
+        int row1H = Theme::headerHeight;
+        int contentH = row1H + interRowGap + Theme::pillSize;
+        int topPad = std::max(4, (rowH - contentH) / 2);
+        int row1Y = g.rowBounds.getY() + topPad;
+        int row2Y = row1Y + row1H + interRowGap;
+        int pillX = g.headerBounds.getX() + Theme::spacingM;
+        g.muteButton  = { pillX, row2Y, Theme::pillSize, Theme::pillSize };
+        pillX += Theme::pillSize + Theme::pillGap;
+        g.soloButton  = { pillX, row2Y, Theme::pillSize, Theme::pillSize };
+        pillX += Theme::pillSize + Theme::pillGap + Theme::pillGroupGap;
+        g.inputButton = { pillX, row2Y, Theme::pillSize, Theme::pillSize };
 
         rowGeoms.push_back(g);
-        y += rowHeight + rowGap;
+        y += rowH + rowGap;
     }
 
     // Top-bar controls — cycle length pill on the right, PANIC reset
@@ -143,27 +164,8 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.drawText("Looper", bounds.reduced(Theme::spacingL, 0),
                juce::Justification::centredLeft);
 
-    // Cycle progress strip under the top bar — thin horizontal bar
-    // showing position within the cycle.
-    if (sequencer) {
-        double cyc = cycleBeats();
-        if (cyc > 0.0 && sequencer->isLoopEnabled()) {
-            double beat = sequencer->getBeatPosition();
-            double pos = std::fmod(beat - sequencer->getLoopStart(), cyc);
-            if (pos < 0) pos += cyc;
-
-            // Align the strip with the timeline column — beat 0 is at
-            // x = headerWidth, not at x = 0.
-            auto strip = juce::Rectangle<int>(headerWidth,
-                                               bounds.getBottom() - 2,
-                                               bounds.getWidth() - headerWidth, 2);
-            g.setColour(Theme::color(Theme::Color::borderSubtle));
-            g.fillRect(strip);
-            int fillW = (int) (strip.getWidth() * (pos / cyc));
-            g.setColour(Theme::color(Theme::Color::accent));
-            g.fillRect(strip.withWidth(fillW));
-        }
-    }
+    // (Cycle progress is shown by an in-timeline fill behind the
+    // playhead — see paintPlayhead. The top-bar strip is gone.)
 
     // Cycle-length editor pill on the right. Shows "<N> bars" — or
     // "no cycle" in bootstrap mode (cycleEnd == 0). Click opens picker.
@@ -217,43 +219,53 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     g.fillRect(headerWidth - 1, row.rowBounds.getY(),
                1, row.rowBounds.getHeight());
 
-    // Track name, right of the mute pill.
-    auto nameArea = row.headerBounds.withTrimmedLeft(row.muteButton.getRight()
-                                                        + Theme::spacingS)
-                                     .withHeight(recButtonSize + 8)
-                                     .translated(0, Theme::spacingS);
+    // Two-row layout: name on top, pills below.
+    int row1Y = row.muteButton.getY() - Theme::headerHeight - 4;
+    int nameX = row.headerBounds.getX() + Theme::spacingM;
+    auto nameArea = juce::Rectangle<int>(nameX, row1Y,
+                                          row.headerBounds.getRight() - nameX - 4,
+                                          Theme::headerHeight);
     g.setColour(Theme::color(t.muted ? Theme::Color::textDim
                                       : Theme::Color::textPrimary));
-    g.setFont(Theme::font(Theme::fontSizeMd));
+    g.setFont(Theme::font(Theme::fontSizeLg));
     g.drawText(t.name, nameArea, juce::Justification::centredLeft);
 
-    // Mute pill — same style as Produce's M pill.
-    auto muteBtn = row.muteButton.toFloat();
-    g.setColour(t.muted ? Theme::color(Theme::Color::pillMute)
-                        : Theme::color(Theme::Color::bgControl));
-    g.fillRoundedRectangle(muteBtn, 4.0f);
-    g.setColour(t.muted ? Theme::color(Theme::Color::textOnColor)
-                        : Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText("M", row.muteButton, juce::Justification::centred);
+    // Pill drawing helper — same style across all looper pills.
+    auto drawPill = [&](juce::Rectangle<int> bounds, const char* label,
+                         bool active, uint32_t activeColor) {
+        g.setColour(active ? Theme::color(activeColor)
+                            : Theme::color(Theme::Color::bgControl));
+        g.fillRoundedRectangle(bounds.toFloat(), Theme::pillRadius);
+        g.setColour(active ? Theme::color(Theme::Color::textOnColor)
+                            : Theme::color(Theme::Color::pillTextOff));
+        g.setFont(Theme::font(Theme::fontSizePill));
+        g.drawText(label, bounds, juce::Justification::centred);
+    };
 
-    // Gesture-state badge — when this track has a queued or in-flight
-    // looper action, label it so the performer can see what's about to
-    // happen (or what's currently happening). Dim text for queued,
-    // bright + accent for capturing.
+    drawPill(row.muteButton, "M", t.muted, Theme::Color::pillMute);
+    drawPill(row.soloButton, "S", t.soloed, Theme::Color::pillSolo);
+    if (t.sourceType == TrackSourceType::Instrument
+        || t.sourceType == TrackSourceType::AudioInput)
+        drawPill(row.inputButton, "I", t.inputMonitoring, Theme::Color::pillInput);
+
+    // Gesture-state badge — visible when this track has a queued or
+    // in-flight looper action. Anchored next to the pills on the same
+    // row so it doesn't fight the name above.
     auto loopAct = state.getLoopAction(t.id);
     if (loopAct != LoopAction::None) {
         const char* label = "";
         bool capturing = false;
         switch (loopAct) {
-            case LoopAction::ReplaceQueued:    label = "REPLACE QUEUED";    break;
-            case LoopAction::OverdubQueued:    label = "OVERDUB QUEUED";    break;
-            case LoopAction::CapturingReplace: label = "REPLACING…"; capturing = true; break;
+            case LoopAction::ReplaceQueued:    label = "REPLACE QUEUED";   break;
+            case LoopAction::OverdubQueued:    label = "OVERDUB QUEUED";   break;
+            case LoopAction::CapturingReplace: label = "REPLACING…";  capturing = true; break;
             case LoopAction::CapturingOverdub: label = "OVERDUBBING…"; capturing = true; break;
             default: break;
         }
-        auto badgeArea = nameArea.withTrimmedLeft(0)
-                                  .translated(0, recButtonSize / 2 + 4);
+        int badgeX = row.inputButton.getRight() + Theme::spacingM;
+        auto badgeArea = juce::Rectangle<int>(badgeX, row.muteButton.getY(),
+                                                row.headerBounds.getRight() - badgeX - 4,
+                                                Theme::pillSize);
         g.setColour(capturing ? Theme::color(Theme::Color::accent)
                               : Theme::color(Theme::Color::textSecondary));
         g.setFont(Theme::font(Theme::fontSizeXs));
@@ -369,8 +381,8 @@ void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
 void LooperPane::paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.setColour(Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText("(no loop — tap Rec to capture)", bounds,
-               juce::Justification::centred);
+    g.drawText(juce::String::fromUTF8("no loop \xe2\x80\x94 focus this track, press Record to capture"),
+               bounds, juce::Justification::centred);
 }
 
 void LooperPane::paintPlayhead(juce::Graphics& g) {
@@ -382,13 +394,23 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
     double pos = std::fmod(beat - sequencer->getLoopStart(), cyc);
     if (pos < 0) pos += cyc;
 
-    // Draw a vertical line spanning all rows at the cycle position.
     if (rowGeoms.empty()) return;
     int topY = rowGeoms.front().rowBounds.getY();
     int botY = rowGeoms.back().rowBounds.getBottom();
     auto timeline = rowGeoms.front().timelineBounds;
     int x = (int) std::round(beatsToX(pos, timeline));
 
+    // Cycle-progress fill: tint the timeline area from beat 0 up to the
+    // playhead. Subtle but readable from across a stage. Uses the
+    // accent color at a low alpha so it shifts the row background
+    // without obscuring the loop content drawn on top.
+    int fillX0 = timeline.getX();
+    if (x > fillX0) {
+        g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.10f));
+        g.fillRect(fillX0, topY, x - fillX0, botY - topY);
+    }
+
+    // Vertical playhead line, drawn last so it sits on top of the fill.
     g.setColour(Theme::color(Theme::Color::playhead));
     g.fillRect(x, topY, 2, botY - topY);
 }
@@ -426,11 +448,22 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
 
         // Record + stop are session-level via the transport bar now
         // Per-track record/arm/take affordances are gone (phase 6
-        // gesture model). Only the mute pill is interactive on the row.
+        // gesture model). M/S/I pills + click-to-focus on the row.
 
         if (row.muteButton.contains(pos)) {
-            bool now = !state.isTrackMuted(row.trackId);
-            state.setTrackMuted(row.trackId, now);
+            state.setTrackMuted(row.trackId, !state.isTrackMuted(row.trackId));
+            return;
+        }
+        if (row.soloButton.contains(pos)) {
+            state.setTrackSoloed(row.trackId, !state.isTrackSoloed(row.trackId));
+            return;
+        }
+        if (row.inputButton.contains(pos)) {
+            auto* t = state.findTrack(row.trackId);
+            if (t && (t->sourceType == TrackSourceType::Instrument
+                   || t->sourceType == TrackSourceType::AudioInput)) {
+                state.setTrackInputMonitoring(row.trackId, !t->inputMonitoring);
+            }
             return;
         }
         // Click on the row's background (not on a specific control) —
@@ -481,6 +514,28 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
         int bars = (int) std::round(cycleBeats() / kBeatsPerBar) + 1;
         state.setCycleLength(bars * kBeatsPerBar);
         return true;
+    }
+    // Cmd+J / Cmd+K — vertical zoom of track row height. Same shortcut
+    // and the same shared config as Producer so adjusting in one mode
+    // carries to the other.
+    if (key.getModifiers().isCommandDown()) {
+        auto c = key.getTextCharacter();
+        if (c == 'J' || c == 'j') {
+            trackRowHeight = juce::jlimit(minTrackRowHeight(), 200,
+                                           (int)(trackRowHeight * 1.3));
+            state.setConfig("zoom_track_row_height", std::to_string(trackRowHeight));
+            rebuildRowGeoms();
+            repaint();
+            return true;
+        }
+        if (c == 'K' || c == 'k') {
+            trackRowHeight = juce::jlimit(minTrackRowHeight(), 200,
+                                           (int)(trackRowHeight / 1.3));
+            state.setConfig("zoom_track_row_height", std::to_string(trackRowHeight));
+            rebuildRowGeoms();
+            repaint();
+            return true;
+        }
     }
     return false;
 }

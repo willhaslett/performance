@@ -300,9 +300,9 @@ void ProducePane::paint(juce::Graphics& g) {
         paintPlayhead(g, fullRulerGrid);
     }
 
-    // Right border — drawn last so track lane fills don't overdraw it
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine((float)getWidth() - 1, 0.0f, (float)getWidth() - 1, (float)getHeight(), 1.0f);
+    // (Right border between this pane and the next is drawn by
+    // MainLayout, so it appears uniformly regardless of which pane
+    // content is in the left slot.)
 }
 
 void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> bounds,

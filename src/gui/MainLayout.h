@@ -105,10 +105,16 @@ private:
     void loadPaneConfig();
 
     Divider sidebarDivider { Divider::Vertical };
+    Divider centerDivider  { Divider::Vertical };  // between Left and Right slots
     juce::TextEditor buildInfoField;
 
     int sidebarWidth = 240;
     int dragStartSidebarWidth = 0;
+    // Override for the Left/Right split. -1 means "use the per-content
+    // preferredLeftProportion." Set when the user drags centerDivider;
+    // persisted in config so it survives relaunch.
+    int leftPaneWidthOverride = -1;
+    int dragStartLeftPaneWidth = 0;
     int stateSubId = -1;   // Song Updated reverse-sync (see docs/PANE_MODE_MODEL.md)
     static constexpr int toolbarHeight = 36;
     static constexpr int minPaneSize = 100;

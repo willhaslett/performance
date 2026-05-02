@@ -56,22 +56,22 @@ private:
 
     // ---- Layout ----
     static constexpr int topBarHeight     = 40;
-    static constexpr int rowHeight        = 96;
     static constexpr int rowGap           = 2;
-    static constexpr int headerWidth      = 200;
-    static constexpr int recButtonSize    = 28;
+    static constexpr int headerWidth      = 140;  // matches Producer
     static constexpr int mutePillWidth    = 28;
+    // Row height is dynamic — shared with Producer via the same
+    // zoom_track_row_height config so adjusting in one mode follows
+    // through to the other. Cmd+J / Cmd+K resize.
+    int trackRowHeight = 72;
 
     struct RowGeom {
         TrackId trackId;
         juce::Rectangle<int> rowBounds;
         juce::Rectangle<int> headerBounds;
         juce::Rectangle<int> timelineBounds;
-        juce::Rectangle<int> recordButton;   // retained for back-compat; unused since phase 5a
-        juce::Rectangle<int> stopButton;     // retained for back-compat; unused since phase 5a
-        juce::Rectangle<int> armButton;      // R — toggles record-arm
         juce::Rectangle<int> muteButton;
-        juce::Rectangle<int> takeSelector;   // clickable area for take picker
+        juce::Rectangle<int> soloButton;
+        juce::Rectangle<int> inputButton;
     };
     std::vector<RowGeom> rowGeoms;
     juce::Rectangle<int> cycleLengthField;   // top-bar control
