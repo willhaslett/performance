@@ -70,12 +70,15 @@ private:
         explicit AboutPage(StateAPI& state);
         void paint(juce::Graphics& g) override;
         void resized() override;
+        int getDesiredHeight() const;
     private:
         StateAPI& state;
-        juce::Label versionLabel, commitLabel, installIdLabel, firstSeenLabel, diagnosticsLabel;
+        juce::Label versionLabel, commitLabel, installIdLabel, firstSeenLabel,
+                    diagnosticsLabel, restoreLastProjectLabel;
         juce::TextEditor versionValue, commitValue, installIdValue, firstSeenValue;
         juce::TextButton copyIdButton { "Copy" };
         juce::ToggleButton diagnosticsToggle;
+        juce::ToggleButton restoreLastProjectToggle;
     };
     AboutPage aboutPage;
 

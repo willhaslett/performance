@@ -970,6 +970,10 @@ void PerformanceCoordinator::loadSong(const std::string& songId) {
     // but silent + waveform-less until the user explicitly reloads.
     loadAudioFilesIntoEngine();
 
+    // Persist as the "last opened song" so the next launch can skip
+    // the chooser if `restore_last_project` is on.
+    stateAPI->setConfig("last_open_song_id", songId);
+
     perfLog("[Coordinator] Loaded song: %s\n", song->name.c_str());
     if (onSongLoaded) onSongLoaded();
 }
@@ -1026,8 +1030,19 @@ bool PerformanceCoordinator::restoreSession() {
         return true;
     }
 
-    // 1+ songs exist. Don't auto-load — the GUI will show a startup chooser.
-    // Mark that we need it so MainLayout can check.
+    // Skip the chooser if the user has opted into auto-loading the
+    // last opened song AND that song still exists. Falls through to
+    // the chooser otherwise (saved id missing, deleted, or setting off).
+    if (stateAPI->getConfig("restore_last_project") == "1") {
+        auto lastId = stateAPI->getConfig("last_open_song_id");
+        if (!lastId.empty() && stateAPI->findSong(SongId{lastId})) {
+            perfLog("[Coordinator] Auto-loading last project: %s\n", lastId.c_str());
+            loadSong(lastId);
+            return true;
+        }
+    }
+
+    // 1+ songs exist and no auto-load — show the chooser.
     startupChooserNeeded = true;
     perfLog("[Coordinator] %d song(s) found — startup chooser will be shown\n",
             (int)songs.size());

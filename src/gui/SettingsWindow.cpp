@@ -35,7 +35,9 @@ SettingsWindow::SettingsWindow(StateAPI& state, EngineAPI& engine,
     setResizable(false, false);
 
     int w = AudioPage::labelWidth + AudioPage::comboWidth + AudioPage::padding * 3;
-    int h = audioPage.getDesiredHeight() + tabs.getTabBarDepth() + getTitleBarHeight();
+    // Size to the tallest page so any tab fits without overflow.
+    int pageH = std::max(audioPage.getDesiredHeight(), aboutPage.getDesiredHeight());
+    int h = pageH + tabs.getTabBarDepth() + getTitleBarHeight();
     centreWithSize(w, h);
 }
 
@@ -240,11 +242,12 @@ SettingsWindow::AboutPage::AboutPage(StateAPI& s) : state(s) {
         addAndMakeVisible(field);
     };
 
-    setupLabel(versionLabel,    "Version:");
-    setupLabel(commitLabel,     "Commit:");
-    setupLabel(installIdLabel,  "Install ID:");
-    setupLabel(firstSeenLabel,  "First Seen:");
-    setupLabel(diagnosticsLabel,"Send Diagnostics:");
+    setupLabel(versionLabel,           "Version:");
+    setupLabel(commitLabel,            "Commit:");
+    setupLabel(installIdLabel,         "Install ID:");
+    setupLabel(firstSeenLabel,         "First Seen:");
+    setupLabel(diagnosticsLabel,       "Send Diagnostics:");
+    setupLabel(restoreLastProjectLabel,"Startup:");
 
     juce::String versionText = BUILD_VERSION;
     if (BUILD_GIT_TAG[0]) versionText += juce::String("  (") + BUILD_GIT_TAG + ")";
@@ -269,6 +272,23 @@ SettingsWindow::AboutPage::AboutPage(StateAPI& s) : state(s) {
         Telemetry::setEnabled(state, diagnosticsToggle.getToggleState());
     };
     addAndMakeVisible(diagnosticsToggle);
+
+    restoreLastProjectToggle.setToggleState(
+        state.getConfig("restore_last_project") == "1", juce::dontSendNotification);
+    restoreLastProjectToggle.setColour(juce::ToggleButton::textColourId,
+                                        Theme::color(Theme::Color::textSecondary));
+    restoreLastProjectToggle.setButtonText("Open last project on startup");
+    restoreLastProjectToggle.onClick = [this] {
+        state.setConfig("restore_last_project",
+                        restoreLastProjectToggle.getToggleState() ? "1" : "0");
+    };
+    addAndMakeVisible(restoreLastProjectToggle);
+}
+
+int SettingsWindow::AboutPage::getDesiredHeight() const {
+    // Six rows: version, commit, install id, first seen, diagnostics,
+    // restore last project. Same row metric as the audio page.
+    return AudioPage::padding + AudioPage::rowHeight * 6 + AudioPage::padding;
 }
 
 void SettingsWindow::AboutPage::paint(juce::Graphics& g) {
@@ -307,6 +327,11 @@ void SettingsWindow::AboutPage::resized() {
     // Diagnostics toggle — label + toggle stretched along row
     diagnosticsLabel.setBounds(x, y, labelWidth, rowHeight);
     diagnosticsToggle.setBounds(x + labelWidth + 8, y, valueWidth, rowHeight);
+    y += rowHeight;
+
+    // Open-last-project toggle
+    restoreLastProjectLabel.setBounds(x, y, labelWidth, rowHeight);
+    restoreLastProjectToggle.setBounds(x + labelWidth + 8, y, valueWidth, rowHeight);
 }
 
 
