@@ -123,48 +123,74 @@ void BindableButton::paint(juce::Graphics& g) {
     bool enabled = isEnabled();
     bool lit = isLit();
 
-    // Cell background. Active wins over hover-flash. Disabled rows
-    // get a faint, dimmer background.
+    // Cell background. Active = subtle inset (slightly darker), not the
+    // big accent fill. The functional state (e.g. queued/capturing for
+    // a looper action) shows in the lane, not the button.
     juce::Colour bg = active
-                       ? Theme::color(Theme::Color::accent)
+                       ? Theme::color(Theme::Color::bgControl).darker(0.25f)
                        : Theme::color(Theme::Color::bgControl);
     paintCellBackground(g, bg);
 
-    // --- Layer 1: label / icon (top ~half) ---
-    auto contentArea = getLocalBounds().withTrimmedBottom(28);
-    auto labelArea   = contentArea.withTrimmedBottom(8);  // leave room for activity light
+    // Optional top color stripe — category hint (e.g. Replace/Overdub
+    // tints that match their lane-state colors).
+    if (! topStripe.isTransparent()) {
+        g.setColour(topStripe);
+        g.fillRect(0, 0, getWidth(), 3);
+    }
 
-    juce::Colour textColor = active     ? Theme::color(Theme::Color::textOnColor)
-                              : enabled  ? Theme::color(Theme::Color::textPrimary)
-                                          : Theme::color(Theme::Color::textDim);
+    // Inner vertical divider on the right edge for non-rightmost cells —
+    // gives the segmented strip cohesion (looks like one shape with
+    // dividers, not a row of separate buttons).
+    if (corners == Left || corners == Mid) {
+        g.setColour(Theme::color(Theme::Color::borderSubtle));
+        g.fillRect(getWidth() - 1, 4, 1, getHeight() - 8);
+    }
+
+    // Three rows top-to-bottom: label / binding / trigger light.
+    // We carve them out of the local area so the layout stays
+    // proportional if the cell ever resizes.
+    constexpr int triggerRowH = 8;
+    constexpr int bindingRowH = 18;
+    auto area = getLocalBounds().reduced(2, 4);
+    auto triggerRow = area.removeFromBottom(triggerRowH);
+    auto bindingRow = area.removeFromBottom(bindingRowH);
+    auto labelRow   = area;  // remainder = top
+
+    // --- Row 1: label / icon ---
+    juce::Colour textColor = enabled ? Theme::color(Theme::Color::textPrimary)
+                                      : Theme::color(Theme::Color::textDim);
     if (variant == Variant::TextLabel) {
+        // Optional record-dot left of the label (Replace/Overdub).
+        auto labelDraw = labelRow;
+        if (showRecordDot) {
+            int dotSize = 8;
+            auto dotArea = labelDraw.removeFromLeft(dotSize + 8);
+            auto dot = dotArea.withSizeKeepingCentre(dotSize, dotSize).toFloat();
+            g.setColour(Theme::color(Theme::Color::transportRecDot));
+            g.fillEllipse(dot);
+        }
         g.setColour(textColor);
-        g.setFont(Theme::font(Theme::fontSizeSm));
-        g.drawText(label, labelArea, juce::Justification::centred);
+        g.setFont(Theme::font(Theme::fontSizeLg));
+        g.drawText(label, labelDraw, juce::Justification::centred);
     } else {
-        // Icon centered in labelArea, sized to ~14px.
-        int iconW = 14;
-        auto icon = labelArea.withSizeKeepingCentre(iconW, iconW);
+        int iconW = 18;
+        auto icon = labelRow.withSizeKeepingCentre(iconW, iconW);
         paintIcon(g, icon, textColor);
     }
 
-    // --- Layer 2: activity light (small dot, just above binding row) ---
-    auto lightArea = juce::Rectangle<int>(0, contentArea.getBottom() - 8,
-                                            getWidth(), 8);
-    auto dot = lightArea.withSizeKeepingCentre(6, 6).toFloat();
-    g.setColour(lit ? Theme::color(Theme::Color::accent)
-                    : (active ? Theme::color(Theme::Color::textOnColor).withAlpha(0.35f)
-                              : Theme::color(Theme::Color::bgRecessed)));
-    g.fillEllipse(dot);
-
-    // --- Layer 3: binding readout (bottom row) ---
-    auto bindingRow = bindingRowBounds();
+    // --- Row 2: binding readout / "+ set" ---
     auto bindingName = currentBindingName();
-    g.setColour(active ? Theme::color(Theme::Color::textOnColor).withAlpha(0.85f)
-                       : Theme::color(Theme::Color::textDim));
+    g.setColour(Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSizeXs));
     g.drawText(bindingName.isEmpty() ? juce::String("+ set") : bindingName,
                bindingRow, juce::Justification::centred);
+
+    // --- Row 3: trigger light (yellow flash on action-fire) ---
+    int dotSize = 6;
+    auto trigDot = triggerRow.withSizeKeepingCentre(dotSize, dotSize).toFloat();
+    g.setColour(lit ? Theme::color(Theme::Color::triggerLight)
+                    : Theme::color(Theme::Color::bgRecessed));
+    g.fillEllipse(trigDot);
 }
 
 void BindableButton::mouseDown(const juce::MouseEvent& e) {

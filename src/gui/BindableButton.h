@@ -43,6 +43,15 @@ public:
     void setEnabledPredicate(std::function<bool()> p) {
         enabledPred = std::move(p); repaint();
     }
+    // Optional 3px color bar along the top edge — used as a category
+    // hint (e.g. Replace and Overdub get color-keyed stripes that
+    // match their respective lane-state tints).
+    void setTopColorStripe(juce::Colour c) { topStripe = c; repaint(); }
+    // Show a small filled red circle to the left of the label, in
+    // the visual family of the Producer's record button. Used by
+    // Replace/Overdub so they read as "record (replace)" / "record
+    // (overdub)" rather than as standalone words.
+    void setShowRecordDot(bool b) { showRecordDot = b; repaint(); }
 
     void paint(juce::Graphics&) override;
     void mouseDown(const juce::MouseEvent&) override;
@@ -61,6 +70,8 @@ private:
 
     int actionFireSubId = -1;
     juce::int64 litUntilMs = 0;
+    juce::Colour topStripe;     // transparent = no stripe
+    bool showRecordDot = false;
 
     juce::Rectangle<int> bindingRowBounds() const;
     juce::String currentBindingName() const;  // "" when unbound

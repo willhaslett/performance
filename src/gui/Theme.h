@@ -50,6 +50,10 @@ namespace Theme {
         inline uint32_t activityOn      = 0xff44cc44;
         inline uint32_t activityOff     = 0xff1a3a1a;
         inline uint32_t statusError     = 0xff994444;
+        // Yellow flash for action-fired indicators on bindable buttons
+        // (BindableButton's bottom-row activity light). Same role as
+        // the trigger-detection lights in PerformPane.
+        inline uint32_t triggerLight    = 0xffe6c84a;
 
         // Transport
         inline uint32_t transportPlay      = 0xff2a6a2a;

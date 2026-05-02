@@ -96,6 +96,7 @@ target_sources(Performance PRIVATE
     src/gui/MorphEditor.cpp
     src/gui/ActionInstanceForm.cpp
     src/gui/ActionPicker.cpp
+    src/gui/BindableButton.cpp
     src/gui/KeyBindingManager.cpp
     src/gui/KeyBindingEditor.cpp
     src/daw/InternalSequencer.cpp

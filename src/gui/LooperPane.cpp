@@ -32,6 +32,89 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     // Pick up the row-height that Producer and Looper share via config.
     auto trh = state.getConfig("zoom_track_row_height");
     if (!trh.empty()) trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
+
+    // ---- Performer gesture buttons ----
+    // Standalone play. Active = "transport is playing" (icon swap).
+    playBtn = std::make_unique<BindableButton>(state, coord, "togglePlay", "",
+                                                BindableButton::Variant::IconPlay);
+    playBtn->setActivePredicate([this] {
+        return sequencer && sequencer->isPlaying();
+    });
+    addAndMakeVisible(*playBtn);
+
+    // Helpers for predicates that look at the focused track.
+    auto hasFocus = [this]() {
+        return !state.getFocusedTrackId().empty();
+    };
+    auto focusedAct = [this]() -> LoopAction {
+        auto fid = state.getFocusedTrackId();
+        return fid.empty() ? LoopAction::None : state.getLoopAction(fid);
+    };
+
+    // Color keys for Replace and Overdub. Match the lane-state tints
+    // that show on the focused track when the action is queued or
+    // capturing — top-stripe on the button is the cue that links the
+    // gesture to the visual on the lane.
+    const auto replaceColor = juce::Colour(0xffcc6655);  // warm red-orange (record family)
+    const auto overdubColor = juce::Colour(0xff5fb09f);  // cool teal
+
+    // All non-play buttons live in one segmented strip — Left for the
+    // first cell, Mid for the rest, Right for the last. The vertical
+    // dividers between cells signal cohesion.
+
+    replaceBtn = std::make_unique<BindableButton>(state, coord, "replaceLoop", "replace");
+    replaceBtn->setCornerStyle(BindableButton::Left);
+    replaceBtn->setEnabledPredicate(hasFocus);
+    replaceBtn->setTopColorStripe(replaceColor);
+    replaceBtn->setShowRecordDot(true);
+    addAndMakeVisible(*replaceBtn);
+
+    overdubBtn = std::make_unique<BindableButton>(state, coord, "overdubLoop", "overdub");
+    overdubBtn->setCornerStyle(BindableButton::Mid);
+    overdubBtn->setEnabledPredicate(hasFocus);
+    overdubBtn->setTopColorStripe(overdubColor);
+    overdubBtn->setShowRecordDot(true);
+    addAndMakeVisible(*overdubBtn);
+
+    undoBtn = std::make_unique<BindableButton>(state, coord, "undoLoop", "undo");
+    undoBtn->setCornerStyle(BindableButton::Mid);
+    undoBtn->setEnabledPredicate([this] {
+        auto fid = state.getFocusedTrackId();
+        return !fid.empty() && state.getLoopUndoDepth(fid) > 0;
+    });
+    addAndMakeVisible(*undoBtn);
+
+    redoBtn = std::make_unique<BindableButton>(state, coord, "redoLoop", "redo");
+    redoBtn->setCornerStyle(BindableButton::Mid);
+    redoBtn->setEnabledPredicate([this] {
+        auto fid = state.getFocusedTrackId();
+        return !fid.empty() && state.getLoopRedoDepth(fid) > 0;
+    });
+    addAndMakeVisible(*redoBtn);
+
+    muteBtn = std::make_unique<BindableButton>(state, coord, "toggleFocusedMute", "mute");
+    muteBtn->setCornerStyle(BindableButton::Mid);
+    muteBtn->setActivePredicate([this] {
+        auto fid = state.getFocusedTrackId();
+        return !fid.empty() && state.isTrackMuted(fid);
+    });
+    muteBtn->setEnabledPredicate(hasFocus);
+    addAndMakeVisible(*muteBtn);
+
+    clearBtn = std::make_unique<BindableButton>(state, coord, "clearLoop", "clear");
+    clearBtn->setCornerStyle(BindableButton::Mid);
+    clearBtn->setEnabledPredicate(hasFocus);
+    addAndMakeVisible(*clearBtn);
+
+    focusPrevBtn = std::make_unique<BindableButton>(state, coord, "focusPrevTrack", "",
+                                                     BindableButton::Variant::IconArrowUp);
+    focusPrevBtn->setCornerStyle(BindableButton::Mid);
+    addAndMakeVisible(*focusPrevBtn);
+
+    focusNextBtn = std::make_unique<BindableButton>(state, coord, "focusNextTrack", "",
+                                                     BindableButton::Variant::IconArrowDown);
+    focusNextBtn->setCornerStyle(BindableButton::Right);
+    addAndMakeVisible(*focusNextBtn);
     stateSubId = state.events().subscribe([this](const StateEvent& ev) {
         if (ev.entity == StateEvent::Config) {
             // Producer (or anything else) changed the row-height config —
@@ -131,8 +214,41 @@ void LooperPane::rebuildRowGeoms() {
     // Top-bar controls — cycle length pill on the right, PANIC reset
     // immediately to its left (cycle field stays at the corner since
     // reset is a rare action and shouldn't grab the prime spot).
-    cycleLengthField = { getWidth() - 160, 8, 140, 24 };
-    resetButton      = { cycleLengthField.getX() - 80, 8, 70, 24 };
+    // Top-bar layout (right-to-left): cycle pill at the corner, reset
+    // pill next, then the BindableButton group taking the remaining
+    // space, then play standalone on the left of the group. Title sits
+    // at the very left.
+    int topBarMid = topBarHeight / 2;
+    int pillH = 24;
+    int pillY = topBarMid - pillH / 2;
+    cycleLengthField = { getWidth() - 160, pillY, 140, pillH };
+    resetButton      = { cycleLengthField.getX() - 80, pillY, 70, pillH };
+
+    int bbH = BindableButton::desiredHeight;
+    int bbY = topBarMid - bbH / 2;
+    const int playWidth      = 56;
+    const int playToStripGap = 12;  // breathing room between standalone play and the strip
+    const int wideBtn        = 84;  // replace, overdub (longer label, plus record dot)
+    const int narrowBtn      = 60;  // undo, redo, mute, clear
+    const int iconBtn        = 40;  // focus prev/next
+
+    int stripW = wideBtn * 2 + narrowBtn * 4 + iconBtn * 2;
+    int bindablesW = playWidth + playToStripGap + stripW;
+
+    int rightEdge = resetButton.getX() - 16;
+    int x = rightEdge - bindablesW;
+
+    playBtn->setBounds(x, bbY, playWidth, bbH);
+    x += playWidth + playToStripGap;
+
+    replaceBtn->setBounds(x, bbY, wideBtn, bbH); x += wideBtn;
+    overdubBtn->setBounds(x, bbY, wideBtn, bbH); x += wideBtn;
+    undoBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
+    redoBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
+    muteBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
+    clearBtn->setBounds(x, bbY, narrowBtn, bbH); x += narrowBtn;
+    focusPrevBtn->setBounds(x, bbY, iconBtn, bbH); x += iconBtn;
+    focusNextBtn->setBounds(x, bbY, iconBtn, bbH);
 }
 
 // ---- Paint ----------------------------------------------------------------
@@ -190,6 +306,10 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.fillRoundedRectangle(resetButton.toFloat(), 4.0f);
     g.setColour(Theme::color(Theme::Color::textSecondary));
     g.drawText("reset", resetButton, juce::Justification::centred);
+
+    // (Gesture buttons are BindableButton child components — they paint
+    // themselves when JUCE walks the children. See constructor + the
+    // layout block in rebuildRowGeoms.)
 }
 
 void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
@@ -248,29 +368,11 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
         || t.sourceType == TrackSourceType::AudioInput)
         drawPill(row.inputButton, "I", t.inputMonitoring, Theme::Color::pillInput);
 
-    // Gesture-state badge — visible when this track has a queued or
-    // in-flight looper action. Anchored next to the pills on the same
-    // row so it doesn't fight the name above.
-    auto loopAct = state.getLoopAction(t.id);
-    if (loopAct != LoopAction::None) {
-        const char* label = "";
-        bool capturing = false;
-        switch (loopAct) {
-            case LoopAction::ReplaceQueued:    label = "REPLACE QUEUED";   break;
-            case LoopAction::OverdubQueued:    label = "OVERDUB QUEUED";   break;
-            case LoopAction::CapturingReplace: label = "REPLACING…";  capturing = true; break;
-            case LoopAction::CapturingOverdub: label = "OVERDUBBING…"; capturing = true; break;
-            default: break;
-        }
-        int badgeX = row.inputButton.getRight() + Theme::spacingM;
-        auto badgeArea = juce::Rectangle<int>(badgeX, row.muteButton.getY(),
-                                                row.headerBounds.getRight() - badgeX - 4,
-                                                Theme::pillSize);
-        g.setColour(capturing ? Theme::color(Theme::Color::accent)
-                              : Theme::color(Theme::Color::textSecondary));
-        g.setFont(Theme::font(Theme::fontSizeXs));
-        g.drawText(label, badgeArea, juce::Justification::centredLeft);
-    }
+    // (Gesture state — queued / capturing — is shown as a colored
+    // tint on the lane's left-of-playhead area in paintPlayhead, not
+    // as a text badge here. The lane shows it bigger and from across
+    // a stage, plus the pulse → solid → neutral rhythm matches how
+    // the action progresses through its cycle.)
 }
 
 void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
@@ -381,7 +483,7 @@ void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
 void LooperPane::paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.setColour(Theme::color(Theme::Color::textDim));
     g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText(juce::String::fromUTF8("no loop \xe2\x80\x94 focus this track, press Record to capture"),
+    g.drawText(juce::String::fromUTF8("no loop \xe2\x80\x94 focus this track, click \xe2\x80\x9creplace\xe2\x80\x9d above to capture"),
                bounds, juce::Justification::centred);
 }
 
@@ -399,15 +501,49 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
     int botY = rowGeoms.back().rowBounds.getBottom();
     auto timeline = rowGeoms.front().timelineBounds;
     int x = (int) std::round(beatsToX(pos, timeline));
-
-    // Cycle-progress fill: tint the timeline area from beat 0 up to the
-    // playhead. Subtle but readable from across a stage. Uses the
-    // accent color at a low alpha so it shifts the row background
-    // without obscuring the loop content drawn on top.
     int fillX0 = timeline.getX();
-    if (x > fillX0) {
-        g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.10f));
-        g.fillRect(fillX0, topY, x - fillX0, botY - topY);
+    if (x <= fillX0) {
+        // Nothing to fill yet — just draw the playhead line and bail.
+        g.setColour(Theme::color(Theme::Color::playhead));
+        g.fillRect(x, topY, 2, botY - topY);
+        return;
+    }
+
+    // Per-row progress fill. Most rows get the subtle accent tint, but
+    // a row with a queued/capturing loop action gets the action-color
+    // tint instead — pulsing while queued, solid while capturing. The
+    // tint lives in the same left-of-playhead region as the cycle
+    // progress so the two visuals are consistent.
+    const auto neutral = Theme::color(Theme::Color::accent).withAlpha(0.10f);
+    const auto replaceColor = juce::Colour(0xffcc6655);
+    const auto overdubColor = juce::Colour(0xff5fb09f);
+
+    // Pulse phase: 0..1, oscillating ~1Hz, used to modulate alpha.
+    double t = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    float pulse = 0.5f + 0.5f * (float) std::sin(t * juce::MathConstants<double>::twoPi);
+
+    for (auto& row : rowGeoms) {
+        auto act = state.getLoopAction(row.trackId);
+        juce::Colour fill = neutral;
+        switch (act) {
+            case LoopAction::ReplaceQueued:
+                fill = replaceColor.withAlpha(0.10f + 0.18f * pulse);
+                break;
+            case LoopAction::CapturingReplace:
+                fill = replaceColor.withAlpha(0.40f);
+                break;
+            case LoopAction::OverdubQueued:
+                fill = overdubColor.withAlpha(0.10f + 0.18f * pulse);
+                break;
+            case LoopAction::CapturingOverdub:
+                fill = overdubColor.withAlpha(0.40f);
+                break;
+            default:
+                break;
+        }
+        g.setColour(fill);
+        g.fillRect(fillX0, row.rowBounds.getY(),
+                   x - fillX0, row.rowBounds.getHeight());
     }
 
     // Vertical playhead line, drawn last so it sits on top of the fill.
@@ -442,6 +578,10 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
             });
         return;
     }
+    // Top bar — gesture buttons. Same calls as the bindable actions.
+    // (Gesture button clicks are handled by the BindableButton child
+    // components themselves; clicks land here only on empty top-bar
+    // background or fall through to row clicks below.)
 
     for (auto& row : rowGeoms) {
         if (!row.rowBounds.contains(pos)) continue;

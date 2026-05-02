@@ -1,8 +1,10 @@
 #pragma once
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "gui/Theme.h"
+#include "gui/BindableButton.h"
 #include "state/StateModel.h"
 #include "daw/SequencerAPI.h"
+#include <memory>
 #include <vector>
 
 class StateAPI;
@@ -55,7 +57,7 @@ private:
     void visibilityChanged() override;
 
     // ---- Layout ----
-    static constexpr int topBarHeight     = 40;
+    static constexpr int topBarHeight     = 80;   // accommodates 64px BindableButtons
     static constexpr int rowGap           = 2;
     static constexpr int headerWidth      = 140;  // matches Producer
     static constexpr int mutePillWidth    = 28;
@@ -75,7 +77,19 @@ private:
     };
     std::vector<RowGeom> rowGeoms;
     juce::Rectangle<int> cycleLengthField;   // top-bar control
-    juce::Rectangle<int> resetButton;        // top-bar PANIC reset
+    juce::Rectangle<int> resetButton;        // top-bar PANIC reset (kept separate for confirm dialog)
+
+    // Bindable performer gesture buttons (top-bar group). One per
+    // looper-relevant action; segmented in sub-groups by visual gap.
+    std::unique_ptr<BindableButton> playBtn;
+    std::unique_ptr<BindableButton> replaceBtn;
+    std::unique_ptr<BindableButton> overdubBtn;
+    std::unique_ptr<BindableButton> undoBtn;
+    std::unique_ptr<BindableButton> redoBtn;
+    std::unique_ptr<BindableButton> muteBtn;
+    std::unique_ptr<BindableButton> clearBtn;
+    std::unique_ptr<BindableButton> focusPrevBtn;
+    std::unique_ptr<BindableButton> focusNextBtn;
     void rebuildRowGeoms();
 
     // ---- Paint helpers ----
