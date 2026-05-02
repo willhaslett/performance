@@ -1082,6 +1082,16 @@ bool PerformanceCoordinator::isInRecordMode() const {
     return false;
 }
 
+int PerformanceCoordinator::addActionFireListener(ActionFireListener listener) {
+    int id = nextActionFireListenerId++;
+    actionFireListeners[id] = std::move(listener);
+    return id;
+}
+
+void PerformanceCoordinator::removeActionFireListener(int id) {
+    actionFireListeners.erase(id);
+}
+
 void PerformanceCoordinator::togglePlay() {
     if (sequencerImpl) sequencerImpl->togglePlayStop();
 }
@@ -1648,7 +1658,11 @@ void PerformanceCoordinator::executeAction(const std::string& actionName,
     // Notify any GUI listening for action fires (e.g. activity lights
     // on the looper button group). Single chokepoint for all dispatch
     // sources — Lua, MIDI bindings, GUI clicks all flow through here.
-    if (onActionFired) onActionFired(actionName);
+    // Iterate a snapshot so a listener that removes itself in its
+    // callback (rare but possible) can't invalidate the iterator.
+    auto snapshot = actionFireListeners;
+    for (auto& [id, fn] : snapshot)
+        if (fn) fn(actionName);
 
     // Check for custom Lua action first
     auto* actionInfo = stateAPI->findActionByName(actionName);

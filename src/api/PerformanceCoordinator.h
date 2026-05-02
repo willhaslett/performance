@@ -87,12 +87,15 @@ public:
     // and Looper both. Routes through the sequencer.
     void togglePlay();
 
-    // Fires whenever an action gets dispatched, with the action's name.
-    // Used by GUIs to flash activity indicators in sync with both GUI
-    // clicks and MIDI binding fires (single source of truth — every
-    // dispatch path goes through executeAction). Set by MainLayout (or
-    // any GUI host) at startup; nullable.
-    std::function<void(const std::string& actionName)> onActionFired;
+    // Action-fire listener API. Any GUI that wants to know when an
+    // action is dispatched (e.g. activity lights on the looper button
+    // group) subscribes here. Every dispatch path — Lua, MIDI bindings,
+    // GUI clicks — funnels through executeAction, which fans out to
+    // every registered listener. Subscribe returns an id; unsubscribe
+    // in the listener's destructor to avoid dangling captures.
+    using ActionFireListener = std::function<void(const std::string& actionName)>;
+    int  addActionFireListener(ActionFireListener listener);
+    void removeActionFireListener(int id);
 
     // --- Persistence ---
     void save();  // flush state to SQLite
@@ -246,6 +249,10 @@ private:
     // audio-thread beat position wraps backward across the cycle
     // boundary. Drives looper gesture commits / take swaps.
     void onCycleWrap(double wrapBeat);
+
+    // Action-fire fan-out (multi-listener; see addActionFireListener).
+    std::map<int, ActionFireListener> actionFireListeners;
+    int nextActionFireListenerId = 1;
 
     // Phase 6 looper — per-track gesture capture. Single capture in
     // flight at a time (target = focused track at wrap time). Events
