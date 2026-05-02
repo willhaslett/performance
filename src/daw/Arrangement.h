@@ -39,6 +39,9 @@ public:
     // --- Queries ---
     std::vector<RegionState*> allRegions() const;
     std::vector<RegionState*> regionsForTrack(const TrackId& trackId) const;
+    // First loop region for the track, or nullptr if none. Looper-mode
+    // playback uses this; the loop pool only ever has one region today.
+    RegionState* loopForTrack(const TrackId& trackId) const;
     RegionState* findRegion(const RegionId& regionId) const;
 
     // --- Playback scanning (reads from active take) ---

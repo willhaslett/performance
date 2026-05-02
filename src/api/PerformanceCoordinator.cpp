@@ -370,8 +370,14 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             // the state machine stuck mid-capture.
             if (activeLoopCapture.has_value()) {
                 stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
+                stateAPI->endTransaction();
                 activeLoopCapture.reset();
                 endCapture();
+            }
+            if (activeLoopAudioSession.has_value() && audioEngine) {
+                audioEngine->clearAudioRecordTargets();
+                activeLoopAudioSession->writer->stopWriting();
+                activeLoopAudioSession.reset();
             }
         }
     });
@@ -832,19 +838,25 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
     for (auto& track : song->tracks) {
         if (track.sourceType != TrackSourceType::AudioInput) continue;
 
-        // Load ALL audio regions for this track
-        for (auto& region : track.regions) {
-            if (region.type != "audio") continue;
-            auto* take = region.activeTake();
-            if (!take || take->filePath.empty()) continue;
+        auto loadFromPool = [&](std::vector<RegionState>& pool) {
+            for (auto& region : pool) {
+                if (region.type != "audio") continue;
+                auto* take = region.activeTake();
+                if (!take || take->filePath.empty()) continue;
 
-            audioEngine->loadAudioFileForTrack(juce::String(track.id.str()),
-                juce::String(region.id.str()), juce::String(take->filePath),
-                take->recordTempo, take->sampleRate);
+                audioEngine->loadAudioFileForTrack(juce::String(track.id.str()),
+                    juce::String(region.id.str()), juce::String(take->filePath),
+                    take->recordTempo, take->sampleRate);
 
-            if (take->peakData.peaks.empty())
-                computeAudioPeaks(*take);
-        }
+                if (take->peakData.peaks.empty())
+                    computeAudioPeaks(*take);
+            }
+        };
+        // Both arrangement regions and looper loops can carry audio
+        // takes; AudioFileNode keeps them by region id, so dispatch
+        // (in GraphWrapper) just looks up whichever pool is active.
+        loadFromPool(track.regions);
+        loadFromPool(track.loops);
     }
 }
 
@@ -1200,6 +1212,47 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
     else                                            stateAPI->overdubLoop();
 
     activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
+
+    // Audio-track captures: open a WAV writer + FIFO and arm the engine.
+    // Mirrors the arrangement-side audio recording wiring (startRecording).
+    auto* focusedTrack = stateAPI->findTrack(focusedId);
+    if (focusedTrack
+        && focusedTrack->sourceType == TrackSourceType::AudioInput
+        && audioEngine
+        && ! focusedTrack->loops.empty()) {
+        auto& region = focusedTrack->loops[0];
+        region.type = "audio";
+        if (auto* take = region.activeTake()) {
+            double sr = audioEngine->getCurrentSampleRate();
+            take->recordTempo  = sequencerImpl->getTempo();
+            take->sampleRate   = (int) sr;
+            take->channelCount = std::max(1, focusedTrack->inputChannelCount);
+
+            auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                                .getChildFile(".config/performance/audio");
+            audioDir.createDirectory();
+            auto wavFile = audioDir.getChildFile(juce::String(take->id.str()) + ".wav");
+            take->filePath = wavFile.getFullPathName().toStdString();
+
+            AudioRecordSession session;
+            session.trackId  = focusedId;
+            session.regionId = region.id;
+            session.fifo     = std::make_unique<AudioRecordFIFO>();
+            session.writer   = std::make_unique<AudioWriterThread>();
+            session.writer->startWriting(*session.fifo, wavFile, sr, take->channelCount);
+
+            std::vector<GraphWrapper::AudioRecordTarget> targets;
+            targets.push_back({ focusedTrack->inputChannelStart,
+                                focusedTrack->inputChannelCount,
+                                session.fifo.get() });
+            audioEngine->setAudioRecordTargets(targets);
+
+            activeLoopAudioSession = std::move(session);
+            perfLog("[Looper] audio capture armed on %s → %s\n",
+                    focusedId.c_str(), take->filePath.c_str());
+        }
+    }
+
     beginCapture(captureStartBeat);
     perfLog("[Looper] %s start on %s at beat %.2f%s\n",
             label, focusedId.c_str(), captureStartBeat,
@@ -1225,10 +1278,50 @@ void PerformanceCoordinator::finishLoopCapture() {
     if (stateAPI) stateAPI->commitLoopAction(tid, std::move(events));
     endCapture();
 
+    // Finalize an audio session if one was open. Mirrors the audio
+    // teardown in stopRecording() — close the writer, stamp peaks +
+    // length on the take, then reload audio files into the engine so
+    // playback (driven by GraphWrapper) can pick the new file up.
+    if (activeLoopAudioSession.has_value() && audioEngine) {
+        audioEngine->clearAudioRecordTargets();
+        activeLoopAudioSession->writer->stopWriting();
+        if (stateAPI) {
+            if (auto* t = stateAPI->findTrack(activeLoopAudioSession->trackId)) {
+                if (! t->loops.empty()) {
+                    auto& region = t->loops[0];
+                    if (auto* take = region.activeTake()) {
+                        int64_t frames = activeLoopAudioSession->writer->getTotalFramesWritten();
+                        double seconds = (take->sampleRate > 0)
+                                       ? (double) frames / take->sampleRate : 0.0;
+                        // Audio loop length comes from the actual file, not
+                        // the elapsed-beat number. Both should agree to
+                        // within a buffer; the file is more precise.
+                        region.lengthBeats = seconds * (take->recordTempo / 60.0);
+                        auto writerPeaks = activeLoopAudioSession->writer->getPeaks();
+                        take->peakData.samplesPerPeak = 256;
+                        take->peakData.peaks.clear();
+                        for (auto& p : writerPeaks)
+                            take->peakData.peaks.push_back({ p.min, p.max });
+                        // Audio first-loop also sets master cycle from the
+                        // file length so playback wraps cleanly.
+                        if (firstLoop) elapsed = region.lengthBeats;
+                        perfLog("[Looper] audio commit on %s — %lld frames, %.3f beats\n",
+                                activeLoopAudioSession->trackId.c_str(),
+                                frames, region.lengthBeats);
+                    }
+                }
+            }
+        }
+        activeLoopAudioSession.reset();
+        loadAudioFilesIntoEngine();
+    }
+
     if (firstLoop && elapsed > 0.0 && stateAPI) {
         stateAPI->setCycleLength(elapsed);
         if (auto* t = stateAPI->findTrack(tid))
-            if (! t->loops.empty())
+            if (! t->loops.empty()
+                && t->loops[0].type != "audio"   // audio path already set length above
+                && t->loops[0].lengthBeats <= 0.0)
                 t->loops[0].lengthBeats = elapsed;
     }
 
@@ -1249,7 +1342,8 @@ void PerformanceCoordinator::resetLooperSession() {
     // 2. Drop any in-flight gesture capture. cancelLoopCapture in
     //    state resets loopAction; release the engine refcount. Close
     //    any open undo transaction so the next mutation isn't grouped
-    //    with the abandoned recording.
+    //    with the abandoned recording. Also tear down any audio writer
+    //    so the half-finished WAV gets closed (and not re-armed).
     if (activeLoopCapture.has_value()) {
         if (stateAPI) {
             stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
@@ -1257,6 +1351,11 @@ void PerformanceCoordinator::resetLooperSession() {
         }
         activeLoopCapture.reset();
         endCapture();
+    }
+    if (activeLoopAudioSession.has_value() && audioEngine) {
+        audioEngine->clearAudioRecordTargets();
+        activeLoopAudioSession->writer->stopWriting();
+        activeLoopAudioSession.reset();
     }
 
     // 3. Wipe per-track looper runtime: queued/capturing flags +

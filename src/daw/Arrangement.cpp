@@ -270,6 +270,16 @@ std::vector<RegionState*> Arrangement::regionsForTrack(const TrackId& trackId) c
     return result;
 }
 
+RegionState* Arrangement::loopForTrack(const TrackId& trackId) const {
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
+    for (auto& t : *songTracks) {
+        if (t.id == trackId)
+            return t.loops.empty() ? nullptr
+                                    : const_cast<RegionState*>(&t.loops[0]);
+    }
+    return nullptr;
+}
+
 RegionState* Arrangement::findRegion(const RegionId& regionId) const {
     PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks)

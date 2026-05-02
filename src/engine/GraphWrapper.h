@@ -278,20 +278,37 @@ public:
                         }
                     });
 
-                // Drive audio file nodes — check which regions cover prevBeat.
-                // Mode-gated: in Looper mode, the arrangement pool's audio
-                // regions must not play (track.loops is the active pool, and
-                // audio looping isn't wired yet — so there's nothing to play
-                // from loops; skipping arrangement is the correct behavior).
-                // Without this, switching to Looper while an audio region was
-                // armed under the playhead leaks Producer audio through the
-                // looper transport.
+                // Drive audio file nodes from the active pool — arrangement
+                // regions when in Arrangement mode, the track's loop region
+                // when in Looper mode (with modular wrap by lengthBeats).
+                // Without the mode gate, switching from Looper to Arrangement
+                // mid-playback would leak Producer audio that happened to
+                // sit under the wrapped playhead.
                 const bool looperActive = arr->isLooperModeActive();
                 for (auto& [trkId, afNode] : trackAudioFileNodes) {
-                    if (!afNode || !afNode->hasFiles() || looperActive) {
+                    if (!afNode || !afNode->hasFiles()) {
                         if (afNode) afNode->setActive(false);
                         continue;
                     }
+
+                    if (looperActive) {
+                        auto* loop = arr->loopForTrack(TrackId{trkId.toStdString()});
+                        if (loop && loop->type == "audio" && ! loop->muted
+                            && loop->lengthBeats > 0.0) {
+                            // Wrap the playhead within the loop (sequencer
+                            // already wraps the master cycle; if the loop
+                            // length matches master this is a no-op, but
+                            // sub-master loops still play correctly).
+                            double pos = std::fmod(prevBeat, loop->lengthBeats);
+                            if (pos < 0.0) pos += loop->lengthBeats;
+                            afNode->setActiveRegion(juce::String(loop->id.str()),
+                                                     0.0, pos);
+                        } else {
+                            afNode->setActive(false);
+                        }
+                        continue;
+                    }
+
                     auto regions = arr->regionsForTrack(TrackId{trkId.toStdString()});
                     bool found = false;
                     for (auto* r : regions) {

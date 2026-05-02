@@ -271,6 +271,10 @@ private:
         std::vector<MidiEventState> events;
     };
     std::optional<LoopCaptureSlot> activeLoopCapture;
+    // For audio-track looper captures, this also holds the writer +
+    // FIFO so finishLoopCapture can finalize the WAV and record peaks.
+    // Empty when the focused track at start time was an instrument.
+    std::optional<AudioRecordSession> activeLoopAudioSession;
     // Beat position at which the active capture started. Used at commit
     // time to compute elapsed beats — the very first commit also adopts
     // this elapsed value as the master cycle length.
