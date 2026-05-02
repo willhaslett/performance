@@ -56,7 +56,7 @@ void LooperPane::timerCallback() {
 
 double LooperPane::cycleBeats() const {
     double c = state.getCycleLength();
-    return c > 0.0 ? c : 16.0 * kBeatsPerBar;  // fallback for empty state
+    return c > 0.0 ? c : 4.0 * kBeatsPerBar;  // fallback for empty state
 }
 
 double LooperPane::beatsToX(double beat, juce::Rectangle<int> t) const {

@@ -327,7 +327,7 @@ void StateAPI::setMode(AppMode mode) {
             s->cycleStart = 0.0;
             s->cycleEnabled = true;
             if (s->cycleEnd <= 0.0)
-                s->cycleEnd = 16.0 * 4.0;  // default 16 bars × 4 beats/bar
+                s->cycleEnd = 4.0 * 4.0;  // default 4 bars × 4 beats/bar
         } else {
             s->cycleEnabled = false;
         }
