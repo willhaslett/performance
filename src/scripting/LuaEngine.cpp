@@ -406,8 +406,6 @@ void LuaEngine::registerAPI() {
         if (tid.empty()) return "no-focus";
         switch (state.getLoopAction(tid)) {
             case LoopAction::None:             return "none";
-            case LoopAction::ReplaceQueued:    return "replace-queued";
-            case LoopAction::OverdubQueued:    return "overdub-queued";
             case LoopAction::CapturingReplace: return "capturing-replace";
             case LoopAction::CapturingOverdub: return "capturing-overdub";
         }

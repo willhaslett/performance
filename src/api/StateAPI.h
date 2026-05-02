@@ -57,28 +57,18 @@ public:
     // Returns the number of regions whose active take changed.
     int commitPendingTakeSwaps();
 
-    // --- Looper actions (Phase 6 — see docs/LIVE_INPUT_AND_FOCUS.md) ---
-    // Performer-facing gestures. All target the currently-focused
-    // track; if no track is focused they're no-ops. The queued action
-    // transitions to Capturing at the next cycle wrap, runs for one
-    // cycle, then commits.
-    //
-    // Re-pressing the SAME gesture during ReplaceQueued/OverdubQueued
-    // cancels the queue (back to None). Pressing the OTHER gesture
-    // switches the queued kind. Either gesture during Capturing is
-    // ignored — the playhead is moving and the action is committed.
+    // --- Looper actions (Boss-RC style — see docs/LIVE_INPUT_AND_FOCUS.md) ---
+    // Performer-facing gestures. All target the currently-focused track;
+    // if no track is focused they're no-ops. Tap-to-start, tap-to-stop:
+    // the gesture transitions None → Capturing immediately (no queue,
+    // no wait for wrap). The "stop" half is done at coordinator level
+    // (replaceLoopGesture / overdubLoopGesture) by calling
+    // commitLoopAction. From any non-None state these methods no-op —
+    // the gesture toggle is the coordinator's job.
     static constexpr int kMaxLoopUndo = 10;
 
     void replaceLoop();
     void overdubLoop();
-
-    // Coordinator-internal hooks. Invoked from onCycleWrap, take an
-    // explicit trackId because the coordinator already knows which
-    // track to drive (it consults focused track at wrap time).
-
-    // Flip ReplaceQueued → CapturingReplace and OverdubQueued →
-    // CapturingOverdub. No-op for any other state.
-    void beginLoopCapture(const TrackId& trackId);
 
     // Snapshot-and-mutate. Called after draining captured events from
     // the FIFO at the end of the capture cycle.

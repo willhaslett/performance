@@ -257,11 +257,6 @@ private:
     void loadAudioFilesIntoEngine();
     void syncTempoFromState();
 
-    // Cycle-wrap hook — fires from the message-thread timer when the
-    // audio-thread beat position wraps backward across the cycle
-    // boundary. Drives looper gesture commits / take swaps.
-    void onCycleWrap(double wrapBeat);
-
     // Action-fire fan-out (multi-listener; see addActionFireListener).
     std::map<int, ActionFireListener> actionFireListeners;
     int nextActionFireListenerId = 1;
@@ -276,7 +271,15 @@ private:
         std::vector<MidiEventState> events;
     };
     std::optional<LoopCaptureSlot> activeLoopCapture;
-    void dispatchLoopGestures(double wrapBeat);  // called from onCycleWrap
+    // Beat position at which the active capture started. Used at commit
+    // time to compute elapsed beats — the very first commit also adopts
+    // this elapsed value as the master cycle length.
+    double captureStartBeat = 0.0;
+    // Tap-to-toggle helper shared by replaceLoopGesture / overdubLoopGesture.
+    void fireLoopCaptureToggle(LoopAction startKind, const char* label);
+    // Stop edge of the toggle: commits the in-flight capture, computes
+    // elapsed beats, and (on the very first commit) sets master cycle.
+    void finishLoopCapture();
 
     // Per-mode playhead memory. The transport (InternalSequencer) is a
     // single shared clock; without this, playing in Looper for 5 minutes
@@ -289,11 +292,6 @@ private:
     AppMode lastSeenMode = AppMode::Arrangement;
     double stashedArrangementSeconds = 0.0;
     void handleModeChange();  // called from event subscription
-
-    // Bootstrap state — true between first and second tap-to-tap
-    // gesture when cycleEnd was 0. While active, captured events
-    // accumulate in activeLoopCapture and the cycle hasn't been set.
-    bool bootstrapActive = false;
 
     void timerCallback() override;
     void populatePluginCatalog();

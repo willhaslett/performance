@@ -125,7 +125,6 @@ private:
     void paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds);
 
     // ---- Interaction ----
-    void showCycleLengthMenu();
 
     // Beat-to-pixel mapping using the current cycle length.
     double cycleBeats() const;

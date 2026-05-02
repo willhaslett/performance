@@ -299,9 +299,12 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     // (Cycle progress is shown by an in-timeline fill behind the
     // playhead — see paintPlayhead. The top-bar strip is gone.)
 
-    // Cycle-length editor pill on the right. Shows "<N> bars" — or
-    // "no cycle" in bootstrap mode (cycleEnd == 0). Click opens picker.
+    // Loop-length readout (right). Shows the master length in seconds
+    // — set by the first commit. Reads "—" before the first commit.
+    // Display only; no picker (Boss-RC: length is captured, not chosen).
     double actualCyc = state.getCycleLength();
+    double bpm = state.getSongTempo();
+    double bps = bpm > 0.0 ? bpm / 60.0 : 2.0;
     g.setColour(Theme::color(Theme::Color::bgControl));
     g.fillRoundedRectangle(cycleLengthField.toFloat(), 4.0f);
     g.setColour(Theme::color(actualCyc > 0.0
@@ -310,10 +313,10 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.setFont(Theme::font(Theme::fontSizeMd));
     juce::String label;
     if (actualCyc > 0.0) {
-        int bars = (int) std::round(actualCyc / kBeatsPerBar);
-        label = "cycle: " + juce::String(bars) + " bars";
+        double seconds = actualCyc / bps;
+        label = "loop: " + juce::String(seconds, 2) + " s";
     } else {
-        label = "no cycle yet";
+        label = juce::String::fromUTF8("loop: \xe2\x80\x94");  // em dash
     }
     g.drawText(label, cycleLengthField, juce::Justification::centred);
 
@@ -592,21 +595,16 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
     for (auto& row : rowGeoms) {
         auto act = state.getLoopAction(row.trackId);
         juce::Colour fill = neutral;
+        // Tap-to-start, tap-to-stop: there's no queued state any more —
+        // the only non-None states are Capturing*. Pulse during capture
+        // (was the queued look) so the eye still has a "this is live and
+        // happening" cue without screaming SOLID at the user.
         switch (act) {
-            // Queued: pulse 0.10 → 0.28 alpha. Capturing: hold at the
-            // peak of the pulse so the visual reads "the strobe just
-            // settled in — recording is happening now."
-            case LoopAction::ReplaceQueued:
+            case LoopAction::CapturingReplace:
                 fill = replaceColor.withAlpha(0.10f + 0.18f * pulse);
                 break;
-            case LoopAction::CapturingReplace:
-                fill = replaceColor.withAlpha(0.28f);
-                break;
-            case LoopAction::OverdubQueued:
-                fill = overdubColor.withAlpha(0.10f + 0.18f * pulse);
-                break;
             case LoopAction::CapturingOverdub:
-                fill = overdubColor.withAlpha(0.28f);
+                fill = overdubColor.withAlpha(0.10f + 0.18f * pulse);
                 break;
             default:
                 break;
@@ -627,11 +625,8 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     grabKeyboardFocus();
     auto pos = e.getPosition();
 
-    // Top bar — cycle length edit.
-    if (cycleLengthField.contains(pos)) {
-        showCycleLengthMenu();
-        return;
-    }
+    // (Loop length is captured by tap-to-stop, not chosen — the readout
+    // pill is display-only.)
     // Top bar — MIDI Learn toggle.
     if (learnPill.contains(pos)) {
         toggleLearnMode();
@@ -692,21 +687,6 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
 
 void LooperPane::mouseMove(const juce::MouseEvent&) {
     // TODO: hover states. Minimal for v1.
-}
-
-void LooperPane::showCycleLengthMenu() {
-    juce::PopupMenu menu;
-    int barOptions[] = { 1, 2, 4, 8, 12, 16, 24, 32, 48, 64 };
-    int currentBars = (int) std::round(cycleBeats() / kBeatsPerBar);
-    for (int opt : barOptions) {
-        menu.addItem(opt, juce::String(opt) + " bars",
-                     true, opt == currentBars);
-    }
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-        [this](int result) {
-            if (result <= 0) return;
-            state.setCycleLength(result * kBeatsPerBar);
-        });
 }
 
 bool LooperPane::handleKey(const juce::KeyPress& key) {

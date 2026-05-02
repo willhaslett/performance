@@ -324,10 +324,12 @@ void StateAPI::setMode(AppMode mode) {
     // mutation — the mode change itself still lands.
     if (auto* s = currentSong()) {
         if (mode == AppMode::Looper) {
+            // No bars/beats default. Loop length is established by the
+            // first commit (Boss-RC tap-to-start, tap-to-stop) and
+            // stored as cycleEnd in beats. Until then, the looper has
+            // no cycle — transport runs free.
             s->cycleStart = 0.0;
-            s->cycleEnabled = true;
-            if (s->cycleEnd <= 0.0)
-                s->cycleEnd = 4.0 * 4.0;  // default 4 bars × 4 beats/bar
+            s->cycleEnabled = (s->cycleEnd > s->cycleStart);
         } else {
             s->cycleEnabled = false;
         }
@@ -481,50 +483,37 @@ void sortByBeat(std::vector<MidiEventState>& events) {
 
 }  // namespace
 
-// Re-pressing the SAME queued gesture cancels (back to None);
-// pressing the OTHER switches the queued kind; either during a
-// Capturing* state is ignored — the playhead is moving and we're
-// committed.
-static void queueLoopAction(StateAPI& state, const TrackId& trackId,
-                             LoopAction newKind,
-                             std::function<std::string()> mintId) {
+// Boss-RC-style: the gesture starts capture immediately (no queue,
+// no wait for wrap). The "stop" half of the toggle lives on the
+// coordinator (replaceLoopGesture / overdubLoopGesture) — when called
+// during a Capturing state, that path commits via commitLoopAction.
+// Calling replaceLoop / overdubLoop directly here is the *start* edge
+// only; from None we transition to the matching Capturing state, and
+// from anywhere else we no-op (the gesture layer handles the toggle).
+static void startLoopCapture(StateAPI& state, const TrackId& trackId,
+                              LoopAction kind,
+                              std::function<std::string()> mintId) {
     auto* t = state.findTrack(trackId);
     if (!t) return;
     auto* region = getOrCreateLoopRegion(state, t, std::move(mintId));
     if (!region) return;
-    if (region->loopAction == LoopAction::CapturingReplace
-     || region->loopAction == LoopAction::CapturingOverdub) return;
-    if (region->loopAction == newKind)
-        region->loopAction = LoopAction::None;  // cancel
-    else
-        region->loopAction = newKind;            // queue or switch
+    if (region->loopAction != LoopAction::None) return;  // already mid-action
+    region->loopAction = kind;
 }
 
 void StateAPI::replaceLoop() {
     auto trackId = getFocusedTrackId();
     if (trackId.empty()) return;
-    queueLoopAction(*this, trackId, LoopAction::ReplaceQueued,
-                    [this]{ return generateId(); });
+    startLoopCapture(*this, trackId, LoopAction::CapturingReplace,
+                      [this]{ return generateId(); });
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 
 void StateAPI::overdubLoop() {
     auto trackId = getFocusedTrackId();
     if (trackId.empty()) return;
-    queueLoopAction(*this, trackId, LoopAction::OverdubQueued,
-                    [this]{ return generateId(); });
-    eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
-}
-
-void StateAPI::beginLoopCapture(const TrackId& trackId) {
-    auto* t = findTrack(trackId);
-    if (!t || t->loops.empty()) return;
-    auto& region = t->loops[0];
-    if (region.loopAction == LoopAction::ReplaceQueued)
-        region.loopAction = LoopAction::CapturingReplace;
-    else if (region.loopAction == LoopAction::OverdubQueued)
-        region.loopAction = LoopAction::CapturingOverdub;
-    else return;
+    startLoopCapture(*this, trackId, LoopAction::CapturingOverdub,
+                      [this]{ return generateId(); });
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
 }
 

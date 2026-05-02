@@ -373,7 +373,6 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
                 activeLoopCapture.reset();
                 endCapture();
             }
-            bootstrapActive = false;
         }
     });
 
@@ -439,7 +438,8 @@ void PerformanceCoordinator::timerCallback() {
                     if (swapped > 0) {
                         perfLog("[Looper] cycle wrap — committed %d take swap(s)\n", swapped);
                     }
-                    onCycleWrap(audioBeat);
+                    // No gesture dispatch on wrap any more — captures
+                    // start/stop on tap, not at cycle boundaries.
                 }
             }
             // Drain recorded MIDI events from audio thread
@@ -1075,14 +1075,13 @@ void PerformanceCoordinator::unloadSong() {
 // --- Loop recording entry points (see docs/LIVE_INPUT_AND_FOCUS.md) ---
 //
 // The whole flow is gesture-driven: replaceLoopGesture / overdubLoopGesture
-// (defined below) are the public entry points. They route to the StateAPI
-// queue methods in established mode and to bootstrap-cycle-establishing
-// behavior when there's no cycle yet. The actual capture work happens at
-// the next cycle wrap in onCycleWrap → dispatchLoopGestures.
+// (defined below) are the public entry points. Each is a tap-to-toggle:
+// on a None state they kick off Capturing immediately; on a Capturing
+// state they commit. The first commit on an empty looper sets the
+// master cycle length from elapsed beats.
 
 bool PerformanceCoordinator::isInRecordMode() const {
     if (recordModeActive) return true;
-    if (bootstrapActive) return true;
     if (activeLoopCapture.has_value()) return true;
     if (stateAPI) {
         auto fid = stateAPI->getFocusedTrackId();
@@ -1144,103 +1143,91 @@ void PerformanceCoordinator::handleModeChange() {
     lastSeenMode = newMode;
 }
 
+// Boss-RC tap-to-toggle. Tap with no in-flight capture → start. Tap
+// during a Capturing* state → commit (regardless of which gesture
+// started it — any record-control acts as the "stop"). The very first
+// commit on an empty looper sets the master cycle length from the
+// elapsed beats; subsequent commits leave cycle alone.
 void PerformanceCoordinator::replaceLoopGesture() {
-    if (!stateAPI) return;
-    // Looper-only — outside the looper this gesture has no meaning,
-    // and bootstrap-mode side effects (stop transport, reset to 0,
-    // open capture) would be destructive in Producer.
+    fireLoopCaptureToggle(LoopAction::CapturingReplace, "replace");
+}
+
+void PerformanceCoordinator::overdubLoopGesture() {
+    fireLoopCaptureToggle(LoopAction::CapturingOverdub, "overdub");
+}
+
+void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
+                                                    const char* label) {
+    if (!stateAPI || !sequencerImpl) return;
     if (stateAPI->getMode() != AppMode::Looper) {
-        perfLog("[Looper] replace gesture ignored — not in Looper mode\n");
+        perfLog("[Looper] %s gesture ignored — not in Looper mode\n", label);
         return;
     }
     auto focusedId = stateAPI->getFocusedTrackId();
     if (focusedId.empty()) {
-        perfLog("[Looper] replace gesture ignored — no focused track\n");
-        return;
-    }
-    double cycleEnd = stateAPI->getCycleLength();
-
-    // Established mode — normal queued path. The state's replaceLoop
-    // toggles the queue (cancel if same gesture); coordinator's
-    // dispatchLoopGestures fires it at the next wrap.
-    if (cycleEnd > 0.0 && !bootstrapActive) {
-        stateAPI->replaceLoop();
+        perfLog("[Looper] %s gesture ignored — no focused track\n", label);
         return;
     }
 
-    // Bootstrap mode. Two cases: (a) first tap — open capture and
-    // start the transport from beat 0. (b) second tap — close capture,
-    // set cycleEnd from elapsed beats, commit events, transport keeps
-    // rolling so the new loop plays seamlessly at the natural wrap.
-    if (!bootstrapActive) {
-        // First tap — start bootstrap.
-        if (!sequencerImpl) return;
-        // Reset transport to beat 0 then start playing. We force a
-        // fresh start so elapsed beats == cycle length.
-        if (sequencerImpl->isPlaying()) sequencerImpl->stop();
-        sequencerImpl->setBeatPosition(0.0);
+    auto act = stateAPI->getLoopAction(focusedId);
+    if (act == LoopAction::CapturingReplace
+     || act == LoopAction::CapturingOverdub) {
+        // Stop edge — commits in-flight capture.
+        finishLoopCapture();
+        return;
+    }
+
+    // Start edge. If transport isn't playing, kick it off — and for the
+    // very first loop (no master cycle yet) snap the playhead to 0 so
+    // elapsed-beats == loop-length cleanly. With an existing master we
+    // leave the playhead alone so other tracks stay aligned.
+    auto* song = stateAPI->currentSong();
+    bool firstLoop = ! song || song->cycleEnd <= song->cycleStart;
+    if (! sequencerImpl->isPlaying()) {
+        if (firstLoop) sequencerImpl->setBeatPosition(0.0);
         sequencerImpl->play();
-        // Open capture immediately (no wait for wrap — there is no wrap).
-        beginCapture(0.0);
-        activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
-        // Drive the state machine straight to CapturingReplace so the
-        // GUI and getLoopActionState() reflect the in-flight state.
-        stateAPI->replaceLoop();        // Off → ReplaceQueued
-        stateAPI->beginLoopCapture(focusedId); // ReplaceQueued → CapturingReplace
-        bootstrapActive = true;
-        perfLog("[Looper] bootstrap punch-in on %s — recording first cycle\n",
-                focusedId.c_str());
-        return;
     }
+    captureStartBeat = sequencerImpl->getBeatPosition();
 
-    // Second tap — close bootstrap. Compute elapsed beats from the
-    // sequencer (we started at 0, so getBeatPosition is the duration).
-    double elapsed = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
-    if (elapsed <= 0.0) {
-        perfLog("[Looper] bootstrap punch-out aborted — elapsed=0\n");
-        return;
-    }
-    auto tid = activeLoopCapture.has_value()
-                ? activeLoopCapture->trackId : focusedId;
-    auto events = activeLoopCapture.has_value()
-                    ? std::move(activeLoopCapture->events)
-                    : std::vector<MidiEventState>{};
-    activeLoopCapture.reset();
-    bootstrapActive = false;
+    if (startKind == LoopAction::CapturingReplace) stateAPI->replaceLoop();
+    else                                            stateAPI->overdubLoop();
 
-    // Commit BEFORE setting cycle so the take's events land. The
-    // commit clears loopAction back to None.
-    stateAPI->commitLoopAction(tid, std::move(events));
-    endCapture();
-
-    // Set cycleEnd from elapsed; setCycleLength enforces the loop-mode
-    // invariants (cycleStart=0, cycleEnabled=true) and bumps Song.
-    stateAPI->setCycleLength(elapsed);
-
-    // Set the freshly-captured region's lengthBeats to match cycleEnd,
-    // so playback's modular wrap is correct.
-    if (auto* t = stateAPI->findTrack(tid))
-        if (!t->loops.empty())
-            t->loops[0].lengthBeats = elapsed;
-
-    perfLog("[Looper] bootstrap punch-out on %s — cycleEnd=%.3f, events=committed\n",
-            tid.c_str(), elapsed);
+    activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
+    beginCapture(captureStartBeat);
+    perfLog("[Looper] %s start on %s at beat %.2f%s\n",
+            label, focusedId.c_str(), captureStartBeat,
+            firstLoop ? " (first loop — sets master)" : "");
 }
 
-void PerformanceCoordinator::overdubLoopGesture() {
-    if (!stateAPI) return;
-    if (stateAPI->getMode() != AppMode::Looper) {
-        perfLog("[Looper] overdub gesture ignored — not in Looper mode\n");
-        return;
+void PerformanceCoordinator::finishLoopCapture() {
+    if (! activeLoopCapture.has_value()) return;
+    auto tid = activeLoopCapture->trackId;
+    auto events = std::move(activeLoopCapture->events);
+    activeLoopCapture.reset();
+
+    double endBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : captureStartBeat;
+    double elapsed = endBeat - captureStartBeat;
+    auto* song = stateAPI ? stateAPI->currentSong() : nullptr;
+    bool firstLoop = ! song || song->cycleEnd <= song->cycleStart;
+    // Single wrap during the capture: add the cycle back. Multi-wrap
+    // recordings are out of scope for V1 (the user is expected to tap
+    // before the second wrap when subsequent captures need to align).
+    if (! firstLoop && elapsed < 0.0)
+        elapsed += (song->cycleEnd - song->cycleStart);
+
+    if (stateAPI) stateAPI->commitLoopAction(tid, std::move(events));
+    endCapture();
+
+    if (firstLoop && elapsed > 0.0 && stateAPI) {
+        stateAPI->setCycleLength(elapsed);
+        if (auto* t = stateAPI->findTrack(tid))
+            if (! t->loops.empty())
+                t->loops[0].lengthBeats = elapsed;
     }
-    double cycleEnd = stateAPI->getCycleLength();
-    if (cycleEnd > 0.0 && !bootstrapActive) {
-        stateAPI->overdubLoop();
-        return;
-    }
-    // In bootstrap mode, overdub behaves as replace — there's nothing
-    // to overdub onto. Friendlier than ignoring the gesture.
-    replaceLoopGesture();
+
+    perfLog("[Looper] commit on %s — elapsed=%.3f beats, events=%zu%s\n",
+            tid.c_str(), elapsed, events.size(),
+            firstLoop ? " (set master cycle)" : "");
 }
 
 void PerformanceCoordinator::resetLooperSession() {
@@ -1257,7 +1244,6 @@ void PerformanceCoordinator::resetLooperSession() {
         activeLoopCapture.reset();
         endCapture();
     }
-    bootstrapActive = false;
 
     // 3. Wipe per-track looper runtime: queued/capturing flags +
     //    undo/redo stacks. Then DELETE every loop region outright
@@ -1277,52 +1263,6 @@ void PerformanceCoordinator::resetLooperSession() {
     }
 
     perfLog("[Looper] resetLooperSession — done; ready for fresh bootstrap\n");
-}
-
-void PerformanceCoordinator::onCycleWrap(double wrapBeat) {
-    // Pending take swaps land first, then gesture dispatch. Any take
-    // swap firing on the same wrap as a punch-in gets a fresh slate
-    // to record into.
-    dispatchLoopGestures(wrapBeat);
-}
-
-// Performer fired replaceLoop()/overdubLoop() during playback. The
-// state holds the queued kind on the focused track's loop region; we
-// transition Queued → Capturing here, run for one cycle while
-// drainRecordFIFO appends to activeLoopCapture.events, then commit at
-// the next wrap. Single capture in flight at a time — focused-track
-// targeting collapses the multi-track question.
-void PerformanceCoordinator::dispatchLoopGestures(double wrapBeat) {
-    if (!stateAPI) return;
-
-    // Step 1: commit the in-flight capture (if any). The track being
-    // captured is whatever was focused at last wrap — we stored it on
-    // activeLoopCapture, not the current focus, because the user may
-    // have moved focus mid-cycle.
-    if (activeLoopCapture.has_value()) {
-        auto tid = activeLoopCapture->trackId;
-        auto events = std::move(activeLoopCapture->events);
-        activeLoopCapture.reset();
-        stateAPI->commitLoopAction(tid, std::move(events));
-        endCapture();
-        perfLog("[Looper] gesture commit on %s at wrap %.2f (events=%zu)\n",
-                tid.c_str(), wrapBeat, events.size());
-    }
-
-    // Step 2: open a new capture if the focused track has a queued
-    // action. Bootstrap mode (no cycle yet) doesn't reach here — the
-    // sequencer's wrap callback only fires when cycleEnd > 0.
-    auto focusedId = stateAPI->getFocusedTrackId();
-    if (focusedId.empty()) return;
-    auto act = stateAPI->getLoopAction(focusedId);
-    if (act != LoopAction::ReplaceQueued && act != LoopAction::OverdubQueued) return;
-
-    stateAPI->beginLoopCapture(focusedId);
-    activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
-    beginCapture(0.0);  // origin=0 — events land on cycle-relative beats
-    perfLog("[Looper] gesture punch-in on %s at wrap %.2f (kind=%s)\n",
-            focusedId.c_str(), wrapBeat,
-            act == LoopAction::ReplaceQueued ? "replace" : "overdub");
 }
 
 // --- Persistence ---
