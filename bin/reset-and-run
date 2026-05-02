@@ -1,1 +1,16 @@
-./reset && open /Users/will/ideas_and_projects/performance/build/Performance_artefacts/Debug/Performance.app
+#!/bin/sh
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+APP="$DIR/build/Performance_artefacts/Debug/Performance.app"
+
+# Quit cleanly if running, so reset doesn't race against an active
+# session writing to ~/.config/performance.
+if pgrep -f "Performance.app/Contents/MacOS/Performance" > /dev/null; then
+    osascript -e 'tell application "Performance" to quit' 2>/dev/null
+    # Wait up to 5s for graceful exit (matches our worst-case shutdown).
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pgrep -f "Performance.app/Contents/MacOS/Performance" > /dev/null || break
+        sleep 0.5
+    done
+fi
+
+"$DIR/bin/reset" && open "$APP"

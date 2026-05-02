@@ -530,6 +530,17 @@ class PerformanceApp : public juce::JUCEApplication {
 public:
     const juce::String getApplicationName() override { return "Performance"; }
     const juce::String getApplicationVersion() override { return "0.1.0"; }
+    // Single-instance only. macOS's `open` (without -n) already focuses
+    // an existing instance; this enforces the rule from JUCE's side too,
+    // covering the case of someone double-clicking the .app or hitting
+    // a hotkey that uses `open -n`. anotherInstanceStarted just brings
+    // our existing window to the front — there's no command-line / file
+    // payload to handle, just the focus.
+    bool moreThanOneInstanceAllowed() override { return false; }
+    void anotherInstanceStarted(const juce::String&) override {
+        if (auto* tlw = juce::TopLevelWindow::getActiveTopLevelWindow())
+            tlw->toFront(true);
+    }
 
     void initialise(const juce::String&) override {
         setvbuf(stderr, nullptr, _IONBF, 0);

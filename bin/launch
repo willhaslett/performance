@@ -3,4 +3,6 @@
 # Used by Alfred / Raycast / Shortcuts / hand for a hotkey-driven
 # launch that doesn't care which directory you call it from.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-open -n "$DIR/build/Performance_artefacts/Debug/Performance.app"
+# No -n: focus the existing instance if one is already running.
+# (App-level single-instance enforcement is a separate concern.)
+open "$DIR/build/Performance_artefacts/Debug/Performance.app"
