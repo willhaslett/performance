@@ -52,13 +52,11 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     replaceBtn = std::make_unique<BindableButton>(state, coord, "replaceLoop", "replace");
     replaceBtn->setCornerStyle(BindableButton::Mid);
     replaceBtn->setEnabledPredicate(hasFocus);
-    replaceBtn->setShowRecordDot(true);
     addAndMakeVisible(*replaceBtn);
 
     overdubBtn = std::make_unique<BindableButton>(state, coord, "overdubLoop", "overdub");
     overdubBtn->setCornerStyle(BindableButton::Mid);
     overdubBtn->setEnabledPredicate(hasFocus);
-    overdubBtn->setShowRecordDot(true);
     addAndMakeVisible(*overdubBtn);
 
     // Loop undo/redo route through app-level UndoHistory so a single
