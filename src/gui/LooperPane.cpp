@@ -724,10 +724,25 @@ void LooperPane::paintRawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds
         // sqrt mapping boosts quiet signals visually (matches Producer).
         float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
         float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
-        float y1 = centreY - scaledMx * halfH;
-        float y2 = centreY - scaledMn * halfH;
+        float y1 = juce::jlimit(inner.getY(), inner.getBottom(),
+                                  centreY - scaledMx * halfH);
+        float y2 = juce::jlimit(inner.getY(), inner.getBottom(),
+                                  centreY - scaledMn * halfH);
         float h  = std::max(1.0f, y2 - y1);
+        g.setGradientFill(grad);
         g.fillRect(px, y1, pw, h);
+
+        // Clip indicator — strict clip means the signal exceeded full
+        // scale (1.0). "Just about to clip" (== 1.0) reads as a perfect
+        // amplitude and stays the normal hue.
+        if (mx > 1.0f || mn < -1.0f) {
+            g.setColour(Theme::color(Theme::Color::meterRed));
+            constexpr float clipStripH = 2.0f;
+            if (mx > 1.0f)
+                g.fillRect(px, inner.getY(), pw, clipStripH);
+            if (mn < -1.0f)
+                g.fillRect(px, inner.getBottom() - clipStripH, pw, clipStripH);
+        }
     }
 }
 

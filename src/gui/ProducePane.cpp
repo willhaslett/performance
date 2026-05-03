@@ -1157,13 +1157,29 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                             if (px + pw < inner.getX() || px > inner.getRight()) continue;
 
                             auto [mn, mx] = take->peakData.peaks[pi];
-                            // Nonlinear scaling: sqrt boosts quiet signals
+                            // Nonlinear scaling: sqrt boosts quiet signals.
+                            // Clamp Y to the lane bounds so over-full-scale
+                            // peaks visually clip at the edge instead of
+                            // bleeding into the row above / below.
                             float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
                             float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
-                            float y1 = centreY - scaledMx * halfH;
-                            float y2 = centreY - scaledMn * halfH;
+                            float y1 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
+                                                      centreY - scaledMx * halfH);
+                            float y2 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
+                                                      centreY - scaledMn * halfH);
                             float h = std::max(1.0f, y2 - y1);
+                            g.setGradientFill(grad);
                             g.fillRect(px, y1, std::max(1.0f, pw), h);
+                            // Strict clip indicator — peak amplitude > 1.0.
+                            // "Just at full scale" reads as perfect, not red.
+                            if (mx > 1.0f || mn < -1.0f) {
+                                g.setColour(Theme::color(Theme::Color::meterRed));
+                                constexpr float clipStripH = 2.0f;
+                                if (mx > 1.0f)
+                                    g.fillRect(px, (float)inner.getY(), pw, clipStripH);
+                                if (mn < -1.0f)
+                                    g.fillRect(px, (float)inner.getBottom() - clipStripH, pw, clipStripH);
+                            }
                         }
                     }
                 }
