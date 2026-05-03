@@ -204,7 +204,7 @@ in place; any existing `state.db` with old-format schemas is reset.
 
 User-defined (LLM-created) actions persist the same typed schema JSON.
 Lua's `createAction(name, label, luaCode, paramSchemaJson)` accepts the
-new format. A short JSON grammar reference goes in `runtime/CLAUDE.md`
+new format. A short JSON grammar reference goes in `runtime/SYSTEM_PROMPT.md`
 so the embedded Claude generates schemas the form can render.
 
 ## Build sequence
@@ -233,7 +233,7 @@ rather than patch-forward.
    pickers uniformly.
 7. **Cascade scan + confirmation dialog.** Hook into track/bus/preset
    delete paths. Scan → confirm → delete-with-dependents as one commit.
-8. **Docs.** Update `runtime/CLAUDE.md` with the new schema grammar so
+8. **Docs.** Update `runtime/SYSTEM_PROMPT.md` with the new schema grammar so
    the embedded Claude generates valid schemas for user-defined actions.
 
 ## Out of scope

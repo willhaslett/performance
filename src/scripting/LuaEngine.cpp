@@ -675,7 +675,7 @@ void LuaEngine::registerAPI() {
     });
 
     // Custom actions. paramSchemaJson is the same typed grammar documented
-    // in runtime/CLAUDE.md — e.g. '[{"name":"track","type":"channelRef","scope":["track"]}]'.
+    // in runtime/SYSTEM_PROMPT.md — e.g. '[{"name":"track","type":"channelRef","scope":["track"]}]'.
     // Omit for a zero-arg action (just a macro).
     lua.set_function("createAction", [&state](const std::string& name, const std::string& label,
                                                const std::string& luaCode,

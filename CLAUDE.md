@@ -361,7 +361,7 @@ On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/perform
 
 ### IPC
 
-`bin/perf` shell command sends Lua to the running app via `/tmp/performance.sock`. `runtime/CLAUDE.md` is the prompt for the embedded Claude instance.
+`bin/perf` shell command sends Lua to the running app via `/tmp/performance.sock`. `runtime/SYSTEM_PROMPT.md` is the model-agnostic system prompt for the embedded chat LLM (was `runtime/CLAUDE.md`); `runtime/composer_prompt.md` is the specialized compose-mode prompt. Both are baked into the binary via `juce_add_binary_data` and rebuilt automatically when edited.
 
 ## Tests
 

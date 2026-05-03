@@ -665,7 +665,7 @@ TrackId StateAPI::createAudioInputTrack(const std::string& name, int inputChanne
     t.inputChannelStart = inputChannelStart;
     t.inputChannelCount = inputChannelCount;
     // Audio tracks default to I=off — feedback-protection convention
-    // (see runtime/CLAUDE.md and docs/LIVE_INPUT_AND_FOCUS.md). Users
+    // (see runtime/SYSTEM_PROMPT.md and docs/LIVE_INPUT_AND_FOCUS.md). Users
     // enable input monitoring explicitly once levels are verified.
     t.inputMonitoring = false;
     s.tracks.push_back(std::move(t));

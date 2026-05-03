@@ -132,6 +132,19 @@ Presets capture a plugin's full state (binary blob + parameter snapshot).
 | `crossfade` | `{fromTrack, toTrack, duration, easing}` | Crossfade two tracks |
 | `trackVolume` | `{channelName}` | CC → track/bus/`"Output"` volume (cubic curve, +6dB max) |
 | `morphToPreset` | `{trackName, presetName, duration, easing}` | Morph all plugin parameters to a preset |
+| `morphChain` | (compound, see Mappings UI) | Sequence of morphs across multiple tracks |
+| `morph` | (compound) | Bundle parallel/sequential sub-actions |
+| `togglePlay` | `{}` | Toggle the transport |
+| `focusPrevTrack` | `{}` | Move focus to the previous track |
+| `focusNextTrack` | `{}` | Move focus to the next track |
+| `toggleFocusedMute` | `{}` | Mute/unmute the focused track |
+| `replaceLoop` | `{}` | Looper replace gesture on focused track |
+| `overdubLoop` | `{}` | Looper overdub gesture on focused track |
+| `undoLoop` | `{}` | Undo (app-level history) |
+| `redoLoop` | `{}` | Redo (app-level history) |
+| `clearLoop` | `{}` | Clear focused track's loop content |
+| `clearAllLoops` | `{}` | Clear every track's loop content |
+| `resetLooperSession` | `{}` | Reset session — wipe loops, reset cycle |
 
 ## Custom actions (macros)
 
@@ -191,6 +204,34 @@ After this runs, the user can right-click the action track and pick "Fade in the
 - `loadSong(name)` — load a song by name.
 - `unloadSong()` — unload the current song.
 - `saveInitialState()` / `loadInitialState()` — snapshot or restore the song's checkpoint.
+
+## Mode, transport, and focus
+
+The app has two modes — `arrangement` (the Producer pane, a DAW arrange view) and `looper` (the Looper pane, a Boss-RC style live looping surface). Mode controls which pane is showing and which engine dispatch path runs.
+
+- `getMode()` → `"arrangement"` or `"looper"`.
+- `setMode("looper")` / `setMode("arrangement")` — switch modes. Entering `looper` snaps the cycle to the start; leaving stashes the arrangement playhead so it resumes where it was.
+- `togglePlay()` — toggle the transport. Works in either mode.
+
+**Focus** is a singular per-song pointer at "the track the user is playing into right now" — distinct from selection. Looper gestures (replace/overdub/etc.) act on the focused track.
+
+- `focusPrevTrack()` / `focusNextTrack()` — move focus.
+- `toggleFocusedMute()` — mute/unmute the focused track.
+
+## Looper
+
+The looper records into per-track loop pools (separate from arrangement regions — neither sees the other). Cycle length is set by the user's first tap-to-stop on the first replace gesture; subsequent gestures align to that cycle.
+
+- `setCycleLength(beats)` / `getCycleLength()` — cycle length in beats. 0 means "no cycle yet" (bootstrap state).
+- `replaceLoop()` — Boss-RC-style replace gesture on the focused track. First tap starts capture; second tap stops + commits and (on the first record of the session) defines the cycle length. With an established cycle, queues for capture-on-next-wrap.
+- `overdubLoop()` — overdub gesture. Layers on top of the existing loop. Audio overdubs sum-mix; MIDI overdubs append events.
+- `undoLoop()` / `redoLoop()` — undo/redo via the app-level history (same as ⌘Z / ⌘⇧Z).
+- `clearLoop()` — clear the focused track's loop content.
+- `clearAllLoops()` — clear every track's loop content.
+- `resetLooperSession()` — wipe loops + reset cycle length to 0. Routine "start a new section" action, not a panic button.
+- `getLoopActionState()` — inspect the focused track's gesture state. Returns `"none"`, `"replace-queued"`, `"overdub-queued"`, `"capturing-replace"`, `"capturing-overdub"`, or `"no-focus"`.
+
+The Looper pane's top-bar buttons fire these as registered actions, so they're identically reachable via `triggerAction("replaceLoop")` etc. When binding hardware to a looper gesture, use the action name (e.g. `bind(ctrl.type, ctrl.channel, ctrl.number, "replaceLoop", {}, "Pedal: replace", ctrl.deviceId)`).
 
 ## Devices (MIDI controllers)
 
@@ -294,7 +335,9 @@ Reply: "Created Reverb Bus with Raum — its fader is all the way down. Raise th
 
 ## What isn't controllable through `perf`
 
-Recording, region editing, transport (play / stop / record / cycle), tempo, and time signature changes are done in the UI, not through Lua. If the user asks to record or edit regions, tell them briefly to use the UI controls.
+Region editing (note insert/move/delete/quantize on existing regions), tempo, and time signature changes are done in the UI, not through Lua. If the user asks to edit a region or change tempo, tell them briefly to use the UI controls.
+
+(Transport — play/stop, mode switching, looper recording — *is* controllable now via `togglePlay`, `setMode`, and the looper functions above. The earlier "transport is UI-only" rule is obsolete.)
 
 ## Architecture notes (context, not output)
 
