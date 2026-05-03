@@ -325,8 +325,23 @@ juce::String ClaudeClient::buildRequestJson() {
     body->setProperty("max_tokens", 8192);
     body->setProperty("stream", true);
 
-    if (systemPrompt.isNotEmpty())
-        body->setProperty("system", systemPrompt);
+    // Send the system prompt as a structured block with cache_control so
+    // Anthropic caches it for 5 minutes. After the first request in that
+    // window, the ~13k-token system prompt is read from cache at 10% of
+    // the normal input price (and counts at the same weighting against
+    // our Lambda's per-install cap). Tools come before system in the
+    // cache prefix, so marking the system block caches tools too.
+    if (systemPrompt.isNotEmpty()) {
+        juce::Array<juce::var> systemArr;
+        auto* sysBlock = new juce::DynamicObject();
+        sysBlock->setProperty("type", "text");
+        sysBlock->setProperty("text", systemPrompt);
+        auto* cacheCtl = new juce::DynamicObject();
+        cacheCtl->setProperty("type", "ephemeral");
+        sysBlock->setProperty("cache_control", juce::var(cacheCtl));
+        systemArr.add(juce::var(sysBlock));
+        body->setProperty("system", systemArr);
+    }
 
     juce::Array<juce::var> messagesArr;
     for (auto& msg : conversationHistory) {

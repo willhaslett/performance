@@ -197,6 +197,8 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream)
     const decoder = new TextDecoder();
     let buffer = '';
     let inputTokens = 0;
+    let cacheCreationTokens = 0;
+    let cacheReadTokens = 0;
     let outputTokens = 0;
 
     const reader = upstream.body.getReader();
@@ -217,8 +219,13 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream)
           if (!json || json === '[DONE]') continue;
           try {
             const evt = JSON.parse(json);
-            if (evt.type === 'message_start' && evt.message?.usage?.input_tokens != null) {
-              inputTokens = evt.message.usage.input_tokens;
+            if (evt.type === 'message_start' && evt.message?.usage) {
+              const u = evt.message.usage;
+              if (u.input_tokens != null) inputTokens = u.input_tokens;
+              if (u.cache_creation_input_tokens != null)
+                cacheCreationTokens = u.cache_creation_input_tokens;
+              if (u.cache_read_input_tokens != null)
+                cacheReadTokens = u.cache_read_input_tokens;
             }
             if (evt.type === 'message_delta' && evt.usage?.output_tokens != null) {
               outputTokens = evt.usage.output_tokens;
@@ -229,10 +236,23 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream)
     }
     out.end();
 
+    // Cost-weighted input tokens against the cap. Anthropic Sonnet 4.5
+    // pricing relative to base input ($3/M):
+    //   - input_tokens                  → 1.0x
+    //   - cache_creation_input_tokens   → 1.25x ($3.75/M, one-time write)
+    //   - cache_read_input_tokens       → 0.1x  ($0.30/M, subsequent reads)
+    // Weighting by relative cost means the cap tracks dollar impact, so
+    // a heavily-cached session with the same effective spend doesn't
+    // burn the budget the way an unweighted token count would. Output
+    // is unaffected (no caching applies to it).
+    const weightedInputTokens = Math.round(
+      inputTokens + cacheCreationTokens * 1.25 + cacheReadTokens * 0.1
+    );
+
     // Best-effort budget update — if this fails the user already got their reply.
-    if (budget && (inputTokens > 0 || outputTokens > 0)) {
+    if (budget && (weightedInputTokens > 0 || outputTokens > 0)) {
       try {
-        await saveBudget(installId, budget, inputTokens, outputTokens);
+        await saveBudget(installId, budget, weightedInputTokens, outputTokens);
       } catch (e) {
         console.error('Budget update failed:', e);
       }
