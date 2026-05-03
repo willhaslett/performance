@@ -1,4 +1,5 @@
 #include "gui/ChatView.h"
+#include "api/ChatHistoryStore.h"
 #include "engine/Log.h"
 
 static juce::Colour bubbleColor(ChatView::Bubble::Type type) {
@@ -50,11 +51,54 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     messageViewport.setScrollBarsShown(true, false);
     addAndMakeVisible(messageViewport);
 
+    // Clear button — rips out the conversation (UI bubbles + in-memory
+    // history + persisted store). Useful when context gets stale or the
+    // user wants to switch topics cleanly.
+    clearButton.setColour(juce::TextButton::buttonColourId,
+                           Theme::color(Theme::Color::bgControl));
+    clearButton.setColour(juce::TextButton::textColourOffId,
+                           Theme::color(Theme::Color::textSecondary));
+    clearButton.onClick = [this] { client.clearHistory(); };
+    addAndMakeVisible(clearButton);
+
     setOpaque(true);
 }
 
 void ChatView::setSystemPrompt(const juce::String& prompt) {
     client.setSystemPrompt(prompt);
+}
+
+void ChatView::setHistoryStore(std::unique_ptr<ChatHistoryStore> store) {
+    client.setHistoryStore(std::move(store));
+    rebuildBubblesFromHistory();
+}
+
+void ChatView::rebuildBubblesFromHistory() {
+    bubbles.clear();
+    for (auto& msg : client.history()) {
+        auto bubbleType = (msg.role == "user")
+                            ? Bubble::User : Bubble::Assistant;
+        for (auto& block : msg.content) {
+            // Skip tool_use / tool_result — they're API plumbing, not
+            // user-visible chat content. (The live UI also doesn't
+            // render them as bubbles; that's via onToolUse, which we
+            // currently no-op below.)
+            if (block.type != ClaudeClient::ContentBlock::Text) continue;
+            if (block.text.isEmpty()) continue;
+            addBubble(bubbleType, block.text);
+        }
+    }
+    layoutBubbles();
+    scrollToBottom();
+}
+
+void ChatView::onHistoryCleared() {
+    juce::MessageManager::callAsync([safe = juce::Component::SafePointer<ChatView>(this)] {
+        if (! safe) return;
+        safe->bubbles.clear();
+        safe->layoutBubbles();
+        safe->repaint();
+    });
 }
 
 void ChatView::paint(juce::Graphics& g) {
@@ -73,12 +117,21 @@ void ChatView::resized() {
     auto area = getLocalBounds();
     int pad = Theme::chatBubblePad;
 
+    // Clear button — top-right corner of the pane. Small + unobtrusive.
+    constexpr int clearW = 60;
+    constexpr int clearH = 22;
+    clearButton.setBounds(area.getRight() - clearW - pad, pad,
+                           clearW, clearH);
+
     auto inputArea = area.removeFromBottom(Theme::chatInputHeight + pad * 2);
     auto fieldBounds = inputArea.reduced(pad + 4, 0)
                                 .withSizeKeepingCentre(inputArea.getWidth() - (pad + 4) * 2,
                                                        Theme::chatInputHeight);
     inputField.setBounds(fieldBounds);
 
+    // Leave vertical room at the top for the clear button so bubbles
+    // don't slide under it.
+    area.removeFromTop(clearH + pad);
     messageViewport.setBounds(area);
     layoutBubbles();
 }

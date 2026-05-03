@@ -1,5 +1,6 @@
 #include "api/ClaudeClient.h"
 #include "scripting/LuaEngine.h"
+#include "api/ChatHistoryStore.h"
 #include "engine/Log.h"
 #include "telemetry/InstallId.h"
 #include "BuildConfig.h"
@@ -15,6 +16,62 @@ void ClaudeClient::setSystemPrompt(const juce::String& prompt) {
     systemPrompt = prompt;
 }
 
+void ClaudeClient::setHistoryStore(std::unique_ptr<ChatHistoryStore> store) {
+    historyStore = std::move(store);
+    if (! historyStore) return;
+    auto loaded = historyStore->load();
+    if (loaded.empty()) return;
+    conversationHistory = std::move(loaded);
+    perfLog("[ChatHistory] loaded %d message(s) from store\n",
+            (int) conversationHistory.size());
+}
+
+void ClaudeClient::clearHistory() {
+    conversationHistory.clear();
+    if (historyStore) historyStore->clear();
+    if (listener) listener->onHistoryCleared();
+    perfLog("[ChatHistory] cleared\n");
+}
+
+void ClaudeClient::trimHistoryForContext() {
+    if (conversationHistory.size() <= kMaxContextMessages) return;
+
+    // Drop oldest first, but keep turn integrity. The Anthropic API
+    // requires every tool_use block to have a matching tool_result block
+    // somewhere later in the conversation, and we can't have a stray
+    // tool_result without its tool_use either. So: walk forward from the
+    // oldest message, dropping until we're under the cap AND the next-to-
+    // drop message would leave a tool_use orphaned.
+    //
+    // Simplest correct rule: only drop a message if it (a) brings us
+    // closer to the cap and (b) doesn't contain tool_use blocks whose
+    // tool_result still lives in the kept tail. Since tool_use is always
+    // in an assistant message and its tool_result is in the immediately
+    // following user message, drop in pairs (assistant + the user turn
+    // that follows it, OR a user turn that has no tool-related blocks).
+    while (conversationHistory.size() > kMaxContextMessages) {
+        // Front-most message — safe to drop a plain user text message
+        // alone, OR an assistant message together with the user message
+        // that follows it (which carries the tool_results).
+        auto& front = conversationHistory.front();
+        bool frontHasToolUse = false;
+        for (auto& b : front.content)
+            if (b.type == ContentBlock::ToolUse) { frontHasToolUse = true; break; }
+
+        if (frontHasToolUse && conversationHistory.size() >= 2) {
+            conversationHistory.erase(conversationHistory.begin(),
+                                       conversationHistory.begin() + 2);
+        } else {
+            conversationHistory.erase(conversationHistory.begin());
+        }
+    }
+}
+
+void ClaudeClient::persistHistory() {
+    if (! historyStore) return;
+    historyStore->save(conversationHistory);
+}
+
 void ClaudeClient::sendMessage(const juce::String& userText) {
     if (isThreadRunning()) return;
 
@@ -23,6 +80,12 @@ void ClaudeClient::sendMessage(const juce::String& userText) {
     userMsg.content.push_back({ ContentBlock::Text, userText, {}, {}, {}, {}, false });
     conversationHistory.push_back(userMsg);
     perfLog("[Chat] User: %s\n", userText.toRawUTF8());
+
+    // Trim before sending so the request stays under the context cap;
+    // persist immediately so a crash before the assistant replies still
+    // captures the user's message.
+    trimHistoryForContext();
+    persistHistory();
 
     startThread();
 }
@@ -145,6 +208,12 @@ void ClaudeClient::run() {
 
         conversationHistory.push_back(toolResultMsg);
     }
+
+    // Round-trip complete (loop ended cleanly OR via early-out break).
+    // Persist the final conversation so a relaunch picks up where we
+    // left off. Trim again in case the round-trip pushed past the cap.
+    trimHistoryForContext();
+    persistHistory();
 
     notifyBusy(false);
 }

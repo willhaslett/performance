@@ -114,6 +114,7 @@ target_sources(Performance PRIVATE
     src/gui/ChatView.cpp
     src/gui/PerformanceLookAndFeel.cpp
     src/api/ClaudeClient.cpp
+    src/api/JsonFileChatHistoryStore.cpp
     src/scripting/LuaEngine.cpp
     src/ipc/IPCServer.cpp
     src/automation/AutomationEngine.cpp

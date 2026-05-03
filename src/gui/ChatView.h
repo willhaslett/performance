@@ -6,6 +6,7 @@
 #include <memory>
 
 class LuaEngine;
+class ChatHistoryStore;
 
 class ChatView : public juce::Component,
                  public ClaudeClient::Listener {
@@ -19,6 +20,12 @@ public:
     // at startup). Composition is part of the same prompt — no separate
     // mode toggle. See runtime/SYSTEM_PROMPT.md "Composing music".
     void setSystemPrompt(const juce::String& prompt);
+
+    // Wire chat-history persistence. Forwards to the underlying
+    // ClaudeClient and renders any restored messages as bubbles so the
+    // user sees their prior conversation on relaunch. Pass nullptr to
+    // disable (in-memory only). See api/ChatHistoryStore.h.
+    void setHistoryStore(std::unique_ptr<ChatHistoryStore> store);
 
     // A chat bubble: rounded background + read-only TextEditor for selectable text
     struct Bubble {
@@ -34,10 +41,12 @@ public:
                    const juce::String& result, bool isError) override;
     void onError(const juce::String& error) override;
     void onBusyChanged(bool busy) override;
+    void onHistoryCleared() override;
 
 private:
     ClaudeClient client;
     juce::TextEditor inputField;
+    juce::TextButton clearButton { "Clear" };
     juce::Viewport messageViewport;
     juce::Component messageContainer;
 
@@ -47,6 +56,12 @@ private:
     Bubble* addBubble(Bubble::Type type, const juce::String& text);
     void layoutBubbles();
     void scrollToBottom();
+    // Recreate bubbles from the underlying ClaudeClient's current
+    // history snapshot. Used after setHistoryStore restores a prior
+    // conversation. Renders user/assistant text blocks; tool calls and
+    // tool results are skipped (they live in the API-level history but
+    // were never shown as bubbles in the live UI either).
+    void rebuildBubblesFromHistory();
 
     // Custom paint for bubble backgrounds (drawn behind the TextEditors)
     class BubbleBackground : public juce::Component {

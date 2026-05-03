@@ -8,6 +8,7 @@
 #include "engine/Log.h"
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
+#include "api/JsonFileChatHistoryStore.h"
 #include "api/PerformanceCoordinator.h"
 #include "state/ActionRefs.h"
 #include "state/StateEvents.h"
@@ -243,6 +244,14 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         perfLog("[MainLayout] WARNING: SYSTEM_PROMPT.md not found in BinaryData — chat LLM will have no perf prompt\n");
     }
     chatView.setSystemPrompt(perfPrompt);
+
+    // Wire chat-history persistence. Single JSON file per install,
+    // shared across songs (one continuous conversation, not per-song).
+    // Decoupled from state.db because chat isn't song state — and so we
+    // can swap the storage backend without touching ClaudeClient.
+    auto chatHistoryFile = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                              .getChildFile(".config/performance/chat_history.json");
+    chatView.setHistoryStore(std::make_unique<JsonFileChatHistoryStore>(chatHistoryFile));
 
     // Reverse-sync: when currentMode flips from outside the GUI (Lua,
     // Claude via perf, IPC, MIDI bindings), bring the Left slot in
