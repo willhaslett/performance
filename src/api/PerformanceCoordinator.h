@@ -194,6 +194,19 @@ public:
     };
     std::optional<InFlightLoopCapture> getInFlightLoopCapture() const;
 
+    // Read-only snapshot of an in-flight audio loop capture (writer's
+    // peaks + the take's sample rate / tempo). Used by the LooperPane
+    // to draw a live waveform during the Capturing window. nullopt when
+    // no audio capture is in flight.
+    struct InFlightLoopAudio {
+        TrackId trackId;
+        std::vector<AudioWriterThread::PeakEntry> peaks;
+        int    samplesPerPeak;  // 256 — see AudioWriterThread
+        int    sampleRate;
+        double recordTempo;
+    };
+    std::optional<InFlightLoopAudio> getInFlightLoopAudio() const;
+
     // --- Logging ---
     void log(const juce::String& message);
 

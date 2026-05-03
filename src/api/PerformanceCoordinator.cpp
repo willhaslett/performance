@@ -437,6 +437,16 @@ void PerformanceCoordinator::timerCallback() {
                                           sequencerImpl->getLoopStart(),
                                           sequencerImpl->getLoopEnd());
 
+            // Drain recorded MIDI events from audio thread BEFORE the
+            // wrap dispatch. Late-cycle events that arrived in the FIFO
+            // before the wrap was detected need to land in the OLD
+            // capture slot so they get committed; if we wrap-dispatch
+            // first, commitInFlightCapture sees an empty events vector
+            // and the user's performance vanishes into the new slot.
+            if (isRecording) {
+                drainRecordFIFO();
+            }
+
             // Cycle-wrap detection for looper mode. When the audio-thread
             // beat position wraps backward (audioBeat < lastSequencerBeat
             // while loop is enabled), the scanner has just crossed the
@@ -455,9 +465,8 @@ void PerformanceCoordinator::timerCallback() {
                     dispatchLoopGesturesAtWrap();
                 }
             }
-            // Drain recorded MIDI events from audio thread
+            // Diagnostic snapshot of the just-completed drain.
             if (isRecording) {
-                drainRecordFIFO();
 
                 // Diagnostic: log audio-thread counters once per second.
                 double nowMs = juce::Time::getMillisecondCounterHiRes();
@@ -1115,6 +1124,23 @@ PerformanceCoordinator::getInFlightLoopCapture() const {
     if (!activeLoopCapture.has_value()) return std::nullopt;
     return InFlightLoopCapture{ activeLoopCapture->trackId,
                                  &activeLoopCapture->events };
+}
+
+std::optional<PerformanceCoordinator::InFlightLoopAudio>
+PerformanceCoordinator::getInFlightLoopAudio() const {
+    if (!activeLoopAudioSession.has_value() || !activeLoopAudioSession->writer) return std::nullopt;
+    if (!stateAPI) return std::nullopt;
+    auto* t = stateAPI->findTrack(activeLoopAudioSession->trackId);
+    if (!t || t->loops.empty()) return std::nullopt;
+    auto* take = t->loops[0].activeTake();
+    if (!take) return std::nullopt;
+    return InFlightLoopAudio{
+        activeLoopAudioSession->trackId,
+        activeLoopAudioSession->writer->getPeaks(),
+        256,                  // matches AudioWriterThread::writeInterleavedToFile
+        take->sampleRate,
+        take->recordTempo
+    };
 }
 
 int PerformanceCoordinator::addActionFireListener(ActionFireListener listener) {

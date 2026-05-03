@@ -122,15 +122,32 @@ private:
     void paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                         const RegionState& loop);
     // Lower-level renderer used by both the committed-loop path and the
-    // in-flight live-capture path (overlay during CapturingReplace /
-    // CapturingOverdub).
+    // in-flight live-capture path. `openNoteEndBeat` caps any notes
+    // that haven't seen a noteOff yet — set to lengthBeats for committed
+    // takes (full bar), to the live playhead for in-flight overlay so
+    // the in-progress note grows under the playhead instead of jumping
+    // to the right edge of the lane.
+    // `velocityHueBase` drives the per-note color (velocity scales
+    // brightness + alpha); pass typeInstrument for parity with the
+    // Producer's MIDI region preview, or triggerLight for the live
+    // recording overlay.
     void paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                     const std::vector<MidiEventState>& events,
                     double lengthBeats,
-                    juce::Colour color);
+                    double openNoteEndBeat,
+                    juce::Colour velocityHueBase);
     // Audio waveform (centered amplitude bars from the take's peak cache).
     void paintAudioWaveform(juce::Graphics& g, juce::Rectangle<int> bounds,
                             const TakeState& take, double lengthBeats);
+    // Lower-level waveform renderer used by both the committed take and
+    // the live in-flight overlay during an audio capture. `cap` clips
+    // the visible peaks horizontally — set to lengthBeats for committed,
+    // to the live playhead beat for the in-flight overlay.
+    void paintRawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds,
+                          const std::vector<std::pair<float, float>>& peaks,
+                          int samplesPerPeak, int sampleRate,
+                          double recordTempo, double lengthBeats,
+                          double cap, juce::Colour baseHue);
     void paintPlayhead(juce::Graphics& g);
     void paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds);
 

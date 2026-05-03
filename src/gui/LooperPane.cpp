@@ -458,17 +458,20 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
     (void) t;
     (void) row;
 
-    // Pull the in-flight gesture capture (if it targets this track) so
-    // the user sees notes appear as they're played, not only after the
-    // cycle wraps. Always nullopt for non-instrument targets after the
-    // drain-side gate, but checking the type here keeps the lane
-    // unambiguous.
+    // Pull the in-flight gesture captures (if either targets this
+    // track) so the user sees content appear as they record, not only
+    // after the cycle wraps.
     auto inFlight = coord.getInFlightLoopCapture();
-    bool hasInFlight = inFlight.has_value()
-                        && inFlight->trackId == t.id
-                        && inFlight->events
-                        && !inFlight->events->empty()
-                        && t.sourceType == TrackSourceType::Instrument;
+    bool hasInFlightMidi = inFlight.has_value()
+                            && inFlight->trackId == t.id
+                            && inFlight->events
+                            && !inFlight->events->empty()
+                            && t.sourceType == TrackSourceType::Instrument;
+    auto inAudio = coord.getInFlightLoopAudio();
+    bool hasInFlightAudio = inAudio.has_value()
+                             && inAudio->trackId == t.id
+                             && t.sourceType == TrackSourceType::AudioInput;
+    bool hasInFlight = hasInFlightMidi || hasInFlightAudio;
 
     // "no loop" hint is gated on actual recorded content (committed
     // OR in-flight), not on the presence of a loop region. Audio loops
@@ -515,26 +518,49 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
                                            std::max(1, x1 - x0),
                                            row.timelineBounds.getHeight() - 8 };
 
-        // Region shell — accent-colored for track type (kept simple:
-        // instrument = typeInstrument, audio = typeAudio).
-        auto col = (t.sourceType == TrackSourceType::AudioInput)
-                    ? Theme::color(Theme::Color::typeAudio)
-                    : Theme::color(Theme::Color::typeInstrument);
-        g.setColour(col.withAlpha(0.25f));
+        // Region shell — Looper uses the darker bgSlot ("passive inset
+        // surface") rather than the Producer's lighter bgSurfaceRaised.
+        // The Producer needs the contrast because its regions are
+        // bounded blocks against an empty timeline; the Looper's loop
+        // region IS the whole lane, so contrast against the row bg
+        // would just add noise. Track type is conveyed by the row's
+        // left-edge stripe (paintTrackHeader).
+        g.setColour(Theme::color(Theme::Color::bgSlot));
         g.fillRoundedRectangle(repBounds.toFloat(), 3.0f);
 
-        if (loop.type == "audio" && take)
-            paintAudioWaveform(g, repBounds, *take, loopLen);
-        else
-            paintLoopNotes(g, repBounds, loop);
+        // Replace-in-progress: existing committed content is being
+        // overwritten — don't paint it (it's already silenced via
+        // scanLoopEvents / GraphWrapper's audio gate). Otherwise paint
+        // the take normally.
+        if (! replacing) {
+            if (loop.type == "audio" && take)
+                paintAudioWaveform(g, repBounds, *take, loopLen);
+            else
+                paintLoopNotes(g, repBounds, loop);
+        }
 
-        // Live overlay: in-flight capture events painted on the first
-        // rep only (they're cycle-relative — see beginCapture(0.0)).
-        // Brighter than committed notes so the live activity reads as
-        // "this is happening right now."
-        if (rep == 0 && hasInFlight) {
-            paintNotes(g, repBounds, *inFlight->events, loopLen,
-                       Theme::color(Theme::Color::triggerLight).withAlpha(0.95f));
+        // Live overlay (first rep only — captures are cycle-relative).
+        // Open notes / waveform tail cap at the live playhead so the
+        // in-progress content grows under the playhead instead of
+        // jumping to the right edge.
+        if (rep == 0) {
+            double headBeat = sequencer ? sequencer->getBeatPosition() : loopLen;
+            headBeat = std::clamp(headBeat, 0.0, loopLen);
+            if (hasInFlightMidi) {
+                paintNotes(g, repBounds, *inFlight->events, loopLen,
+                           headBeat,
+                           Theme::color(Theme::Color::triggerLight));
+            }
+            if (hasInFlightAudio) {
+                std::vector<std::pair<float, float>> pairPeaks;
+                pairPeaks.reserve(inAudio->peaks.size());
+                for (auto& p : inAudio->peaks) pairPeaks.push_back({ p.min, p.max });
+                paintRawWaveform(g, repBounds, pairPeaks,
+                                  inAudio->samplesPerPeak, inAudio->sampleRate,
+                                  inAudio->recordTempo, loopLen,
+                                  headBeat,
+                                  Theme::color(Theme::Color::triggerLight));
+            }
         }
 
         // Fade tail: if this repetition is only partial (loopLen >
@@ -552,14 +578,19 @@ void LooperPane::paintLoopNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                                   const RegionState& loop) {
     auto* take = loop.activeTake();
     if (!take) return;
+    // Committed take: any open note (rare) extends to the bar end.
+    // Color matches the Producer's MIDI region preview so the visual
+    // language is consistent across panes.
     paintNotes(g, bounds, take->events, loop.lengthBeats,
-               Theme::color(Theme::Color::textPrimary).withAlpha(0.85f));
+               loop.lengthBeats,
+               Theme::color(Theme::Color::typeInstrument));
 }
 
 void LooperPane::paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
                               const std::vector<MidiEventState>& events,
                               double lengthBeats,
-                              juce::Colour color) {
+                              double openNoteEndBeat,
+                              juce::Colour velocityHueBase) {
     if (events.empty() || lengthBeats <= 0.0) return;
 
     // Simple piano-roll-ish render: find pitch range, map beats to x,
@@ -572,38 +603,58 @@ void LooperPane::paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
         if (e.data1 > maxPitch) maxPitch = e.data1;
     }
     if (minPitch > maxPitch) return;
-    int pitchRange = std::max(1, maxPitch - minPitch);
+    // Pad the pitch range a little for vertical breathing room (matches
+    // the Producer treatment).
+    int range = std::max(1, maxPitch - minPitch);
+    int pad   = std::max(2, range / 4);
+    int lo    = std::max(0, minPitch - pad);
+    int hi    = std::min(127, maxPitch + pad);
+    int span  = std::max(1, hi - lo);
 
-    struct Note { double startBeat, endBeat; int pitch; };
+    struct Note { double startBeat, endBeat; int pitch; int velocity; };
     std::vector<Note> notes;
-    std::map<int, double> open;
+    struct OpenNote { double startBeat; int velocity; };
+    std::map<int, OpenNote> open;
     for (auto& e : events) {
         if ((e.status & 0xF0) == 0x90 && e.data2 > 0) {
-            open[e.data1] = e.beatOffset;
+            open[e.data1] = { e.beatOffset, e.data2 };
         } else if ((e.status & 0xF0) == 0x80
                    || ((e.status & 0xF0) == 0x90 && e.data2 == 0)) {
             auto it = open.find(e.data1);
             if (it != open.end()) {
-                notes.push_back({ it->second, e.beatOffset, e.data1 });
+                notes.push_back({ it->second.startBeat, e.beatOffset,
+                                  e.data1, it->second.velocity });
                 open.erase(it);
             }
         }
     }
-    // In-flight notes that haven't seen a noteOff yet — extend to the
-    // end of the loop so the user sees the in-progress bar growing
-    // toward the playhead.
-    for (auto& [pitch, onBeat] : open)
-        notes.push_back({ onBeat, lengthBeats, pitch });
+    // Open notes (no noteOff yet): extend only to the caller-supplied
+    // cap. For the in-flight overlay this is the live playhead, so the
+    // in-progress bar grows under the playhead instead of jumping to
+    // the right edge of the lane.
+    double cap = std::clamp(openNoteEndBeat, 0.0, lengthBeats);
+    for (auto& [pitch, on] : open)
+        notes.push_back({ on.startBeat, cap, pitch, on.velocity });
 
-    g.setColour(color);
+    constexpr float noteH = 2.0f;
+    auto inner = bounds.toFloat().reduced(1.0f, 3.0f);
+
     for (auto& n : notes) {
         double xFrac0 = n.startBeat / lengthBeats;
         double xFrac1 = n.endBeat   / lengthBeats;
-        int x0 = bounds.getX() + (int)(xFrac0 * bounds.getWidth());
-        int x1 = bounds.getX() + (int)(xFrac1 * bounds.getWidth());
-        double yFrac = 1.0 - ((double)(n.pitch - minPitch) / pitchRange);
-        int y = bounds.getY() + (int)(yFrac * (bounds.getHeight() - 4)) + 2;
-        g.fillRect(x0, y, std::max(2, x1 - x0), 2);
+        float nx = inner.getX() + (float)(xFrac0 * inner.getWidth());
+        float nw = std::max(1.5f,
+                              (float)((xFrac1 - xFrac0) * inner.getWidth()));
+        float ny = inner.getBottom()
+                    - ((n.pitch - lo) + 0.5f) * (inner.getHeight() / span);
+
+        // Velocity → brightness + alpha on the base hue (Producer parity).
+        float velNorm = juce::jlimit(0.0f, 1.0f, n.velocity / 127.0f);
+        auto col = velocityHueBase.darker(0.55f)
+                                   .interpolatedWith(velocityHueBase.brighter(0.45f), velNorm)
+                                   .withAlpha(0.75f + velNorm * 0.2f);
+        g.setColour(col);
+        g.fillRect(nx, ny - noteH * 0.5f, nw, std::max(1.0f, noteH));
     }
 }
 
@@ -627,17 +678,28 @@ void LooperPane::paintAudioWaveform(juce::Graphics& g,
                                       juce::Rectangle<int> bounds,
                                       const TakeState& take,
                                       double lengthBeats) {
-    if (take.peakData.peaks.empty() || lengthBeats <= 0.0
-        || bounds.getWidth() <= 0)
+    paintRawWaveform(g, bounds, take.peakData.peaks,
+                     take.peakData.samplesPerPeak, take.sampleRate,
+                     take.recordTempo, lengthBeats,
+                     /*cap=*/lengthBeats,
+                     Theme::color(Theme::Color::typeAudio));
+}
+
+void LooperPane::paintRawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                    const std::vector<std::pair<float, float>>& peaks,
+                                    int samplesPerPeak, int sampleRate,
+                                    double recordTempo, double lengthBeats,
+                                    double cap, juce::Colour baseHue) {
+    if (peaks.empty() || lengthBeats <= 0.0 || bounds.getWidth() <= 0
+        || sampleRate <= 0)
         return;
 
     auto inner = bounds.toFloat().reduced(1.0f, 3.0f);
     float centreY = inner.getCentreY();
     float halfH   = inner.getHeight() * 0.5f;
 
-    auto base    = Theme::color(Theme::Color::typeAudio);
-    auto intense = base.brighter(0.25f).withAlpha(0.95f);
-    auto dim     = base.darker(0.15f).withAlpha(0.8f);
+    auto intense = baseHue.brighter(0.25f).withAlpha(0.95f);
+    auto dim     = baseHue.darker(0.15f).withAlpha(0.8f);
     juce::ColourGradient grad(intense,
                                inner.getX(), inner.getY(),
                                intense,
@@ -645,17 +707,20 @@ void LooperPane::paintAudioWaveform(juce::Graphics& g,
     grad.addColour(0.5, dim);
     g.setGradientFill(grad);
 
-    int numPeaks = (int) take.peakData.peaks.size();
-    double beatsPerPeak = (take.peakData.samplesPerPeak / (double) take.sampleRate)
-                          * (take.recordTempo / 60.0);
+    int numPeaks = (int) peaks.size();
+    double beatsPerPeak = (samplesPerPeak / (double) sampleRate)
+                          * (recordTempo / 60.0);
     double pxPerBeat = (double) bounds.getWidth() / lengthBeats;
+    double cappedCap = std::clamp(cap, 0.0, lengthBeats);
+    float  capPx     = (float) bounds.getX() + (float)(cappedCap * pxPerBeat);
 
     for (int pi = 0; pi < numPeaks; ++pi) {
         float px = (float) bounds.getX() + (float)(pi * beatsPerPeak * pxPerBeat);
         float pw = std::max(1.0f, (float)(beatsPerPeak * pxPerBeat));
         if (px + pw < bounds.getX() || px > bounds.getRight()) continue;
+        if (px > capPx) break;  // beyond playhead — clip the in-flight tail
 
-        auto [mn, mx] = take.peakData.peaks[pi];
+        auto [mn, mx] = peaks[pi];
         // sqrt mapping boosts quiet signals visually (matches Producer).
         float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
         float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
@@ -688,12 +753,10 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
         return;
     }
 
-    // Per-row progress fill. Most rows get the subtle accent tint, but
-    // a row with a queued/capturing loop action gets the action-color
-    // tint instead — pulsing while queued, solid while capturing. The
-    // tint lives in the same left-of-playhead region as the cycle
-    // progress so the two visuals are consistent.
-    const auto neutral = Theme::color(Theme::Color::accent).withAlpha(0.10f);
+    // Per-row left-of-playhead fill: a subtle accent trail by default
+    // ("you've played this far in the loop"), swapped to the gesture
+    // color during Queued / Capturing.
+    const auto neutral      = Theme::color(Theme::Color::accent).withAlpha(0.10f);
     const auto replaceColor = juce::Colour(0xffcc6655);
     const auto overdubColor = juce::Colour(0xff5fb09f);
 
@@ -710,16 +773,16 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
         // content is being recorded right now."
         switch (act) {
             case LoopAction::ReplaceQueued:
-                fill = replaceColor.withAlpha(0.06f + 0.12f * pulse);
+                fill = replaceColor.withAlpha(0.20f + 0.20f * pulse);
                 break;
             case LoopAction::CapturingReplace:
-                fill = replaceColor.withAlpha(0.18f + 0.22f * pulse);
+                fill = replaceColor.withAlpha(0.45f + 0.25f * pulse);
                 break;
             case LoopAction::OverdubQueued:
-                fill = overdubColor.withAlpha(0.06f + 0.12f * pulse);
+                fill = overdubColor.withAlpha(0.20f + 0.20f * pulse);
                 break;
             case LoopAction::CapturingOverdub:
-                fill = overdubColor.withAlpha(0.18f + 0.22f * pulse);
+                fill = overdubColor.withAlpha(0.45f + 0.25f * pulse);
                 break;
             default:
                 break;
