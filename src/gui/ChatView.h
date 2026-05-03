@@ -15,16 +15,10 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    // The caller supplies both prompts at startup (from BinaryData). The
-    // chat defaults to `perf` mode; the Compose toggle swaps to the
-    // composer prompt in-session.
-    void setPrompts(const juce::String& perfPrompt,
-                    const juce::String& composerPrompt);
-
-    // Legacy single-prompt setter — keeps existing call-sites working
-    // during the transition; effectively sets the perf prompt and
-    // leaves the composer prompt empty.
-    void setSystemPrompt(const juce::String& prompt) { setPrompts(prompt, {}); }
+    // The single system prompt for the chat LLM (loaded from BinaryData
+    // at startup). Composition is part of the same prompt — no separate
+    // mode toggle. See runtime/SYSTEM_PROMPT.md "Composing music".
+    void setSystemPrompt(const juce::String& prompt);
 
     // A chat bubble: rounded background + read-only TextEditor for selectable text
     struct Bubble {
@@ -46,16 +40,6 @@ private:
     juce::TextEditor inputField;
     juce::Viewport messageViewport;
     juce::Component messageContainer;
-
-    // Latching Compose toggle — header button. When pressed, the
-    // composer system prompt is active; when released, the general
-    // perf prompt is active. Toggling clears conversation history
-    // because the two personas have incompatible context.
-    juce::TextButton composeToggle;
-    juce::String perfPrompt;
-    juce::String composerPrompt;
-    bool composeActive = false;
-    void applyActivePrompt();
 
     std::vector<std::unique_ptr<Bubble>> bubbles;
 
