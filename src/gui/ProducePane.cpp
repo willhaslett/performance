@@ -2103,6 +2103,14 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         auto tracks = state->listTracks();
         if (dragCurrentTrackIdx >= 0 && dragCurrentTrackIdx < (int)tracks.size()) {
             auto targetTrackId = tracks[dragCurrentTrackIdx].id;
+            // Capture source-track id BEFORE the move so we can emit
+            // events for both source and destination (autosave + any
+            // listeners need the signal — Arrangement mutates the
+            // tracks vector directly and doesn't emit events itself).
+            TrackId sourceTrackId;
+            if (dragStartTrackIdx >= 0 && dragStartTrackIdx < (int)tracks.size())
+                sourceTrackId = tracks[dragStartTrackIdx].id;
+
             if (dragIsOption) {
                 auto* newRegion = arrangement->duplicateRegion(dragRegionId, targetTrackId, dragCurrentBeat);
                 if (newRegion) {
@@ -2113,6 +2121,24 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
                 arrangement->moveRegion(dragRegionId, targetTrackId, dragCurrentBeat);
             }
             if (onRegionsChanged) onRegionsChanged();
+
+            // Emit Track::Updated for the destination (and the source
+            // too on a move) so autosave + EngineSync pick up the
+            // change. Without this the move appears to work in the
+            // GUI but the engine doesn't see it and autosave never
+            // flushes — so on relaunch the region is back where it
+            // started.
+            auto emitTrackUpdated = [this](const TrackId& trackId) {
+                if (trackId.empty()) return;
+                StateEvent ev;
+                ev.action = StateEvent::Updated;
+                ev.entity = StateEvent::Track;
+                ev.entityId = trackId.str();
+                state->events().emit(ev);
+            };
+            emitTrackUpdated(targetTrackId);
+            if (! dragIsOption && sourceTrackId != targetTrackId)
+                emitTrackUpdated(sourceTrackId);
         }
         draggingRegion = false;
         dragRegionId = {};

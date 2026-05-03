@@ -192,10 +192,31 @@ struct RawEvent {
     double durationBeats;
 };
 
+// Diagnostic counters threaded through parseVoiceEvents so the
+// top-level parser can produce a specific error when every event was
+// silently dropped (the most common cause: drum tokens on a non-drums
+// track, or pitched notes on a drums track — parseNoteName returns
+// nullopt in both cases). Without this the user sees only "nothing to
+// write" with no hint at the actual mismatch, and the LLM tends to
+// react by creating duplicate tracks instead of fixing the notation.
+struct DropDiag {
+    int attempted = 0;             // notes the parser tried to read
+    int dropped   = 0;             // notes parseNoteName couldn't resolve
+    std::string firstDroppedToken; // sample for the error message
+};
+
+// Returns true if `tok` is a known drum-hit token (kick / snare /
+// hhc / etc.). Used by the diagnostic layer to distinguish "drum
+// tokens on non-drums track" from "pitched notes on drums track".
+bool isDrumToken(const std::string& tok) {
+    return kDrumMap.find(tok) != kDrumMap.end();
+}
+
 // Mirrors parse_events() in compiler.py. Splits a voice line on `|`
 // then on `,`, parses each `beat <pos> <note-or-chord> <dur> <vel>`
 // clause, handles chords in `[n n n]` form.
-std::vector<RawEvent> parseVoiceEvents(const std::string& eventStr, bool isDrums) {
+std::vector<RawEvent> parseVoiceEvents(const std::string& eventStr, bool isDrums,
+                                         DropDiag* diag = nullptr) {
     std::vector<RawEvent> out;
 
     static const std::regex beatRe(R"(beat\s+([\d.+]+)\s+(.+))");
@@ -224,15 +245,26 @@ std::vector<RawEvent> parseVoiceEvents(const std::string& eventStr, bool isDrums
                 auto [dur, _tied] = parseDuration(cm[2].str());
                 int vel = parseVelocity(cm[3].str());
                 for (auto& noteTok : splitWhitespace(notesStr)) {
+                    if (diag) diag->attempted++;
                     auto pitch = parseNoteName(noteTok, isDrums);
                     if (pitch) out.push_back({beatOffset, *pitch, vel, dur});
+                    else if (diag) {
+                        diag->dropped++;
+                        if (diag->firstDroppedToken.empty())
+                            diag->firstDroppedToken = noteTok;
+                    }
                 }
             } else if (std::regex_search(remainder, sm, singleRe) && sm.position() == 0) {
+                if (diag) diag->attempted++;
                 auto pitch = parseNoteName(sm[1].str(), isDrums);
                 if (pitch) {
                     auto [dur, _tied] = parseDuration(sm[2].str());
                     int vel = parseVelocity(sm[3].str());
                     out.push_back({beatOffset, *pitch, vel, dur});
+                } else if (diag) {
+                    diag->dropped++;
+                    if (diag->firstDroppedToken.empty())
+                        diag->firstDroppedToken = sm[1].str();
                 }
             }
         }
@@ -258,6 +290,15 @@ struct Score {
     std::vector<std::pair<std::string, std::string>> tracks;  // name → gm-program or "drums"
     std::vector<BarData> bars;
     double swing = 0.0;
+
+    // Aggregated drop diagnostics — populated by parseScore so the
+    // top-level parse() can return a specific "drum vs pitched
+    // mismatch"-style error when every event got silently dropped.
+    int totalAttempted = 0;
+    int totalDropped = 0;
+    std::string firstDroppedToken;     // sample
+    std::string firstDroppingTrack;
+    bool firstDroppingIsDrumsTrack = false;
 };
 
 // Parse a single track declaration line ("  Piano: 0", "  Drum Kit: drums").
@@ -370,8 +411,18 @@ bool parseScore(const std::string& src, Score& score, std::string& err) {
             auto parent = resolveParentTrack(score, voiceLabel);
             if (parent.empty()) continue;
 
-            auto parsed = parseVoiceEvents(events, isDrumsTrack(score, parent));
+            DropDiag diag;
+            bool isDrumsParent = isDrumsTrack(score, parent);
+            auto parsed = parseVoiceEvents(events, isDrumsParent, &diag);
             currentBar->voices.emplace_back(voiceLabel, std::move(parsed));
+
+            score.totalAttempted += diag.attempted;
+            score.totalDropped   += diag.dropped;
+            if (diag.dropped > 0 && score.firstDroppedToken.empty()) {
+                score.firstDroppedToken         = diag.firstDroppedToken;
+                score.firstDroppingTrack        = parent;
+                score.firstDroppingIsDrumsTrack = isDrumsParent;
+            }
         }
     }
 
@@ -466,5 +517,42 @@ bool V2NotationParser::parse(const juce::String& input,
     Score score;
     if (!parseScore(input.toStdString(), score, err)) return false;
     emitOutput(score, out);
+
+    // Specific-error layer: if every note got silently dropped, blaming
+    // "nothing to write" makes callers (especially the chat LLM) suspect
+    // the wrong thing — typically they react by creating duplicate
+    // tracks instead of fixing the notation. Detect the common drum-vs-
+    // pitched mismatch and say so plainly.
+    if (out.notes.empty() && score.totalAttempted > 0 && score.totalDropped > 0) {
+        const auto& tok = score.firstDroppedToken;
+        const auto& track = score.firstDroppingTrack;
+        if (score.firstDroppingIsDrumsTrack) {
+            // Drums-typed track but the events use non-drum tokens
+            // (almost always pitched note names like C1 / D1).
+            err = "track '" + track + "' is declared as 'drums' but its events "
+                  "use non-drum tokens (e.g. '" + tok + "'). Drums-typed tracks "
+                  "accept only drum tokens like kick, snare, hhc, hho, ride, "
+                  "crash, ltom, mtom, htom. Either change the header to '"
+                  + track + ": 0' (or another GM program) and keep the pitched "
+                  "notes, or keep '" + track + ": drums' and rewrite the "
+                  "events using drum tokens.";
+        } else if (isDrumToken(tok)) {
+            // GM-instrument track but the events use drum tokens.
+            err = "track '" + track + "' is declared as a GM instrument but its "
+                  "events use drum tokens (e.g. '" + tok + "'). Drum tokens "
+                  "require the track to be declared as 'drums' in the header. "
+                  "Either change the header to '" + track + ": drums' or rewrite "
+                  "the events using pitched note names like C1, D1, E1 (these map "
+                  "to the GM percussion notes 36, 38, 40).";
+        } else {
+            // Unknown token shape — generic fallback that at least names
+            // the offender so the caller doesn't have to guess.
+            err = "all events on track '" + track + "' were dropped — the parser "
+                  "didn't recognize the note token '" + tok + "'. Pitched notes "
+                  "look like 'C4' / 'G#4' / 'Bb2'; drum tokens (on a drums-typed "
+                  "track) look like 'kick' / 'snare' / 'hhc'.";
+        }
+        return false;
+    }
     return true;
 }
