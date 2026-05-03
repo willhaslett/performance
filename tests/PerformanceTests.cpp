@@ -5352,6 +5352,63 @@ public:
             auto* song = s.currentSong();
             expect(song && song->cycleEnd == 0.0);
         }
+
+        beginTest("transport stop during Capturing commits the in-flight capture");
+        {
+            // Boss-RC behavior — stopping mid-record should persist what
+            // the user just played, not drop it. The transport-stop
+            // subscription routes through commitInFlightCapture (was:
+            // cancelLoopCapture) so the capture state and in-flight slot
+            // both clear and the commit lands.
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+            s.setFocusedTrackId(t1);
+
+            coord.replaceLoopGesture();   // bootstrap → CapturingReplace
+            expect(s.getLoopAction(t1) == LoopAction::CapturingReplace);
+            expect(coord.getInFlightLoopCapture().has_value());
+
+            coord.sequencer()->setBeatPosition(2.0);   // simulate elapsed
+            coord.sequencer()->stop();                 // mid-record stop
+
+            // Post-stop: state cleared, capture slot drained, master cycle
+            // adopted from elapsed (this was the first loop).
+            expect(s.getLoopAction(t1) == LoopAction::None);
+            expect(! coord.getInFlightLoopCapture().has_value());
+            expectWithinAbsoluteError(s.currentSong()->cycleEnd, 2.0, 1e-6);
+        }
+
+        beginTest("transport stop during Queued drops the deferred action");
+        {
+            // Queued state has no recorded content yet, so stopping
+            // should clear the queue (not pretend-commit nothing).
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
+
+            // Stand up a master cycle so the next gesture queues instead
+            // of bootstrapping.
+            coord.replaceLoopGesture();
+            coord.sequencer()->setBeatPosition(4.0);
+            coord.replaceLoopGesture();   // commit, master = 4
+            expectWithinAbsoluteError(s.currentSong()->cycleEnd, 4.0, 1e-6);
+
+            // Re-arm — established path queues.
+            coord.replaceLoopGesture();
+            expect(s.getLoopAction(t1) == LoopAction::ReplaceQueued);
+            expect(! coord.getInFlightLoopCapture().has_value());
+
+            coord.sequencer()->stop();
+
+            expect(s.getLoopAction(t1) == LoopAction::None);
+            // Master cycle untouched — there was nothing to commit.
+            expectWithinAbsoluteError(s.currentSong()->cycleEnd, 4.0, 1e-6);
+        }
     }
 };
 
