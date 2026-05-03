@@ -293,8 +293,13 @@ public:
 
                     if (looperActive) {
                         auto* loop = arr->loopForTrack(TrackId{trkId.toStdString()});
+                        // Replace-in-progress silences the existing audio —
+                        // we're about to overwrite it. Overdub keeps it.
+                        bool replaceCapture = loop
+                            && loop->loopAction == LoopAction::CapturingReplace;
                         if (loop && loop->type == "audio" && ! loop->muted
-                            && loop->lengthBeats > 0.0) {
+                            && loop->lengthBeats > 0.0
+                            && ! replaceCapture) {
                             // Wrap the playhead within the loop (sequencer
                             // already wraps the master cycle; if the loop
                             // length matches master this is a no-op, but

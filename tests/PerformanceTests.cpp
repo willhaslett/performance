@@ -4618,13 +4618,14 @@ public:
     LooperBossTests() : juce::UnitTest("LooperBoss") {}
 
     void runTest() override {
-        // Boss-RC tap-to-start, tap-to-stop. State transitions are direct
-        // (no queued state any more); commit is the "stop" half driven by
-        // the coordinator. These tests cover the StateAPI primitives —
-        // gesture toggling at the coordinator level lives in
+        // Established-cycle gesture transitions are queue-based:
+        // None ↔ Queued ↔ (other) Queued; Capturing is locked. The
+        // bootstrap path (no cycle) uses startLoopCaptureNow to go
+        // directly to Capturing. These tests cover StateAPI primitives;
+        // coordinator-level wrap dispatch lives in
         // CoordinatorLooperGestureTests.
 
-        beginTest("replaceLoop on empty track creates region + enters CapturingReplace");
+        beginTest("replaceLoop on empty track creates region + queues replace");
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
@@ -4633,50 +4634,104 @@ public:
             tc.state().replaceLoop();
             auto* t = tc.state().findTrack(trackId);
             expectEquals((int) t->loops.size(), 1);
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+            expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
         }
 
-        beginTest("overdubLoop on empty track enters CapturingOverdub");
-        {
-            TestCoordinator tc;
-            auto trackId = tc.state().createTrack("T");
-            tc.state().setFocusedTrackId(trackId);
-            tc.state().overdubLoop();
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingOverdub);
-        }
-
-        beginTest("replaceLoop / overdubLoop are no-ops while already capturing");
+        beginTest("re-pressing same gesture cancels back to None");
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             tc.state().setFocusedTrackId(trackId);
             tc.state().replaceLoop();
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
-            tc.state().replaceLoop();  // no toggle here — coord drives commit
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
-            tc.state().overdubLoop();  // also no-op — wrong gesture mid-capture
-            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+            expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
+            tc.state().replaceLoop();
+            expect(tc.state().getLoopAction(trackId) == LoopAction::None);
+
+            tc.state().overdubLoop();
+            expect(tc.state().getLoopAction(trackId) == LoopAction::OverdubQueued);
+            tc.state().overdubLoop();
+            expect(tc.state().getLoopAction(trackId) == LoopAction::None);
         }
 
-        beginTest("commit Replace: events become captured, snapshot pushed, state → None");
+        beginTest("pressing the other gesture switches the queued kind");
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             tc.state().setFocusedTrackId(trackId);
-            tc.state().replaceLoop();   // → CapturingReplace
+            tc.state().replaceLoop();
+            tc.state().overdubLoop();
+            expect(tc.state().getLoopAction(trackId) == LoopAction::OverdubQueued);
+            tc.state().replaceLoop();
+            expect(tc.state().getLoopAction(trackId) == LoopAction::ReplaceQueued);
+        }
+
+        beginTest("either gesture during Capturing is ignored");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
+            tc.state().beginLoopCapture(trackId);   // Queued → CapturingReplace
+            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+            tc.state().replaceLoop();   // ignored
+            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+            tc.state().overdubLoop();   // ignored
+            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+        }
+
+        beginTest("beginLoopCapture flips Queued → Capturing for both kinds");
+        {
+            TestCoordinator tc;
+            auto t1 = tc.state().createTrack("T1");
+            tc.state().setFocusedTrackId(t1);
+            tc.state().replaceLoop();
+            tc.state().beginLoopCapture(t1);
+            expect(tc.state().getLoopAction(t1) == LoopAction::CapturingReplace);
+
+            auto t2 = tc.state().createTrack("T2");
+            tc.state().setFocusedTrackId(t2);
+            tc.state().overdubLoop();
+            tc.state().beginLoopCapture(t2);
+            expect(tc.state().getLoopAction(t2) == LoopAction::CapturingOverdub);
+        }
+
+        beginTest("beginLoopCapture from None / non-Queued is a no-op");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
+            tc.state().replaceLoop();   // cancel back to None
+            tc.state().beginLoopCapture(trackId);
+            expect(tc.state().getLoopAction(trackId) == LoopAction::None);
+        }
+
+        beginTest("startLoopCaptureNow drops directly into Capturing (bootstrap path)");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().startLoopCaptureNow(LoopAction::CapturingReplace);
+            expect(tc.state().getLoopAction(trackId) == LoopAction::CapturingReplace);
+        }
+
+        beginTest("commit Replace: events become captured, state → None");
+        {
+            TestCoordinator tc;
+            auto trackId = tc.state().createTrack("T");
+            tc.state().setFocusedTrackId(trackId);
+            tc.state().replaceLoop();
+            tc.state().beginLoopCapture(trackId);
 
             std::vector<MidiEventState> captured = {
                 { 0.0, 0x90, 1, 60, 100 }, { 1.0, 0x80, 1, 60, 0 }
             };
             tc.state().commitLoopAction(trackId, captured);
 
-            auto* t = tc.state().findTrack(trackId);
-            auto* take = t->loops[0].activeTake();
+            auto* take = tc.state().findTrack(trackId)->loops[0].activeTake();
             expectEquals((int) take->events.size(), 2);
             expectEquals(take->events[0].data1, 60);
             expect(tc.state().getLoopAction(trackId) == LoopAction::None);
-            // commitLoopAction snapshots app-level undo so the user can
-            // back the whole commit out (events + lengthBeats + cycle).
             expect(tc.state().canUndo());
         }
 
@@ -4684,27 +4739,25 @@ public:
         {
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
-            // Seed with an initial replace.
             tc.state().setFocusedTrackId(trackId);
             tc.state().replaceLoop();
+            tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, {
                 { 0.0, 0x90, 1, 60, 100 }, { 2.0, 0x80, 1, 60, 0 }
             });
 
-            // Overdub adds two more, interleaved in time.
             tc.state().overdubLoop();
+            tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, {
                 { 1.0, 0x90, 1, 64, 100 }, { 3.0, 0x80, 1, 64, 0 }
             });
 
             auto* take = tc.state().findTrack(trackId)->loops[0].activeTake();
             expectEquals((int) take->events.size(), 4);
-            // Sorted by beat: 0.0, 1.0, 2.0, 3.0.
             expectEquals(take->events[0].beatOffset, 0.0);
             expectEquals(take->events[1].beatOffset, 1.0);
             expectEquals(take->events[2].beatOffset, 2.0);
             expectEquals(take->events[3].beatOffset, 3.0);
-            // Two commits → two undo snapshots (app-level).
             expect(tc.state().canUndo());
         }
 
@@ -4713,20 +4766,17 @@ public:
             TestCoordinator tc;
             auto trackId = tc.state().createTrack("T");
             tc.state().setFocusedTrackId(trackId);
-            // No replaceLoop / overdubLoop — state is None.
+            tc.state().replaceLoop();   // → ReplaceQueued (NOT capturing)
             tc.state().commitLoopAction(trackId, {
                 { 0.0, 0x90, 1, 60, 100 }
             });
+            // Region exists (replaceLoop created it) but no events
+            // committed since state is Queued not Capturing.
             auto* t = tc.state().findTrack(trackId);
-            // Region wasn't created either.
-            expectEquals((int) t->loops.size(), 0);
+            expect(! t->loops.empty());
+            auto* take = t->loops[0].activeTake();
+            expectEquals((int) take->events.size(), 0);
         }
-
-        // Loop undo/redo go through the app-level UndoHistory now (one
-        // snapshot covers events + lengthBeats + cycle). The dedicated
-        // app-level UndoHistoryTests cover the mechanism end-to-end;
-        // here we only verify the looper-side hookups push/pop snapshots
-        // through commits and clears.
 
         beginTest("clearLoop pushes app-level undo, empties events; cycleEnd untouched");
         {
@@ -4737,14 +4787,14 @@ public:
 
             tc.state().setFocusedTrackId(trackId);
             tc.state().replaceLoop();
+            tc.state().beginLoopCapture(trackId);
             tc.state().commitLoopAction(trackId, { { 0.0, 0x90, 1, 60, 100 } });
 
             tc.state().clearLoop();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 0);
             expect(tc.state().canUndo());
-            expectEquals(tc.state().currentSong()->cycleEnd, 16.0);  // untouched
+            expectEquals(tc.state().currentSong()->cycleEnd, 16.0);
 
-            // Undo brings the events back.
             tc.state().undo();
             expectEquals((int) tc.state().findTrack(trackId)->loops[0].activeTake()->events.size(), 1);
         }
@@ -4760,6 +4810,7 @@ public:
             for (auto& tid : { t1, t2 }) {
                 tc.state().setFocusedTrackId(tid);
                 tc.state().replaceLoop();
+                tc.state().beginLoopCapture(tid);
                 tc.state().commitLoopAction(tid, { { 0.0, 0x90, 1, 60, 100 } });
             }
 
@@ -4772,19 +4823,15 @@ public:
             expectEquals(tc.state().currentSong()->cycleEnd, 0.0);
             expect(! tc.state().currentSong()->cycleEnabled);
 
-            // One undo restores the cleared state.
             tc.state().undo();
             expectEquals(tc.state().currentSong()->cycleEnd, 16.0);
         }
 
-        beginTest("undo on a fresh commit also undoes master cycle");
+        beginTest("undo on a fresh bootstrap commit also undoes master cycle");
         {
-            // The motivating bug: after the very first commit (which
-            // sets master cycle from elapsed beats), a single undo must
-            // take the looper all the way back to its initial no-cycle
-            // state — events gone AND cycleEnd back to 0. Goes through
-            // the coordinator's gesture toggle so the transaction that
-            // wraps start→stop is exercised.
+            // Motivating bug: the very first (bootstrap) commit sets
+            // master cycle from elapsed beats; a single undo must take
+            // the looper all the way back to its initial no-cycle state.
             TestCoordinator tc;
             auto& coord = tc.get();
             auto& s = tc.state();
@@ -4793,9 +4840,9 @@ public:
             expectEquals(s.currentSong()->cycleEnd, 0.0);
 
             s.setFocusedTrackId(trackId);
-            coord.replaceLoopGesture();          // start: transport plays, CapturingReplace
+            coord.replaceLoopGesture();          // bootstrap start → CapturingReplace
             coord.sequencer()->setBeatPosition(8.0);
-            coord.replaceLoopGesture();          // stop: commit + setCycleLength(8)
+            coord.replaceLoopGesture();          // bootstrap stop → commit + cycle=8
             expectWithinAbsoluteError(s.currentSong()->cycleEnd, 8.0, 1e-6);
             expect(s.canUndo());
 
@@ -4805,7 +4852,7 @@ public:
             expect(! t || t->loops.empty()
                    || t->loops[0].activeTake()->events.empty());
 
-            coord.resetLooperSession();   // tidy teardown
+            coord.resetLooperSession();
         }
     }
 };
@@ -5148,13 +5195,18 @@ public:
     CoordinatorLooperGestureTests() : juce::UnitTest("CoordinatorLooperGesture") {}
 
     void runTest() override {
-        beginTest("first tap on empty looper: starts capture, transport plays from 0");
+        // Two paths: bootstrap (tap-to-start, tap-to-stop, no cycle yet)
+        // and established (queue at tap, wrap promotes to Capturing).
+        // Wrap-driven established dispatch needs the message loop to run,
+        // which tests don't do — those edges are click-tested.
+
+        beginTest("bootstrap: first tap starts capture, transport plays from 0");
         {
             TestCoordinator tc;
             auto& coord = tc.get();
             auto& s = tc.state();
             auto t1 = s.createTrack("T1");
-            s.setMode(AppMode::Looper);   // no longer pre-fills cycleEnd
+            s.setMode(AppMode::Looper);
 
             coord.replaceLoopGesture();
 
@@ -5163,10 +5215,10 @@ public:
             expect(coord.getInFlightLoopCapture()->trackId == t1);
             expect(coord.sequencer() && coord.sequencer()->isPlaying());
 
-            coord.resetLooperSession();   // tidy teardown
+            coord.resetLooperSession();
         }
 
-        beginTest("second tap commits and sets master cycle length from elapsed");
+        beginTest("bootstrap: second tap commits and sets master cycle from elapsed");
         {
             TestCoordinator tc;
             auto& coord = tc.get();
@@ -5174,16 +5226,13 @@ public:
             auto t1 = s.createTrack("T1");
             s.setMode(AppMode::Looper);
 
-            coord.replaceLoopGesture();   // start: beat 0, CapturingReplace
-            // Manually advance the sequencer to simulate elapsed beats.
+            coord.replaceLoopGesture();   // start
             coord.sequencer()->setBeatPosition(8.0);
-            coord.replaceLoopGesture();   // tap = stop
+            coord.replaceLoopGesture();   // stop = commit
 
             expect(s.getLoopAction(t1) == LoopAction::None);
             expect(! coord.getInFlightLoopCapture().has_value());
-            // First commit on an empty looper sets the master cycle length.
             expectWithinAbsoluteError(s.currentSong()->cycleEnd, 8.0, 1e-6);
-            // The freshly-captured region picks up the same length.
             auto* t = s.findTrack(t1);
             expect(t && t->loops.size() == 1);
             expectWithinAbsoluteError(t->loops[0].lengthBeats, 8.0, 1e-6);
@@ -5191,28 +5240,46 @@ public:
             coord.sequencer()->stop();
         }
 
-        beginTest("subsequent commit leaves master cycle alone");
+        beginTest("established: tap queues (no immediate capture, transport unchanged)");
         {
             TestCoordinator tc;
             auto& coord = tc.get();
             auto& s = tc.state();
             auto t1 = s.createTrack("T1");
-            auto t2 = s.createTrack("T2");
             s.setMode(AppMode::Looper);
-
-            // First loop on T1 — sets master to 4 beats.
-            s.setFocusedTrackId(t1);
+            // Stand up master cycle the cheap way: bootstrap-record once.
             coord.replaceLoopGesture();
             coord.sequencer()->setBeatPosition(4.0);
             coord.replaceLoopGesture();
             expectWithinAbsoluteError(s.currentSong()->cycleEnd, 4.0, 1e-6);
+            // Transport is still playing post-commit. Tap again →
+            // established path: queue, don't open capture, don't change
+            // transport.
+            bool wasPlaying = coord.sequencer()->isPlaying();
+            expect(wasPlaying);
+            coord.replaceLoopGesture();
+            expect(s.getLoopAction(t1) == LoopAction::ReplaceQueued);
+            expect(! coord.getInFlightLoopCapture().has_value());
+            expect(coord.sequencer()->isPlaying() == wasPlaying);
 
-            // Second loop on T2 — runs for 2 beats, commits. Master unchanged.
-            s.setFocusedTrackId(t2);
+            coord.resetLooperSession();
+        }
+
+        beginTest("established: re-tap during Queued cancels back to None");
+        {
+            TestCoordinator tc;
+            auto& coord = tc.get();
+            auto& s = tc.state();
+            auto t1 = s.createTrack("T1");
+            s.setMode(AppMode::Looper);
             coord.replaceLoopGesture();
-            coord.sequencer()->setBeatPosition(coord.sequencer()->getBeatPosition() + 2.0);
-            coord.replaceLoopGesture();
-            expectWithinAbsoluteError(s.currentSong()->cycleEnd, 4.0, 1e-6);
+            coord.sequencer()->setBeatPosition(4.0);
+            coord.replaceLoopGesture();   // master set
+
+            coord.replaceLoopGesture();   // queue
+            expect(s.getLoopAction(t1) == LoopAction::ReplaceQueued);
+            coord.replaceLoopGesture();   // cancel
+            expect(s.getLoopAction(t1) == LoopAction::None);
 
             coord.resetLooperSession();
         }
@@ -5239,7 +5306,6 @@ public:
             auto& coord = tc.get();
             auto& s = tc.state();
             auto t1 = s.createTrack("T1");
-            // mode left at Arrangement default
 
             coord.replaceLoopGesture();
 
@@ -5247,7 +5313,7 @@ public:
             expect(! coord.sequencer()->isPlaying());
         }
 
-        beginTest("overdub on empty starts CapturingOverdub immediately");
+        beginTest("bootstrap: overdub starts CapturingOverdub immediately");
         {
             TestCoordinator tc;
             auto& coord = tc.get();
@@ -5272,7 +5338,7 @@ public:
             s.setMode(AppMode::Looper);
             coord.resetLooperSession();
             s.setFocusedTrackId(t1);
-            coord.replaceLoopGesture();   // bootstrap punch-in
+            coord.replaceLoopGesture();   // bootstrap
 
             expect(coord.sequencer()->isPlaying());
             expect(coord.getInFlightLoopCapture().has_value());
@@ -5400,7 +5466,8 @@ public:
             s.setCycleLength(16.0);       // simulate "master cycle set"
             s.setFocusedTrackId(t1);
 
-            s.replaceLoop();              // creates region, CapturingReplace
+            s.replaceLoop();              // → ReplaceQueued
+            s.beginLoopCapture(t1);       // → CapturingReplace (simulates wrap)
 
             std::vector<MidiEventState> events;
             MidiEventState e;
@@ -5427,6 +5494,7 @@ public:
             s.setFocusedTrackId(t1);
 
             s.replaceLoop();
+            s.beginLoopCapture(t1);
             // Pretend a previous step already pinned the length (e.g. the
             // first-loop commit at coord level).
             s.findTrack(t1)->loops[0].lengthBeats = 7.5;

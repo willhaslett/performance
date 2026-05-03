@@ -128,6 +128,9 @@ private:
                     const std::vector<MidiEventState>& events,
                     double lengthBeats,
                     juce::Colour color);
+    // Audio waveform (centered amplitude bars from the take's peak cache).
+    void paintAudioWaveform(juce::Graphics& g, juce::Rectangle<int> bounds,
+                            const TakeState& take, double lengthBeats);
     void paintPlayhead(juce::Graphics& g);
     void paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds);
 

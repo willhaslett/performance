@@ -456,6 +456,10 @@ void Arrangement::scanLoopEvents(double prevBeat, double currentBeat,
         auto& r = t.loops[0];  // one loop per track in looper mode
         if (r.type != "midi" || r.muted) continue;
         if (r.lengthBeats <= 0.0) continue;
+        // Replace-in-progress silences the existing content immediately —
+        // the user is recording over it, the old take is about to be
+        // discarded on commit. Overdub keeps it (overdubbing layers on).
+        if (r.loopAction == LoopAction::CapturingReplace) continue;
 
         auto* take = r.activeTake();
         if (!take) continue;

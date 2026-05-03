@@ -471,11 +471,21 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
                         && t.sourceType == TrackSourceType::Instrument;
 
     // "no loop" hint is gated on actual recorded content (committed
-    // OR in-flight), not on the presence of a loop region — once
-    // there's something to show, show it.
+    // OR in-flight), not on the presence of a loop region. Audio loops
+    // carry their content in a file (filePath / peaks), not in events,
+    // so check for either. Replace-in-progress visually clears the
+    // existing content — it's about to be discarded on commit, and
+    // showing it during recording reads as "this is still here" when
+    // it isn't.
     auto* take = t.loops.empty() ? nullptr : t.loops[0].activeTake();
-    bool hasCommitted = take && !take->events.empty();
-    if (!hasCommitted && !hasInFlight) {
+    bool isAudioLoop  = ! t.loops.empty() && t.loops[0].type == "audio";
+    bool replacing    = ! t.loops.empty()
+                        && t.loops[0].loopAction == LoopAction::CapturingReplace;
+    bool hasCommitted = ! replacing
+                        && take
+                        && (! take->events.empty()
+                            || (isAudioLoop && ! take->filePath.empty()));
+    if (! hasCommitted && ! hasInFlight) {
         paintEmptyRow(g, row.timelineBounds);
         return;
     }
@@ -513,7 +523,10 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
         g.setColour(col.withAlpha(0.25f));
         g.fillRoundedRectangle(repBounds.toFloat(), 3.0f);
 
-        paintLoopNotes(g, repBounds, loop);
+        if (loop.type == "audio" && take)
+            paintAudioWaveform(g, repBounds, *take, loopLen);
+        else
+            paintLoopNotes(g, repBounds, loop);
 
         // Live overlay: in-flight capture events painted on the first
         // rep only (they're cycle-relative — see beginCapture(0.0)).
@@ -595,10 +608,62 @@ void LooperPane::paintNotes(juce::Graphics& g, juce::Rectangle<int> bounds,
 }
 
 void LooperPane::paintEmptyRow(juce::Graphics& g, juce::Rectangle<int> bounds) {
-    g.setColour(Theme::color(Theme::Color::textDim));
-    g.setFont(Theme::font(Theme::fontSizeSm));
-    g.drawText(juce::String::fromUTF8("no loop \xe2\x80\x94 focus this track, click \xe2\x80\x9creplace\xe2\x80\x9d above to capture"),
-               bounds, juce::Justification::centred);
+    // The verbose bootstrap hint is only useful when the looper has no
+    // cycle yet. Once anything has been recorded — i.e. master cycle is
+    // set — empty tracks should look like quiet, available slots in the
+    // session, not like onboarding pages.
+    if (state.getCycleLength() <= 0.0) {
+        g.setColour(Theme::color(Theme::Color::textDim));
+        g.setFont(Theme::font(Theme::fontSizeSm));
+        g.drawText(juce::String::fromUTF8(
+                       "no loop \xe2\x80\x94 focus this track, click "
+                       "\xe2\x80\x9creplace\xe2\x80\x9d above to capture"),
+                   bounds, juce::Justification::centred);
+    }
+    // else: leave the lane empty. Row bg + type stripe still anchor it.
+}
+
+void LooperPane::paintAudioWaveform(juce::Graphics& g,
+                                      juce::Rectangle<int> bounds,
+                                      const TakeState& take,
+                                      double lengthBeats) {
+    if (take.peakData.peaks.empty() || lengthBeats <= 0.0
+        || bounds.getWidth() <= 0)
+        return;
+
+    auto inner = bounds.toFloat().reduced(1.0f, 3.0f);
+    float centreY = inner.getCentreY();
+    float halfH   = inner.getHeight() * 0.5f;
+
+    auto base    = Theme::color(Theme::Color::typeAudio);
+    auto intense = base.brighter(0.25f).withAlpha(0.95f);
+    auto dim     = base.darker(0.15f).withAlpha(0.8f);
+    juce::ColourGradient grad(intense,
+                               inner.getX(), inner.getY(),
+                               intense,
+                               inner.getX(), inner.getBottom(), false);
+    grad.addColour(0.5, dim);
+    g.setGradientFill(grad);
+
+    int numPeaks = (int) take.peakData.peaks.size();
+    double beatsPerPeak = (take.peakData.samplesPerPeak / (double) take.sampleRate)
+                          * (take.recordTempo / 60.0);
+    double pxPerBeat = (double) bounds.getWidth() / lengthBeats;
+
+    for (int pi = 0; pi < numPeaks; ++pi) {
+        float px = (float) bounds.getX() + (float)(pi * beatsPerPeak * pxPerBeat);
+        float pw = std::max(1.0f, (float)(beatsPerPeak * pxPerBeat));
+        if (px + pw < bounds.getX() || px > bounds.getRight()) continue;
+
+        auto [mn, mx] = take.peakData.peaks[pi];
+        // sqrt mapping boosts quiet signals visually (matches Producer).
+        float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
+        float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
+        float y1 = centreY - scaledMx * halfH;
+        float y2 = centreY - scaledMn * halfH;
+        float h  = std::max(1.0f, y2 - y1);
+        g.fillRect(px, y1, pw, h);
+    }
 }
 
 void LooperPane::paintPlayhead(juce::Graphics& g) {
@@ -639,16 +704,22 @@ void LooperPane::paintPlayhead(juce::Graphics& g) {
     for (auto& row : rowGeoms) {
         auto act = state.getLoopAction(row.trackId);
         juce::Colour fill = neutral;
-        // Tap-to-start, tap-to-stop: there's no queued state any more —
-        // the only non-None states are Capturing*. Pulse during capture
-        // (was the queued look) so the eye still has a "this is live and
-        // happening" cue without screaming SOLID at the user.
+        // Queued: subtle pulse — "armed, waiting for the wrap." Existing
+        // content still plays + shows. Capturing: stronger pulse — "the
+        // cycle owns this; existing content is silenced + hidden, new
+        // content is being recorded right now."
         switch (act) {
+            case LoopAction::ReplaceQueued:
+                fill = replaceColor.withAlpha(0.06f + 0.12f * pulse);
+                break;
             case LoopAction::CapturingReplace:
-                fill = replaceColor.withAlpha(0.10f + 0.18f * pulse);
+                fill = replaceColor.withAlpha(0.18f + 0.22f * pulse);
+                break;
+            case LoopAction::OverdubQueued:
+                fill = overdubColor.withAlpha(0.06f + 0.12f * pulse);
                 break;
             case LoopAction::CapturingOverdub:
-                fill = overdubColor.withAlpha(0.10f + 0.18f * pulse);
+                fill = overdubColor.withAlpha(0.18f + 0.22f * pulse);
                 break;
             default:
                 break;

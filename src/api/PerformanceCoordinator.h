@@ -273,17 +273,30 @@ private:
     std::optional<LoopCaptureSlot> activeLoopCapture;
     // For audio-track looper captures, this also holds the writer +
     // FIFO so finishLoopCapture can finalize the WAV and record peaks.
-    // Empty when the focused track at start time was an instrument.
+    // Empty when the captured track at start time was an instrument.
     std::optional<AudioRecordSession> activeLoopAudioSession;
     // Beat position at which the active capture started. Used at commit
-    // time to compute elapsed beats — the very first commit also adopts
-    // this elapsed value as the master cycle length.
+    // time to compute elapsed beats — the bootstrap-first commit also
+    // adopts this elapsed value as the master cycle length.
     double captureStartBeat = 0.0;
+
     // Tap-to-toggle helper shared by replaceLoopGesture / overdubLoopGesture.
     void fireLoopCaptureToggle(LoopAction startKind, const char* label);
-    // Stop edge of the toggle: commits the in-flight capture, computes
-    // elapsed beats, and (on the very first commit) sets master cycle.
+    // Stop edge of the toggle (bootstrap path only — established path
+    // commits at wrap, see dispatchLoopGestures).
     void finishLoopCapture();
+    // Bring up MIDI / audio capture for a track that has just become
+    // Capturing. Used by the bootstrap path (immediate at tap) and the
+    // established path (at the wrap that promotes Queued → Capturing).
+    void openLoopCaptureForTrack(const TrackId& trackId, double captureBeat);
+    // Tear down + commit the in-flight capture (events into take, audio
+    // file finalized, peaks computed, audio reloaded). Used by the
+    // wrap-driven established-path commit AND by the transport-stop
+    // subscription so stopping mid-record persists what was captured.
+    void commitInFlightCapture();
+    // Wrap-time dispatch: commit any in-flight Capturing on the focused
+    // track, then promote any Queued → Capturing.
+    void dispatchLoopGesturesAtWrap();
 
     // Per-mode playhead memory. The transport (InternalSequencer) is a
     // single shared clock; without this, playing in Looper for 5 minutes

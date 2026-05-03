@@ -368,16 +368,24 @@ void PerformanceCoordinator::initialise(const juce::String& dbPath) {
             // looper gesture — the cycle-wrap handler can't fire once
             // the sequencer isn't advancing, so we'd otherwise leave
             // the state machine stuck mid-capture.
+            // Commit (don't cancel) any in-flight Capturing — a stop
+            // mid-record should persist what's been captured so the
+            // user's work survives. Established Queued state can just
+            // be cleared since no recording happened yet.
             if (activeLoopCapture.has_value()) {
-                stateAPI->cancelLoopCapture(activeLoopCapture->trackId);
-                stateAPI->endTransaction();
-                activeLoopCapture.reset();
-                endCapture();
-            }
-            if (activeLoopAudioSession.has_value() && audioEngine) {
-                audioEngine->clearAudioRecordTargets();
-                activeLoopAudioSession->writer->stopWriting();
-                activeLoopAudioSession.reset();
+                commitInFlightCapture();
+                if (stateAPI) stateAPI->endTransaction();
+            } else if (stateAPI) {
+                // Drop any Queued-but-never-recorded action on the
+                // focused track so the next play doesn't surprise the
+                // user with a deferred punch-in.
+                auto fid = stateAPI->getFocusedTrackId();
+                if (! fid.empty()) {
+                    auto a = stateAPI->getLoopAction(fid);
+                    if (a == LoopAction::ReplaceQueued
+                     || a == LoopAction::OverdubQueued)
+                        stateAPI->cancelLoopCapture(fid);
+                }
             }
         }
     });
@@ -444,8 +452,7 @@ void PerformanceCoordinator::timerCallback() {
                     if (swapped > 0) {
                         perfLog("[Looper] cycle wrap — committed %d take swap(s)\n", swapped);
                     }
-                    // No gesture dispatch on wrap any more — captures
-                    // start/stop on tap, not at cycle boundaries.
+                    dispatchLoopGesturesAtWrap();
                 }
             }
             // Drain recorded MIDI events from audio thread
@@ -1155,20 +1162,29 @@ void PerformanceCoordinator::handleModeChange() {
     lastSeenMode = newMode;
 }
 
-// Boss-RC tap-to-toggle. Tap with no in-flight capture → start. Tap
-// during a Capturing* state → commit (regardless of which gesture
-// started it — any record-control acts as the "stop"). The very first
-// commit on an empty looper sets the master cycle length from the
-// elapsed beats; subsequent commits leave cycle alone.
+// Two paths:
+//   * Bootstrap (no master cycle yet): tap-to-start, tap-to-stop. The
+//     transport snaps to 0 if it isn't playing; capture opens
+//     immediately; second tap commits and the elapsed beats become the
+//     master cycle.
+//   * Established (cycle is set): tap → ReplaceQueued / OverdubQueued
+//     on the focused track. Existing content keeps playing + visible.
+//     At the next cycle wrap, dispatchLoopGesturesAtWrap promotes
+//     Queued → Capturing for one cycle (existing silenced + hidden,
+//     new captured), then commits at the next wrap.
+//
+// Re-pressing the same gesture during Queued cancels back to None;
+// pressing the other switches the kind. Either gesture during
+// Capturing is ignored — the cycle owns the boundary.
 void PerformanceCoordinator::replaceLoopGesture() {
-    fireLoopCaptureToggle(LoopAction::CapturingReplace, "replace");
+    fireLoopCaptureToggle(LoopAction::ReplaceQueued, "replace");
 }
 
 void PerformanceCoordinator::overdubLoopGesture() {
-    fireLoopCaptureToggle(LoopAction::CapturingOverdub, "overdub");
+    fireLoopCaptureToggle(LoopAction::OverdubQueued, "overdub");
 }
 
-void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
+void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction queueKind,
                                                     const char* label) {
     if (!stateAPI || !sequencerImpl) return;
     if (stateAPI->getMode() != AppMode::Looper) {
@@ -1182,40 +1198,62 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
     }
 
     auto act = stateAPI->getLoopAction(focusedId);
-    if (act == LoopAction::CapturingReplace
-     || act == LoopAction::CapturingOverdub) {
-        // Stop edge — commits in-flight capture.
-        finishLoopCapture();
+
+    // ----- Established path (bootstrap is below) ---------------------
+    auto* song = stateAPI->currentSong();
+    bool hasCycle = song && song->cycleEnd > song->cycleStart
+                    && sequencerImpl->isPlaying();
+    if (hasCycle) {
+        // Capturing? Cycle owns the boundary — ignore the tap.
+        if (act == LoopAction::CapturingReplace
+         || act == LoopAction::CapturingOverdub) {
+            perfLog("[Looper] %s ignored — recording (cycle commits at next wrap)\n", label);
+            return;
+        }
+        // None / Queued — let StateAPI's queue logic toggle/cancel/switch.
+        if (queueKind == LoopAction::ReplaceQueued) stateAPI->replaceLoop();
+        else                                         stateAPI->overdubLoop();
+        auto newAct = stateAPI->getLoopAction(focusedId);
+        perfLog("[Looper] %s queued on %s (state now %d)\n",
+                label, focusedId.c_str(), (int) newAct);
         return;
     }
 
-    // Start edge. Open an undo transaction that spans both edges so a
-    // single Cmd-Z undoes the entire recording (region creation + events
-    // + lengthBeats + master cycle if first loop) as one step. Without
-    // this each StateAPI mutation would be its own snapshot and the
-    // user would need 3+ undos to back out a single take.
-    stateAPI->beginTransaction();
+    // ----- Bootstrap path -------------------------------------------
+    if (act == LoopAction::CapturingReplace
+     || act == LoopAction::CapturingOverdub) {
+        // Stop edge: commit, set master cycle from elapsed beats.
+        commitInFlightCapture();
+        if (stateAPI) stateAPI->endTransaction();
+        return;
+    }
 
-    // If transport isn't playing, kick it off — and for the very first
-    // loop (no master cycle yet) snap the playhead to 0 so elapsed
-    // beats == loop length cleanly. With an existing master we leave
-    // the playhead alone so other tracks stay aligned.
-    auto* song = stateAPI->currentSong();
-    bool firstLoop = ! song || song->cycleEnd <= song->cycleStart;
+    // Start edge. One transaction wraps tap → tap so a single undo
+    // backs out the whole recording.
+    stateAPI->beginTransaction();
     if (! sequencerImpl->isPlaying()) {
-        if (firstLoop) sequencerImpl->setBeatPosition(0.0);
+        sequencerImpl->setBeatPosition(0.0);
         sequencerImpl->play();
     }
     captureStartBeat = sequencerImpl->getBeatPosition();
+    auto kind = (queueKind == LoopAction::ReplaceQueued)
+                 ? LoopAction::CapturingReplace
+                 : LoopAction::CapturingOverdub;
+    stateAPI->startLoopCaptureNow(kind);
+    openLoopCaptureForTrack(focusedId, captureStartBeat);
+    perfLog("[Looper] %s bootstrap start on %s at beat %.2f\n",
+            label, focusedId.c_str(), captureStartBeat);
+}
 
-    if (startKind == LoopAction::CapturingReplace) stateAPI->replaceLoop();
-    else                                            stateAPI->overdubLoop();
+// Bring up MIDI capture (activeLoopCapture + beginCapture refcount)
+// and an audio session for AudioInput tracks. Used by both the
+// bootstrap-immediate path and the wrap-driven established path.
+void PerformanceCoordinator::openLoopCaptureForTrack(const TrackId& trackId,
+                                                      double captureBeat) {
+    captureStartBeat = captureBeat;
+    activeLoopCapture = LoopCaptureSlot{ trackId, {} };
 
-    activeLoopCapture = LoopCaptureSlot{ focusedId, {} };
-
-    // Audio-track captures: open a WAV writer + FIFO and arm the engine.
-    // Mirrors the arrangement-side audio recording wiring (startRecording).
-    auto* focusedTrack = stateAPI->findTrack(focusedId);
+    auto* focusedTrack = stateAPI ? stateAPI->findTrack(trackId) : nullptr;
     if (focusedTrack
         && focusedTrack->sourceType == TrackSourceType::AudioInput
         && audioEngine
@@ -1224,7 +1262,7 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
         region.type = "audio";
         if (auto* take = region.activeTake()) {
             double sr = audioEngine->getCurrentSampleRate();
-            take->recordTempo  = sequencerImpl->getTempo();
+            take->recordTempo  = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
             take->sampleRate   = (int) sr;
             take->channelCount = std::max(1, focusedTrack->inputChannelCount);
 
@@ -1235,7 +1273,7 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
             take->filePath = wavFile.getFullPathName().toStdString();
 
             AudioRecordSession session;
-            session.trackId  = focusedId;
+            session.trackId  = trackId;
             session.regionId = region.id;
             session.fifo     = std::make_unique<AudioRecordFIFO>();
             session.writer   = std::make_unique<AudioWriterThread>();
@@ -1249,39 +1287,40 @@ void PerformanceCoordinator::fireLoopCaptureToggle(LoopAction startKind,
 
             activeLoopAudioSession = std::move(session);
             perfLog("[Looper] audio capture armed on %s → %s\n",
-                    focusedId.c_str(), take->filePath.c_str());
+                    trackId.c_str(), take->filePath.c_str());
         }
     }
 
-    beginCapture(captureStartBeat);
-    perfLog("[Looper] %s start on %s at beat %.2f%s\n",
-            label, focusedId.c_str(), captureStartBeat,
-            firstLoop ? " (first loop — sets master)" : "");
+    beginCapture(captureBeat);
 }
 
-void PerformanceCoordinator::finishLoopCapture() {
+// Drain & commit an in-flight capture. Used by:
+//   * dispatchLoopGesturesAtWrap (established path commits at next wrap)
+//   * fireLoopCaptureToggle bootstrap stop edge
+//   * transport-stop subscription (so a stop mid-record persists, not
+//     drops, what was captured so far — Boss-RC behavior)
+void PerformanceCoordinator::commitInFlightCapture() {
     if (! activeLoopCapture.has_value()) return;
-    auto tid = activeLoopCapture->trackId;
+    auto tid    = activeLoopCapture->trackId;
     auto events = std::move(activeLoopCapture->events);
     activeLoopCapture.reset();
 
     double endBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : captureStartBeat;
     double elapsed = endBeat - captureStartBeat;
-    auto* song = stateAPI ? stateAPI->currentSong() : nullptr;
-    bool firstLoop = ! song || song->cycleEnd <= song->cycleStart;
-    // Single wrap during the capture: add the cycle back. Multi-wrap
-    // recordings are out of scope for V1 (the user is expected to tap
-    // before the second wrap when subsequent captures need to align).
+    auto*  song    = stateAPI ? stateAPI->currentSong() : nullptr;
+    bool   firstLoop = ! song || song->cycleEnd <= song->cycleStart;
+    // Single wrap-around during the capture: add the cycle back so the
+    // computed elapsed isn't negative.
     if (! firstLoop && elapsed < 0.0)
         elapsed += (song->cycleEnd - song->cycleStart);
 
     if (stateAPI) stateAPI->commitLoopAction(tid, std::move(events));
     endCapture();
 
-    // Finalize an audio session if one was open. Mirrors the audio
-    // teardown in stopRecording() — close the writer, stamp peaks +
+    // Finalize an audio session if one was open. Same shape as
+    // stopRecording's audio teardown — close the writer, stamp peaks +
     // length on the take, then reload audio files into the engine so
-    // playback (driven by GraphWrapper) can pick the new file up.
+    // playback (driven by GraphWrapper) picks the new file up.
     if (activeLoopAudioSession.has_value() && audioEngine) {
         audioEngine->clearAudioRecordTargets();
         activeLoopAudioSession->writer->stopWriting();
@@ -1293,17 +1332,12 @@ void PerformanceCoordinator::finishLoopCapture() {
                         int64_t frames = activeLoopAudioSession->writer->getTotalFramesWritten();
                         double seconds = (take->sampleRate > 0)
                                        ? (double) frames / take->sampleRate : 0.0;
-                        // Audio loop length comes from the actual file, not
-                        // the elapsed-beat number. Both should agree to
-                        // within a buffer; the file is more precise.
                         region.lengthBeats = seconds * (take->recordTempo / 60.0);
                         auto writerPeaks = activeLoopAudioSession->writer->getPeaks();
                         take->peakData.samplesPerPeak = 256;
                         take->peakData.peaks.clear();
                         for (auto& p : writerPeaks)
                             take->peakData.peaks.push_back({ p.min, p.max });
-                        // Audio first-loop also sets master cycle from the
-                        // file length so playback wraps cleanly.
                         if (firstLoop) elapsed = region.lengthBeats;
                         perfLog("[Looper] audio commit on %s — %lld frames, %.3f beats\n",
                                 activeLoopAudioSession->trackId.c_str(),
@@ -1320,16 +1354,50 @@ void PerformanceCoordinator::finishLoopCapture() {
         stateAPI->setCycleLength(elapsed);
         if (auto* t = stateAPI->findTrack(tid))
             if (! t->loops.empty()
-                && t->loops[0].type != "audio"   // audio path already set length above
+                && t->loops[0].type != "audio"
                 && t->loops[0].lengthBeats <= 0.0)
                 t->loops[0].lengthBeats = elapsed;
     }
 
-    if (stateAPI) stateAPI->endTransaction();
-
     perfLog("[Looper] commit on %s — elapsed=%.3f beats, events=%zu%s\n",
             tid.c_str(), elapsed, events.size(),
             firstLoop ? " (set master cycle)" : "");
+}
+
+// Bootstrap stop edge. Established path commits at wrap, not here.
+void PerformanceCoordinator::finishLoopCapture() {
+    commitInFlightCapture();
+}
+
+// Wrap-driven dispatch for the established path. Two steps in order:
+//   1. Commit any in-flight Capturing — its cycle just ended.
+//   2. Promote any focused-track Queued → Capturing for the next cycle.
+// Both happen synchronously on the message thread (called from the
+// timerCallback wrap detector). One capture in flight at a time —
+// the "focused track" anchor collapses the multi-track question.
+void PerformanceCoordinator::dispatchLoopGesturesAtWrap() {
+    if (!stateAPI) return;
+
+    if (activeLoopCapture.has_value()) {
+        commitInFlightCapture();
+        if (stateAPI) stateAPI->endTransaction();
+    }
+
+    auto focusedId = stateAPI->getFocusedTrackId();
+    if (focusedId.empty()) return;
+    auto act = stateAPI->getLoopAction(focusedId);
+    if (act != LoopAction::ReplaceQueued && act != LoopAction::OverdubQueued)
+        return;
+
+    stateAPI->beginTransaction();
+    stateAPI->beginLoopCapture(focusedId);
+    // Wrap-driven captures start at cycle 0 (the wrap's audioBeat is
+    // tiny — a few samples past zero). Storing events relative to 0
+    // matches the existing scanLoopEvents' cycle-relative reads.
+    openLoopCaptureForTrack(focusedId, 0.0);
+    perfLog("[Looper] wrap → capture begins on %s (kind=%s)\n",
+            focusedId.c_str(),
+            act == LoopAction::ReplaceQueued ? "replace" : "overdub");
 }
 
 void PerformanceCoordinator::resetLooperSession() {

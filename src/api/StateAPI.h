@@ -59,14 +59,33 @@ public:
 
     // --- Looper actions (Boss-RC style — see docs/LIVE_INPUT_AND_FOCUS.md) ---
     // Performer-facing gestures. All target the currently-focused track;
-    // if no track is focused they're no-ops. Tap-to-start, tap-to-stop:
-    // the gesture transitions None → Capturing immediately (no queue,
-    // no wait for wrap). The "stop" half is done at coordinator level
-    // (replaceLoopGesture / overdubLoopGesture) by calling
-    // commitLoopAction. From any non-None state these methods no-op —
-    // the gesture toggle is the coordinator's job.
+    // if no track is focused they're no-ops. The coordinator picks
+    // which to call depending on whether a master cycle exists:
+    //
+    //   * Bootstrap (no cycle): coord calls startLoopCaptureNow so the
+    //     state goes None → Capturing immediately. Tap-to-start /
+    //     tap-to-stop, free length.
+    //
+    //   * Established (cycle is set): coord calls replaceLoop /
+    //     overdubLoop, which queue. At the next wrap the coord
+    //     promotes Queued → Capturing for one cycle, then commits at
+    //     the next wrap.
+    //
+    // Re-pressing the same gesture during Queued cancels back to None.
+    // Pressing the other gesture switches the queued kind. Either
+    // gesture during Capturing is ignored — the cycle owns the boundary.
     void replaceLoop();
     void overdubLoop();
+
+    // State-only flip Queued → Capturing. Coord invokes this at the
+    // cycle wrap as part of the established-path dispatch. No-op for
+    // any state other than ReplaceQueued / OverdubQueued.
+    void beginLoopCapture(const TrackId& trackId);
+
+    // Bootstrap-path entry: create the loop region (if needed) and set
+    // the focused track straight to Capturing. Coord uses this when
+    // there's no cycle to align to.
+    void startLoopCaptureNow(LoopAction kind);
 
     // Snapshot-and-mutate. Called after draining captured events from
     // the FIFO at the end of the capture cycle.

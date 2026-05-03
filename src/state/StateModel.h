@@ -182,17 +182,28 @@ struct TakeState {
 };
 
 // Looper-only: queued or in-flight action on a track's loop region.
-// Boss-RC-style: the performer taps Replace/Overdub to start recording
-// immediately (no wait for cycle wrap); a second tap commits. The first
-// commit on an empty looper sets the master loop length from the elapsed
-// time. There is no queue — action is either None or one of the two
-// Capturing states.
+// Boss-RC-style: bootstrap (no cycle yet) is tap-to-start / tap-to-stop,
+// directly transitioning None ↔ Capturing*. Once a master cycle exists,
+// taps queue to the next wrap — None → Queued → (at wrap) Capturing →
+// (at next wrap) commit → None. The queued window keeps existing content
+// playing and lets the user warm up; the capture window has the existing
+// content silenced and the new input recorded.
 //   None             - track is just playing (or silent)
+//   ReplaceQueued    - tapped during established cycle; at next wrap
+//                      becomes CapturingReplace
+//   OverdubQueued    - tapped during established cycle; at next wrap
+//                      becomes CapturingOverdub
 //   CapturingReplace - recording right now; on commit, captured events
 //                      replace existing content
 //   CapturingOverdub - recording right now; on commit, captured events
 //                      are merged into existing content
-enum class LoopAction { None, CapturingReplace, CapturingOverdub };
+enum class LoopAction {
+    None,
+    ReplaceQueued,
+    OverdubQueued,
+    CapturingReplace,
+    CapturingOverdub,
+};
 
 // A region is a time-positioned container of takes on a track.
 struct RegionState {
