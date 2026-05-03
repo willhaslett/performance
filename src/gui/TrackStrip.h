@@ -78,9 +78,8 @@ private:
     bool inputSlotHovered = false;
     void showInputPicker(juce::Point<int> screenPos);
     void paintInputSlot(juce::Graphics& g);
-    // Remove a track with a confirmation dialog when it has dependent action
-    // events / bindings. Cascades their removal on confirm.
-    void confirmAndRemoveTrack(const TrackId& id);
+    // Track removal moved to TrackUi::confirmAndRemoveTrack — shared
+    // with the Producer's track-header right-click menu.
 
     PluginSlot instrumentSlot;
     std::vector<std::unique_ptr<PluginSlot>> effectSlots;

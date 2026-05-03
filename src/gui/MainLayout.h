@@ -52,6 +52,7 @@ public:
 
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
+    ProducePane& getProducer() { return producePane; }
 
     // Pane assignment — the core abstraction
     void setPaneContent(PaneSlot slot, PaneContent content);

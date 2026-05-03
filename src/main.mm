@@ -739,16 +739,24 @@ public:
 
         // Sidebar pane selection is wired in MainLayout constructor
 
-        // Wire track preset callbacks — MixerView applies these to each new TrackStrip
-        layout->getMixer().onSaveTrackPreset = [this](const juce::String& trackId, const juce::String& name) {
+        // Wire track preset callbacks — same coordinator-side functions
+        // for the Mixer (per-strip context menu) and the Producer
+        // (track-header right-click context menu). Identical menu via
+        // gui/TrackUi.h showTrackContextMenu.
+        auto saveCb = [this](const juce::String& trackId, const juce::String& name) {
             coordinator->saveTrackPreset(trackId, name);
         };
-        layout->getMixer().onLoadTrackPreset = [this](const juce::String& trackId, const juce::String& name) {
+        auto loadCb = [this](const juce::String& trackId, const juce::String& name) {
             coordinator->loadTrackPreset(trackId, name);
         };
-        layout->getMixer().onListTrackPresets = [this]() {
-            return coordinator->listTrackPresets();
-        };
+        auto listCb = [this]() { return coordinator->listTrackPresets(); };
+
+        layout->getMixer().onSaveTrackPreset    = saveCb;
+        layout->getMixer().onLoadTrackPreset    = loadCb;
+        layout->getMixer().onListTrackPresets   = listCb;
+        layout->getProducer().onSaveTrackPreset  = saveCb;
+        layout->getProducer().onLoadTrackPreset  = loadCb;
+        layout->getProducer().onListTrackPresets = listCb;
 
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();

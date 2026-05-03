@@ -23,36 +23,9 @@ TrackStrip::TrackStrip(const juce::String& id, const juce::String& name,
     instrumentSlot.onChanged = [this]() { rebuildEffectSlots(); };
 }
 
-void TrackStrip::confirmAndRemoveTrack(const TrackId& id) {
-    auto deps = ActionRefs::countDependents(state, id.str());
-    if (deps.actionEvents == 0 && deps.bindings == 0) {
-        state.removeTrack(id);
-        return;
-    }
-
-    auto* trk = state.findTrack(id);
-    juce::String name = trk ? juce::String(trk->name) : juce::String("track");
-
-    juce::String parts;
-    if (deps.actionEvents > 0)
-        parts << deps.actionEvents << " action event" << (deps.actionEvents == 1 ? "" : "s");
-    if (deps.bindings > 0) {
-        if (parts.isNotEmpty()) parts << " and ";
-        parts << deps.bindings << " MIDI binding" << (deps.bindings == 1 ? "" : "s");
-    }
-
-    juce::AlertWindow::showOkCancelBox(
-        juce::MessageBoxIconType::WarningIcon,
-        "Delete track",
-        "Deleting \"" + name + "\" will also remove " + parts + " that reference it.",
-        "Delete", "Cancel", nullptr,
-        juce::ModalCallbackFunction::create([this, id](int ok) {
-            if (ok == 1) {
-                ActionRefs::removeDependents(state, id.str());
-                state.removeTrack(id);
-            }
-        }));
-}
+// confirmAndRemoveTrack moved to gui/TrackUi.h so the Producer's
+// track-header right-click and the Mixer's strip context menu share
+// one definition. Local member is gone — call TrackUi:: directly.
 
 void TrackStrip::setInstrumentName(const juce::String& name) {
     bool wasEmpty = !instrumentSlot.hasPlugin();
@@ -536,45 +509,12 @@ void TrackStrip::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TrackStrip::showTrackMenu(juce::Point<int> screenPos) {
-    juce::PopupMenu menu;
-    menu.addItem(1, "Save Track Preset...");
-
-    // Load submenu — only if presets exist
-    std::vector<juce::String> presets;
-    if (onListTrackPresets)
-        presets = onListTrackPresets();
-
-    if (!presets.empty()) {
-        juce::PopupMenu loadMenu;
-        for (int i = 0; i < (int)presets.size(); ++i)
-            loadMenu.addItem(100 + i, presets[i]);
-        menu.addSubMenu("Load Track Preset", loadMenu);
-    }
-
-    menu.addSeparator();
-    menu.addItem(10, "Delete Track");
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-        juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-        [this, presets](int result) {
-            if (result == 1) {
-                juce::StringArray existing;
-                for (auto& n : presets)
-                    existing.add(n);
-                SaveAsDialog::show("Save Track Preset", trackName, existing,
-                    [this](const juce::String& name) {
-                        if (onSaveTrackPreset)
-                            onSaveTrackPreset(trackId, name);
-                    });
-            }
-            else if (result >= 100 && result - 100 < (int)presets.size()) {
-                if (onLoadTrackPreset)
-                    onLoadTrackPreset(trackId, presets[result - 100]);
-            }
-            else if (result == 10) {
-                confirmAndRemoveTrack(TrackId{trackId.toStdString()});
-            }
-        });
+    TrackUi::TrackMenuCallbacks cb;
+    cb.onSavePreset  = onSaveTrackPreset;
+    cb.onLoadPreset  = onLoadTrackPreset;
+    cb.onListPresets = onListTrackPresets;
+    TrackUi::showTrackContextMenu(state, TrackId{trackId.toStdString()},
+                                    trackName, screenPos, cb);
 }
 
 void TrackStrip::mouseDoubleClick(const juce::MouseEvent& event) {

@@ -23,6 +23,12 @@ public:
     std::function<bool()> onIsRecordMode;
     std::function<void()> onRegionsChanged;  // reload audio files after move/duplicate/delete
 
+    // Track preset callbacks — set by main.mm to share with the Mixer's
+    // identical right-click menu. See gui/TrackUi.h showTrackContextMenu.
+    std::function<void(const juce::String& trackId, const juce::String& presetName)> onSaveTrackPreset;
+    std::function<void(const juce::String& trackId, const juce::String& presetName)> onLoadTrackPreset;
+    std::function<std::vector<juce::String>()> onListTrackPresets;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseUp(const juce::MouseEvent& event) override;

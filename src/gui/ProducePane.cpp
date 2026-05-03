@@ -1495,13 +1495,31 @@ int ProducePane::getTrackIndexAtY(int y) const {
 void ProducePane::mouseDown(const juce::MouseEvent& event) {
     grabKeyboardFocus();
 
-    // Start drag on track header area
+    // Track header area
     if (event.getPosition().getX() < trackHeaderWidth) {
         int idx = getTrackIndexAtY(event.getPosition().getY());
-        if (idx >= 0) {
-            dragTrackIndex = idx;
-            dragTargetIndex = idx;
-            dragStartY = event.getPosition().getY();
+        if (idx >= 0 && state) {
+            auto tracks = state->listTracks();
+            if (idx < (int) tracks.size()) {
+                // Right-click → same context menu as the Mixer
+                // (Save / Load Track Preset, Delete Track). Shared
+                // helper in gui/TrackUi.h so the two surfaces stay
+                // identical as items evolve.
+                if (event.mods.isPopupMenu()) {
+                    TrackUi::TrackMenuCallbacks cb;
+                    cb.onSavePreset   = onSaveTrackPreset;
+                    cb.onLoadPreset   = onLoadTrackPreset;
+                    cb.onListPresets  = onListTrackPresets;
+                    TrackUi::showTrackContextMenu(*state, tracks[idx].id,
+                        juce::String(tracks[idx].name),
+                        event.getScreenPosition(), cb);
+                    return;
+                }
+                // Plain click → start a header-reorder drag.
+                dragTrackIndex = idx;
+                dragTargetIndex = idx;
+                dragStartY = event.getPosition().getY();
+            }
         }
         return;
     }
