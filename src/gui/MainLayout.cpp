@@ -124,7 +124,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         buildInfoField.setCaretVisible(false);
         buildInfoField.setScrollbarsShown(false);
         buildInfoField.setFont(Theme::font(Theme::fontSizeSm));
-        buildInfoField.setJustification(juce::Justification::centredRight);
+        buildInfoField.setJustification(juce::Justification::centred);
         buildInfoField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
         buildInfoField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
         buildInfoField.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
@@ -448,25 +448,12 @@ void MainLayout::loadPaneConfig() {
 
 void MainLayout::paint(juce::Graphics& g) {
     g.fillAll(Theme::color(Theme::Color::bgApp));
-
-    // Toolbar — just build info
-    auto toolbar = getLocalBounds().removeFromTop(toolbarHeight);
-    g.setColour(Theme::color(Theme::Color::bgPanel));
-    g.fillRect(toolbar);
-    g.setColour(Theme::color(Theme::Color::border));
-    g.drawLine(0.0f, (float)toolbarHeight, (float)getWidth(), (float)toolbarHeight, 1.0f);
-
     // (Vertical divider between Left and Right panes is centerDivider,
     // a child Component — paints itself on top of everything.)
 }
 
 void MainLayout::resized() {
     auto area = getLocalBounds();
-    auto toolbarArea = area.removeFromTop(toolbarHeight);
-
-    // Build info — right-aligned in toolbar
-    buildInfoField.setBounds(toolbarArea.getRight() - 160, toolbarArea.getY(), 150, toolbarArea.getHeight());
-    buildInfoField.toFront(false);
 
     bool hasSidebar = (paneAssignments[PaneSlot::Sidebar] != PaneContent::Hidden);
     bool hasBottom = (paneAssignments[PaneSlot::Bottom] != PaneContent::Hidden);
@@ -476,10 +463,27 @@ void MainLayout::resized() {
     // Sidebar
     if (hasSidebar) {
         auto* sideComp = componentForContent(paneAssignments[PaneSlot::Sidebar]);
-        if (sideComp) sideComp->setBounds(area.removeFromLeft(sidebarWidth));
+        juce::Rectangle<int> sideBounds;
+        if (sideComp) {
+            sideBounds = area.removeFromLeft(sidebarWidth);
+            sideComp->setBounds(sideBounds);
+        }
         sidebarDivider.setBounds(area.getX() - Divider::thickness, area.getY(),
                                   Divider::thickness * 2, area.getHeight());
         sidebarDivider.toFront(false);
+
+        // Build info — centered along the sidebar's bottom edge.
+        // Dropped from the old top toolbar (which is gone). Width
+        // matches the sidebar so the readout always fits.
+        constexpr int buildInfoH = 24;
+        constexpr int buildInfoBotPad = 6;
+        buildInfoField.setBounds(sideBounds.getX(),
+                                  sideBounds.getBottom() - buildInfoH - buildInfoBotPad,
+                                  sideBounds.getWidth(), buildInfoH);
+        buildInfoField.setVisible(true);
+        buildInfoField.toFront(false);
+    } else {
+        buildInfoField.setVisible(false);
     }
 
     // Bottom pane
@@ -543,7 +547,7 @@ void MainLayout::toggleMusicalTyping() {
         if (musicalTypingLastPos.x < 0) {
             // First open — center at top
             musicalTypingLastPos.x = (getWidth() - musicalTyping.getWidth()) / 2;
-            musicalTypingLastPos.y = toolbarHeight + 8;
+            musicalTypingLastPos.y = 8;
         }
         musicalTyping.setBounds(musicalTypingLastPos.x, musicalTypingLastPos.y,
                                 musicalTyping.getWidth(), musicalTyping.getHeight());

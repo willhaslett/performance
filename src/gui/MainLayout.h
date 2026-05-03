@@ -116,7 +116,6 @@ private:
     int leftPaneWidthOverride = -1;
     int dragStartLeftPaneWidth = 0;
     int stateSubId = -1;   // Song Updated reverse-sync (see docs/PANE_MODE_MODEL.md)
-    static constexpr int toolbarHeight = 36;
     static constexpr int minPaneSize = 100;
 
     // Loading overlay
