@@ -474,8 +474,20 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     int totalButtonsW = numButtons * btnSize + (numButtons - 1) * btnGap;
 
     const int groupPad = 4;
-    int btnX = Theme::spacingM + groupPad;              // left-align, leave the group container's own padding visible
+    // Aligns the visible group container's left edge with the right
+    // edge of the track-headers column below — matches the Looper's
+    // top-bar layout so the two panes read as a matched pair.
+    int btnX = trackHeaderWidth + groupPad;
     int lcdLeft = (getWidth() - lcdWidth) / 2;          // center on full pane width
+
+    // Pane title — centered both axes in the top-left rectangle above
+    // the track-headers column. Painted before the button group so the
+    // group container (if it ever spills left) visually wins.
+    auto titleArea = juce::Rectangle<int>(0, area.getY(),
+                                            trackHeaderWidth, area.getHeight());
+    g.setColour(Theme::color(Theme::Color::textPrimary));
+    g.setFont(Theme::font(Theme::fontSizeTitle));
+    g.drawText("Producer", titleArea, juce::Justification::centred);
 
     int btnY = area.getCentreY() - btnSize / 2;
 

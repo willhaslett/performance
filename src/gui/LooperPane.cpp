@@ -265,11 +265,13 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
     g.setColour(Theme::color(Theme::Color::bgPanel));
     g.fillRect(bounds);
 
-    // Title on the left.
+    // Pane title — centered both axes in the top-left rectangle above
+    // the track-headers column. Mirrors the Producer's placement so the
+    // two panes read as a matched pair when toggling between them.
+    auto titleArea = juce::Rectangle<int>(0, 0, headerWidth, bounds.getHeight());
     g.setColour(Theme::color(Theme::Color::textPrimary));
-    g.setFont(Theme::font(Theme::fontSizeLg));
-    g.drawText("Looper", bounds.reduced(Theme::spacingL, 0),
-               juce::Justification::centredLeft);
+    g.setFont(Theme::font(Theme::fontSizeTitle));
+    g.drawText("Looper", titleArea, juce::Justification::centred);
 
     // (Cycle progress is shown by an in-timeline fill behind the
     // playhead — see paintPlayhead.)
