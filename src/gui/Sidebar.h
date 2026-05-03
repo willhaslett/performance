@@ -28,6 +28,14 @@ public:
     std::function<void(const std::string& deviceName)> onAudioOutputSelected;
     std::function<void(const std::string& deviceName)> onAudioInputSelected;
 
+    // Track presets — list provider + click handler. Click creates a
+    // new track named after the preset, then loads the preset onto it
+    // (mirrors the right-click "Load Track Preset" submenu but
+    // entry-point is "I want a fresh track from a preset" rather than
+    // "swap an existing track's chain").
+    std::function<std::vector<juce::String>()> onListTrackPresets;
+    std::function<void(const juce::String& presetName)> onTrackPresetClicked;
+
     // Navigation callbacks — MainLayout sets these
     std::function<void(const std::string& viewName)> onToggleView;
     std::function<bool(const std::string& viewName)> isViewActive;
@@ -47,10 +55,10 @@ private:
 
     // Item model — rebuilt on refresh
     struct Item {
-        enum Kind { SectionHeader, ViewToggle, SongEntry, ActionButton };
+        enum Kind { SectionHeader, ViewToggle, SongEntry, TrackPresetEntry, ActionButton };
         Kind kind;
         juce::String label;
-        std::string id;        // view name or song id
+        std::string id;        // view name, song id, or preset name
         juce::Rectangle<int> bounds;
         juce::String shortcut; // keybinding hint (e.g., "⌘P")
     };

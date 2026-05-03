@@ -77,6 +77,31 @@ void Sidebar::rebuild() {
     items.push_back({ Item::ActionButton, "+ New " + UiTerms::docSingular, "new_song", {} });
     items.back().bounds = { 0, y, getWidth(), itemHeight };
     y += itemHeight;
+
+    // --- Track Presets ---
+    // Lists every saved track preset alphabetically. Click creates a
+    // fresh track and loads the preset onto it. Section is omitted
+    // entirely when there are no presets — no point in a header that
+    // only labels emptiness.
+    if (onListTrackPresets) {
+        auto presets = onListTrackPresets();
+        std::sort(presets.begin(), presets.end(),
+            [](const juce::String& a, const juce::String& b) {
+                return a.compareIgnoreCase(b) < 0;
+            });
+        if (! presets.empty()) {
+            y += sectionGap;
+            items.push_back({ Item::SectionHeader, "Track Presets", "", {} });
+            items.back().bounds = { 0, y, getWidth(), sectionHeight };
+            y += sectionHeight;
+
+            for (auto& name : presets) {
+                items.push_back({ Item::TrackPresetEntry, name, name.toStdString(), {} });
+                items.back().bounds = { 0, y, getWidth(), itemHeight };
+                y += itemHeight;
+            }
+        }
+    }
 }
 
 void Sidebar::paint(juce::Graphics& g) {
@@ -167,6 +192,11 @@ void Sidebar::mouseUp(const juce::MouseEvent& event) {
 
         if (item.kind == Item::ActionButton && item.id == "new_song" && onNewSong) {
             onNewSong();
+            return;
+        }
+
+        if (item.kind == Item::TrackPresetEntry && onTrackPresetClicked) {
+            onTrackPresetClicked(juce::String(item.id));
             return;
         }
 

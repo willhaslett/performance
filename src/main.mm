@@ -758,6 +758,17 @@ public:
         layout->getProducer().onLoadTrackPreset  = loadCb;
         layout->getProducer().onListTrackPresets = listCb;
 
+        // Sidebar's "Track Presets" section uses the same list provider;
+        // clicking an entry creates a fresh instrument track named after
+        // the preset, then loads the preset onto it (loadTrackPreset
+        // also renames the track to the preset name, so initial name +
+        // post-load name match).
+        layout->getSidebar().onListTrackPresets = listCb;
+        layout->getSidebar().onTrackPresetClicked = [this](const juce::String& presetName) {
+            auto trackId = coordinator->state().createTrack(presetName.toStdString());
+            coordinator->loadTrackPreset(juce::String(trackId.str()), presetName);
+        };
+
         ipcServer = std::make_unique<IPCServer>(*luaEngine);
         ipcServer->start();
 
