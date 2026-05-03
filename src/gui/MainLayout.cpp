@@ -745,6 +745,13 @@ bool MainLayout::handleGlobalKeyUp(const juce::KeyPress& key) {
     return false;
 }
 
+void MainLayout::toggleMidiMonitor() {
+    auto current = getPaneContent(PaneSlot::Right);
+    setPaneContent(PaneSlot::Right,
+                   current == PaneContent::MidiMonitor ? PaneContent::Hidden : PaneContent::MidiMonitor);
+    savePaneConfig();
+}
+
 void MainLayout::showOverlay(const juce::String& message) {
     overlay.message = message;
     overlay.setBounds(getLocalBounds());

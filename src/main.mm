@@ -284,6 +284,7 @@ public:
             menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", "view.mixer"));
             menu.addItem(shortcut(52, "Chat", "view.chat"));
             menu.addItem(shortcut(53, "Logs", "view.logs"));
+            menu.addItem(56, "MIDI Monitor");
             menu.addItem(shortcut(CommandIDs::viewMusicalTyping, "Musical Typing", "view.musicalTyping"));
             menu.addSeparator();
             menu.addItem(shortcut(CommandIDs::viewZoomIn, "Zoom In", "view.zoomIn"));
@@ -442,6 +443,7 @@ public:
         case 51: if (kb) layout.handleGlobalKey(kb->getKey("view.mappings")); break;
         case 52: if (kb) layout.handleGlobalKey(kb->getKey("view.chat")); break;
         case 53: if (kb) layout.handleGlobalKey(kb->getKey("view.logs")); break;
+        case 56: layout.toggleMidiMonitor(); break;
         case 55: if (kb) layout.handleGlobalKey(kb->getKey("view.looper")); break;
         case 54: juce::File("/tmp/performance.log").revealToUser(); break;
         case CommandIDs::viewMusicalTyping: layout.handleGlobalKey(KeyBindings::musicalTyping); break;

@@ -52,6 +52,11 @@ public:
     bool handleGlobalKey(const juce::KeyPress& key);
     bool handleGlobalKeyUp(const juce::KeyPress& key);
 
+    // Direct right-slot toggle for MIDI Monitor. Mirrors the "view"
+    // toggles in handleGlobalKey but exposed as a method so menu items
+    // (which have no keybinding) can drive it directly.
+    void toggleMidiMonitor();
+
     Sidebar& getSidebar() { return sidebar; }
     MixerView& getMixer() { return mixerView; }
     ProducePane& getProducer() { return producePane; }
