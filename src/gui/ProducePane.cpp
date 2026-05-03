@@ -567,17 +567,35 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
                          Theme::color(Theme::Color::accent));
 
     // --- Position display (LCD centered between view group and metronome) ---
-    // The metronome lives at the right edge of the bar; its left edge is
-    // getWidth() minus the metronome's slider+label+pad budget (kept in
-    // sync with resized()). Centering the LCD between the view group and
-    // the metronome avoids the overlap-on-narrow-pane bug that plain
-    // center-on-pane-width hits when chat is open.
+    // Three snap states based on available width: full layout (~512px,
+    // BAR/BEAT/DIV/TICK + TIME + BPM + TIME SIG), compact (~140px, just
+    // BPM + TIME SIG — the static info you can't read off the ruler
+    // playhead), or hidden when even compact won't fit. Avoids the
+    // overflow-into-metronome problem on narrow producer panes (small
+    // laptop + chat open) and keeps the most important readouts as long
+    // as possible.
     constexpr int metronomeBudget = 8 + 24 + 70;          // pad + labelW + sliderW
-    constexpr int lcdSidePad = 12;
+    constexpr int lcdSidePad      = 12;
+    constexpr int kLcdFullWidth   = 512;
+    constexpr int kLcdCompactWidth = 140;
     int lcdAvailLeft  = viewGroupBounds.getRight() + lcdSidePad;
     int lcdAvailRight = getWidth() - metronomeBudget - lcdSidePad;
     int lcdAvailWidth = std::max(0, lcdAvailRight - lcdAvailLeft);
-    int actualLcdWidth = std::min(lcdWidth, lcdAvailWidth);
+
+    enum class LcdMode { Full, Compact, Hidden };
+    LcdMode lcdMode = (lcdAvailWidth >= kLcdFullWidth)    ? LcdMode::Full
+                    : (lcdAvailWidth >= kLcdCompactWidth) ? LcdMode::Compact
+                                                          : LcdMode::Hidden;
+    if (lcdMode == LcdMode::Hidden) {
+        // Reset click bounds so a stale rectangle from a wider session
+        // doesn't catch clicks on whatever now lives where the LCD was.
+        bpmClickBounds = {};
+        timeSigClickBounds = {};
+        return;
+    }
+
+    int actualLcdWidth = (lcdMode == LcdMode::Full) ? kLcdFullWidth
+                                                     : kLcdCompactWidth;
     int lcdX = lcdAvailLeft + (lcdAvailWidth - actualLcdWidth) / 2;
     int lcdY = area.getY() + 8;
     int lcdHeight = area.getHeight() - 16;
@@ -628,28 +646,30 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
         colX += 6;
     };
 
-    snprintf(buf, sizeof(buf), "%3d", bar);
-    drawCol(buf, "BAR", 58, monoLg);
-    snprintf(buf, sizeof(buf), "%d", beatInBar);
-    drawCol(buf, "BEAT", 38, monoLg);
-    snprintf(buf, sizeof(buf), "%d", div);
-    drawCol(buf, "DIV", 32, monoLg);
-    snprintf(buf, sizeof(buf), "%03d", tick);
-    drawCol(buf, "TICK", 52, monoLg);
+    if (lcdMode == LcdMode::Full) {
+        snprintf(buf, sizeof(buf), "%3d", bar);
+        drawCol(buf, "BAR", 58, monoLg);
+        snprintf(buf, sizeof(buf), "%d", beatInBar);
+        drawCol(buf, "BEAT", 38, monoLg);
+        snprintf(buf, sizeof(buf), "%d", div);
+        drawCol(buf, "DIV", 32, monoLg);
+        snprintf(buf, sizeof(buf), "%03d", tick);
+        drawCol(buf, "TICK", 52, monoLg);
 
-    drawSep();
+        drawSep();
 
-    // --- Time: HH : MM : SS . ms ---
-    double totalSeconds = (bpm > 0) ? (beat / (bpm / 60.0)) : 0.0;
-    int hrs = (int)(totalSeconds / 3600.0);
-    int mins = (int)(std::fmod(totalSeconds, 3600.0) / 60.0);
-    int secs = (int)std::fmod(totalSeconds, 60.0);
-    int ms = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
+        // --- Time: HH : MM : SS . ms ---
+        double totalSeconds = (bpm > 0) ? (beat / (bpm / 60.0)) : 0.0;
+        int hrs = (int)(totalSeconds / 3600.0);
+        int mins = (int)(std::fmod(totalSeconds, 3600.0) / 60.0);
+        int secs = (int)std::fmod(totalSeconds, 60.0);
+        int ms = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
 
-    snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
-    drawCol(buf, "TIME", 180, monoMd);
+        snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
+        drawCol(buf, "TIME", 180, monoMd);
 
-    drawSep();
+        drawSep();
+    }
 
     // --- Tempo + Time Signature (clickable) ---
     bpmClickBounds = juce::Rectangle<int>(colX, lcdBounds.getY(), 52, lcdBounds.getHeight());

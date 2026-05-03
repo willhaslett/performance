@@ -425,14 +425,15 @@ static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
 // Preferred proportion of the Left/Right row for each content type when it
 // occupies the Left slot and has a Right sibling. Right slot gets (1 - left).
 // Used to snap the split to a sensible width whenever content is swapped.
-static float preferredLeftProportion(PaneContent content) {
-    switch (content) {
-        case PaneContent::Produce:     return 0.65f;  // wide timeline
-        case PaneContent::Perform:     return 0.75f;  // Controllers + SongMappings side-by-side
-        case PaneContent::Debug:       return 0.50f;
-        default:                       return 0.50f;
-    }
-}
+// Initial Right-pane target width (in pixels) when the user hasn't
+// overridden via dragging the center divider. Right contents (Chat,
+// Logs, MIDI Monitor) all read better narrow — chat as a skinny
+// phone-style column, logs/MIDI as a tail-the-stream side panel —
+// and a narrow default keeps the Producer's transport bar fully
+// laid out (LCD + metronome) even on small laptop screens. User
+// can drag wider any time; the override persists per-config.
+static constexpr int kRightPaneTargetWidth = 220;
+static constexpr int kRightPaneMaxWidth    = 320;
 
 juce::PopupMenu MainLayout::buildPaneMenu(PaneSlot slot) {
     auto current = getPaneContent(slot);
@@ -539,13 +540,18 @@ void MainLayout::resized() {
     if (hasLeft && hasRight) {
         auto* leftComp = componentForContent(paneAssignments[PaneSlot::Left]);
         auto* rightComp = componentForContent(paneAssignments[PaneSlot::Right]);
-        // User override (drag) wins over the per-content preferred prop.
+        // User override (drag) wins over the per-content preferred default.
         int leftWidth;
         if (leftPaneWidthOverride > 0) {
             leftWidth = leftPaneWidthOverride;
         } else {
-            float prop = preferredLeftProportion(paneAssignments[PaneSlot::Left]);
-            leftWidth = (int)(area.getWidth() * prop);
+            // Default: Right gets a small fixed-ish target, Left gets
+            // the rest. Keeps the Producer's transport/LCD fully laid
+            // out on small laptop screens. Bounded above so on huge
+            // monitors the right pane doesn't sprawl.
+            int rightWidth = std::min(kRightPaneMaxWidth, kRightPaneTargetWidth);
+            rightWidth = std::min(rightWidth, area.getWidth() / 2);
+            leftWidth = area.getWidth() - rightWidth;
         }
         leftWidth = std::max(minPaneSize,
                               std::min(area.getWidth() - minPaneSize, leftWidth));

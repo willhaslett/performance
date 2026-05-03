@@ -1160,10 +1160,11 @@ bool PerformanceCoordinator::restoreSession() {
         return true;
     }
 
-    // Skip the chooser if the user has opted into auto-loading the
-    // last opened song AND that song still exists. Falls through to
-    // the chooser otherwise (saved id missing, deleted, or setting off).
-    if (stateAPI->getConfig("restore_last_project") == "1") {
+    // Skip the chooser if auto-loading the last opened song is enabled
+    // (default ON — opt out via Settings → About) AND that song still
+    // exists. Falls through to the chooser otherwise (saved id missing,
+    // deleted, or setting explicitly disabled).
+    if (stateAPI->getConfig("restore_last_project") != "0") {
         auto lastId = stateAPI->getConfig("last_open_song_id");
         if (!lastId.empty() && stateAPI->findSong(SongId{lastId})) {
             perfLog("[Coordinator] Auto-loading last project: %s\n", lastId.c_str());

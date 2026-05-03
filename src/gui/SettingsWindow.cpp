@@ -273,8 +273,10 @@ SettingsWindow::AboutPage::AboutPage(StateAPI& s) : state(s) {
     };
     addAndMakeVisible(diagnosticsToggle);
 
+    // Default ON when the config key isn't set ("opt out" rather than
+    // "opt in") — matches the runtime check in PerformanceCoordinator.
     restoreLastProjectToggle.setToggleState(
-        state.getConfig("restore_last_project") == "1", juce::dontSendNotification);
+        state.getConfig("restore_last_project") != "0", juce::dontSendNotification);
     restoreLastProjectToggle.setColour(juce::ToggleButton::textColourId,
                                         Theme::color(Theme::Color::textSecondary));
     restoreLastProjectToggle.setButtonText("Open last project on startup");
