@@ -76,34 +76,11 @@ private:
         juce::Rectangle<int> inputButton;
     };
     std::vector<RowGeom> rowGeoms;
-    // Top-bar LCD-style block: TIME / BPM. Mirrors the Producer LCD's
-    // analogous cells (same digit font, same labels, same BPM click-to-
-    // edit dialog) so tempo is visible and adjustable from either pane.
-    juce::Rectangle<int> lcdBounds;
-    juce::Rectangle<int> timeCell;
-    juce::Rectangle<int> bpmClickBounds;
-    juce::Rectangle<int> resetButton;        // top-bar PANIC reset (kept separate for confirm dialog)
-    juce::Rectangle<int> learnPill;          // top-bar MIDI Learn toggle
 
-    void showBpmEditor();
-
-    // MIDI Learn state — owned by the pane, not the buttons. While
-    // `learnMode` is true, bindable cells switch from "click fires" to
-    // "click arms the next MIDI event." `armedActionName` is the cell
-    // that will receive the next captured event; clicking another cell
-    // re-arms to that one (we only ever capture for one action at a
-    // time so the user can build a bank by clicking through the strip).
-    bool learnMode = false;
-    juce::String armedActionName;
-    void toggleLearnMode();
-    void exitLearnMode();
-    void armForLearn(const juce::String& actionName);
-    void onLearnCapture(const std::string& type, int channel, int number,
-                        const std::string& portName);
-    void rearmLearnCapture();
-
-    // Bindable performer gesture buttons (top-bar group). One per
-    // looper-relevant action; segmented in sub-groups by visual gap.
+    // Bindable performer gesture buttons — one segmented strip in the
+    // top bar, in performer order (play | replace overdub | undo redo
+    // mute clear | prev next | reset). MIDI binding is done via the
+    // Mappings pane (BindableButton's right-click menu also offers it).
     std::unique_ptr<BindableButton> playBtn;
     std::unique_ptr<BindableButton> replaceBtn;
     std::unique_ptr<BindableButton> overdubBtn;
@@ -113,6 +90,7 @@ private:
     std::unique_ptr<BindableButton> clearBtn;
     std::unique_ptr<BindableButton> focusPrevBtn;
     std::unique_ptr<BindableButton> focusNextBtn;
+    std::unique_ptr<BindableButton> resetBtn;
     void rebuildRowGeoms();
 
     // ---- Paint helpers ----

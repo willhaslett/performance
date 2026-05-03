@@ -34,45 +34,30 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     if (!trh.empty()) trackRowHeight = std::max(minTrackRowHeight(), std::stoi(trh));
 
     // ---- Performer gesture buttons ----
-    // Standalone play. Active = "transport is playing" (icon swap).
+    // One segmented strip in the top bar: play | replace overdub |
+    // undo redo mute clear | prev next | reset. Left corner on the
+    // first cell, Right corner on the last, Mid for everything between.
+    auto hasFocus = [this]() {
+        return !state.getFocusedTrackId().empty();
+    };
+
     playBtn = std::make_unique<BindableButton>(state, coord, "togglePlay", "",
                                                 BindableButton::Variant::IconPlay);
+    playBtn->setCornerStyle(BindableButton::Left);
     playBtn->setActivePredicate([this] {
         return sequencer && sequencer->isPlaying();
     });
     addAndMakeVisible(*playBtn);
 
-    // Helpers for predicates that look at the focused track.
-    auto hasFocus = [this]() {
-        return !state.getFocusedTrackId().empty();
-    };
-    auto focusedAct = [this]() -> LoopAction {
-        auto fid = state.getFocusedTrackId();
-        return fid.empty() ? LoopAction::None : state.getLoopAction(fid);
-    };
-
-    // Color keys for Replace and Overdub. Match the lane-state tints
-    // that show on the focused track when the action is queued or
-    // capturing — top-stripe on the button is the cue that links the
-    // gesture to the visual on the lane.
-    const auto replaceColor = juce::Colour(0xffcc6655);  // warm red-orange (record family)
-    const auto overdubColor = juce::Colour(0xff5fb09f);  // cool teal
-
-    // All non-play buttons live in one segmented strip — Left for the
-    // first cell, Mid for the rest, Right for the last. The vertical
-    // dividers between cells signal cohesion.
-
     replaceBtn = std::make_unique<BindableButton>(state, coord, "replaceLoop", "replace");
-    replaceBtn->setCornerStyle(BindableButton::Left);
+    replaceBtn->setCornerStyle(BindableButton::Mid);
     replaceBtn->setEnabledPredicate(hasFocus);
-    replaceBtn->setTopColorStripe(replaceColor);
     replaceBtn->setShowRecordDot(true);
     addAndMakeVisible(*replaceBtn);
 
     overdubBtn = std::make_unique<BindableButton>(state, coord, "overdubLoop", "overdub");
     overdubBtn->setCornerStyle(BindableButton::Mid);
     overdubBtn->setEnabledPredicate(hasFocus);
-    overdubBtn->setTopColorStripe(overdubColor);
     overdubBtn->setShowRecordDot(true);
     addAndMakeVisible(*overdubBtn);
 
@@ -110,22 +95,12 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
 
     focusNextBtn = std::make_unique<BindableButton>(state, coord, "focusNextTrack", "",
                                                      BindableButton::Variant::IconArrowDown);
-    focusNextBtn->setCornerStyle(BindableButton::Right);
+    focusNextBtn->setCornerStyle(BindableButton::Mid);
     addAndMakeVisible(*focusNextBtn);
 
-    // Wire MIDI Learn predicates onto every bindable cell. Each cell
-    // asks "are we in learn mode? am I the armed target?" — both answers
-    // come from this pane's state. Click-to-arm goes through armForLearn,
-    // which kicks off the next-event capture.
-    BindableButton* allBtns[] = { playBtn.get(), replaceBtn.get(), overdubBtn.get(),
-                                   undoBtn.get(), redoBtn.get(), muteBtn.get(),
-                                   clearBtn.get(), focusPrevBtn.get(), focusNextBtn.get() };
-    for (auto* btn : allBtns) {
-        btn->setLearnPredicate([this] { return learnMode; });
-        juce::String name = btn->getActionName();
-        btn->setArmedPredicate([this, name] { return learnMode && armedActionName == name; });
-        btn->setOnArmRequest([this, name] { armForLearn(name); });
-    }
+    resetBtn = std::make_unique<BindableButton>(state, coord, "resetLooperSession", "reset");
+    resetBtn->setCornerStyle(BindableButton::Right);
+    addAndMakeVisible(*resetBtn);
 
     stateSubId = state.events().subscribe([this](const StateEvent& ev) {
         if (ev.entity == StateEvent::Config) {
@@ -223,61 +198,30 @@ void LooperPane::rebuildRowGeoms() {
         y += rowH + rowGap;
     }
 
-    // Top-bar controls — cycle length pill on the right, PANIC reset
-    // immediately to its left (cycle field stays at the corner since
-    // reset is a rare action and shouldn't grab the prime spot).
-    // Top-bar layout (right-to-left): cycle pill at the corner, reset
-    // pill next, then the BindableButton group taking the remaining
-    // space, then play standalone on the left of the group. Title sits
-    // at the very left.
+    // Top-bar layout: a single segmented BindableButton strip, then
+    // the LCD. Strip is left-anchored at headerWidth so the leftmost
+    // button (play) aligns with the right edge of the track-header
+    // column.
     int topBarMid = topBarHeight / 2;
-    int pillH = 24;
-    int pillY = topBarMid - pillH / 2;
 
     int bbH = BindableButton::desiredHeight;
     int bbY = topBarMid - bbH / 2;
-    const int playWidth        = 56;
-    const int playToStripGap   = 12;  // breathing room between standalone play and the strip
-    const int wideBtn          = 84;  // replace, overdub (longer label, plus record dot)
-    const int narrowBtn        = 60;  // undo, redo, mute, clear
-    const int iconBtn          = 40;  // focus prev/next
-    const int stripToControlsGap = 16;
-    const int controlGap       = 8;
+    const int playWidth = 56;
+    const int wideBtn   = 84;   // replace, overdub
+    const int narrowBtn = 60;   // undo, redo, mute, clear, reset
+    const int iconBtn   = 40;   // focus prev/next
 
-    // Left-anchor the whole top bar so the play button's left edge sits
-    // flush with the right edge of the track-header column. Everything
-    // else flows right with the same relative spacing as before.
     int x = headerWidth;
-
-    playBtn->setBounds(x, bbY, playWidth, bbH);
-    x += playWidth + playToStripGap;
-
-    replaceBtn->setBounds(x, bbY, wideBtn, bbH); x += wideBtn;
-    overdubBtn->setBounds(x, bbY, wideBtn, bbH); x += wideBtn;
-    undoBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
-    redoBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
-    muteBtn->setBounds(x, bbY, narrowBtn, bbH);  x += narrowBtn;
-    clearBtn->setBounds(x, bbY, narrowBtn, bbH); x += narrowBtn;
-    focusPrevBtn->setBounds(x, bbY, iconBtn, bbH); x += iconBtn;
-    focusNextBtn->setBounds(x, bbY, iconBtn, bbH); x += iconBtn;
-
-    x += stripToControlsGap;
-
-    learnPill = { x, pillY, 100, pillH };  x += 100 + controlGap;
-    resetButton = { x, pillY, 70, pillH };  x += 70 + controlGap;
-
-    // LCD block — TIME + BPM cells. Same digit/label style as Producer.
-    // TIME width matches Producer's TIME cell (180px) so the
-    // "H:MM:SS.mmm" digits don't overflow into ellipses.
-    const int timeCellW = 180;
-    const int bpmCellW  = 64;
-    const int lcdW      = timeCellW + bpmCellW + 4;
-    const int lcdH      = 36;
-    int lcdY = topBarMid - lcdH / 2;
-    lcdBounds = { x, lcdY, lcdW, lcdH };
-    int cellX = lcdBounds.getX() + 2;
-    timeCell       = { cellX, lcdBounds.getY(), timeCellW, lcdBounds.getHeight() }; cellX += timeCellW;
-    bpmClickBounds = { cellX, lcdBounds.getY(), bpmCellW,  lcdBounds.getHeight() };
+    playBtn->setBounds(x, bbY, playWidth, bbH);    x += playWidth;
+    focusPrevBtn->setBounds(x, bbY, iconBtn, bbH);  x += iconBtn;
+    focusNextBtn->setBounds(x, bbY, iconBtn, bbH);  x += iconBtn;
+    replaceBtn->setBounds(x, bbY, wideBtn, bbH);    x += wideBtn;
+    overdubBtn->setBounds(x, bbY, wideBtn, bbH);    x += wideBtn;
+    undoBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
+    redoBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
+    muteBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
+    clearBtn->setBounds(x, bbY, narrowBtn, bbH);    x += narrowBtn;
+    resetBtn->setBounds(x, bbY, narrowBtn, bbH);
 }
 
 // ---- Paint ----------------------------------------------------------------
@@ -310,77 +254,7 @@ void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
                juce::Justification::centredLeft);
 
     // (Cycle progress is shown by an in-timeline fill behind the
-    // playhead — see paintPlayhead. The top-bar strip is gone.)
-
-    // Top-bar LCD block — TIME (wall-clock from beat 0) and BPM
-    // (clickable). Mirrors the Producer's matching cells; tempo lives
-    // on the song so changes here flip the Producer's display too.
-    {
-        auto lcdBg     = Theme::color(Theme::Color::bgControl);
-        auto lcdBorder = Theme::color(Theme::Color::border);
-        auto lcdDigit  = Theme::color(Theme::Color::lcdDigit);
-        g.setColour(lcdBg);
-        g.fillRoundedRectangle(lcdBounds.toFloat(), 4.0f);
-        g.setColour(lcdBorder);
-        g.drawRoundedRectangle(lcdBounds.toFloat(), 4.0f, 1.0f);
-
-        auto monoMd    = Theme::fontMono(Theme::fontSizeLcdMd);
-        auto labelFont = Theme::font(Theme::fontSizeLcdLabel);
-
-        auto drawCell = [&](juce::Rectangle<int> bounds, const char* digits,
-                             const char* label, juce::Colour digitCol) {
-            int digitTop = bounds.getY() + 2;
-            int digitH   = bounds.getHeight() - 14;
-            int labelY   = bounds.getBottom() - 13;
-            g.setFont(monoMd);
-            g.setColour(digitCol);
-            g.drawText(digits, bounds.getX(), digitTop, bounds.getWidth(), digitH,
-                       juce::Justification::centred);
-            g.setColour(Theme::color(Theme::Color::textDim));
-            g.setFont(labelFont);
-            g.drawText(label, bounds.getX(), labelY, bounds.getWidth(), 12,
-                       juce::Justification::centred);
-        };
-
-        double bpm   = state.getSongTempo();
-        double bps   = bpm > 0.0 ? bpm / 60.0 : 2.0;
-        double beat  = sequencer ? sequencer->getBeatPosition() : 0.0;
-        char buf[24];
-
-        // TIME — HH:MM:SS.ms wall-clock from transport zero.
-        double totalSeconds = beat / bps;
-        int hrs  = (int)(totalSeconds / 3600.0);
-        int mins = (int)(std::fmod(totalSeconds, 3600.0) / 60.0);
-        int secs = (int)std::fmod(totalSeconds, 60.0);
-        int ms   = (int)(std::fmod(totalSeconds, 1.0) * 1000.0);
-        snprintf(buf, sizeof(buf), "%d:%02d:%02d.%03d", hrs, mins, secs, ms);
-        drawCell(timeCell, buf, "TIME", lcdDigit);
-
-        // Separator + BPM (clickable).
-        g.setColour(lcdBorder);
-        g.drawLine((float) timeCell.getRight(), (float)(lcdBounds.getY() + 4),
-                   (float) timeCell.getRight(), (float)(lcdBounds.getBottom() - 4), 1.0f);
-        snprintf(buf, sizeof(buf), "%.1f", bpm);
-        drawCell(bpmClickBounds, buf, "BPM", lcdDigit);
-    }
-
-    // PANIC reset button — wipes everything and returns to bootstrap.
-    g.setColour(Theme::color(Theme::Color::bgControl));
-    g.fillRoundedRectangle(resetButton.toFloat(), 4.0f);
-    g.setColour(Theme::color(Theme::Color::textSecondary));
-    g.drawText("reset", resetButton, juce::Justification::centred);
-
-    // MIDI Learn toggle pill. On = accent fill ("the strip is now an
-    // armable surface"). Off = neutral. The bindable cells switch
-    // behavior automatically via the predicates set in the ctor.
-    g.setColour(learnMode ? Theme::color(Theme::Color::accent)
-                          : Theme::color(Theme::Color::bgControl));
-    g.fillRoundedRectangle(learnPill.toFloat(), 4.0f);
-    g.setColour(learnMode ? Theme::color(Theme::Color::textOnColor)
-                          : Theme::color(Theme::Color::textSecondary));
-    g.setFont(Theme::font(Theme::fontSizeMd));
-    g.drawText(learnMode ? "learning\xe2\x80\xa6" : "MIDI learn",
-               learnPill, juce::Justification::centred);
+    // playhead — see paintPlayhead.)
 
     // (Gesture buttons are BindableButton child components — they paint
     // themselves when JUCE walks the children. See constructor + the
@@ -818,36 +692,9 @@ void LooperPane::mouseDown(const juce::MouseEvent& e) {
     grabKeyboardFocus();
     auto pos = e.getPosition();
 
-    if (bpmClickBounds.contains(pos)) {
-        showBpmEditor();
-        return;
-    }
-    // (TIME cell is display-only — readout, no click semantics.)
-    // Top bar — MIDI Learn toggle.
-    if (learnPill.contains(pos)) {
-        toggleLearnMode();
-        return;
-    }
-    // Top bar — PANIC reset. Confirms before wiping.
-    if (resetButton.contains(pos)) {
-        juce::AlertWindow::showAsync(
-            juce::MessageBoxOptions()
-                .withIconType(juce::MessageBoxIconType::WarningIcon)
-                .withTitle("Reset looper session?")
-                .withMessage("Stops transport, wipes every track's loop content "
-                             "and undo history, and resets the cycle length. "
-                             "This is the panic button — there's no undo for the reset itself.")
-                .withButton("Reset")
-                .withButton("Cancel"),
-            [this](int result) {
-                if (result == 1) coord.resetLooperSession();
-            });
-        return;
-    }
-    // Top bar — gesture buttons. Same calls as the bindable actions.
-    // (Gesture button clicks are handled by the BindableButton child
-    // components themselves; clicks land here only on empty top-bar
-    // background or fall through to row clicks below.)
+    // (Play, reset, and gesture buttons are BindableButton child
+    // components — they handle their own clicks. Top-bar clicks land
+    // here only on empty background or fall through to row clicks below.)
 
     for (auto& row : rowGeoms) {
         if (!row.rowBounds.contains(pos)) continue;
@@ -895,11 +742,6 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
     //   m  — toggle mute on selected track
     //   [  — decrement cycle length by one bar
     //   ]  — increment cycle length by one bar
-    // Escape exits MIDI Learn mode without binding anything.
-    if (key.isKeyCode(juce::KeyPress::escapeKey) && learnMode) {
-        exitLearnMode();
-        return true;
-    }
     if (key.isKeyCode('[')) {
         double cur = cycleBeats();
         int bars = std::max(1, (int) std::round(cur / kBeatsPerBar) - 1);
@@ -936,127 +778,3 @@ bool LooperPane::handleKey(const juce::KeyPress& key) {
     return false;
 }
 
-// ---- LCD editors (BPM, Time Sig) ----------------------------------------
-// Match the Producer's tempo / time-sig dialogs by intent — same input
-// validation ranges, same StateAPI calls — so changes from either pane
-// land in the same song state.
-
-void LooperPane::showBpmEditor() {
-    auto* dlg = new juce::AlertWindow("Set Tempo", "", juce::MessageBoxIconType::NoIcon);
-    dlg->addTextEditor("bpm", juce::String(state.getSongTempo(), 1), "BPM");
-    dlg->addButton("OK", 1);
-    dlg->addButton("Cancel", 0);
-    auto* statePtr = &state;
-    dlg->enterModalState(true, juce::ModalCallbackFunction::create(
-        [dlg, statePtr](int result) {
-            if (result == 1) {
-                double bpm = dlg->getTextEditorContents("bpm").getDoubleValue();
-                if (bpm >= 20.0 && bpm <= 300.0)
-                    statePtr->setSongTempo(bpm);
-            }
-            delete dlg;
-        }));
-}
-
-// ---- MIDI Learn -----------------------------------------------------------
-
-void LooperPane::toggleLearnMode() {
-    if (learnMode) exitLearnMode();
-    else {
-        learnMode = true;
-        armedActionName.clear();   // nothing armed until the user clicks a cell
-        repaint();
-    }
-}
-
-void LooperPane::exitLearnMode() {
-    learnMode = false;
-    armedActionName.clear();
-    coord.cancelMidiLearn();
-    repaint();
-}
-
-void LooperPane::armForLearn(const juce::String& actionName) {
-    armedActionName = actionName;
-    rearmLearnCapture();
-    repaint();
-}
-
-void LooperPane::rearmLearnCapture() {
-    // Empty deviceId = listen across every enabled MIDI input.
-    coord.startMidiLearn("",
-        [safe = juce::Component::SafePointer<LooperPane>(this)]
-        (const std::string& type, int ch, int num, const std::string& port) {
-            juce::MessageManager::callAsync([safe, type, ch, num, port]() {
-                if (safe) safe->onLearnCapture(type, ch, num, port);
-            });
-        });
-}
-
-void LooperPane::onLearnCapture(const std::string& type, int channel, int number,
-                                 const std::string& portName) {
-    // Bail if state changed under us mid-capture.
-    if (!learnMode || armedActionName.isEmpty()) return;
-
-    // Resolve / register the source device. Mirrors ControllersPane's
-    // learn flow so devices end up in the same registry. IAC loopback
-    // is noise — re-arm and ignore.
-    DeviceId deviceId;
-    if (!portName.empty()) {
-        if (juce::String(portName).containsIgnoreCase("IAC Driver")) {
-            rearmLearnCapture();
-            return;
-        }
-        if (auto* dev = state.findDeviceByPortName(portName)) {
-            deviceId = dev->id;
-        } else {
-            deviceId = state.registerDevice(portName, portName);
-        }
-    }
-    if (deviceId.empty()) {
-        rearmLearnCapture();
-        return;
-    }
-
-    // Make sure the control exists on the device — if not, register a
-    // default-named control for it so it shows up in Mappings later.
-    bool haveControl = false;
-    if (auto* dev = state.findDevice(deviceId)) {
-        for (auto& ctrl : dev->controls)
-            if (ctrl.controlType == type && ctrl.channel == channel && ctrl.number == number) {
-                haveControl = true; break;
-            }
-    }
-    if (!haveControl) {
-        juce::String defaultName = (type == "cc")   ? "CC " + juce::String(number)
-                                  : (type == "note") ? "Note " + juce::String(number)
-                                                     : juce::String("Control");
-        state.addDeviceControl(deviceId, defaultName.toStdString(), type, channel, number);
-    }
-
-    auto* a = state.findActionByName(armedActionName.toStdString());
-    auto* song = state.currentSong();
-    if (!a || !song) {
-        armedActionName.clear();
-        repaint();
-        return;
-    }
-
-    // 1:1 binding per action (the rule the user picked earlier in the
-    // gesture-button design discussion). Drop any existing song-scoped
-    // bindings for this action before adding the new one.
-    for (auto& b : state.bindingsForSong(song->id))
-        if (b.actionId == a->id) state.removeBinding(b.id);
-
-    juce::String desc = (type == "cc")   ? "CC " + juce::String(number)
-                       : (type == "note") ? "Note " + juce::String(number)
-                                          : juce::String(type);
-    state.addBinding(song->id, type, channel, number, a->id, "[]",
-                      desc.toStdString(), deviceId);
-
-    // Stay in learn mode but clear the armed cell — the user can click
-    // another to keep building a bank without leaving the mode.
-    armedActionName.clear();
-    coord.cancelMidiLearn();
-    repaint();
-}

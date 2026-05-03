@@ -2313,7 +2313,7 @@ void PerformanceCoordinator::registerBuiltinActions() {
     stateAPI->registerAction("clearAllLoops", "Loop: clear all + reset cycle",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then clearAllLoops() end"));
-    stateAPI->registerAction("resetLooperSession", "Loop: PANIC reset everything",
+    stateAPI->registerAction("resetLooperSession", "Loop: reset session",
         std::vector<ParamSchema>{},
         AA::lua("if value > 0 then resetLooperSession() end"));
 
