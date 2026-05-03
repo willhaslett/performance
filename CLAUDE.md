@@ -192,6 +192,7 @@ Runtime-mutable. Every token in `Theme.h` (colors, fonts, spacing, dimensions, r
 - **LCD interactivity** — drag-to-change and double-click-to-edit for BAR/BEAT/DIV/TICK + time display.
 - **Stuck note prevention at region boundaries** — synthetic noteOffs at region end.
 - **Auto-focus chat input when Chat pane is revealed** — currently testers have to click the field before typing.
+- **ChatView Markdown rendering.** ChatView uses one `juce::TextEditor` per bubble (plain text only) — Markdown the LLM emits shows up as raw characters. The system prompt now tells the LLM to output plain prose, but headers/bullets/code blocks would be nicer to actually render when they're useful. Lift: hand-rolled minimal Markdown parser (bold/italic/headers/inline code, fenced code blocks with monospace + bg) + a custom paint per bubble replacing the TextEditor. Keep copy/paste affordance. Half a day at minimum; not a 0.1.0 blocker.
 - **Left pane top-bar squeezed when right pane is wide.** Producer / Looper / Perform top bars overflow / overlap when the right (chat) pane is wide enough. Needs a layout decision — does the top-bar collapse content (e.g. icon-only at narrow widths), wrap to two rows, set a max width on the right pane, or make the divider hard-snap before the left pane crosses a usability threshold? Affects all three panes; design pass first, then implement.
 
 **Deferred / lower priority:**
