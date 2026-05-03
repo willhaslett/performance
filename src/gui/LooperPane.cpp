@@ -228,22 +228,18 @@ void LooperPane::rebuildRowGeoms() {
 
     int bbH = BindableButton::desiredHeight;
     int bbY = topBarMid - bbH / 2;
-    const int playWidth = 56;
-    const int wideBtn   = 84;   // replace, overdub
-    const int narrowBtn = 60;   // undo, redo, mute, clear, reset
-    const int iconBtn   = 40;   // focus prev/next
+    // Uniform cell width — every cell hosts the same trigger-slot
+    // affordance, so they all need room for the placeholder text.
+    constexpr int cellW = 84;
 
     int x = headerWidth;
-    playBtn->setBounds(x, bbY, playWidth, bbH);    x += playWidth;
-    focusPrevBtn->setBounds(x, bbY, iconBtn, bbH);  x += iconBtn;
-    focusNextBtn->setBounds(x, bbY, iconBtn, bbH);  x += iconBtn;
-    replaceBtn->setBounds(x, bbY, wideBtn, bbH);    x += wideBtn;
-    overdubBtn->setBounds(x, bbY, wideBtn, bbH);    x += wideBtn;
-    undoBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
-    redoBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
-    muteBtn->setBounds(x, bbY, narrowBtn, bbH);     x += narrowBtn;
-    clearBtn->setBounds(x, bbY, narrowBtn, bbH);    x += narrowBtn;
-    resetBtn->setBounds(x, bbY, narrowBtn, bbH);
+    for (auto* btn : { playBtn.get(), focusPrevBtn.get(), focusNextBtn.get(),
+                        replaceBtn.get(), overdubBtn.get(),
+                        undoBtn.get(), redoBtn.get(), muteBtn.get(),
+                        clearBtn.get(), resetBtn.get() }) {
+        btn->setBounds(x, bbY, cellW, bbH);
+        x += cellW;
+    }
 }
 
 // ---- Paint ----------------------------------------------------------------
