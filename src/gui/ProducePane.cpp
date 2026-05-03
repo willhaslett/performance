@@ -478,7 +478,10 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     // edge of the track-headers column below — matches the Looper's
     // top-bar layout so the two panes read as a matched pair.
     int btnX = trackHeaderWidth + groupPad;
-    int lcdLeft = (getWidth() - lcdWidth) / 2;          // center on full pane width
+    // lcdLeft is computed below, after the View group's right edge is
+    // known — the LCD centers in the space between the buttons and the
+    // metronome slider rather than on the full pane width, so it can't
+    // overlap either side when the pane gets narrow (chat pane open).
 
     // Pane title — centered both axes in the top-left rectangle above
     // the track-headers column. Painted before the button group so the
@@ -563,11 +566,22 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
                          hoveredTransport == HoveredTransport::SnapToggle,
                          Theme::color(Theme::Color::accent));
 
-    // --- Position display (LCD centered on grid area) ---
-    int lcdX = lcdLeft;
+    // --- Position display (LCD centered between view group and metronome) ---
+    // The metronome lives at the right edge of the bar; its left edge is
+    // getWidth() minus the metronome's slider+label+pad budget (kept in
+    // sync with resized()). Centering the LCD between the view group and
+    // the metronome avoids the overlap-on-narrow-pane bug that plain
+    // center-on-pane-width hits when chat is open.
+    constexpr int metronomeBudget = 8 + 24 + 70;          // pad + labelW + sliderW
+    constexpr int lcdSidePad = 12;
+    int lcdAvailLeft  = viewGroupBounds.getRight() + lcdSidePad;
+    int lcdAvailRight = getWidth() - metronomeBudget - lcdSidePad;
+    int lcdAvailWidth = std::max(0, lcdAvailRight - lcdAvailLeft);
+    int actualLcdWidth = std::min(lcdWidth, lcdAvailWidth);
+    int lcdX = lcdAvailLeft + (lcdAvailWidth - actualLcdWidth) / 2;
     int lcdY = area.getY() + 8;
     int lcdHeight = area.getHeight() - 16;
-    auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, lcdWidth, lcdHeight);
+    auto lcdBounds = juce::Rectangle<int>(lcdX, lcdY, actualLcdWidth, lcdHeight);
 
     // LCD background — interactive control base
     auto lcdBg = Theme::color(Theme::Color::bgControl);
