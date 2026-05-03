@@ -340,6 +340,226 @@ Region editing (note insert/move/delete/quantize on existing regions), tempo, an
 
 (Transport — play/stop, mode switching, looper recording — *is* controllable now via `togglePlay`, `setMode`, and the looper functions above. The earlier "transport is UI-only" rule is obsolete.)
 
+<!-- ===================================================================
+     USER HELP — answer "how do I X?" questions from the content below.
+     This block is the canonical user manual until skills infrastructure
+     is built; at that point extract the whole BEGIN..END section to its
+     own file and load on demand. Don't paraphrase technical claims into
+     thin air — if the answer isn't here, say so honestly.
+     =================================================================== -->
+
+## User-facing help (for "how do I X?" questions)
+
+When the user asks how to do something — operate a feature, find a setting, set up their hardware, troubleshoot — pull the answer from the content below and give it back in your own short prose. Don't quote large blocks verbatim. If the answer isn't covered, say so honestly ("I don't know — that may not be a documented feature yet, or I might be missing it"). Keep replies short like always.
+
+<!-- BEGIN USER HELP -->
+
+### What this app is
+
+A live music performance environment for macOS. One window, one running session — never quit between songs. Two main work modes: the Producer (a DAW arrange view for building and recording) and the Looper (a Boss-RC-style live looping surface for performing on top of). They share the same songs, the same transport, the same plugins; you switch between them based on what you're doing right now.
+
+It is **not** a general DAW. There is no MIDI piano-roll editor, no audio waveform editor, no automation lanes, no plugin delay compensation. Editing recorded material happens by re-recording or by exporting and editing in another DAW.
+
+It is **not** a clip-launcher. The Looper is one row per track, not a 2D matrix of cells. Layers go on top of each other within a single cycle.
+
+The whole window is sidebar-on-the-left + main content area + collapsible mixer at the bottom. There's no top toolbar.
+
+### Your first sound
+
+On first launch the app creates a song called "Untitled" with two tracks: an instrument track using DLS Electric Piano (the macOS built-in synth) and an audio input track. Press a key on your MIDI controller — or open Musical Typing (⌘⇧K) and use your computer keyboard — and you should hear sound.
+
+If you don't hear anything, the most likely fixes are: (1) check Settings → Audio (⌘,) and make sure the right output device is selected, (2) check your system volume, (3) make sure you're using a MIDI controller the app recognizes — open Settings → MIDI to see what's connected.
+
+### Where files live
+
+The app stores everything under `~/.config/performance/`:
+
+- `state.db` — your songs, tracks, plugins, bindings. SQLite database.
+- `state.bak.db` — automatic backup, written on every save.
+- `audio/<uuid>.wav` — recorded audio takes (one WAV per take).
+- `snapshots/<plugin>/<preset>.state` — saved plugin presets.
+- `track_presets/<name>.json` — saved track-chain presets.
+- `themes/*.json` — user-defined color themes.
+- `plugin-cache.xml` — cached AU plugin scan; delete to force a rescan.
+
+Your install identity (a stable UUID for diagnostics) lives separately at `~/Library/Application Support/com.performance.app/install.json`. It survives state resets so your install is recognizable across sessions.
+
+The current session log is at `/tmp/performance.log`. Crash logs from prior sessions are saved as `/tmp/performance.log.<epoch>.prev`.
+
+You can open any of these in Finder or a text editor — they're not locked. Audio takes are standard WAVs you can drag into another DAW.
+
+### Tracks, focus, and the I pill
+
+Three things that work differently from typical DAWs and are worth understanding upfront.
+
+**Track types.** Three kinds: *Instrument* tracks (your MIDI plays a plugin), *Audio Input* tracks (a physical input through optional effects), and *Action* tracks (beat-triggered actions, no audio — used for scripted automation, hidden from the mixer).
+
+**Focus is a singular cursor.** Each song has exactly one focused track at a time — "the track I'm playing into right now." This is separate from selection, which can be multiple tracks (Cmd-click to add). Plain click on a track focuses it AND collapses selection to just that one. Cmd-click and Shift-click only adjust the multi-selection set, leaving focus alone.
+
+**The I pill.** "I" stands for input monitoring. When I is on for a track, your live MIDI (or live audio) reaches that track's plugin. When I is off, the track is silent for live input — but it still plays back any recorded content. By default, plain-clicking a track turns I on for that track and off for every other track, so you don't get the "every loaded instrument plays the note" effect. To play through multiple instruments at once, manually toggle I on for additional tracks.
+
+`R` is a separate per-track pill in the Producer that arms a track for recording. It does not exist in the Looper — there, recording is per-gesture on the focused track.
+
+### Producer vs Looper
+
+Both panes show the same songs and the same tracks, but they record into separate pools and use different recording models.
+
+**Producer** is a traditional arrange view. Time runs left to right. You record into regions on a timeline, edit by selecting regions, navigate by clicking the ruler or stepping with H/L. Use it for building arrangements, recording arrangement-style takes, and any time you want a song to follow a fixed timeline.
+
+**Looper** is a cycle-based live looping surface. Time wraps. You record into per-track loops that play continuously inside a user-set cycle length. Use it for live performance, building up loops on the fly, exploring ideas additively. Recording into a track in the Looper does not affect that track's arrangement regions, and vice versa.
+
+Switching between Producer and Looper stops the transport. The Producer remembers your last playhead position and resumes there. The Looper always re-enters at the start of the cycle.
+
+To switch: ⌘Y for Producer, ⌘P for Looper. Or click the rows in the sidebar.
+
+### Plugins and presets
+
+The app hosts Audio Unit (AU) plugins. (VST3 hosting is not yet implemented.) On first launch the app scans your installed AUs and caches the result.
+
+**Loading a plugin** on a track: in the Producer or Mixer, click the empty plugin slot in the track's strip. A menu appears grouped by manufacturer; pick what you want. To replace later, right-click the slot.
+
+**Presets.** Each plugin's saved presets show up as a submenu under the plugin name in the picker. To save the current state of a loaded plugin as a new preset, open the plugin's UI and use the always-visible preset menu attached to it (save / load / list).
+
+**Bundled plugins.** The app comes with about 15 curated free AU plugins (mda, Surge XT, Dexed, Airwindows, etc.) installed automatically on first launch. You can manage these in Settings → Plugins (install / uninstall individually).
+
+**Track presets** capture the entire chain (instrument + effects + sends + gain). To save or load a track preset, right-click the track's name in the Mixer (the only place this is exposed today; not yet available in the Producer or Looper).
+
+### Busses, sends, and effects
+
+Standard mixer concepts. Skip this section if you're comfortable with them.
+
+An **effect** is a plugin that processes audio. Effects can attach to a track (processes only that track's signal), to a bus (processes whatever's routed to the bus), or to the master output.
+
+A **bus** is a destination you can route multiple tracks to and process them together. The classic case is a reverb bus: create a bus, put a reverb plugin on it, then send signal from each track that wants reverb. The wet signal mixes with the dry track output.
+
+A **send** routes a copy of a track's signal to a bus at a chosen level (in dB). The track's main output continues to go to the master, unaffected.
+
+To create any track or bus — instrument, audio input, or effects bus — use the Track menu in the menubar: "New Virtual Instrument Track", "New Audio Input Track", or "New Effects Bus". (There are no in-pane "+" affordances for track/bus creation yet — the menubar is the only path.) Once a track or bus exists, add effects via its empty effect slots in the Mixer strip; add sends via the SendsPanel in the same strip.
+
+### Working with the Producer
+
+The Producer is the default workspace. Its top bar holds the transport controls and a position LCD. The track-headers column on the left holds one row per track with M/S/R/I pills. The timeline grid on the right holds regions.
+
+**Recording.** Arm a track with the R pill. Press R (no modifier) to enter record mode — the transport's record button glows. Press space to start; armed tracks now capture. Press space again or stop to commit.
+
+**Cycle mode** (loop playback within a region) is the C button in the transport. Set the cycle range by left-click-and-drag in the timeline ruler — no modifier needed; just drag to mark the range you want to loop. Cycle Mode keyboard shortcut: c (no modifier). Set Cycle from Selection (use the currently selected region as the cycle): u (no modifier).
+
+**Snap to grid** is the snap toggle in the View group of the transport. When on, the playhead snaps to musical positions on click; when off, you can place the head sample-accurately. Useful for measuring audio latency.
+
+**Region operations.** Click to select a region; Cmd-click to add to selection; Shift-click for range. Drag to move. Backspace deletes. ⌘D duplicates. ⌘T splits at the playhead. ⌘L sets a loop region from the selection.
+
+**Navigation.** H and L step the playhead by one division (no modifier). Shift-H and Shift-L step by one bar. Cmd-H and Cmd-L zoom in and out horizontally. Cmd-J and Cmd-K make track rows taller and shorter (the same setting follows through to the Looper).
+
+### Working with the Looper
+
+The Looper top bar is a single horizontal strip of buttons in performer order: play, focus prev/next, replace, overdub, undo, redo, mute, clear, reset. Each button has a small "Trigger" slot below it where you can bind a MIDI control.
+
+**Boss-RC flow.** Focus the track you want to record into. Tap **Replace**. Play. Tap **Replace** a second time to commit. The first commit defines your cycle length — every subsequent loop on every track aligns to that cycle. Focus the next track. Tap Replace or Overdub. Repeat.
+
+**Replace** captures one cycle of new content, replacing whatever was there. **Overdub** captures one cycle that layers on top of existing content — both MIDI (events accumulate) and audio (new audio sums with existing audio).
+
+**Queue, then capture on wrap.** Once a cycle exists, tapping Replace or Overdub queues the gesture: the button pulses to show it's armed, then on the next cycle wrap it starts capturing for exactly one cycle, then commits. This means you can plan ahead — tap before the wrap and the recording starts cleanly on the downbeat.
+
+**Undo and redo.** Same as the rest of the app — they go through the app-level history (⌘Z / ⌘⇧Z work too).
+
+**Reset session** wipes every track's loops and resets the cycle length to zero. It's a routine action ("start a new section"), not a panic button — there's no confirmation dialog, and undo restores it.
+
+**The trigger slot under each button** is for binding a MIDI control. Click it; a menu lists every registered control across your devices. Already-bound controls are disabled. Pick one and that control fires the button. "Manage controls" at the bottom of the menu jumps you to the Performer pane to register more.
+
+**Cycle length.** Defaults to 4 bars on a fresh session. Change it with `[` and `]` (decrement / increment by one bar) while the Looper has focus, or programmatically via chat ("set cycle length to 8 beats").
+
+### Working with the Mixer
+
+A horizontal row of strips at the bottom of the window. Toggle with ⌘O. Each track and bus gets a strip with: input level meters at the top, plugin slots, send list, fader with peak hold, mute and solo pills.
+
+**Faders** use the IEC dB scale: −60 dB at the bottom, +6 dB at the top, unity at about 80% up. Click anywhere on the track to jump the fader handle there. Drag to set continuously.
+
+**Meters.** Stereo, with peak-hold dots that decay slowly so you can see the recent maximum. The scale is non-linear (cubic) so the meaningful range from quiet to loud spreads across the full meter height instead of clustering at the top.
+
+**Mute and Solo.** Mute silences the track. Solo silences every other unsoloed track. Multiple solos add together (you hear all soloed tracks). The pills are at the bottom of the strip.
+
+**Reorder strips** by dragging the strip header.
+
+### Working with the Performer pane
+
+Press ⌘U. Two halves: Controllers on the left, Song Mappings on the right (drag the divider between them).
+
+**Controllers** lists your registered MIDI devices and their named controls. To register a device, see "Setting up MIDI controllers" below. To name a control, click "+" next to a device and use Learn mode: the next MIDI message captured becomes the control with the name you give it.
+
+**Song Mappings** shows two sub-lists: *Atemporal* (bindings that fire when their MIDI control fires) and *Score* (an ordered sequence of bindings used as a song's run-of-show document). You bind a control to an action by dragging the control onto the action, or by using the "+" buttons on either side.
+
+The Looper top bar's per-button trigger slots are a shortcut for the same thing — they create song-scoped Atemporal bindings.
+
+### Working with the Sidebar
+
+A vertical column on the left. Toggle with ⌘S. Two sections: View (one row per pane with its keyboard shortcut) and Songs (the song list plus a +New Song button). The build version sits centered along the bottom edge — selectable so you can copy the commit hash if you're reporting an issue.
+
+The Songs list highlights the currently-loaded song with a brighter row. Click any song to load it; the engine clears and rebuilds from that song's state.
+
+### Audio devices (input and output)
+
+Open Settings (⌘,) and pick the Audio tab. Output and input are independent on macOS, so the app exposes them as two separate dropdowns. Pick your output (speakers, headphones, audio interface) and your input (microphone, audio interface) independently.
+
+The app remembers your selection per device name, so if you unplug and reconnect the same interface it's restored automatically. If you select a device that's not currently available at startup, the app falls back to the system default.
+
+If audio is silent or hardware seems unresponsive, this is the first place to look.
+
+### Setting up your MIDI controller
+
+Plug in your controller before launching the app. (MIDI hot-plug while the app is running is not yet supported — you have to relaunch to pick up devices added mid-session.)
+
+Open the Performer pane (⌘U). On the left, your connected MIDI input ports show up. The exact UI affordance for registering a port as a named "device" (so you can name its controls and bind them) isn't documented here yet — try right-clicking the port, looking for an Add button next to it, or asking in chat. Once it's registered, the device shows up by name and you can name its controls.
+
+To name a control, click the "+" next to the device, click Learn, then move the control on your hardware. The next message the app receives gets captured; type a name for it ("Pedal 1", "Mod Wheel", "Pad 4"). The control is now addressable by name and ready to bind to actions.
+
+To bind a control to an action: drag the control onto an action in the Song Mappings panel, or use the trigger slot on a Looper button if you're binding a looper gesture.
+
+### Keyboard shortcuts
+
+Default shortcuts:
+
+- ⌘Y Producer · ⌘U Performer · ⌘I Chat · ⌘O Mixer · ⌘P Looper · ⌘S Sidebar · ⌘⇧L Logs
+- ⌘, Settings · ⌘⇧K Musical Typing · Esc Close plugin editor
+- ⌘Z Undo · ⌘⇧Z Redo · ⌘D Duplicate · ⌘T Split at playhead · ⌫ Delete
+- Space Play/Stop · Return Rewind · r Record · c Cycle mode · m Metronome · u Set Cycle from Selection · l Toggle loop on selected region
+- h / l Step playhead by division · Shift-H / Shift-L Step by bar
+- ⌘H / ⌘L Zoom horizontal · ⌘J / ⌘K Track rows taller / shorter
+- `[` / `]` (in Looper) Decrement / increment cycle length by one bar
+
+To rebind: open the Keyboard Shortcuts window from the **Performance** menu in the macOS menubar (the leftmost app menu, alongside Settings and Quit). Each row shows the current key; click to capture a new one. Reset-to-default per row, plus reset-all-to-default.
+
+`Save` is intentionally unbound — autosave covers it (every change flushes to disk three seconds after you stop touching things). If you want a forced save, use the menubar's File → Save.
+
+### Asking the chat assistant
+
+Press ⌘I to open the Chat pane. Type what you want — in plain English — and the assistant has access to the same APIs you do, so it can create tracks, load plugins, set gains, build complex effect chains, bind MIDI controls, switch songs, drive the looper, and answer questions about the app.
+
+It works best with concrete asks ("create a piano track with the DLS plugin and add a Raum reverb," "fade out the keys over 8 seconds," "set up a 4-bar cycle and focus track 1"). Vague requests get vague answers.
+
+It will not do destructive things without warning, but it can change existing state when asked. If something it does is wrong, ⌘Z to undo.
+
+If you're not sure what's possible, ask ("what can you do?", "how do I bind my pedal to start the loop?"). It knows about tracks, busses, sends, plugins, presets, bindings, the looper, focus, transport, and most of the in-app help.
+
+There's also a Compose toggle in the Chat pane — that switches the assistant into composition mode, where it writes music in a notation language and drops the result into your current song as new regions. Use it when you want to generate musical material rather than configure the app.
+
+### When something's wrong
+
+**Undo first.** ⌘Z walks back the last change to state — track edits, region edits, gain changes, looper recordings, plugin loads, almost anything. The history goes back many steps.
+
+**Reset the looper session** if your loops are tangled but the rest of the song is fine — click the Reset button in the Looper top bar. Wipes loops, resets cycle length, leaves your tracks and plugins alone. Undo restores it.
+
+**Force a save** with File → Save in the menubar if you're nervous about something — though autosave should already have you covered (3 seconds after the last change).
+
+**Logs.** ⌘⇧L opens the Logs pane in-app, or `tail -f /tmp/performance.log` in a terminal. Errors and engine events show up there with subsystem prefixes like `[Engine]`, `[MIDI]`, `[Coordinator]`.
+
+**Reset the song library.** If you want to start completely fresh, delete songs one at a time from the sidebar — when the list is empty, the app creates a fresh "Untitled" with the default piano-and-audio-input setup. There's no "wipe everything" button by design.
+
+**Crashes.** The app is designed to autosave on crash via the JUCE crash handler — your work should survive. The crashed-session log gets shipped to the developer the next time you launch (you can opt out in Settings → About). When you relaunch, your last-loaded song reopens.
+
+**Reporting an issue.** Note the build hash from the bottom of the sidebar and describe what you were doing when it broke. To send logs along with the report: open the Logs pane (⌘⇧L), click "Export Logs" — it saves a single `.txt` file to your Desktop containing both the current session and any prior crashed-session logs. Send that file to Will along with your description. (For crashes, the app also auto-ships the prior-session log on next launch when the Send Diagnostics toggle in Settings → About is on, so the developer often gets it without you doing anything.)
+
+<!-- END USER HELP -->
+
 ## Architecture notes (context, not output)
 
 - The in-memory StateAPI is the single source of truth. Every call mutates state; the engine is a pure view that syncs from state events.
