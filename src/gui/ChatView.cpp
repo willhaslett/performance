@@ -32,7 +32,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textOnColor));
     inputField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
     inputField.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
-    inputField.setTextToShowWhenEmpty("Message Claude...", Theme::color(Theme::Color::textDim));
+    inputField.setTextToShowWhenEmpty("Message AI...", Theme::color(Theme::Color::textDim));
     inputField.setJustification(juce::Justification::centredLeft);
     inputField.setIndents((int)(Theme::chatInputHeight * 0.4f), 0);
     inputField.onReturnKey = [this] { sendCurrentInput(); };
