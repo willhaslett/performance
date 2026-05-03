@@ -44,14 +44,20 @@ As of 2026-05-03, the architectural foundation is settled, both reward features 
 
 The Looper top bar got its consolidation pass: single segmented `BindableButton` strip (play | up down | replace overdub | undo redo mute clear | reset), uniform 84px cells, no LCD, no record dot, no separate MIDI Learn pill. Each button now carries its own plugin-slot-style "Trigger" affordance — click opens a menu of every registered control across all devices (already-bound controls disabled), bottom item "Manage controls" jumps to the Perform pane. Whole-cell flash on action fire (200ms `triggerLight` overlay at 35% alpha). Pane title ("Looper" / "Producer") is now centered above the track-headers column on both panes. App-level toolbar removed entirely; build info lives at the bottom of the sidebar.
 
-**Remaining sequence:**
+**Plan for next session (2026-05-04):**
+
+1. **Chat interface dogfooding.** Play with the embedded Claude chat for both project management (creating/loading songs, mucking with bindings, etc.) and composing. Look for quick wins. Surface candidates feed the §3 "ChatView UX polish" tail in the 0.1.0 release plan.
+2. **Distribution proof — Sara's machine.** Build the DMG, install on Sara's computer (first second-machine install). Confirm Gatekeeper accepts the notarized DMG, first-launch creates a new install ID, default song reaches sound-on-first-keypress. This is the §1 distribution-proof checklist below, run for real.
+3. **Ship to Joe** via Google Drive — first delivered tester. Round 1 of the friend-tester arc starts here.
+
+**Broader remaining sequence:**
 
 1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* See `docs/BUNDLED_PLUGINS.md`.
 2. ~~**Composer integration.**~~ *Shipped (2026-04-20).* See `docs/COMPOSER_INTEGRATION.md`.
 3. **Looper bootstrap-after-reset bug + KeyLab miles.** Still open: after clicking the in-app reset, neither Play nor Replace appear to do anything — diagnosed as either a focused-track or transport-state half-clear, not yet root-caused. Then more KeyLab time on the trigger-slot binding flow.
 4. **Audio latency** — measured ~85ms one-way at 128 samples (much higher than expected ~3ms). Snap-toggle is in to enable measurement; root-cause work pending. Could be a 0.1.0 blocker depending on cause.
 5. **perfuce.com rebuild.** Tester onboarding copy, example prompts, demo videos. Gated on video capture.
-6. **Distribution proof** (second-machine install, ~1 hour).
+6. **Distribution proof** (second-machine install, ~1 hour) — *first run = Sara's machine, see Plan for next session above.*
 7. **Tag + release.**
 
 ### 1. Distribution proof
