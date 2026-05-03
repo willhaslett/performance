@@ -78,6 +78,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     debugPane.setVisible(false);
     chatView.setVisible(false);
     logPane.setVisible(false);
+    midiMonitorPane.setVisible(false);
     mixerView.setVisible(false);
 
     addChildComponent(sidebar);
@@ -90,8 +91,28 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     // panes. This keeps the Controllers activity dots alive alongside the
     // SongMappings row pulses.
     coordinator.setGlobalMidiMonitor(
-        [this](const std::string& deviceName, const std::string&,
-               const std::string& evType, int ch, int num, int) {
+        [this](const std::string& deviceName, const std::string& description,
+               const std::string& evType, int ch, int num, int value) {
+            // Fan out 1: MIDI Monitor pane — wants every event, no
+            // type filter, with the raw type token + value so it can
+            // color-code and display fully. Push BEFORE any
+            // early-return so sysex/clock/etc. also surface.
+            // Map our internal type names to lowercase tokens the
+            // pane's tokeniser keys on (noteOn, noteOff, cc, etc.).
+            std::string monType = evType;
+            for (auto& c : monType) c = (char) std::tolower(c);
+            if (monType == "noteon")    monType = "noteOn";
+            if (monType == "noteoff")   monType = "noteOff";
+            if (monType == "pitch")     monType = "pitchBend";
+            juce::MessageManager::callAsync(
+                [this, deviceName, description, monType, ch, num, value]() {
+                    midiMonitorPane.handleMidiActivity(deviceName, description,
+                                                        monType, ch, num, value);
+                });
+
+            // Fan out 2: Perform pane (existing) — type-filtered to the
+            // surfaces it cares about (Controllers activity dots, Song
+            // Mappings row pulses).
             auto* dev = this->state.findDeviceByPortName(deviceName);
             if (!dev) return;
             auto devId = dev->id;
@@ -109,6 +130,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     addChildComponent(debugPane);
     addChildComponent(chatView);
     addChildComponent(logPane);
+    addChildComponent(midiMonitorPane);
     addChildComponent(mixerView);
 
     // Musical Typing (hidden by default)
@@ -213,6 +235,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
             auto cur = getPaneContent(PaneSlot::Right);
             setPaneContent(PaneSlot::Right,
                            cur == PaneContent::Chat ? PaneContent::Hidden : PaneContent::Chat);
+        } else if (viewName == "midi_monitor") {
+            auto cur = getPaneContent(PaneSlot::Right);
+            setPaneContent(PaneSlot::Right,
+                           cur == PaneContent::MidiMonitor ? PaneContent::Hidden : PaneContent::MidiMonitor);
         }
         savePaneConfig();
     };
@@ -223,6 +249,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         if (viewName == "perform")  return getPaneContent(PaneSlot::Left) == PaneContent::Perform;
         if (viewName == "mixer")    return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
         if (viewName == "chat")     return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
+        if (viewName == "midi_monitor") return getPaneContent(PaneSlot::Right) == PaneContent::MidiMonitor;
         return false;
     };
     // sidebar.onNewSong is wired by main.mm after layout construction.
@@ -291,6 +318,7 @@ juce::Component* MainLayout::componentForContent(PaneContent content) {
         case PaneContent::Debug:       return &debugPane;
         case PaneContent::Chat:        return &chatView;
         case PaneContent::Logs:        return &logPane;
+        case PaneContent::MidiMonitor: return &midiMonitorPane;
         case PaneContent::Mixer:       return &mixerView;
         default:                       return nullptr;
     }
@@ -306,6 +334,7 @@ std::string MainLayout::contentToString(PaneContent content) {
         case PaneContent::Debug:       return "debug";
         case PaneContent::Chat:        return "chat";
         case PaneContent::Logs:        return "logs";
+        case PaneContent::MidiMonitor: return "midi_monitor";
         case PaneContent::Mixer:       return "mixer";
     }
     return "hidden";
@@ -319,6 +348,7 @@ PaneContent MainLayout::stringToContent(const std::string& s) {
     if (s == "debug")        return PaneContent::Debug;
     if (s == "chat")         return PaneContent::Chat;
     if (s == "logs")         return PaneContent::Logs;
+    if (s == "midi_monitor") return PaneContent::MidiMonitor;
     if (s == "mixer")        return PaneContent::Mixer;
     return PaneContent::Hidden;  // includes legacy "controllers" / "song_mappings" / "mappings"
 }
@@ -333,6 +363,7 @@ const char* MainLayout::contentLabel(PaneContent content) {
         case PaneContent::Debug:       return "Debug";
         case PaneContent::Chat:        return "Chat";
         case PaneContent::Logs:        return "Logs";
+        case PaneContent::MidiMonitor: return "MIDI Monitor";
         case PaneContent::Mixer:       return "Mixer";
     }
     return "?";
@@ -385,7 +416,7 @@ static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
     switch (slot) {
         case PaneSlot::Sidebar: return { PaneContent::Hidden, PaneContent::SidebarTree };
         case PaneSlot::Left:    return { PaneContent::Hidden, PaneContent::Produce, PaneContent::Perform, PaneContent::Debug };
-        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs };
+        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs, PaneContent::MidiMonitor };
         case PaneSlot::Bottom:  return { PaneContent::Hidden, PaneContent::Mixer };
     }
     return { PaneContent::Hidden };

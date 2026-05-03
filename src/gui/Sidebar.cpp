@@ -45,11 +45,12 @@ void Sidebar::rebuild() {
     // Sidebar itself is ⌘S (handled in the View menu, not listed here).
     juce::String cmd = juce::String::fromUTF8("\xe2\x8c\x98");
     for (auto& v : std::vector<std::tuple<std::string, juce::String, juce::String>>{
-        {"produce",  "Produce",  cmd + "Y"},
-        {"perform",  "Perform",  cmd + "U"},
-        {"chat",     "Chat",     cmd + "I"},
-        {"mixer",    "Mixer",    cmd + "O"},
-        {"looper",   "Looper",   cmd + "P"},
+        {"produce",       "Produce",       cmd + "Y"},
+        {"perform",       "Perform",       cmd + "U"},
+        {"chat",          "Chat",          cmd + "I"},
+        {"mixer",         "Mixer",         cmd + "O"},
+        {"looper",        "Looper",        cmd + "P"},
+        {"midi_monitor",  "MIDI Monitor",  ""},
     }) {
         auto& [id, label, shortcut] = v;
         items.push_back({ Item::ViewToggle, label, id, {}, shortcut });

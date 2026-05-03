@@ -5,6 +5,7 @@
 #include "gui/ChatView.h"
 #include "gui/DebugPane.h"
 #include "gui/LogPane.h"
+#include "gui/MidiMonitorPane.h"
 #include "gui/PerformPane.h"
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
@@ -33,7 +34,8 @@ enum class PaneContent {
     Debug,
     Chat,
     Logs,
-    Mixer
+    Mixer,
+    MidiMonitor
 };
 
 class MainLayout : public juce::Component, public juce::DragAndDropContainer {
@@ -83,6 +85,7 @@ public:
     LooperPane looperPane;
     ChatView chatView;
     LogPane logPane;
+    MidiMonitorPane midiMonitorPane;
 
 private:
     StateAPI& state;

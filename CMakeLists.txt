@@ -111,6 +111,7 @@ target_sources(Performance PRIVATE
     src/composer/V2NotationParser.cpp
     src/composer/ComposerWriter.cpp
     src/gui/LogPane.cpp
+    src/gui/MidiMonitorPane.cpp
     src/gui/ChatView.cpp
     src/gui/PerformanceLookAndFeel.cpp
     src/api/ClaudeClient.cpp
