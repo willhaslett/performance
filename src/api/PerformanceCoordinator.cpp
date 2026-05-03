@@ -915,6 +915,98 @@ void PerformanceCoordinator::computeAudioPeaks(TakeState& take) {
             (int)take.peakData.peaks.size(), take.filePath.c_str());
 }
 
+void PerformanceCoordinator::recomputeAudioPeaksFromFile(TakeState& take) {
+    take.peakData.peaks.clear();
+    computeAudioPeaks(take);
+}
+
+void PerformanceCoordinator::mergeOverdubAudio(const AudioRecordSession& session) {
+    if (! session.isOverdub) return;
+    juce::File targetFile(session.targetPath);
+    juce::File tempFile(session.tempPath);
+    if (! tempFile.existsAsFile()) {
+        perfLog("[Looper] overdub merge: temp file missing (%s) — skipping\n",
+                session.tempPath.c_str());
+        return;
+    }
+
+    juce::WavAudioFormat wav;
+    auto readBuffer = [&](const juce::File& file) -> juce::AudioBuffer<float> {
+        auto stream = file.createInputStream();
+        if (! stream) return {};
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            wav.createReaderFor(stream.release(), true));
+        if (! reader) return {};
+        juce::AudioBuffer<float> buf((int) reader->numChannels,
+                                       (int) reader->lengthInSamples);
+        if (reader->lengthInSamples > 0)
+            reader->read(&buf, 0, (int) reader->lengthInSamples, 0, true, true);
+        return buf;
+    };
+
+    juce::AudioBuffer<float> oldBuf = targetFile.existsAsFile()
+                                       ? readBuffer(targetFile)
+                                       : juce::AudioBuffer<float>{};
+    juce::AudioBuffer<float> newBuf = readBuffer(tempFile);
+
+    if (newBuf.getNumSamples() == 0) {
+        perfLog("[Looper] overdub merge: temp file empty — discarding\n");
+        tempFile.deleteFile();
+        return;
+    }
+
+    int outChans = std::max(oldBuf.getNumChannels(), newBuf.getNumChannels());
+    int outFrames = std::max(oldBuf.getNumSamples(), newBuf.getNumSamples());
+    if (outChans <= 0) outChans = 1;
+
+    juce::AudioBuffer<float> mixed(outChans, outFrames);
+    mixed.clear();
+    for (int ch = 0; ch < outChans; ++ch) {
+        if (ch < oldBuf.getNumChannels())
+            mixed.addFrom(ch, 0, oldBuf, ch, 0, oldBuf.getNumSamples());
+        if (ch < newBuf.getNumChannels())
+            mixed.addFrom(ch, 0, newBuf, ch, 0, newBuf.getNumSamples());
+    }
+
+    // Write the mix to a temp-of-temp, then atomically replace the
+    // target. juce::File::createOutputStream doesn't truncate, so we
+    // delete the target first to avoid leaving stale tail data.
+    juce::File mixFile(targetFile.getFullPathName() + ".mix");
+    mixFile.deleteFile();
+    {
+        auto stream = mixFile.createOutputStream();
+        if (! stream) {
+            perfLog("[Looper] overdub merge: failed to open %s for write\n",
+                    mixFile.getFullPathName().toRawUTF8());
+            tempFile.deleteFile();
+            return;
+        }
+        // Reuse existing tempo / sample-rate from the take. Get sample rate
+        // from the new file's reader (writer wrote at engine sample rate).
+        int sr = 48000;
+        if (auto inStream = tempFile.createInputStream()) {
+            if (auto* r = wav.createReaderFor(inStream.release(), true)) {
+                sr = (int) r->sampleRate;
+                delete r;
+            }
+        }
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            wav.createWriterFor(stream.release(), sr, outChans, 24, {}, 0));
+        if (! writer) {
+            perfLog("[Looper] overdub merge: failed to create WAV writer\n");
+            tempFile.deleteFile();
+            return;
+        }
+        writer->writeFromAudioSampleBuffer(mixed, 0, outFrames);
+    }  // writer destructor flushes + closes
+    targetFile.deleteFile();
+    mixFile.moveFileTo(targetFile);
+    tempFile.deleteFile();
+
+    perfLog("[Looper] overdub merge: %d frames × %d ch → %s\n",
+            outFrames, outChans, session.targetPath.c_str());
+}
+
 void PerformanceCoordinator::shutdown() {
     auto t0 = juce::Time::getMillisecondCounterHiRes();
     stopTimer();
@@ -1286,6 +1378,7 @@ void PerformanceCoordinator::openLoopCaptureForTrack(const TrackId& trackId,
         && ! focusedTrack->loops.empty()) {
         auto& region = focusedTrack->loops[0];
         region.type = "audio";
+        bool isOverdub = (region.loopAction == LoopAction::CapturingOverdub);
         if (auto* take = region.activeTake()) {
             double sr = audioEngine->getCurrentSampleRate();
             take->recordTempo  = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
@@ -1296,14 +1389,29 @@ void PerformanceCoordinator::openLoopCaptureForTrack(const TrackId& trackId,
                                 .getChildFile(".config/performance/audio");
             audioDir.createDirectory();
             auto wavFile = audioDir.getChildFile(juce::String(take->id.str()) + ".wav");
+            // For overdub, write to a temp sibling so we can mix with the
+            // existing wav at commit time; for replace, write straight to
+            // the target after deleting it. createOutputStream doesn't
+            // truncate — without the delete, a shorter new recording
+            // leaves stale tail data and the WAV reader's lengthInSamples
+            // reflects the OLD (longer) file, so playback walks past the
+            // new content into the leftover bytes.
+            auto tempFile = isOverdub
+                ? audioDir.getChildFile(juce::String(take->id.str()) + ".overdub.wav")
+                : wavFile;
+            if (! isOverdub)
+                wavFile.deleteFile();
             take->filePath = wavFile.getFullPathName().toStdString();
 
             AudioRecordSession session;
-            session.trackId  = trackId;
-            session.regionId = region.id;
-            session.fifo     = std::make_unique<AudioRecordFIFO>();
-            session.writer   = std::make_unique<AudioWriterThread>();
-            session.writer->startWriting(*session.fifo, wavFile, sr, take->channelCount);
+            session.trackId    = trackId;
+            session.regionId   = region.id;
+            session.fifo       = std::make_unique<AudioRecordFIFO>();
+            session.writer     = std::make_unique<AudioWriterThread>();
+            session.tempPath   = tempFile.getFullPathName().toStdString();
+            session.targetPath = wavFile.getFullPathName().toStdString();
+            session.isOverdub  = isOverdub;
+            session.writer->startWriting(*session.fifo, tempFile, sr, take->channelCount);
 
             std::vector<GraphWrapper::AudioRecordTarget> targets;
             targets.push_back({ focusedTrack->inputChannelStart,
@@ -1312,8 +1420,10 @@ void PerformanceCoordinator::openLoopCaptureForTrack(const TrackId& trackId,
             audioEngine->setAudioRecordTargets(targets);
 
             activeLoopAudioSession = std::move(session);
-            perfLog("[Looper] audio capture armed on %s → %s\n",
-                    trackId.c_str(), take->filePath.c_str());
+            perfLog("[Looper] audio %s armed on %s → %s\n",
+                    isOverdub ? "overdub capture" : "replace capture",
+                    trackId.c_str(),
+                    activeLoopAudioSession->tempPath.c_str());
         }
     }
 
@@ -1343,36 +1453,55 @@ void PerformanceCoordinator::commitInFlightCapture() {
     if (stateAPI) stateAPI->commitLoopAction(tid, std::move(events));
     endCapture();
 
-    // Finalize an audio session if one was open. Same shape as
-    // stopRecording's audio teardown — close the writer, stamp peaks +
-    // length on the take, then reload audio files into the engine so
-    // playback (driven by GraphWrapper) picks the new file up.
+    // Finalize an audio session if one was open. Close the writer, then
+    // for an overdub capture merge the just-written temp file with the
+    // existing target file (sample-by-sample sum) and write the result
+    // back to the take's filePath. Replace skips the merge — writer
+    // already wrote straight to the target. After either path: stamp
+    // peaks + length on the take, reload audio files into the engine.
     if (activeLoopAudioSession.has_value() && audioEngine) {
         audioEngine->clearAudioRecordTargets();
         activeLoopAudioSession->writer->stopWriting();
+
+        auto session = std::move(*activeLoopAudioSession);
+        activeLoopAudioSession.reset();
+
+        if (session.isOverdub) {
+            mergeOverdubAudio(session);
+        }
+
         if (stateAPI) {
-            if (auto* t = stateAPI->findTrack(activeLoopAudioSession->trackId)) {
+            if (auto* t = stateAPI->findTrack(session.trackId)) {
                 if (! t->loops.empty()) {
                     auto& region = t->loops[0];
                     if (auto* take = region.activeTake()) {
-                        int64_t frames = activeLoopAudioSession->writer->getTotalFramesWritten();
+                        // Length comes from the target file's frame count
+                        // (same for replace and overdub — overdub merge
+                        // preserves the longer of the two file lengths).
+                        juce::WavAudioFormat wav;
+                        auto file = juce::File(session.targetPath);
+                        int64_t frames = 0;
+                        if (file.existsAsFile()) {
+                            auto stream = file.createInputStream();
+                            if (stream) {
+                                std::unique_ptr<juce::AudioFormatReader> reader(
+                                    wav.createReaderFor(stream.release(), true));
+                                if (reader) frames = reader->lengthInSamples;
+                            }
+                        }
                         double seconds = (take->sampleRate > 0)
                                        ? (double) frames / take->sampleRate : 0.0;
                         region.lengthBeats = seconds * (take->recordTempo / 60.0);
-                        auto writerPeaks = activeLoopAudioSession->writer->getPeaks();
-                        take->peakData.samplesPerPeak = 256;
-                        take->peakData.peaks.clear();
-                        for (auto& p : writerPeaks)
-                            take->peakData.peaks.push_back({ p.min, p.max });
+                        recomputeAudioPeaksFromFile(*take);
                         if (firstLoop) elapsed = region.lengthBeats;
-                        perfLog("[Looper] audio commit on %s — %lld frames, %.3f beats\n",
-                                activeLoopAudioSession->trackId.c_str(),
+                        perfLog("[Looper] audio commit on %s (%s) — %lld frames, %.3f beats\n",
+                                session.trackId.c_str(),
+                                session.isOverdub ? "overdub" : "replace",
                                 frames, region.lengthBeats);
                     }
                 }
             }
         }
-        activeLoopAudioSession.reset();
         loadAudioFilesIntoEngine();
     }
 

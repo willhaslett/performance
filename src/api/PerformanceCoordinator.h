@@ -256,6 +256,15 @@ private:
         RegionId regionId;
         std::unique_ptr<AudioRecordFIFO> fifo;
         std::unique_ptr<AudioWriterThread> writer;
+        // For looper overdub: writer targets `tempPath` (a sibling of
+        // the take's filePath), and on commit the contents are mixed
+        // with the existing file at `targetPath` and the result is
+        // written back to `targetPath`. For looper replace and for
+        // arrangement recording, both paths are the take's filePath
+        // (writer goes straight there, no mix step).
+        std::string tempPath;
+        std::string targetPath;
+        bool isOverdub = false;
     };
     std::vector<AudioRecordSession> audioRecordSessions;
     double recordStartBeat = 0.0;
@@ -267,6 +276,13 @@ private:
     void stopRecording();
     void drainRecordFIFO();
     void computeAudioPeaks(TakeState& take);
+    // Sum-mix the just-recorded overdub temp file with the existing
+    // target file and write the result back to the target. Deletes
+    // the temp file. No-op for non-overdub sessions.
+    void mergeOverdubAudio(const AudioRecordSession& session);
+    // Re-scan the take's WAV file from disk and rebuild peakData. Used
+    // after the overdub merge so the lane visual matches the file.
+    void recomputeAudioPeaksFromFile(TakeState& take);
     void loadAudioFilesIntoEngine();
     void syncTempoFromState();
 
