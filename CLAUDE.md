@@ -22,7 +22,7 @@ User-testing artifacts (round plans, session notes, tester profiles, feedback) l
 
 ## Version & Distribution
 
-**Current version: `0.0.3`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.3)`. `0.1.0` will be the first beta. `0.0.3` adds the bundled-plugin install pack (15 curated free AU plugins via private S3 + presigned Lambda, first-launch prompt, Settings → Plugins install/uninstall) on top of `0.0.2`'s architectural settlement.
+**Current version: `0.0.4`** — SSOT is `CMakeLists.txt` line 2: `project(Performance VERSION 0.0.4)`. `0.1.0` will be the first beta. `0.0.4` is the first build shipped to a tester (Sara) — adds chat history persistence, GM defaults + drum-token enforcement in the compose prompt, BindableButton trigger-slot menu (with shared track-context-menu), Sidebar Track Presets section, MIDI Monitor pane (View menu), and the prompt-caching + 5x cap bumps in the chat Lambda. `0.0.3` was the bundled-plugin install pack baseline.
 
 **Build pipeline:** `scripts/build-release.sh [version]` — one command for Release build → code sign → DMG → notarize → staple. Version defaults to the CMake version. Output: `dist/Performance-<version>.dmg`. Requires Apple Developer ID certificate (William Haslett, H25TK2U8FA) + keychain-stored notarization credentials (`AC_PASSWORD` profile). First successful end-to-end run completed.
 
