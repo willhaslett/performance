@@ -50,6 +50,11 @@ The Looper top bar got its consolidation pass: single segmented `BindableButton`
 2. **Distribution proof — Sara's machine.** Build the DMG, install on Sara's computer (first second-machine install). Confirm Gatekeeper accepts the notarized DMG, first-launch creates a new install ID, default song reaches sound-on-first-keypress. This is the §1 distribution-proof checklist below, run for real.
 3. **Ship to Joe** via Google Drive — first delivered tester. Round 1 of the friend-tester arc starts here.
 
+**Pre-Joe-ship gate (don't forget):**
+- **Confirm bundled plugin pack actually installs end-to-end** on a fresh-ish install. The pipeline ships; we need to verify Joe's first launch actually downloads and registers all 15 AUs. Test via the bin/reset script + relaunch flow at minimum.
+
+**Latency note (resolved for ship):** measured 80+ms round-trip on the MacBook's built-in audio at 128 samples; verified the same recording path is fine on Will's Focusrite. Built-in Mac audio has known high driver latency that no host-side compensation will fix on the input side; dedicated interfaces deliver near-buffer-size times. Joe records bass through an interface, so this isn't a Joe blocker. Compensation for high-latency configurations stays in the backlog; not on the critical path for the first friend ship.
+
 **Broader remaining sequence:**
 
 1. ~~**Bundled plugin install pack.**~~ *Shipped (2026-04-20).* See `docs/BUNDLED_PLUGINS.md`.
