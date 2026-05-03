@@ -124,9 +124,16 @@ export class TelemetryStack extends Stack {
         BEARER_TOKEN_SECRET: tokenSecret.secretArn,
         ANTHROPIC_KEY_PARAM: anthropicKeyParamName,
         DEFAULT_MODEL: 'claude-sonnet-4-5',
-        MONTHLY_INPUT_CAP: '100000',
-        MONTHLY_OUTPUT_CAP: '25000',
-        UNCAPPED_INSTALLS: '',  // CSV of install IDs to bypass the cap (dev use)
+        // Per-install monthly caps. Bumped 5x from the original 100k/25k
+        // to give friend-round testers headroom while we ship Anthropic
+        // prompt caching (which will drop per-request input cost ~10x and
+        // let us walk these back down). Revisit after caching lands.
+        MONTHLY_INPUT_CAP: '500000',
+        MONTHLY_OUTPUT_CAP: '125000',
+        // CSV of install IDs that bypass the cap (dev use). Will's dev
+        // install is permanently uncapped — the cap exists to bound
+        // tester cost, not block development.
+        UNCAPPED_INSTALLS: '07666c28-f231-4b31-8af3-72e29073d7b2',
       },
     });
 
