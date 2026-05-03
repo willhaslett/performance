@@ -35,6 +35,10 @@ public:
     ~LooperPane() override;
 
     void setSequencer(SequencerAPI* seq) { sequencer = seq; }
+    // Wired by MainLayout — fired when the user picks "Manage controls"
+    // from any BindableButton's trigger menu, so the host can hide the
+    // looper and reveal the Perform pane.
+    void setOnShowPerformPane(std::function<void()> fn);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -91,6 +95,8 @@ private:
     std::unique_ptr<BindableButton> focusPrevBtn;
     std::unique_ptr<BindableButton> focusNextBtn;
     std::unique_ptr<BindableButton> resetBtn;
+    std::function<void()> onShowPerformPane;
+    void wireManageControls(BindableButton& btn);
     void rebuildRowGeoms();
 
     // ---- Paint helpers ----

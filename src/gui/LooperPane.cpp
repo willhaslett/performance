@@ -100,6 +100,12 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
     resetBtn->setCornerStyle(BindableButton::Right);
     addAndMakeVisible(*resetBtn);
 
+    for (auto* b : { playBtn.get(), replaceBtn.get(), overdubBtn.get(),
+                      undoBtn.get(), redoBtn.get(), muteBtn.get(),
+                      clearBtn.get(), focusPrevBtn.get(), focusNextBtn.get(),
+                      resetBtn.get() })
+        wireManageControls(*b);
+
     stateSubId = state.events().subscribe([this](const StateEvent& ev) {
         if (ev.entity == StateEvent::Config) {
             // Producer (or anything else) changed the row-height config —
@@ -124,6 +130,24 @@ LooperPane::LooperPane(StateAPI& s, EngineAPI& e, PerformanceCoordinator& c)
 
 LooperPane::~LooperPane() {
     state.events().unsubscribe(stateSubId);
+}
+
+void LooperPane::setOnShowPerformPane(std::function<void()> fn) {
+    onShowPerformPane = std::move(fn);
+    // Re-wire each button's manage-controls callback so newly assigned
+    // host actions take effect even if buttons were created earlier.
+    for (auto* b : { playBtn.get(), replaceBtn.get(), overdubBtn.get(),
+                      undoBtn.get(), redoBtn.get(), muteBtn.get(),
+                      clearBtn.get(), focusPrevBtn.get(), focusNextBtn.get(),
+                      resetBtn.get() }) {
+        if (b) wireManageControls(*b);
+    }
+}
+
+void LooperPane::wireManageControls(BindableButton& btn) {
+    btn.setOnManageControlsRequest([this] {
+        if (onShowPerformPane) onShowPerformPane();
+    });
 }
 
 void LooperPane::visibilityChanged() {

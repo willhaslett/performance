@@ -30,6 +30,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
 
     looperPane.setSequencer(coordinator.sequencer());
+    looperPane.setOnShowPerformPane([this] {
+        setPaneContent(PaneSlot::Left, PaneContent::Perform);
+        savePaneConfig();
+    });
 
     // After a song loads, scan its bindings + action events for refs that
     // don't resolve anymore (e.g. a track got deleted in a past session and
