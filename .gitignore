@@ -8,3 +8,4 @@ cmake_install.cmake
 dist/
 keys/
 .cache/
+.claude/
