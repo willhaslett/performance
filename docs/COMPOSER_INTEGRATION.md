@@ -1,6 +1,6 @@
-# Composer integration — investigation
+# Composer integration
 
-**Status:** investigation only; no design decisions yet.
+**Status (2026-05-03):** **Shipped.** Phases 1–5 of the design (bottom of this doc) all landed on `main` on 2026-04-20. The investigation block immediately below is preserved as the "why" — the design + ship details are in the **Design** section further down. Read the design section for what's in code; read the investigation for the original framing.
 **Date started:** 2026-04-20.
 **Source project:** `~/ideas_and_projects/dawai/` (standalone, git-tracked, phase 11 "prompt & workflow tuning").
 

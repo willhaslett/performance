@@ -1,6 +1,6 @@
 # Live MIDI input, track focus, and looper routing
 
-**Status:** designed 2026-04-21, not yet implemented. Living doc — updated as we land pieces. Target: merged to `main` before 0.1.0 ship.
+**Status (2026-05-03):** Phases 1–5 shipped. Phase 6 (Boss-style looper) is functionally complete for both MIDI and audio — see status block at the top of `LIVE_LOOPING.md` for the per-piece breakdown. The doc below is kept as the design rationale; the "Phased implementation plan" section now reads as history rather than a forward plan.
 
 This redesigns how live MIDI reaches instrument plugins, introduces a singular "focused track" concept, and reshapes the looper around those primitives. It supersedes the per-track record button UI in the Looper pane and fixes the current "all plugins receive all live MIDI" behavior that's both musically wrong (hitting a key plays every loaded instrument) and a CPU waste (every plugin running voice allocation on every event).
 
@@ -70,15 +70,13 @@ Capture is upstream of routing. That preserves the `R=on, I=off` silent-capture 
 
 ## Looper changes that fall out of this
 
-Once per-track `I`/`R` and focused-track are in place, the Looper pane's per-track record button becomes the wrong abstraction. The new model:
+(All shipped by phase 6; described here as the rationale for the model that's now in code.)
 
-- **Loop recording is a global action**, not a per-track one. One button (in the transport bar, bindable to a MIDI pedal) triggers punch-in on every currently-armed track.
-- **Arming happens via `R` pills wherever they live** — Produce pane row, mixer, MIDI binding. The Looper pane doesn't duplicate the arming UI; it just respects the current armed set.
-- **Multi-track recording for free.** If two tracks have `R=on` when the performer hits the global record action, both record simultaneously. The dispatcher already tags per-track, so each track gets its own take.
-- **Per-track rows in the Looper pane** show loop content (take timeline, take picker, mute, stop) but no record affordance. The red-ring-pulsing "armed" visual can live on the row header if we want to echo which tracks are being recorded into, but it's display, not control.
-- **The `Off → Armed → Recording → StopPending → Off` per-track state machine** we built gets torn out in favor of a single session-level machine: `Off → Recording → Off` that respects the armed set at the moment of punch-in.
+Once per-track `I`/`R` and focused-track are in place, the Looper pane's per-track record button becomes the wrong abstraction. The model in code today:
 
-This is a significant simplification over what currently sits on `main`. Several hundred lines of looper-specific code collapse.
+- **Loop recording is a per-focused-track action.** Replace and overdub gestures (in the top bar, bindable via each cell's trigger slot) target the currently-focused track — no per-track record button. Boss-RC flow: focus → tap → play → second tap sets cycle length → focus next → tap.
+- **Arming via `R` pills was dropped from the Looper.** R-arming machinery is gone from the Looper specifically (commit 844ed85); the Looper uses focus + gestures, not the armed set. Producer/Mixer keep `R` for arrangement recording.
+- **The per-track `LoopRecordState` (`Off → Armed → Recording → StopPending → Off`)** was torn out in favor of a session-level `LoopAction` enum (`None / ReplaceQueued / OverdubQueued / CapturingReplace / CapturingOverdub`) tracked per-region. Several hundred lines of looper-specific code collapsed.
 
 ## Loop length definition (Boss-style)
 
@@ -86,15 +84,17 @@ Covered in `LIVE_LOOPING.md`'s updates. Summary: loop length is tap-to-tap on th
 
 ## GUI changes summary
 
-1. **Instrument tracks gain the `I` pill.** Same visual as audio's `I` pill. Four pills on instruments now: `M S R I`.
-2. **Focused-track highlight.** TBD — a left-edge colored stripe on the track row is the least disruptive affordance. Could also be the name color or an outline. One pick, consistent across Produce and Looper.
-3. **Click dispatcher.** Plain/Cmd/Shift click handler is factored into one place (probably a helper on MainLayout or a shared track-list widget) so Produce, Looper, and Mixer all use the same rules.
-4. **Looper pane.** Remove per-track record button. Keep mute, take selector, loop timeline. Optionally add a red-pulse indicator for "armed AND currently capturing" state.
-5. **Transport bar global record.** The `r` key and a transport-bar record button become the sole entrypoints for arrangement + looper recording. The looper branch of that action picks up on `getMode() == Looper`.
+(Reflects what shipped — see `TrackUi`, `LooperPane`, `BindableButton` in `src/gui/`.)
 
-## Phased implementation plan
+1. **Instrument tracks have the `I` pill.** Same visual as audio's `I` pill. Three pills on instruments in the Looper (`M S I` — `R` is gone there); four on instruments in Producer/Mixer (`M S R I`).
+2. **Focused-track highlight** is a thickened left-edge type-color stripe on the track row, plus a row-bg shift via `TrackUi::rowBgToken(muted, focused, selected)` — applied uniformly across Produce, Mixer, and Looper.
+3. **Click dispatcher** lives in `TrackUi::handleTrackClick(state, trackId, mods)`; Produce, Looper, and Mixer all call it.
+4. **Looper pane** has no per-track record button; gesture buttons (replace / overdub / undo / redo / mute / clear / reset) live in the top bar's segmented `BindableButton` strip and act on the focused track. Each cell carries a per-button trigger-slot affordance for binding to a MIDI control.
+5. **Transport bar global record.** The `r` key + transport record handle arrangement recording. Looper recording goes through the gesture buttons (which fire actions, which can themselves be MIDI-bound via the trigger slots).
 
-The pieces compose cleanly; each phase leaves the tree buildable.
+## Phased implementation plan (history)
+
+All phases below shipped. Kept here for traceability — each phase's section describes what landed, in roughly the order it landed. Phase 6 detail lives in `LIVE_LOOPING.md`.
 
 ### Phase 1 — State model: focus and per-track inputMonitoring for instruments
 
@@ -131,17 +131,20 @@ which gives multi-track capture for free. And capture is upstream of the
 routing gate in `GraphWrapper::processBlock`, so `R=on, I=off` silent
 capture already works. Skipping this phase.
 
-### Phase 5 — Looper session-level record
+### Phase 5 — Looper session-level record (shipped)
 
-- Transport-bar record (and `r` key) becomes mode-aware.
-- Looper-flavored record uses a session-level state machine that respects the armed set.
-- Per-track record button removed from Looper pane.
-- Per-track state machine / `LoopRecordState` collapses into session state.
-- Multi-track simultaneous capture works automatically.
+- `LoopRecordState` per-track machine torn out (commit 5f14ee7).
+- Per-track record button removed from Looper pane (commit 844ed85, GUI cleanup).
+- Replaced by session-level `LoopAction` enum (`None / ReplaceQueued / OverdubQueued / CapturingReplace / CapturingOverdub`) per-region.
 
-### Phase 6 — Looper: Boss-style loop length (see LIVE_LOOPING.md)
+### Phase 6 — Looper: Boss-style loop length + gesture top bar (shipped)
 
-Covered separately. Depends on phase 5 being in place.
+- Boss-RC tap-to-start, tap-to-stop bootstrap (commit 7e65b15).
+- Queue-then-record-on-wrap for established cycle (commit 9d27209).
+- Audio recording + playback wired (commit e62a322); real overdub via WAV sum-mix (commit 5536135).
+- Top bar consolidated to a single segmented `BindableButton` strip with per-button trigger-slot binding (commits 980c6f1 → 97a195f → 1fd2f0a → 24c68fd).
+
+See `LIVE_LOOPING.md` for the data model and capture/commit lifecycle.
 
 ## Known bugs (surfaced during phase 5a click-testing)
 

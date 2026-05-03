@@ -1,6 +1,6 @@
 # Live looping — investigation + design
 
-**Status:** Phases 1–4 landed on branch `live-looping` as of 2026-04-20; initial click-testing in progress. Phase 5 (movement/copy primitives) still open. See **Implementation status** at the bottom for details.
+**Status (2026-05-03):** the data model + cycle math + capture/commit lifecycle described here are in code and shipped. The **Looper pane GUI section below is stale** — the pane was redesigned twice since this doc was written (per-track record button → session-level gestures → segmented `BindableButton` strip with per-button trigger slots). For the current GUI, read `LooperPane.h`, `BindableButton.h`, and the "Current focus" block in `CLAUDE.md`. The "Out of scope" list at the bottom is also stale: **audio loops + audio overdub shipped** (commits e62a322, 5536135). See **Implementation status** at the bottom for the current rundown.
 
 The investigation section surveys the field. The Design section below is what we're actually building — and it diverges from the "Ableton-style matrix" the investigation opens with. The deeper the investigation went, the clearer it became that the user's intuition about a single looping timeline with one region per track was *not* an under-specified matrix; it was a legitimately different model, and the right one for this app.
 
@@ -211,8 +211,10 @@ Five phases, each shippable on its own, building strictly upward.
 
 ## Out of scope for v1
 
-- Audio loops. MIDI only for this release.
-- Overdub (add layer to an existing take). Not part of our model.
+(Updated 2026-05-03 — this list shrank as the looper matured. Items struck through here shipped.)
+
+- ~~Audio loops. MIDI only for this release.~~ **Shipped** — audio recording + playback wired (commit e62a322).
+- ~~Overdub (add layer to an existing take). Not part of our model.~~ **Shipped** — both MIDI overdub and audio overdub (via WAV sum-mix) work; commit 5536135 for the audio path. Gesture lives in the top-bar `BindableButton` strip.
 - Scenes / cross-track coordinated launch. Not applicable.
 - "Start from arbitrary beat" when launching a take. The model is always beat-0-at-wrap.
 - Follow actions, per-take quantize, per-loop tempo.
@@ -229,19 +231,26 @@ Five phases, each shippable on its own, building strictly upward.
 
 ---
 
-# Implementation status (2026-04-20)
+# Implementation status (2026-05-03)
 
-All work is on branch `live-looping`, merged to `main` after initial visual verification.
+The data model + cycle math + capture/commit lifecycle are in code. The Looper pane has been substantially redesigned twice since the original Phase 4 GUI landed; what's there now does not match the old description.
 
-**Phases 1–3 landed with tests:** state model + pool-discriminated persistence + `pendingTakeId`; modular playback (`regionPosition = cyclePosition mod region.lengthBeats`); latching loop-record state machine (Off → Armed → Recording → StopPending → Off) with cycle-wrap detection in `PerformanceCoordinator`. 205/205 unit tests pass, including `LooperStateTests`, `LooperPlaybackTests`, `LooperTakeSwapTests`, `LooperRecordTests`.
+**What's in code today:**
 
-**Phase 4 landed, click-testing in progress.** `LooperPane` renders a top bar (title + cycle-progress strip aligned to the timeline column + cycle-length pill), one row per track (record button with armed/recording/stop-pending visual states, mute pill, take selector, loop content repeated across the cycle with a simple piano-roll note render), and a shared playhead. Sidebar has a "Looper" row that flips `looperModeActive` and swaps the Left slot between Produce and Looper (they're mutually exclusive). Click handlers are wired to `toggleLoopRecord`, `setTrackMuted`, `setPendingTake`, and `setCycleLength`.
+- **Data model** — `track.regions` (arrangement) and `track.loops` (looper) as fully independent collections; `RegionState` carries `pendingTakeId` and a `loopAction` enum (`None / ReplaceQueued / OverdubQueued / CapturingReplace / CapturingOverdub`). `cycleEnabled` + `cycleStart=0` enforced when `AppMode::Looper`.
+- **Engine** — mode-gated dispatch in `GraphWrapper::processBlock` (both MIDI *and* audio file regions are silenced when the engine is in Looper mode, so arrangement content can't bleed in). `Arrangement::loopForTrack(TrackId)` returns the loop region (or null) for the looper code path.
+- **Capture/commit** — Boss-RC: first tap on `replace` starts capturing, second tap defines cycle length and commits the take. Subsequent gestures queue and commit on the next cycle wrap. Replace truncates the WAV file before the writer opens; overdub writes to a `.overdub.wav` temp, then sum-mixes both into a `.mix` file and atomically renames on commit. In-flight content (notes + waveform) paints live during capture, capped at the live playhead.
+- **GUI** — top bar is a single segmented `BindableButton` strip (play | up down | replace overdub | undo redo mute clear | reset, uniform 84px cells); each cell carries a per-button trigger-slot affordance for binding to a MIDI control (menu lists every registered control, disables already-bound, "Manage controls" jumps to Perform pane). Pane title "Looper" centered above the track-headers column. App-level toolbar removed; build info at the sidebar bottom.
+- **Tests** — 252 in tree (`tests/PerformanceTests.cpp`). Looper-specific suites cover state transitions, capture commit length, the Boss-RC redux path, transport-stop-during-capture, queued-stop-cancels.
 
-**Open items before calling Looper done:**
+**Still open (ship blockers):**
 
-- **Extended click-testing.** Record path end-to-end (arm → wrap → capture → stop-pending → finalize), take-swap visible at cycle wrap, cycle-length live editing, and behavior under song switch / autosave / quit-and-reload. The full feature surface has not yet been exercised in the running app.
-- **Dedicated keyboard shortcut for the Looper pane.** All adjacent ⌘ keys were taken (⌘L is `view.zoomIn`); deferred until click-testing motivates a choice.
-- **Load-time reconciliation** between persisted `looperModeActive` and the persisted pane layout. Skipped on the first pass; revisit if it bites.
-- **Pane-aware keybinding routing.** Still on the open-questions list above.
-- **Phase 5 — movement/copy primitives** (`moveLoop`, `moveRegion`, `copyLoopToArrangement`, `copyArrangementToLoop`). Not started.
+- **Bootstrap-after-reset bug.** After clicking the in-app reset, neither Play nor Replace appear to do anything. Diagnosed as either a focused-track or transport-state half-clear; not yet root-caused.
+- **Stuck notes on transport stop** — Looper-only, intermittent. `[LoopDump]` diagnostic logging in tree (commit `d017823`).
+- **Audio latency** ~85ms one-way at 128 samples — much higher than expected. Snap-toggle landed for sample-accurate measurement.
+
+**Deferred:**
+
+- Phase 5 movement/copy primitives (`moveLoop`, `moveRegion`, `copyLoopToArrangement`, `copyArrangementToLoop`) — never landed; still considered nice-to-have rather than ship-blocker.
+- Producer ↔ Looper tempo coupling (one song = one tempo; documented in CLAUDE.md backlog).
 

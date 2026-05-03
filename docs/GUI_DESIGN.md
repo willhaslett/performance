@@ -2,6 +2,8 @@
 
 Work-in-progress design thinking for the app's UX. Not a spec — a conversation artifact. Nothing here is locked in. The goal is to converge toward a vision that doesn't require rewrites but is headed toward a surprisingly good UI.
 
+> **Stale-content warning (2026-05-03).** Sections that talk about "the toolbar" describe a UI surface that **no longer exists** — the app-level top toolbar was removed (commit cfa7536); navigation is now via the sidebar (`⌘S`), not toolbar buttons. The "two modes / one app" framing also bears reading against `docs/PANE_MODE_MODEL.md` (the formal model that won) rather than the early speculation here. The user-journey and UX-principle sections (`### 1. I just want to play a sound`, the Claude-as-shortcut section, the progressive-disclosure section) are still useful framing. Treat the rest as historical thinking.
+
 ## User Journeys
 
 The five things a user routinely does, in the order they discover them.
