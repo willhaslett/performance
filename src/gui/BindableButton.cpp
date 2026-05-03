@@ -305,7 +305,7 @@ void BindableButton::showTriggerMenu(juce::Point<int> screenPos) {
     }
 
     menu.addSeparator();
-    menu.addItem(kManageId, "Manage controls\xe2\x80\xa6");
+    menu.addItem(kManageId, juce::String::fromUTF8("Manage controls\xe2\x80\xa6"));
 
     auto self = juce::Component::SafePointer<BindableButton>(this);
     auto songId = song->id;

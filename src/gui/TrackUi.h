@@ -130,7 +130,7 @@ inline void showTrackContextMenu(StateAPI& state,
     auto presets = cb.onListPresets ? cb.onListPresets() : std::vector<juce::String>{};
 
     juce::PopupMenu menu;
-    menu.addItem(1, "Save Track Preset\xe2\x80\xa6");
+    menu.addItem(1, juce::String::fromUTF8("Save Track Preset\xe2\x80\xa6"));
 
     if (! presets.empty()) {
         juce::PopupMenu loadMenu;
