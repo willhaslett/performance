@@ -22,6 +22,7 @@ void ClaudeClient::sendMessage(const juce::String& userText) {
     userMsg.role = "user";
     userMsg.content.push_back({ ContentBlock::Text, userText, {}, {}, {}, {}, false });
     conversationHistory.push_back(userMsg);
+    perfLog("[Chat] User: %s\n", userText.toRawUTF8());
 
     startThread();
 }
@@ -88,6 +89,14 @@ void ClaudeClient::run() {
         if (!streamResponse(*stream, assistantMsg)) break;
 
         conversationHistory.push_back(assistantMsg);
+
+        // Log every text block as soon as the assistant turn arrives —
+        // text emitted alongside a tool call would otherwise never surface
+        // to the log (notifyText only fires on text-only turns).
+        for (auto& block : assistantMsg.content) {
+            if (block.type == ContentBlock::Text && block.text.isNotEmpty())
+                perfLog("[Chat] Assistant: %s\n", block.text.toRawUTF8());
+        }
 
         // Tool-use loop: if the assistant called any tools, run them and continue.
         bool hasToolUse = false;
