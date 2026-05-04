@@ -169,9 +169,15 @@ void SettingsWindow::AudioPage::applyBufferSize() {
     int idx = bufferBox.getSelectedItemIndex();
     if (idx < 0 || idx >= sizes.size()) return;
     auto setup = dm.getAudioDeviceSetup();
-    setup.bufferSize = sizes[idx];
-    state.setConfig("audio_buffer_size", std::to_string(sizes[idx]));
-    dm.setAudioDeviceSetup(setup, true);
+    int requested = sizes[idx];
+    setup.bufferSize = requested;
+    state.setConfig("audio_buffer_size", std::to_string(requested));
+    auto err = dm.setAudioDeviceSetup(setup, true);
+    int applied = device->getCurrentBufferSizeSamples();
+    perfLog("[Engine] applyBufferSize: requested=%d, applied=%d%s%s\n",
+            requested, applied,
+            (applied != requested) ? " (FALLBACK)" : "",
+            err.isEmpty() ? "" : (" err=" + err).toRawUTF8());
     refresh();
 }
 

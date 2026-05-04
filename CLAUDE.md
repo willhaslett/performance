@@ -46,9 +46,19 @@ The Looper top bar got its consolidation pass: single segmented `BindableButton`
 
 **Friend round one — shipped 2026-05-04.** `0.0.5` DMG sent to Chris, Joe, Alec, and Charlie. No feedback in yet. Pre-ship gate (bundled plugin pack install verification) was confirmed working on Sara's machine before sending. Now in wait-and-see mode while we continue work on the things still open.
 
-**Latency investigation (re-opened):** earlier framing in this file was wrong. Logic on the same hardware at the same buffer size is near-zero latency on built-in Mac audio — so the 80+ms isn't a hardware constraint, it's something we're inheriting/adding. Diagnostic dump from 2026-05-04 shows the device honestly reports 76.4ms round-trip (input 53.69ms / output 22.71ms) at 128 samples, almost exactly matching Will's measured ~80ms. Two distinct fixes:
-- **(1) Input-latency compensation on commit** — shift the recorded WAV's startBeat back by reported (input + output) latency. Logic does this. Recording aligns on playback even though real-time monitoring is still 76ms behind. Works on every device. ~30 min.
-- **(2) Disable VoiceProcessing/AGC on built-in Mac mic** — the 53ms input latency is macOS Voice Processing IO (VPIO) being applied to the built-in mic. Logic disables it via lower-level CoreAudio properties to get ~3.7ms input. Drops the *real-time* latency, not just the recorded alignment. Half-day of CoreAudio plumbing — JUCE doesn't expose this directly, need an Objective-C `AudioObjectSetPropertyData` call against the device's AudioObjectID. Doing this first since Will isn't in a hurry and (2) is the more substantial fix.
+**Built-in Mac mic latency — public-beta blocker, deferred.** Investigated 2026-05-04 with per-property CoreAudio diagnostics (still in tree, fires on every device init/change). Findings:
+
+- **Root cause is `kAudioStreamPropertyLatency` = 2399 samples (~50 ms) on the MacBook Pro Microphone's single input stream.** Not the safety offset (50 samples), not the device-fixed latency (0), not the buffer (128). Just the stream itself reports the macOS smart-audio chain (noise cancellation / beamforming / AGC) as part of stream latency.
+- **No public CoreAudio path to bypass on this device.** Only one input stream exposed. Only one data source: `0x696d6963='MacBook Pro Microphone'(current)`. No "Internal microphone" / "Microphone array" alternate to switch to. Any JUCE-based app using AUHAL gets the same 2399 samples.
+- **Logic Pro on the same Mac is near-zero** (~3.7ms input per Logic's own display) — so the path exists, we just don't have it via JUCE's CoreAudio layer. Logic likely uses either AVAudioEngine + AVAudioInputNode (different code path that may bypass the smart-audio chain) or a private CoreAudio entitlement that exposes a non-processed stream. Both avenues are major refactors / possibly impossible from a third-party app.
+- **Other audio devices are fine.** Focusrite, Brio, ZoomAudioDevice, BlackHole — all report stream latency = 0. The bug is specifically the macOS built-in mic.
+
+Three theoretical fixes, none being done now:
+1. **Input-latency compensation on commit** — shift recorded WAV start-beat back by reported (input + output) latency. Logic does this. Fixes alignment-on-playback for every device. Doesn't fix the live-monitoring lag during recording (that's still 76ms). Punted because it'd also shift recordings on devices that work fine today (Focusrite at ~5ms), and Will doesn't want to change behavior on devices where things already work correctly.
+2. **Switch built-in input to AVAudioEngine** — major refactor of JUCE's audio device layer for that one device. Probably the only software path that reaches Logic-grade latency.
+3. **Document and route around** — user help recommends an external interface for recording. Built-in works for casual playback only.
+
+Status: **public-beta blocker before we ship to strangers.** Not a friend-round blocker (Joe + others use interfaces). Diagnostic logging stays in the tree so when we return, the device-property breakdown is one log read away.
 
 **Broader remaining sequence:**
 

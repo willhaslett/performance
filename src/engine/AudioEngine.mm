@@ -7,6 +7,154 @@
 
 static std::vector<CFBundleRef> loadedBundles;
 
+// Probe each contributing CoreAudio property for every input device on
+// the system, so we can see which property is dominating the reported
+// latency. JUCE's getInputLatencyInSamples() returns the sum of:
+//   deviceLatency + safetyOffset + framesInBuffer + streamLatency
+// We dump them individually so the breakdown is visible. The fix path
+// depends on which one is bloated — safety offset is usually the most
+// addressable (driver convention, sometimes overridable), device
+// latency is usually fixed hardware/driver constant, stream latency
+// hints at format-conversion overhead.
+static void dumpInputDeviceLatencyBreakdown() {
+    AudioObjectPropertyAddress addrDevices = {
+        kAudioHardwarePropertyDevices,
+        kAudioObjectPropertyScopeGlobal,
+        kAudioObjectPropertyElementMain
+    };
+    UInt32 dataSize = 0;
+    if (AudioObjectGetPropertyDataSize(kAudioObjectSystemObject, &addrDevices, 0, nullptr, &dataSize) != noErr) return;
+    std::vector<AudioObjectID> ids(dataSize / sizeof(AudioObjectID));
+    if (AudioObjectGetPropertyData(kAudioObjectSystemObject, &addrDevices, 0, nullptr, &dataSize, ids.data()) != noErr) return;
+
+    for (auto devId : ids) {
+        // Device must have input streams to be considered an input device.
+        AudioObjectPropertyAddress addrStreams = {
+            kAudioDevicePropertyStreams,
+            kAudioDevicePropertyScopeInput,
+            kAudioObjectPropertyElementMain
+        };
+        UInt32 streamsSize = 0;
+        if (AudioObjectGetPropertyDataSize(devId, &addrStreams, 0, nullptr, &streamsSize) != noErr || streamsSize == 0)
+            continue;
+        std::vector<AudioStreamID> streams(streamsSize / sizeof(AudioStreamID));
+        AudioObjectGetPropertyData(devId, &addrStreams, 0, nullptr, &streamsSize, streams.data());
+
+        // Device name.
+        CFStringRef nameRef = nullptr;
+        UInt32 nameSize = sizeof(nameRef);
+        AudioObjectPropertyAddress addrName = {
+            kAudioObjectPropertyName, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain
+        };
+        AudioObjectGetPropertyData(devId, &addrName, 0, nullptr, &nameSize, &nameRef);
+        char nameBuf[256] = "";
+        if (nameRef) {
+            CFStringGetCString(nameRef, nameBuf, sizeof(nameBuf), kCFStringEncodingUTF8);
+            CFRelease(nameRef);
+        }
+
+        auto getU32 = [](AudioObjectID obj, AudioObjectPropertySelector sel,
+                          AudioObjectPropertyScope scope) -> UInt32 {
+            AudioObjectPropertyAddress a = { sel, scope, kAudioObjectPropertyElementMain };
+            UInt32 v = 0;
+            UInt32 sz = sizeof(v);
+            if (AudioObjectGetPropertyData(obj, &a, 0, nullptr, &sz, &v) != noErr) return 0;
+            return v;
+        };
+
+        UInt32 deviceLat   = getU32(devId,         kAudioDevicePropertyLatency,        kAudioDevicePropertyScopeInput);
+        UInt32 safetyOff   = getU32(devId,         kAudioDevicePropertySafetyOffset,   kAudioDevicePropertyScopeInput);
+        UInt32 bufFrames   = getU32(devId,         kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeWildcard);
+        UInt32 streamLat   = getU32(streams.front(), kAudioStreamPropertyLatency,      kAudioDevicePropertyScopeInput);
+        UInt32 total       = deviceLat + safetyOff + bufFrames + streamLat;
+
+        perfLog("[Engine][lat:probe] '%s': device=%u + safety=%u + buf=%u + stream=%u = %u samples (input)\n",
+                nameBuf, deviceLat, safetyOff, bufFrames, streamLat, total);
+
+        // For each stream on this input device, dump its individual
+        // latency + terminal type. If there are multiple streams and one
+        // has lower latency than streams.front(), JUCE/AUHAL is picking
+        // a sub-optimal one and we may be able to override.
+        if (streams.size() > 1) {
+            for (size_t i = 0; i < streams.size(); ++i) {
+                UInt32 sLat = getU32(streams[i], kAudioStreamPropertyLatency,      kAudioDevicePropertyScopeInput);
+                UInt32 sTrm = getU32(streams[i], kAudioStreamPropertyTerminalType, kAudioDevicePropertyScopeInput);
+                perfLog("[Engine][lat:probe]    stream[%zu] id=%u latency=%u terminalType=0x%x\n",
+                        i, streams[i], sLat, sTrm);
+            }
+        }
+
+        // Enumerate alternate data sources on this device. Built-in mic
+        // sometimes exposes multiple ("Internal microphone" vs
+        // "Microphone array") and switching can bypass DSP chains.
+        AudioObjectPropertyAddress addrSources = {
+            kAudioDevicePropertyDataSources,
+            kAudioDevicePropertyScopeInput,
+            kAudioObjectPropertyElementMain
+        };
+        UInt32 srcSize = 0;
+        if (AudioObjectGetPropertyDataSize(devId, &addrSources, 0, nullptr, &srcSize) == noErr && srcSize > 0) {
+            std::vector<UInt32> sources(srcSize / sizeof(UInt32));
+            AudioObjectGetPropertyData(devId, &addrSources, 0, nullptr, &srcSize, sources.data());
+            UInt32 currentSource = getU32(devId, kAudioDevicePropertyDataSource, kAudioDevicePropertyScopeInput);
+            juce::String srcList;
+            for (size_t i = 0; i < sources.size(); ++i) {
+                // Translate FourCC-encoded source ID to its name string.
+                CFStringRef srcName = nullptr;
+                AudioValueTranslation trans = { &sources[i], sizeof(UInt32),
+                                                &srcName,    sizeof(CFStringRef) };
+                AudioObjectPropertyAddress addrName = {
+                    kAudioDevicePropertyDataSourceNameForIDCFString,
+                    kAudioDevicePropertyScopeInput,
+                    kAudioObjectPropertyElementMain
+                };
+                UInt32 transSize = sizeof(trans);
+                AudioObjectGetPropertyData(devId, &addrName, 0, nullptr, &transSize, &trans);
+                char nameBuf2[128] = "?";
+                if (srcName) {
+                    CFStringGetCString(srcName, nameBuf2, sizeof(nameBuf2), kCFStringEncodingUTF8);
+                    CFRelease(srcName);
+                }
+                srcList << (i > 0 ? ", " : "") << "0x" << juce::String::toHexString((int) sources[i])
+                        << "='" << nameBuf2 << "'"
+                        << (sources[i] == currentSource ? "(current)" : "");
+            }
+            perfLog("[Engine][lat:probe]    data sources: %s\n", srcList.toRawUTF8());
+        }
+    }
+}
+
+// Diagnostic dump for the active device — JUCE's reported latencies +
+// the actual buffer/SR + whether input and output are different
+// devices (CoreAudio aggregate-device construction adds latency on top
+// of single-device round-trip). Compare these numbers against Logic's
+// "audio settings" pane on the same device to see whether the gap is
+// the device's honest reported latency (then comp is the fix) or
+// something we're adding in the JUCE/graph pipeline (then dig
+// deeper).
+static void logDeviceLatency(juce::AudioIODevice* device, const char* phase) {
+    if (! device) return;
+    int inLatencySamples  = device->getInputLatencyInSamples();
+    int outLatencySamples = device->getOutputLatencyInSamples();
+    double sr             = device->getCurrentSampleRate();
+    int    bufSamples     = device->getCurrentBufferSizeSamples();
+    double inMs    = sr > 0 ? (inLatencySamples  / sr) * 1000.0 : 0.0;
+    double outMs   = sr > 0 ? (outLatencySamples / sr) * 1000.0 : 0.0;
+    double bufMs   = sr > 0 ? (bufSamples        / sr) * 1000.0 : 0.0;
+    double rtMs    = inMs + outMs;
+    auto   inName  = device->getName();
+    perfLog("[Engine][lat:%s] device='%s' sr=%.0f buf=%d (%.2f ms)\n",
+            phase, inName.toRawUTF8(), sr, bufSamples, bufMs);
+    perfLog("[Engine][lat:%s]   reported input=%d samples (%.2f ms), output=%d samples (%.2f ms), round-trip=%.2f ms\n",
+            phase, inLatencySamples, inMs, outLatencySamples, outMs, rtMs);
+    auto bs = device->getAvailableBufferSizes();
+    juce::String sizes;
+    for (int i = 0; i < bs.size(); ++i) sizes << bs[i] << (i + 1 < bs.size() ? "," : "");
+    perfLog("[Engine][lat:%s]   available buffer sizes: %s\n",
+            phase, sizes.toRawUTF8());
+    dumpInputDeviceLatencyBreakdown();
+}
+
 AudioEngine::AudioEngine()
     : graph(std::make_unique<juce::AudioProcessorGraph>()),
       graphWrapper(std::make_unique<GraphWrapper>(*graph)),
@@ -26,9 +174,7 @@ void AudioEngine::initialise() {
     }
 
     if (auto* device = deviceManager.getCurrentAudioDevice()) {
-        perfLog("[Engine] Audio device: %s\n", device->getName().toRawUTF8());
-        perfLog("[Engine]   Sample rate: %.0f\n", device->getCurrentSampleRate());
-        perfLog("[Engine]   Buffer size: %d\n", device->getCurrentBufferSizeSamples());
+        logDeviceLatency(device, "init");
     }
 
     setupGraph();
@@ -170,6 +316,7 @@ void AudioEngine::rebuildGraph() {
 
     perfLog("[Engine] Graph rebuilt: %d inputs, sr=%.0f, buf=%d\n",
             numInputs, device->getCurrentSampleRate(), device->getCurrentBufferSizeSamples());
+    logDeviceLatency(device, "rebuild");
 }
 
 void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source) {
