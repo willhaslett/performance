@@ -44,16 +44,11 @@ As of 2026-05-03, the architectural foundation is settled, both reward features 
 
 The Looper top bar got its consolidation pass: single segmented `BindableButton` strip (play | up down | replace overdub | undo redo mute clear | reset), uniform 84px cells, no LCD, no record dot, no separate MIDI Learn pill. Each button now carries its own plugin-slot-style "Trigger" affordance — click opens a menu of every registered control across all devices (already-bound controls disabled), bottom item "Manage controls" jumps to the Perform pane. Whole-cell flash on action fire (200ms `triggerLight` overlay at 35% alpha). Pane title ("Looper" / "Producer") is now centered above the track-headers column on both panes. App-level toolbar removed entirely; build info lives at the bottom of the sidebar.
 
-**Plan for next session (2026-05-04):**
+**Friend round one — shipped 2026-05-04.** `0.0.5` DMG sent to Chris, Joe, Alec, and Charlie. No feedback in yet. Pre-ship gate (bundled plugin pack install verification) was confirmed working on Sara's machine before sending. Now in wait-and-see mode while we continue work on the things still open.
 
-1. **Chat interface dogfooding.** Play with the embedded Claude chat for both project management (creating/loading songs, mucking with bindings, etc.) and composing. Look for quick wins. Surface candidates feed the §3 "ChatView UX polish" tail in the 0.1.0 release plan.
-2. **Distribution proof — Sara's machine.** Build the DMG, install on Sara's computer (first second-machine install). Confirm Gatekeeper accepts the notarized DMG, first-launch creates a new install ID, default song reaches sound-on-first-keypress. This is the §1 distribution-proof checklist below, run for real.
-3. **Ship to Joe** via Google Drive — first delivered tester. Round 1 of the friend-tester arc starts here.
-
-**Pre-Joe-ship gate (don't forget):**
-- **Confirm bundled plugin pack actually installs end-to-end** on a fresh-ish install. The pipeline ships; we need to verify Joe's first launch actually downloads and registers all 15 AUs. Test via the bin/reset script + relaunch flow at minimum.
-
-**Latency note (resolved for ship):** measured 80+ms round-trip on the MacBook's built-in audio at 128 samples; verified the same recording path is fine on Will's Focusrite. Built-in Mac audio has known high driver latency that no host-side compensation will fix on the input side; dedicated interfaces deliver near-buffer-size times. Joe records bass through an interface, so this isn't a Joe blocker. Compensation for high-latency configurations stays in the backlog; not on the critical path for the first friend ship.
+**Latency investigation (re-opened):** earlier framing in this file was wrong. Logic on the same hardware at the same buffer size is near-zero latency on built-in Mac audio — so the 80+ms isn't a hardware constraint, it's something we're inheriting/adding. Diagnostic dump from 2026-05-04 shows the device honestly reports 76.4ms round-trip (input 53.69ms / output 22.71ms) at 128 samples, almost exactly matching Will's measured ~80ms. Two distinct fixes:
+- **(1) Input-latency compensation on commit** — shift the recorded WAV's startBeat back by reported (input + output) latency. Logic does this. Recording aligns on playback even though real-time monitoring is still 76ms behind. Works on every device. ~30 min.
+- **(2) Disable VoiceProcessing/AGC on built-in Mac mic** — the 53ms input latency is macOS Voice Processing IO (VPIO) being applied to the built-in mic. Logic disables it via lower-level CoreAudio properties to get ~3.7ms input. Drops the *real-time* latency, not just the recorded alignment. Half-day of CoreAudio plumbing — JUCE doesn't expose this directly, need an Objective-C `AudioObjectSetPropertyData` call against the device's AudioObjectID. Doing this first since Will isn't in a hurry and (2) is the more substantial fix.
 
 **Broader remaining sequence:**
 
