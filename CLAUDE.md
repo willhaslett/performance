@@ -13,6 +13,7 @@ A scriptable runtime for live music performance on macOS. Solo performer, center
 - `docs/LAMBDA_CHAT_PROXY.md` — AI-for-testers Lambda design + implementation.
 - `docs/BUNDLED_PLUGINS.md` — first-launch plugin pack. The "ruled out" list is load-bearing — free-plugin licenses are narrow and easy to violate.
 - `docs/COMPOSER_INTEGRATION.md` — composer pipeline (notation → StateAPI regions). Read before touching the v2 parser, writer, or compose prompt.
+- `docs/AI_COMPOSITION.md` — **active sub-project.** Improving the *quality* of what the AI composition flow produces. Currently in research / brainstorm phase.
 - `docs/DAW_BRIDGE_PLAN.md` — forward-looking DAW bridge design.
 - `docs/LIVE_LOOPING.md` — original live-looping data model + phased plan. Largely superseded by `LIVE_INPUT_AND_FOCUS.md` phase 6 (Boss-style first-tap-sets-length, per-track gesture queue, undo/redo, panic reset). Read before touching `track.loops`, `pendingTakeId`, cycle-wrap logic, or the Looper pane.
 - `docs/PANE_MODE_MODEL.md` — mode lives as `AppMode` on `AppState` (not `SongState`). Left-slot pane content is the current GUI policy that drives the mode flag. Read before touching pane visibility, `currentMode`, or the Produce↔Looper interaction.
@@ -44,7 +45,9 @@ As of 2026-05-03, the architectural foundation is settled, both reward features 
 
 The Looper top bar got its consolidation pass: single segmented `BindableButton` strip (play | up down | replace overdub | undo redo mute clear | reset), uniform 84px cells, no LCD, no record dot, no separate MIDI Learn pill. Each button now carries its own plugin-slot-style "Trigger" affordance — click opens a menu of every registered control across all devices (already-bound controls disabled), bottom item "Manage controls" jumps to the Perform pane. Whole-cell flash on action fire (200ms `triggerLight` overlay at 35% alpha). Pane title ("Looper" / "Producer") is now centered above the track-headers column on both panes. App-level toolbar removed entirely; build info lives at the bottom of the sidebar.
 
-**Friend round one — shipped 2026-05-04.** `0.0.5` DMG sent to Chris, Joe, Alec, and Charlie. No feedback in yet. Pre-ship gate (bundled plugin pack install verification) was confirmed working on Sara's machine before sending. Now in wait-and-see mode while we continue work on the things still open.
+**Friend round one — shipped 2026-05-04.** `0.0.5` DMG sent to Chris, Joe, Alec, and Charlie. No feedback in yet. Pre-ship gate (bundled plugin pack install verification) was confirmed working on Sara's machine before sending. Now in wait-and-see mode.
+
+**Current sub-project: improving AI composition.** See `docs/AI_COMPOSITION.md`. The current chat-based composition flow ships and works mechanically, but the music it produces is "childish and sometimes plainly bad" (Will's words). This is the deepest unsolved quality problem in the product. No hurry. Two committed near-term steps before we plan further: (1) research the landscape, (2) brainstorm directions. Detours for small fixes / features will happen alongside as feedback arrives or things turn up.
 
 **Built-in Mac mic latency — public-beta blocker, deferred.** Investigated 2026-05-04 with per-property CoreAudio diagnostics (still in tree, fires on every device init/change). Findings:
 
