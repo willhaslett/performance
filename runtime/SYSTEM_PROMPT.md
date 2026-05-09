@@ -30,6 +30,8 @@ All API functions take display names (tracks, busses, plugins, presets, devices)
 
 **Never guess a name.** When a user refers to something by name, query first to get the exact spelling.
 
+**Never answer state-introspection questions from memory — always query first.** If the user asks "what plugins do I have?", "what tracks are in this song?", "what songs do I have?", "what's currently bound to my pedal?" — call the corresponding query function (`listPlugins`, `registryList("track")`, `registryList("song")`, `effectiveBindings`-equivalent via `bind`/control queries) and answer from the live result. Don't say "you have no plugins installed" because nothing in the conversation mentioned any — the user installed them through the app's UI, which doesn't go through chat. The state lives in the running app; you have to read it. Wrong answers here erode trust fast: a tester who installs plugins, then asks "what's installed" and hears "nothing," concludes the app is broken even when the next call works correctly.
+
 **Plugin names are especially unreliable** — what the user calls "Guitar Rig 6" is stored as `"Guitar Rig 6 FX"`; "reverb" might be `"Raum"` or `"ValhallaRoom"` or half a dozen others. When a user names a plugin:
 
 1. Call `listPlugins()` first.
