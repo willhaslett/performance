@@ -11,6 +11,8 @@
 #include "song/SongRuntime.h"
 #include "install/BundledPluginInstaller.h"
 #include "composer/V2NotationParser.h"
+#include "composer/ABCParser.h"
+#include "composer/ABCWriter.h"
 #include "composer/ComposerOutput.h"
 #include "composer/ComposerWriter.h"
 #include "daw/Arrangement.h"
@@ -3831,6 +3833,375 @@ bar 1 | C
 };
 
 static V2NotationParserTests v2NotationParserTests;
+
+// ============================================================================
+// ABCParser tests
+// ============================================================================
+
+class ABCParserTests : public juce::UnitTest {
+public:
+    ABCParserTests() : juce::UnitTest("ABCParser") {}
+
+private:
+    static ComposerOutput parseOrFail(juce::UnitTest& t, const juce::String& input) {
+        ABCParser p;
+        ComposerOutput out;
+        std::string err;
+        bool ok = p.parse(input, out, err);
+        if (!ok) t.logMessage("parse failed: " + juce::String(err));
+        t.expect(ok);
+        return out;
+    }
+
+public:
+    void runTest() override {
+        beginTest("missing K: header is rejected");
+        {
+            ABCParser p;
+            ComposerOutput out;
+            std::string err;
+            expect(!p.parse("X:1\nL:1/8\nQ:1/4=120\nM:4/4\nC D E F\n", out, err));
+            expect(err.find("K:") != std::string::npos);
+        }
+
+        beginTest("headers parse (tempo, meter, key)");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+T:Test
+L:1/8
+Q:1/4=92
+M:3/4
+K:Dmin
+)"));
+            expectEquals(out.tempo, 92.0);
+            expectEquals((int) out.timeSignature.size(), 1);
+            expectEquals(out.timeSignature[0].first, 3);
+            expectEquals(out.timeSignature[0].second, 4);
+        }
+
+        beginTest("single note parses (pitch, start, duration)");
+        {
+            // L:1/8, so bare 'C' = eighth note (0.5 beats), 'C2' = quarter (1.0 beats).
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2
+)"));
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].startBeat, 0.0);
+            expectEquals(out.notes[0].durationBeats, 1.0);
+            expectEquals(out.notes[0].pitch, 60);   // middle C
+        }
+
+        beginTest("octave markers (lowercase, ', ,)");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+C c c' C,
+)"));
+            expectEquals((int) out.notes.size(), 4);
+            expectEquals(out.notes[0].pitch, 60);  // C  = C4
+            expectEquals(out.notes[1].pitch, 72);  // c  = C5
+            expectEquals(out.notes[2].pitch, 84);  // c' = C6
+            expectEquals(out.notes[3].pitch, 48);  // C, = C3
+        }
+
+        beginTest("accidentals (^ and _)");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+^C _D =E
+)"));
+            expectEquals((int) out.notes.size(), 3);
+            expectEquals(out.notes[0].pitch, 61);  // C# = 61
+            expectEquals(out.notes[1].pitch, 61);  // Db = 61
+            expectEquals(out.notes[2].pitch, 64);  // E natural = 64
+        }
+
+        beginTest("chord [CEG] expands to multiple notes at same beat");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+[CEG]2
+)"));
+            expectEquals((int) out.notes.size(), 3);
+            for (auto& n : out.notes) {
+                expectEquals(n.startBeat, 0.0);
+                expectEquals(n.durationBeats, 2.0);
+            }
+            // Pitches sort to C E G.
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[1].pitch, 64);
+            expectEquals(out.notes[2].pitch, 67);
+        }
+
+        beginTest("rests advance cursor without emitting notes");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+z C z C
+)"));
+            expectEquals((int) out.notes.size(), 2);
+            expectEquals(out.notes[0].startBeat, 1.0);
+            expectEquals(out.notes[1].startBeat, 3.0);
+        }
+
+        beginTest("ties merge tied notes of same pitch");
+        {
+            // Two C2 notes tied = single quarter (in L:1/8, 2 = 2 eighths).
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2-C2
+)"));
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[0].durationBeats, 2.0);
+        }
+
+        beginTest("multi-voice (V:Piano, V:Drums)");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+%%MIDI drummap B 36
+%%MIDI drummap S 38
+V:Piano
+V:Drums
+V:Piano
+C D E F
+V:Drums
+B S B S
+)"));
+            // 4 piano + 4 drum
+            expectEquals((int) out.notes.size(), 8);
+            int pianoCount = 0, drumCount = 0;
+            for (auto& n : out.notes) {
+                if (n.trackName == "Piano") ++pianoCount;
+                if (n.trackName == "Drums") ++drumCount;
+            }
+            expectEquals(pianoCount, 4);
+            expectEquals(drumCount, 4);
+        }
+
+        beginTest("inline header [Q:...] is rejected");
+        {
+            ABCParser p;
+            ComposerOutput out;
+            std::string err;
+            expect(!p.parse(juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2 [Q:1/4=140] D2
+)"), out, err));
+            expect(err.find("Q") != std::string::npos);
+        }
+
+        beginTest("comment lines and inline %") ;
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+% leading comment
+C D % trailing comment
+E F
+)"));
+            expectEquals((int) out.notes.size(), 4);
+        }
+
+        beginTest("decoration tokens (!ff!, +p+) are skipped silently");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+!ff! C +mp+ D "text" E
+)"));
+            expectEquals((int) out.notes.size(), 3);
+        }
+    }
+};
+
+static ABCParserTests abcParserTests;
+
+// ============================================================================
+// ABCWriter tests
+// ============================================================================
+
+class ABCWriterTests : public juce::UnitTest {
+public:
+    ABCWriterTests() : juce::UnitTest("ABCWriter") {}
+
+    void runTest() override {
+        beginTest("header order and required fields");
+        {
+            ABCWriteInput in;
+            in.tempo = 120; in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriter w;
+            auto abc = w.write(in);
+            // Header order: X T L Q M K (T optional, no title here).
+            auto x = abc.find("X:");
+            auto l = abc.find("L:");
+            auto q = abc.find("Q:");
+            auto m = abc.find("M:");
+            auto k = abc.find("K:");
+            expect(x < l);
+            expect(l < q);
+            expect(q < m);
+            expect(m < k);
+            expect(abc.find("L:1/8") != std::string::npos);
+            expect(abc.find("K:none") != std::string::npos);
+        }
+
+        beginTest("middle C single note round-trips through parser");
+        {
+            ABCWriteInput in;
+            in.tempo = 120; in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});  // middle C, quarter
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+
+            ABCParser p;
+            ComposerOutput out;
+            std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[0].durationBeats, 1.0);
+        }
+
+        beginTest("chord round-trips");
+        {
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 2.0, 60, 80});
+            v.notes.push_back({0.0, 2.0, 64, 80});
+            v.notes.push_back({0.0, 2.0, 67, 80});
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            // Chord syntax should appear.
+            expect(abc.find("[") != std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 3);
+            for (auto& n : out.notes) {
+                expectEquals(n.startBeat, 0.0);
+                expectEquals(n.durationBeats, 2.0);
+            }
+        }
+
+        beginTest("note crossing bar line is split with tie");
+        {
+            // 4/4, half note starting at beat 3 → spans into bar 2.
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({3.0, 2.0, 60, 80});  // starts beat 3, lasts 2 beats
+            in.voices.push_back(v);
+            in.lengthBeats = 8.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("-") != std::string::npos);   // tie present
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            // The tied pair should re-merge into one note (length 2.0).
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].startBeat, 3.0);
+            expectEquals(out.notes[0].durationBeats, 2.0);
+        }
+
+        beginTest("multi-voice round-trip preserves voices");
+        {
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice piano; piano.name = "Piano";
+            piano.notes.push_back({0.0, 1.0, 60, 80});
+            piano.notes.push_back({1.0, 1.0, 62, 80});
+            ABCWriteInput::Voice drums; drums.name = "Drums"; drums.isDrums = true;
+            drums.notes.push_back({0.0, 0.5, 36, 80});  // kick
+            drums.notes.push_back({1.0, 0.5, 38, 80});  // snare
+            in.voices.push_back(piano);
+            in.voices.push_back(drums);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("V:Piano") != std::string::npos);
+            expect(abc.find("V:Drums") != std::string::npos);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            bool ok = p.parse(juce::String(abc), out, err);
+            if (!ok) logMessage("parse failed: " + juce::String(err));
+            expect(ok);
+            int pianoCount = 0, drumCount = 0;
+            for (auto& n : out.notes) {
+                if (n.trackName == "Piano") ++pianoCount;
+                if (n.trackName == "Drums") ++drumCount;
+            }
+            expectEquals(pianoCount, 2);
+            expectEquals(drumCount, 2);
+        }
+
+        beginTest("varying time signature (3/4) round-trips");
+        {
+            ABCWriteInput in;
+            in.tempo = 100; in.timeSignatureNum = 3; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});
+            v.notes.push_back({1.0, 1.0, 62, 80});
+            v.notes.push_back({2.0, 1.0, 64, 80});
+            in.voices.push_back(v);
+            in.lengthBeats = 3.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("M:3/4") != std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals(out.timeSignature[0].first, 3);
+            expectEquals(out.timeSignature[0].second, 4);
+            expectEquals((int) out.notes.size(), 3);
+        }
+    }
+};
+
+static ABCWriterTests abcWriterTests;
 
 // ============================================================================
 // ComposerWriter tests
