@@ -1,6 +1,8 @@
 # Improving AI composition
 
-**Status (2026-05-04):** sub-project just opened. The current chat-based composition flow (V2 notation → `compose()` → MIDI regions) ships and works mechanically, but the music it produces is, in Will's words, "quite childish" and sometimes plainly bad. This doc tracks the effort to make it good.
+**Status (2026-05-08):** research phase complete; direction committed. Build plan lives in **`docs/AI_COMPOSITION_API.md`** (sub-sub-project: ABC notation + content CRUD layer, on dev branch `composition-abc`). This doc remains the research catalog and "where we landed and why" record.
+
+The current chat-based composition flow (V2 notation → `compose()` → MIDI regions) ships and works mechanically, but the music it produces is, in Will's words, "quite childish" and sometimes plainly bad. The redesign aims to make it good.
 
 No hurry. We're in the wait-and-see phase of the friend ship; the rest of the app is in good shape; this is the deepest unsolved quality problem in the product. Other small fixes / features will likely happen alongside.
 

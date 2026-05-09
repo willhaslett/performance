@@ -1,0 +1,201 @@
+# Composition API redesign — ABC + content CRUD
+
+**Parent doc:** `docs/AI_COMPOSITION.md` (research + open questions).
+**Status (2026-05-08):** committed. Build starts on dev branch `composition-abc`. Merge to main when the new surface is working end-to-end and we're happy with the round-trip behavior on at least the AI-composed-material path.
+
+## Why this exists
+
+Two convictions from the research phase:
+
+1. **V2 notation is not expressive enough.** It lacks dynamics, articulations, ornaments, slurs, multi-voice within a part, lyrics, mid-piece modulation, and a real ecosystem. Filling those into V2 either re-invents ABC or hits the bloat trap.
+2. **ABC is a clear winner candidate.** Mature spec, in Claude's training data, mature ecosystem (renderers, MusicXML/MIDI converters), best compression of any text format per ChatMusician's analysis (~288 tokens/song avg). What ChatMusician, ComposerX, and NotaGen all chose for the same reason.
+
+We may eventually replace this whole roll-your-own approach with a specialist symbolic-music model (ChatMusician, MIDI-LLM, or a hybrid). But ABC + content CRUD is the right next step regardless — a specialist model would still benefit from a clean content API to operate against, and ABC is the most likely interchange format with such a model anyway.
+
+## What this changes
+
+Three things, in order of significance:
+
+1. **Notation: V2 → ABC.** Wherever we currently emit / parse / show V2, we use ABC instead.
+2. **Composition surface: single `compose()` verb → CRUD across project / track / region scopes.** The LLM gains the ability to read existing musical content, edit in place, and write at any granularity — not just generate fresh regions.
+3. **Tempo / time signature / key become first-class CRUD resources** with full event-list semantics (multi-event, addressed by beat). Previously UI-only and constant-per-project.
+
+## The API surface
+
+Legend: ✓ exists today · ★ new · ⤳ rename suggested · ⌫ removal proposed
+
+| Category | Function | | Purpose |
+|---|---|---|---|
+| **Projects** *(backend = song; UiTerms alias to "Project")* | `song(name)` | ✓ | create or set the active project |
+| | `listSongs()` | ✓ | list projects |
+| | `loadSong(name)` | ✓ | load by name |
+| | `unloadSong()` | ✓ | unload current |
+| | `currentSongId()` | ✓ | UUID of active project |
+| | `save()` | ✓ | force flush to SQLite |
+| | `saveInitialState()` / `loadInitialState()` | ✓ | snapshot / restore checkpoint |
+| **Tracks (structural)** | `createTrack(name)` | ✓ | empty instrument track |
+| | `createAudioInputTrack(name, start, count)` | ✓ | empty audio-input track |
+| | `removeTrack(name)` | ✓ | delete |
+| | `selectTrack(name)` | ✓ | focus + select |
+| | `setTrackInputChannels(track, start, count)` | ✓ | wire input channels |
+| | `setTrackInputMonitoring(track, enabled)` | ✓ | I pill |
+| **Plugins / Instruments / Effects** | `addInstrument(track, plugin [, preset])` | ✓ | load AU instrument |
+| | `addEffect(parent, name, plugin)` | ✓ | parent = track / bus / "Output" |
+| | `addTrackEffect` / `addBusEffect` | ✓ | aliases |
+| | `removeEffect(parent, effectId)` | ✓ | |
+| | `openEditor(track [, effect])` | ✓ | |
+| | `listPlugins()` | ✓ | |
+| | `setParam(track, name, value)` / `getParam(...)` | ✓ | |
+| | `setEffectParam(parent, fx, name, value)` / `getEffectParam(...)` | ✓ | |
+| | `savePreset(track, name)` / `loadPreset(track, name)` | ✓ | |
+| | `morphToPreset(track, name, dur, easing)` | ✓ | |
+| | `listPresets(plugin)` | ✓ | |
+| **Routing / Gain / Sends / Busses** | `setTrackGainDb` / `setTrackGain` / `getTrackGain` | ✓ | |
+| | `setMasterGain` / `setChannelGain` | ✓ | |
+| | `createBus(name)` / `removeBus(name)` | ✓ | |
+| | `setBusGainDb` / `setBusGain` | ✓ | |
+| | `addSendDb` / `addSend` / `setSendGainDb` / `setSendGain` | ✓ | |
+| **Devices / Bindings / Action definitions** | `registerDevice(name, port)` | ✓ | |
+| | `addDeviceControl` / `addDeviceToSong` / `listDevices` | ✓ | |
+| | `getDeviceControl` / `listDeviceControls` / `listMidiInputs` | ✓ | |
+| | `bind(type, ch, num, action, args, desc, devId)` | ✓ | |
+| | `defineAction(name, label, lua, schema, songId)` | ⤳ | renamed from `createAction` |
+| | `removeAction(actionId)` | ✓ | unregister an action definition |
+| | `triggerAction(actionName)` | ✓ | fire one immediately |
+| **Transport / Mode / Focus / Looper** | `togglePlay()` | ✓ | |
+| | `setMode("looper" \| "arrangement")` / `getMode()` | ✓ | |
+| | `focusPrevTrack()` / `focusNextTrack()` / `toggleFocusedMute()` | ✓ | |
+| | `setCycleLength(beats)` / `getCycleLength()` | ✓ | |
+| | `setPendingTake(regionId, takeId)` | ✓ | |
+| | `replaceLoop()` / `overdubLoop()` / `undoLoop()` / `redoLoop()` | ✓ | |
+| | `clearLoop()` / `clearAllLoops()` / `resetLooperSession()` | ✓ | |
+| | `getLoopActionState()` | ✓ | |
+| **Project content (NEW)** | `getProject()` | ★ | ABC of current project |
+| | `setProject(abc)` | ★ | replace whole musical content (diff-detected) |
+| **Track content (NEW)** | `listTracks()` | ⤳ | exists as `registryList("track")`; alias for symmetry |
+| | `getTrack(name)` | ★ | ABC of all musical content on the track |
+| | `setTrack(name, abc)` | ★ | replace content (track must exist) |
+| **Region content (NEW)** | `listRegions(track)` | ★ | `[{beat, length, name}, ...]` |
+| | `getRegion(track, beat)` | ★ | ABC of region at that beat |
+| | `setRegion(track, beat, abc)` | ★ | update only — region must exist |
+| | `createRegion(track, beat, abc)` | ★ | explicit creation |
+| | `deleteRegion(track, beat)` | ★ | |
+| **Action events (NEW)** | `listActionEvents(track)` | ★ | `[{id, beat, action, args}, ...]` |
+| | `getActionEvent(id)` | ★ | one event |
+| | `createActionEvent(track, beat, action, args)` | ★ | returns new id |
+| | `setActionEvent(id, beat, action, args)` | ★ | update |
+| | `deleteActionEvent(id)` | ★ | |
+| **Tempo (NEW)** | `listTempos()` | ★ | `[{beat, bpm}, ...]` sorted |
+| | `getTempo(beat)` | ★ | effective BPM at that beat |
+| | `createTempo(beat, bpm)` | ★ | new event |
+| | `setTempo(beat, bpm)` | ★ | update event at exact beat (must exist) |
+| | `deleteTempo(beat)` | ★ | |
+| **Time Signature (NEW)** | `listTimeSignatures()` | ★ | `[{beat, num, den}, ...]` |
+| | `getTimeSignature(beat)` | ★ | effective signature at that beat |
+| | `createTimeSignature(beat, num, den)` | ★ | new event |
+| | `setTimeSignature(beat, num, den)` | ★ | update |
+| | `deleteTimeSignature(beat)` | ★ | |
+| **Key Signature (NEW — optional)** | `listKeys()` | ★ | `[{beat, key}, ...]` — empty if none set |
+| | `getKey(beat)` | ★ | effective key, or `nil` |
+| | `createKey(beat, key)` | ★ | string: `"C"`, `"Am"`, `"F#mix"` |
+| | `setKey(beat, key)` | ★ | update |
+| | `deleteKey(beat)` | ★ | |
+| **Composition (current — to be removed)** | `compose(notation [, startBeat])` | ⌫ | superseded by CRUD content layer |
+| **Other / utility** | `listAudioDevices()` / `setAudioDevice` / `setAudioInputDevice` | ✓ | |
+| | `listInputChannels()` / `registryList(type, ...)` | ✓ | |
+| | `log(msg)` / `dB(value)` / `bounce(...)` | ✓ | |
+| | `interpolate(...)` / `delay(...)` / `cancel(...)` / `cancelAll()` | ✓ | |
+
+### Renames + removal summary
+
+- `createAction` → `defineAction` (frees the verb for the new event-scheduling op).
+- `registryList("track")` → `listTracks()` (alias, both keep working).
+- `compose()` removed — fully replaced by content CRUD.
+
+### Rules the new API needs the prompt to enforce
+
+- **Use the smallest scope that contains both the material you're acting on AND any material affected by the act.** In-place edits → region or track scope. Structural changes (insert/delete time, restructure form, change tempo at a point) → project scope, because everything downstream shifts.
+- **Before composing into existing material, read the relevant scope first.** Don't compose blind into a track that already has content.
+- **Use named regions / `P:` part labels in ABC** so the LLM can refer to "the bridge" / "the A section" by name across calls. Adopt the convention; teach it in the prompt.
+
+## Hard problems we're committing to solve
+
+1. **MIDI → ABC transcription.** When the user records or hand-edits MIDI, we have raw events, not ABC. Going back to musically-correct ABC is a known-hard problem (rhythm quantization, voicing inference, articulation guess). **V1 punt:** only emit ABC for material the LLM composed itself (where we have the source ABC stored alongside the MIDI). For hand-recorded / hand-edited regions, return a placeholder (`% region recorded by user; notation unavailable`) so the LLM knows it exists but doesn't try to read it as notation. Best-effort transcription comes later.
+2. **Round-trip stability via "house style".** When the LLM reads region X as ABC, edits, writes back, then reads it again later, version C should look very close to version B. Means our generator and the LLM's emitter need to converge on the same ABC conventions: bar-line frequency, voice naming, key inference, default note length, header field order. Document as a "house style" in the system prompt and produce matching output from the project-state-to-ABC writer.
+3. **Diff-detection on `setProject`.** Replacing the whole project with new ABC must not silently destroy material the LLM didn't intend to change. Server-side: compare new ABC to current project ABC region-by-region; only modify regions the LLM actually changed; warn if hand-recorded material would be lost.
+4. **ABC parser robustness for what the LLM emits.** The spec is mature but full of edge cases. Either pull in an existing C++ ABC parser (license-permitting) or write a focused subset that handles what the LLM tends to produce. Prefer the latter for now — bounded scope, no new deps.
+
+## What's deliberately out of scope this pass
+
+- **Multi-agent decomposition (ComposerX-style).** Stays in the brainstorm pile until we see how the new API performs single-agent.
+- **Specialist-model integration (AMT / ChatMusician / MIDI-LLM as tools).** Same — defer until baseline is in.
+- **Sketch-input / hum-to-MIDI / infill UX.** Out of scope; this redesign is about the read/write surface, not the user-input mode.
+- **RLHF-style automated quality judges.** Out of scope.
+- **Best-effort transcription of hand-recorded MIDI.** Punted explicitly above.
+
+## Implementation plan
+
+Sequential phases, each landable as a separate commit (or small commit set) on `composition-abc`. Each phase leaves the tree buildable; tests pass at every step.
+
+### Phase 1 — ABC infrastructure
+
+- ABC parser (`src/composer/ABCParser.h/.cpp`): consumes ABC, emits `ComposerOutput` with `MidiEventState`s. Mirrors the role of `V2NotationParser`. Supports the subset the LLM actually emits (notes, chords, rests, ties, durations, basic dynamics, multi-voice via `V:`, repeats, headers including `K:none`).
+- ABC writer (`src/composer/ABCWriter.h/.cpp`): given `MidiEventState`s + region/track context, emits ABC. Used for `getRegion / getTrack / getProject`. Establishes "house style" conventions.
+- Tests: ABC → MIDI → ABC round-trip stability for representative cases (single voice, multi-voice, ties, repeats, varying time-sig).
+
+### Phase 2 — Content CRUD Lua API
+
+- All `getProject` / `setProject` / `getTrack` / `setTrack` / `getRegion` / `setRegion` / `createRegion` / `deleteRegion` / `listRegions`.
+- Diff-detection on `setProject` (separate file: `src/composer/ProjectDiff.h/.cpp`).
+- `listTracks()` alias (forwards to `registryList("track")`).
+- Tests: each CRUD op in isolation; cross-CRUD interactions; diff-detection preserves un-touched regions.
+
+### Phase 3 — Tempo / time signature / key CRUD
+
+- `KeyEvent` added to `StateModel.h` parallel to `TempoEvent` / `TimeSignatureEvent`.
+- SQLite schema additions (key events table). No migration needed — schema versioning bump only.
+- Lua exposure for all three resource families.
+- ABC writer integrates header (Q:, M:, K:) and inline (`[Q:1/4=120]`, `[M:3/4]`, `[K:G]`) emission.
+- Tests: events at various beats round-trip through ABC; effective-value lookups (`getTempo(20)` returns the most-recent-prior event).
+
+### Phase 4 — Action event CRUD + rename
+
+- Rename `createAction` → `defineAction` in `LuaEngine.cpp` (one call site rename in `runtime/SYSTEM_PROMPT.md`).
+- New `listActionEvents` / `getActionEvent` / `createActionEvent` / `setActionEvent` / `deleteActionEvent`.
+- Tests: standard CRUD on action events.
+
+### Phase 5 — System prompt rewrite
+
+- Replace V2 grammar section in `runtime/SYSTEM_PROMPT.md` with ABC primer + house-style conventions.
+- Add CRUD usage rules: smallest-scope-that-contains-effect, read-before-write, use named regions / `P:` labels.
+- Prompt cache will reset; first request after deploy pays full cost again.
+
+### Phase 6 — Remove old surface
+
+- Delete `compose()` Lua function.
+- Delete `V2NotationParser`, `ComposerWriter` (the V2 one — keep the new ABC writer obviously).
+- Update `docs/COMPOSER_INTEGRATION.md` to mark V2 path as historical / superseded.
+- Update `docs/AI_COMPOSITION.md` to mark this redesign as shipped.
+
+### Phase 7 — End-to-end validation before merge
+
+- Manual test: empty project → compose piano via chat → compose drum that responds to it → edit a region → restructure with a bridge insertion → playback works correctly throughout.
+- Verify diff-detection: ask the LLM to do a setProject that "doesn't intend to change" a hand-recorded region; verify the recording survives.
+- Token cost check: run a representative session and confirm caching keeps per-request input cost in line with current numbers.
+- Listen test: subjective, comparing AI-composed output now vs. before. Doesn't have to dramatically improve — just shouldn't regress, and should unlock new editing/extending operations that weren't possible before.
+
+### Merge
+
+When phase 7 looks good, merge `composition-abc` to `main`. Bump version. Update CLAUDE.md + AI_COMPOSITION.md "current focus" sections. Ship to friend testers in next round (no rush — tester feedback so far is light).
+
+## Migration / data preservation
+
+- **Existing songs in user DBs:** stored as `MidiEventState`s — format-agnostic. No data migration needed; the new API just generates ABC from the same underlying events.
+- **AI-composed regions in existing songs:** their stored events were V2-derived. We don't have the V2 source preserved alongside, so we'll have to transcribe them to ABC using the writer. For most regions this should round-trip cleanly since the events came from a parser. For genuinely complex cases (very dense polyphonic material), the transcription may produce ABC that differs in formatting from what would be ideal — acceptable cost.
+- **Conversation history with `compose()` calls:** still valid history, but the function it referenced no longer exists. Acceptable — old conversations don't get retroactively fixed; new conversations use the new surface.
+
+## Notes
+
+- The `composition-abc` branch is for this work specifically. Side fixes / unrelated bugs that come up during testing should land on `main` directly so the branch stays focused.
+- Token cost on the LLM side: prompt caching keeps the per-request overhead low. The big cost driver will be initial fetches of project / track ABC into context. Will be fine.
+- We may discover during phase 1 or 2 that round-trip stability or transcription is harder than we think. If so, we re-scope, document the new findings in this doc, and decide whether to proceed.
