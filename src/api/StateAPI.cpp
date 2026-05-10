@@ -298,6 +298,132 @@ std::pair<int,int> StateAPI::getSongTimeSignature() const {
     return { 4, 4 };
 }
 
+// --- Multi-event tempo / timesig / key maps ----------------------------------
+//
+// Each setXxxEvent inserts a new event or updates the existing one at the
+// same beat (1e-6 tolerance). Vectors maintained sorted by beat.
+// removeXxxEvent erases by beat; returns whether anything was removed.
+// effectiveXxxAt walks the sorted events for the most-recent-prior value.
+
+namespace {
+constexpr double kBeatEps = 1e-6;
+
+template <typename Event, typename Update>
+void upsertSorted(std::vector<Event>& v, double beat, Update update) {
+    for (auto& e : v) {
+        if (std::abs(e.beat - beat) < kBeatEps) { update(e); return; }
+    }
+    Event e;
+    e.beat = beat;
+    update(e);
+    v.push_back(e);
+    std::sort(v.begin(), v.end(),
+        [](const Event& a, const Event& b) { return a.beat < b.beat; });
+}
+
+template <typename Event>
+bool eraseAtBeat(std::vector<Event>& v, double beat) {
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        if (std::abs(it->beat - beat) < kBeatEps) { v.erase(it); return true; }
+    }
+    return false;
+}
+}  // namespace
+
+void StateAPI::setTempoEvent(double beat, double bpm) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.tempoEvents, beat, [bpm](TempoEvent& e) { e.bpm = bpm; });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeTempoEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.tempoEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+double StateAPI::effectiveTempoAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->tempoEvents.empty()) return 120.0;
+    double bpm = s->tempoEvents.front().bpm;
+    for (auto& e : s->tempoEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        bpm = e.bpm;
+    }
+    return bpm;
+}
+
+void StateAPI::setTimeSigEvent(double beat, int numerator, int denominator) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.timeSigEvents, beat,
+        [numerator, denominator](TimeSignatureEvent& e) {
+            e.numerator   = numerator;
+            e.denominator = denominator;
+        });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeTimeSigEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.timeSigEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+std::pair<int,int> StateAPI::effectiveTimeSignatureAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->timeSigEvents.empty()) return { 4, 4 };
+    auto effective = s->timeSigEvents.front();
+    for (auto& e : s->timeSigEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        effective = e;
+    }
+    return { effective.numerator, effective.denominator };
+}
+
+void StateAPI::setKeyEvent(double beat, const std::string& key) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.keyEvents, beat, [&key](KeyEvent& e) { e.key = key; });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeKeyEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.keyEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+std::string StateAPI::effectiveKeyAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->keyEvents.empty()) return {};
+    std::string key = s->keyEvents.front().key;
+    for (auto& e : s->keyEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        key = e.key;
+    }
+    return key;
+}
+
 std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId.str();
 }

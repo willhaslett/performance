@@ -673,6 +673,184 @@ void LuaEngine::registerAPI() {
         return RegionContent::projectToABC(*song);
     });
 
+    // ---- Tempo / Time Signature / Key CRUD (composition-abc Phase 3b) ----
+    //
+    // 15 verbs across three resource families. Each follows the same shape:
+    //   list<X>s()              → table of {beat, ...}
+    //   get<X>(beat)            → effective value at beat (most-recent-prior)
+    //   create<X>(beat, ...)    → error if beat already taken
+    //   set<X>(beat, ...)       → error if no event at beat
+    //   delete<X>(beat)         → error if no event at beat
+    //
+    // Engine runtime evaluation (3c) lifts these from "data-faithful but
+    // inert beyond event[0]" to "playback honors the full map."
+
+    auto eventExistsAtBeat = [](const auto& events, double beat) -> bool {
+        constexpr double kEps = 1e-6;
+        for (auto& e : events) if (std::abs(e.beat - beat) < kEps) return true;
+        return false;
+    };
+
+    // Tempo -------------------------------------------------------------------
+    lua.set_function("listTempos", [this, &state]() -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) return out;
+        int i = 1;
+        for (auto& e : song->tempoEvents) {
+            sol::table row = sv.create_table();
+            row["beat"] = e.beat;
+            row["bpm"]  = e.bpm;
+            out[i++] = row;
+        }
+        return out;
+    });
+
+    lua.set_function("getTempo", [&state](double beat) -> double {
+        return state.effectiveTempoAt(beat);
+    });
+
+    lua.set_function("createTempo", [&state, eventExistsAtBeat]
+                     (double beat, double bpm) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("createTempo: no current song");
+        if (eventExistsAtBeat(song->tempoEvents, beat))
+            throw std::runtime_error("createTempo: a tempo event already exists at beat "
+                                       + std::to_string(beat) + " — use setTempo to update");
+        state.setTempoEvent(beat, bpm);
+        return std::string("ok");
+    });
+
+    lua.set_function("setTempo", [&state, eventExistsAtBeat]
+                     (double beat, double bpm) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("setTempo: no current song");
+        if (!eventExistsAtBeat(song->tempoEvents, beat))
+            throw std::runtime_error("setTempo: no tempo event at beat "
+                                       + std::to_string(beat) + " — use createTempo to add");
+        state.setTempoEvent(beat, bpm);
+        return std::string("ok");
+    });
+
+    lua.set_function("deleteTempo", [&state](double beat) -> std::string {
+        if (!state.removeTempoEvent(beat))
+            throw std::runtime_error("deleteTempo: no tempo event at beat "
+                                       + std::to_string(beat));
+        return std::string("ok");
+    });
+
+    // Time signature ---------------------------------------------------------
+    lua.set_function("listTimeSignatures", [this, &state]() -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) return out;
+        int i = 1;
+        for (auto& e : song->timeSigEvents) {
+            sol::table row = sv.create_table();
+            row["beat"] = e.beat;
+            row["num"]  = e.numerator;
+            row["den"]  = e.denominator;
+            out[i++] = row;
+        }
+        return out;
+    });
+
+    lua.set_function("getTimeSignature", [this, &state](double beat) -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto [num, den] = state.effectiveTimeSignatureAt(beat);
+        out["num"] = num;
+        out["den"] = den;
+        return out;
+    });
+
+    lua.set_function("createTimeSignature", [&state, eventExistsAtBeat]
+                     (double beat, int num, int den) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("createTimeSignature: no current song");
+        if (eventExistsAtBeat(song->timeSigEvents, beat))
+            throw std::runtime_error("createTimeSignature: a time-signature event already exists at beat "
+                                       + std::to_string(beat) + " — use setTimeSignature to update");
+        if (num <= 0 || den <= 0)
+            throw std::runtime_error("createTimeSignature: numerator and denominator must be positive");
+        state.setTimeSigEvent(beat, num, den);
+        return std::string("ok");
+    });
+
+    lua.set_function("setTimeSignature", [&state, eventExistsAtBeat]
+                     (double beat, int num, int den) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("setTimeSignature: no current song");
+        if (!eventExistsAtBeat(song->timeSigEvents, beat))
+            throw std::runtime_error("setTimeSignature: no time-signature event at beat "
+                                       + std::to_string(beat) + " — use createTimeSignature to add");
+        state.setTimeSigEvent(beat, num, den);
+        return std::string("ok");
+    });
+
+    lua.set_function("deleteTimeSignature", [&state](double beat) -> std::string {
+        if (!state.removeTimeSigEvent(beat))
+            throw std::runtime_error("deleteTimeSignature: no time-signature event at beat "
+                                       + std::to_string(beat));
+        return std::string("ok");
+    });
+
+    // Key signature ----------------------------------------------------------
+    lua.set_function("listKeys", [this, &state]() -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) return out;
+        int i = 1;
+        for (auto& e : song->keyEvents) {
+            sol::table row = sv.create_table();
+            row["beat"] = e.beat;
+            row["key"]  = e.key;
+            out[i++] = row;
+        }
+        return out;
+    });
+
+    lua.set_function("getKey", [this, &state](double beat) -> sol::object {
+        sol::state_view sv(lua.lua_state());
+        auto k = state.effectiveKeyAt(beat);
+        if (k.empty()) return sol::make_object(sv, sol::nil);
+        return sol::make_object(sv, k);
+    });
+
+    lua.set_function("createKey", [&state, eventExistsAtBeat]
+                     (double beat, const std::string& key) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("createKey: no current song");
+        if (eventExistsAtBeat(song->keyEvents, beat))
+            throw std::runtime_error("createKey: a key event already exists at beat "
+                                       + std::to_string(beat) + " — use setKey to update");
+        if (key.empty())
+            throw std::runtime_error("createKey: key string cannot be empty (use deleteKey to remove)");
+        state.setKeyEvent(beat, key);
+        return std::string("ok");
+    });
+
+    lua.set_function("setKey", [&state, eventExistsAtBeat]
+                     (double beat, const std::string& key) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("setKey: no current song");
+        if (!eventExistsAtBeat(song->keyEvents, beat))
+            throw std::runtime_error("setKey: no key event at beat "
+                                       + std::to_string(beat) + " — use createKey to add");
+        state.setKeyEvent(beat, key);
+        return std::string("ok");
+    });
+
+    lua.set_function("deleteKey", [&state](double beat) -> std::string {
+        if (!state.removeKeyEvent(beat))
+            throw std::runtime_error("deleteKey: no key event at beat "
+                                       + std::to_string(beat));
+        return std::string("ok");
+    });
+
     // Devices
     lua.set_function("registerDevice", [&state, &coord](const std::string& name, const std::string& portName) -> std::string {
         auto id = state.registerDevice(name, portName);
