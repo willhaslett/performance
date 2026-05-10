@@ -624,17 +624,43 @@ void LuaEngine::registerAPI() {
         return RegionContent::projectToABC(*song);
     });
 
-    // ---- Tempo / Time Signature / Key CRUD (composition-abc Phase 3b) ----
+    // ---- Unified Event API (composition-abc Phase 3d-b) ------------------
     //
-    // 15 verbs across three resource families. Each follows the same shape:
-    //   list<X>s()              → table of {beat, ...}
-    //   get<X>(beat)            → effective value at beat (most-recent-prior)
-    //   create<X>(beat, ...)    → error if beat already taken
-    //   set<X>(beat, ...)       → error if no event at beat
-    //   delete<X>(beat)         → error if no event at beat
+    // One verb family for all timeline-scheduled events: tempo / timesig /
+    // key / action. Storage stays per-type (typed vectors on SongState)
+    // for type safety; this layer is the unified surface the LLM uses.
     //
-    // Engine runtime evaluation (3c) lifts these from "data-faithful but
-    // inert beyond event[0]" to "playback honors the full map."
+    //   createEvent(beat, type, payload) → returns event id (string)
+    //   listEvents([type])               → table of {id, beat, type, payload}
+    //   getEvent(id)                     → {id, beat, type, payload}
+    //   setEvent(id, partial)            → update fields (beat / payload)
+    //   deleteEvent(id)                  → "ok"
+    //
+    // Type strings: "tempo" | "timesig" | "key" | "action"
+    // Payload shapes (Lua tables):
+    //   tempo:   {bpm = number}
+    //   timesig: {num = int, den = int}
+    //   key:     {key = string}
+    //   action:  {name = string, args = table | string}   (args optional)
+
+    auto packTempoPayload   = [](sol::state_view sv, const TempoEvent& e) {
+        sol::table p = sv.create_table(); p["bpm"] = e.bpm; return p;
+    };
+    auto packTimesigPayload = [](sol::state_view sv, const TimeSignatureEvent& e) {
+        sol::table p = sv.create_table(); p["num"] = e.numerator; p["den"] = e.denominator; return p;
+    };
+    auto packKeyPayload     = [](sol::state_view sv, const KeyEvent& e) {
+        sol::table p = sv.create_table(); p["key"] = e.key; return p;
+    };
+
+    auto packActionPayload = [&state](sol::state_view sv, const SongState::ActionEvent& ev) -> sol::table {
+        sol::table p = sv.create_table();
+        std::string name = ev.actionId.str();
+        for (auto& a : state.allActions()) if (a.id == ev.actionId) { name = a.name; break; }
+        p["name"] = name;
+        p["args"] = ev.argsJson;       // exposed as JSON string for now
+        return p;
+    };
 
     auto eventExistsAtBeat = [](const auto& events, double beat) -> bool {
         constexpr double kEps = 1e-6;
@@ -642,163 +668,189 @@ void LuaEngine::registerAPI() {
         return false;
     };
 
-    // Tempo -------------------------------------------------------------------
-    lua.set_function("listTempos", [this, &state]() -> sol::table {
+    // Convert a Lua table args field to a JSON string for action storage.
+    auto luaArgsToJson = [](sol::object args) -> std::string {
+        if (!args.valid() || args.is<sol::nil_t>()) return "[]";
+        if (args.is<std::string>()) return args.as<std::string>();
+        if (args.is<sol::table>()) {
+            // Walk the table and build a JSON array. Only flat values for now.
+            sol::table t = args.as<sol::table>();
+            juce::var arr;
+            arr = juce::Array<juce::var>{};
+            for (auto& kv : t) {
+                if (kv.second.is<double>())       arr.append(kv.second.as<double>());
+                else if (kv.second.is<int>())     arr.append(kv.second.as<int>());
+                else if (kv.second.is<bool>())    arr.append(kv.second.as<bool>());
+                else if (kv.second.is<std::string>()) arr.append(juce::String(kv.second.as<std::string>()));
+            }
+            return juce::JSON::toString(arr, true).toStdString();
+        }
+        return "[]";
+    };
+
+    lua.set_function("createEvent", [this, &state, eventExistsAtBeat, luaArgsToJson]
+                     (double beat, const std::string& type, sol::table payload) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("createEvent: no current song");
+
+        if (type == "tempo") {
+            if (eventExistsAtBeat(song->tempoEvents, beat))
+                throw std::runtime_error("createEvent: a tempo event already exists at beat "
+                                           + std::to_string(beat) + " — use setEvent to update");
+            double bpm = payload["bpm"].get_or(120.0);
+            state.setTempoEvent(beat, bpm);
+            for (auto& e : song->tempoEvents)
+                if (std::abs(e.beat - beat) < 1e-6) return e.id.str();
+            throw std::runtime_error("createEvent: internal — failed to find newly-created tempo event");
+        }
+        if (type == "timesig") {
+            if (eventExistsAtBeat(song->timeSigEvents, beat))
+                throw std::runtime_error("createEvent: a time-signature event already exists at beat "
+                                           + std::to_string(beat) + " — use setEvent to update");
+            int num = payload["num"].get_or(4);
+            int den = payload["den"].get_or(4);
+            if (num <= 0 || den <= 0)
+                throw std::runtime_error("createEvent: timesig num/den must be positive");
+            state.setTimeSigEvent(beat, num, den);
+            for (auto& e : song->timeSigEvents)
+                if (std::abs(e.beat - beat) < 1e-6) return e.id.str();
+            throw std::runtime_error("createEvent: internal — failed to find newly-created timesig event");
+        }
+        if (type == "key") {
+            if (eventExistsAtBeat(song->keyEvents, beat))
+                throw std::runtime_error("createEvent: a key event already exists at beat "
+                                           + std::to_string(beat) + " — use setEvent to update");
+            std::string key = payload["key"].get_or<std::string>("");
+            if (key.empty())
+                throw std::runtime_error("createEvent: key string cannot be empty");
+            state.setKeyEvent(beat, key);
+            for (auto& e : song->keyEvents)
+                if (std::abs(e.beat - beat) < 1e-6) return e.id.str();
+            throw std::runtime_error("createEvent: internal — failed to find newly-created key event");
+        }
+        if (type == "action") {
+            std::string name = payload["name"].get_or<std::string>("");
+            if (name.empty()) throw std::runtime_error("createEvent: action payload requires 'name'");
+            auto* info = state.findActionByName(name);
+            if (!info) throw std::runtime_error("createEvent: no action named '" + name + "'");
+            std::string args = luaArgsToJson(payload["args"]);
+            auto id = state.addActionEvent(beat, info->id, args);
+            return id.str();
+        }
+        throw std::runtime_error("createEvent: unknown type '" + type + "' (expected tempo|timesig|key|action)");
+    });
+
+    lua.set_function("listEvents", [this, &state,
+                                      packTempoPayload, packTimesigPayload, packKeyPayload, packActionPayload]
+                     (sol::optional<std::string> typeFilter) -> sol::table {
         sol::state_view sv(lua.lua_state());
         sol::table out = sv.create_table();
         auto* song = state.currentSong();
         if (!song) return out;
+
+        const bool wantTempo   = !typeFilter.has_value() || typeFilter.value() == "tempo";
+        const bool wantTimesig = !typeFilter.has_value() || typeFilter.value() == "timesig";
+        const bool wantKey     = !typeFilter.has_value() || typeFilter.value() == "key";
+        const bool wantAction  = !typeFilter.has_value() || typeFilter.value() == "action";
+
         int i = 1;
-        for (auto& e : song->tempoEvents) {
+        auto pack = [&](const std::string& id, double beat, const char* type, sol::table payload) {
             sol::table row = sv.create_table();
-            row["beat"] = e.beat;
-            row["bpm"]  = e.bpm;
+            row["id"]      = id;
+            row["beat"]    = beat;
+            row["type"]    = type;
+            row["payload"] = payload;
             out[i++] = row;
-        }
+        };
+        if (wantTempo)   for (auto& e : song->tempoEvents)   pack(e.id.str(), e.beat, "tempo",   packTempoPayload(sv, e));
+        if (wantTimesig) for (auto& e : song->timeSigEvents) pack(e.id.str(), e.beat, "timesig", packTimesigPayload(sv, e));
+        if (wantKey)     for (auto& e : song->keyEvents)     pack(e.id.str(), e.beat, "key",     packKeyPayload(sv, e));
+        if (wantAction)  for (auto& e : song->actionEvents)  pack(e.id.str(), e.beat, "action",  packActionPayload(sv, e));
         return out;
     });
 
-    lua.set_function("getTempo", [&state](double beat) -> double {
-        return state.effectiveTempoAt(beat);
-    });
-
-    lua.set_function("createTempo", [&state, eventExistsAtBeat]
-                     (double beat, double bpm) -> std::string {
+    auto findAndDispatch = [&state](const std::string& idStr,
+                                       auto onTempo, auto onTimesig, auto onKey, auto onAction) -> bool {
         auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("createTempo: no current song");
-        if (eventExistsAtBeat(song->tempoEvents, beat))
-            throw std::runtime_error("createTempo: a tempo event already exists at beat "
-                                       + std::to_string(beat) + " — use setTempo to update");
-        state.setTempoEvent(beat, bpm);
-        return std::string("ok");
-    });
+        if (!song) return false;
+        for (auto& e : song->tempoEvents)   if (e.id.str() == idStr) { onTempo(e); return true; }
+        for (auto& e : song->timeSigEvents) if (e.id.str() == idStr) { onTimesig(e); return true; }
+        for (auto& e : song->keyEvents)     if (e.id.str() == idStr) { onKey(e); return true; }
+        for (auto& e : song->actionEvents)  if (e.id.str() == idStr) { onAction(e); return true; }
+        return false;
+    };
 
-    lua.set_function("setTempo", [&state, eventExistsAtBeat]
-                     (double beat, double bpm) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("setTempo: no current song");
-        if (!eventExistsAtBeat(song->tempoEvents, beat))
-            throw std::runtime_error("setTempo: no tempo event at beat "
-                                       + std::to_string(beat) + " — use createTempo to add");
-        state.setTempoEvent(beat, bpm);
-        return std::string("ok");
-    });
-
-    lua.set_function("deleteTempo", [&state](double beat) -> std::string {
-        if (!state.removeTempoEvent(beat))
-            throw std::runtime_error("deleteTempo: no tempo event at beat "
-                                       + std::to_string(beat));
-        return std::string("ok");
-    });
-
-    // Time signature ---------------------------------------------------------
-    lua.set_function("listTimeSignatures", [this, &state]() -> sol::table {
+    lua.set_function("getEvent", [this, &state, findAndDispatch,
+                                    packTempoPayload, packTimesigPayload, packKeyPayload, packActionPayload]
+                     (const std::string& idStr) -> sol::table {
         sol::state_view sv(lua.lua_state());
         sol::table out = sv.create_table();
-        auto* song = state.currentSong();
-        if (!song) return out;
-        int i = 1;
-        for (auto& e : song->timeSigEvents) {
-            sol::table row = sv.create_table();
-            row["beat"] = e.beat;
-            row["num"]  = e.numerator;
-            row["den"]  = e.denominator;
-            out[i++] = row;
-        }
+        bool found = findAndDispatch(idStr,
+            [&](const TempoEvent& e)              { out["id"]=e.id.str(); out["beat"]=e.beat; out["type"]="tempo";   out["payload"]=packTempoPayload(sv, e); },
+            [&](const TimeSignatureEvent& e)      { out["id"]=e.id.str(); out["beat"]=e.beat; out["type"]="timesig"; out["payload"]=packTimesigPayload(sv, e); },
+            [&](const KeyEvent& e)                { out["id"]=e.id.str(); out["beat"]=e.beat; out["type"]="key";     out["payload"]=packKeyPayload(sv, e); },
+            [&](const SongState::ActionEvent& e)  { out["id"]=e.id.str(); out["beat"]=e.beat; out["type"]="action";  out["payload"]=packActionPayload(sv, e); }
+        );
+        if (!found) throw std::runtime_error("getEvent: no event with id '" + idStr + "'");
         return out;
     });
 
-    lua.set_function("getTimeSignature", [this, &state](double beat) -> sol::table {
-        sol::state_view sv(lua.lua_state());
-        sol::table out = sv.create_table();
-        auto [num, den] = state.effectiveTimeSignatureAt(beat);
-        out["num"] = num;
-        out["den"] = den;
-        return out;
-    });
+    lua.set_function("setEvent", [&state, findAndDispatch, luaArgsToJson]
+                     (const std::string& idStr, sol::table partial) -> std::string {
+        sol::optional<double> newBeat;
+        if (partial["beat"].valid()) newBeat = partial["beat"].get<double>();
+        sol::object payloadObj = partial["payload"];
 
-    lua.set_function("createTimeSignature", [&state, eventExistsAtBeat]
-                     (double beat, int num, int den) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("createTimeSignature: no current song");
-        if (eventExistsAtBeat(song->timeSigEvents, beat))
-            throw std::runtime_error("createTimeSignature: a time-signature event already exists at beat "
-                                       + std::to_string(beat) + " — use setTimeSignature to update");
-        if (num <= 0 || den <= 0)
-            throw std::runtime_error("createTimeSignature: numerator and denominator must be positive");
-        state.setTimeSigEvent(beat, num, den);
+        bool found = findAndDispatch(idStr,
+            [&](TempoEvent& e) {
+                if (newBeat.has_value()) state.setTempoEvent(newBeat.value(), e.bpm);
+                else if (payloadObj.valid() && payloadObj.is<sol::table>()) {
+                    auto p = payloadObj.as<sol::table>();
+                    state.setTempoEvent(e.beat, p["bpm"].get_or(e.bpm));
+                }
+            },
+            [&](TimeSignatureEvent& e) {
+                if (newBeat.has_value()) state.setTimeSigEvent(newBeat.value(), e.numerator, e.denominator);
+                else if (payloadObj.valid() && payloadObj.is<sol::table>()) {
+                    auto p = payloadObj.as<sol::table>();
+                    state.setTimeSigEvent(e.beat, p["num"].get_or(e.numerator), p["den"].get_or(e.denominator));
+                }
+            },
+            [&](KeyEvent& e) {
+                if (newBeat.has_value()) state.setKeyEvent(newBeat.value(), e.key);
+                else if (payloadObj.valid() && payloadObj.is<sol::table>()) {
+                    auto p = payloadObj.as<sol::table>();
+                    state.setKeyEvent(e.beat, p["key"].get_or(e.key));
+                }
+            },
+            [&](SongState::ActionEvent& e) {
+                if (newBeat.has_value())
+                    state.setActionEventBeat(ActionEventId{idStr}, newBeat.value());
+                if (payloadObj.valid() && payloadObj.is<sol::table>()) {
+                    auto p = payloadObj.as<sol::table>();
+                    if (p["name"].valid()) {
+                        auto* info = state.findActionByName(p["name"].get<std::string>());
+                        if (!info) throw std::runtime_error("setEvent: no action named '"
+                                                              + p["name"].get<std::string>() + "'");
+                        e.actionId = info->id;
+                    }
+                    if (p["args"].valid()) e.argsJson = luaArgsToJson(p["args"]);
+                }
+            }
+        );
+        if (!found) throw std::runtime_error("setEvent: no event with id '" + idStr + "'");
         return std::string("ok");
     });
 
-    lua.set_function("setTimeSignature", [&state, eventExistsAtBeat]
-                     (double beat, int num, int den) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("setTimeSignature: no current song");
-        if (!eventExistsAtBeat(song->timeSigEvents, beat))
-            throw std::runtime_error("setTimeSignature: no time-signature event at beat "
-                                       + std::to_string(beat) + " — use createTimeSignature to add");
-        state.setTimeSigEvent(beat, num, den);
-        return std::string("ok");
-    });
-
-    lua.set_function("deleteTimeSignature", [&state](double beat) -> std::string {
-        if (!state.removeTimeSigEvent(beat))
-            throw std::runtime_error("deleteTimeSignature: no time-signature event at beat "
-                                       + std::to_string(beat));
-        return std::string("ok");
-    });
-
-    // Key signature ----------------------------------------------------------
-    lua.set_function("listKeys", [this, &state]() -> sol::table {
-        sol::state_view sv(lua.lua_state());
-        sol::table out = sv.create_table();
-        auto* song = state.currentSong();
-        if (!song) return out;
-        int i = 1;
-        for (auto& e : song->keyEvents) {
-            sol::table row = sv.create_table();
-            row["beat"] = e.beat;
-            row["key"]  = e.key;
-            out[i++] = row;
-        }
-        return out;
-    });
-
-    lua.set_function("getKey", [this, &state](double beat) -> sol::object {
-        sol::state_view sv(lua.lua_state());
-        auto k = state.effectiveKeyAt(beat);
-        if (k.empty()) return sol::make_object(sv, sol::nil);
-        return sol::make_object(sv, k);
-    });
-
-    lua.set_function("createKey", [&state, eventExistsAtBeat]
-                     (double beat, const std::string& key) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("createKey: no current song");
-        if (eventExistsAtBeat(song->keyEvents, beat))
-            throw std::runtime_error("createKey: a key event already exists at beat "
-                                       + std::to_string(beat) + " — use setKey to update");
-        if (key.empty())
-            throw std::runtime_error("createKey: key string cannot be empty (use deleteKey to remove)");
-        state.setKeyEvent(beat, key);
-        return std::string("ok");
-    });
-
-    lua.set_function("setKey", [&state, eventExistsAtBeat]
-                     (double beat, const std::string& key) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("setKey: no current song");
-        if (!eventExistsAtBeat(song->keyEvents, beat))
-            throw std::runtime_error("setKey: no key event at beat "
-                                       + std::to_string(beat) + " — use createKey to add");
-        state.setKeyEvent(beat, key);
-        return std::string("ok");
-    });
-
-    lua.set_function("deleteKey", [&state](double beat) -> std::string {
-        if (!state.removeKeyEvent(beat))
-            throw std::runtime_error("deleteKey: no key event at beat "
-                                       + std::to_string(beat));
+    lua.set_function("deleteEvent", [&state, findAndDispatch]
+                     (const std::string& idStr) -> std::string {
+        bool found = findAndDispatch(idStr,
+            [&](TempoEvent& e)              { state.removeTempoEvent(e.beat); },
+            [&](TimeSignatureEvent& e)      { state.removeTimeSigEvent(e.beat); },
+            [&](KeyEvent& e)                { state.removeKeyEvent(e.beat); },
+            [&](SongState::ActionEvent&)    { state.removeActionEvent(ActionEventId{idStr}); }
+        );
+        if (!found) throw std::runtime_error("deleteEvent: no event with id '" + idStr + "'");
         return std::string("ok");
     });
 
@@ -1003,100 +1055,9 @@ void LuaEngine::registerAPI() {
         coord.executeAction(actionName, juce::var(), 1.0f);
     });
 
-    // ---- Action-event CRUD (composition-abc Phase 4) ---------------------
-    //
-    // Action events are beat-triggered firings of a registered action with
-    // packed args. Stored at song level (the "Action track" pane is a
-    // visual surface; the events themselves are not per-track). The LLM
-    // / scripter uses these to schedule transport-time effects, mode
-    // switches, automation triggers, etc. without writing them as MIDI.
-
-    auto findEventById = [](std::vector<SongState::ActionEvent>& events,
-                              const std::string& idStr) -> SongState::ActionEvent* {
-        ActionEventId aeid{idStr};
-        for (auto& e : events) if (e.id == aeid) return &e;
-        return nullptr;
-    };
-
-    lua.set_function("listActionEvents", [this, &state]() -> sol::table {
-        sol::state_view sv(lua.lua_state());
-        sol::table out = sv.create_table();
-        auto* song = state.currentSong();
-        if (!song) return out;
-        // Resolve actionId -> name once for readability.
-        std::unordered_map<std::string, std::string> idToName;
-        for (auto& a : state.allActions()) idToName[a.id.str()] = a.name;
-        int i = 1;
-        for (auto& ev : song->actionEvents) {
-            sol::table row = sv.create_table();
-            row["id"]     = ev.id.str();
-            row["beat"]   = ev.beat;
-            auto it = idToName.find(ev.actionId.str());
-            row["action"] = (it != idToName.end()) ? it->second : ev.actionId.str();
-            row["args"]   = ev.argsJson;
-            out[i++] = row;
-        }
-        return out;
-    });
-
-    lua.set_function("getActionEvent", [this, &state, findEventById]
-                     (const std::string& idStr) -> sol::table {
-        sol::state_view sv(lua.lua_state());
-        sol::table out = sv.create_table();
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("getActionEvent: no current song");
-        auto* ev = findEventById(song->actionEvents, idStr);
-        if (!ev) throw std::runtime_error("getActionEvent: no event with id '" + idStr + "'");
-        out["id"]   = ev->id.str();
-        out["beat"] = ev->beat;
-        // Resolve action name.
-        std::string name = ev->actionId.str();
-        for (auto& a : state.allActions()) if (a.id == ev->actionId) { name = a.name; break; }
-        out["action"] = name;
-        out["args"]   = ev->argsJson;
-        return out;
-    });
-
-    lua.set_function("createActionEvent", [&state]
-                     (double beat, const std::string& actionName,
-                      sol::optional<std::string> argsJson) -> std::string {
-        auto* info = state.findActionByName(actionName);
-        if (!info) throw std::runtime_error("createActionEvent: no action named '" + actionName + "'");
-        std::string args = argsJson.value_or("[]");
-        auto id = state.addActionEvent(beat, info->id, args);
-        return id.str();
-    });
-
-    lua.set_function("setActionEvent", [&state, findEventById]
-                     (const std::string& idStr,
-                      sol::optional<double> beat,
-                      sol::optional<std::string> actionName,
-                      sol::optional<std::string> argsJson) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("setActionEvent: no current song");
-        auto* ev = findEventById(song->actionEvents, idStr);
-        if (!ev) throw std::runtime_error("setActionEvent: no event with id '" + idStr + "'");
-        if (beat.has_value())
-            state.setActionEventBeat(ActionEventId{idStr}, beat.value());
-        if (actionName.has_value()) {
-            auto* info = state.findActionByName(actionName.value());
-            if (!info) throw std::runtime_error("setActionEvent: no action named '" + actionName.value() + "'");
-            ev->actionId = info->id;
-        }
-        if (argsJson.has_value())
-            ev->argsJson = argsJson.value();
-        return std::string("ok");
-    });
-
-    lua.set_function("deleteActionEvent", [&state, findEventById]
-                     (const std::string& idStr) -> std::string {
-        auto* song = state.currentSong();
-        if (!song) throw std::runtime_error("deleteActionEvent: no current song");
-        if (!findEventById(song->actionEvents, idStr))
-            throw std::runtime_error("deleteActionEvent: no event with id '" + idStr + "'");
-        state.removeActionEvent(ActionEventId{idStr});
-        return std::string("ok");
-    });
+    // (Per-family action-event verbs removed in Phase 3d-b. Use the
+    // unified createEvent / listEvents / getEvent / setEvent / deleteEvent
+    // API above with type="action".)
     lua.set_function("currentSongId", [&state]() -> std::string {
         auto* song = state.currentSong();
         return song ? song->id.str() : std::string{};
