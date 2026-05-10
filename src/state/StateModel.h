@@ -310,6 +310,15 @@ struct TimeSignatureEvent {
     int denominator = 4;
 };
 
+// Key signature change at a specific beat position. ABC-style strings:
+// "C", "Am", "F#mix", "none". Empty / absent vector = no key declared
+// (writer emits K:none). When set, the first event (beat 0) is the
+// initial key.
+struct KeyEvent {
+    double beat = 0.0;
+    std::string key = "C";
+};
+
 struct SongState {
     SongId id;
     std::string name;
@@ -324,6 +333,7 @@ struct SongState {
     // Tempo and time signature maps (sorted by beat)
     std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
     std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
+    std::vector<KeyEvent> keyEvents;                // empty = no key declared (K:none in ABC)
 
     // Cycle playback (per-song). Used by both the Producer's cycle mode
     // and the Looper. When the app is in `AppMode::Looper`, the
