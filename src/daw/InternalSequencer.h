@@ -1,7 +1,9 @@
 #pragma once
 #include "daw/SequencerAPI.h"
+#include "state/StateModel.h"
 #include <atomic>
 #include <mutex>
+#include <vector>
 
 // InternalSequencer — our own transport and beat clock.
 // No external DAW dependency. Driven by a high-resolution timer.
@@ -51,7 +53,20 @@ public:
 
     // Called from a timer or audio callback to advance the clock.
     // deltaSeconds = time since last call.
+    //
+    // When tempoEvents is non-empty (set via setTempoEvents) the
+    // advance walks event boundaries between prevBeat and the new
+    // position, switching BPM as it crosses each. The atomic `tempo`
+    // is kept up to date with the currently-effective BPM so audio-
+    // thread reads of getTempo() see the right value at every tick.
     void advance(double deltaSeconds);
+
+    // Push the full song-level tempo map into the sequencer. Empty
+    // vector falls back to the legacy single-`tempo` behavior.
+    // Thread-safety: writer = message thread; reader = message
+    // thread inside advance(). Behind a mutex; not on the audio
+    // critical path.
+    void setTempoEvents(const std::vector<TempoEvent>& events);
 
     // Set position without triggering beat callbacks (for sync from audio thread)
     void setBeatPositionSilent(double beat);
@@ -70,6 +85,13 @@ private:
     std::mutex callbackMutex;
     BeatCallback beatCallback;
     TransportCallback transportCallback;
+
+    // Multi-event tempo map. Empty = use the atomic `tempo` directly
+    // (legacy single-tempo behavior). Locked under tempoMapMutex; only
+    // touched by message-thread code (writer = setTempoEvents,
+    // reader = advance which runs on the timer thread).
+    std::mutex tempoMapMutex;
+    std::vector<TempoEvent> tempoEvents;
 
     double lastBeatNotified = -1.0;
 };

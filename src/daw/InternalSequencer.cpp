@@ -117,15 +117,67 @@ SequencerAPI::Capabilities InternalSequencer::getCapabilities() const {
 void InternalSequencer::advance(double deltaSeconds) {
     if (!playing.load(std::memory_order_relaxed)) return;
 
-    double bpm = tempo.load(std::memory_order_relaxed);
-    double beatsPerSecond = bpm / 60.0;
-    double advance = deltaSeconds * beatsPerSecond;
+    double pos = beatPosition.load(std::memory_order_relaxed);
 
-    double pos = beatPosition.load(std::memory_order_relaxed) + advance;
+    // Snapshot tempo events under the lock so the walk below operates on
+    // a stable copy. Vector is small (typically 1-10 entries) so the
+    // copy cost is negligible.
+    std::vector<TempoEvent> events;
+    {
+        std::lock_guard<std::mutex> lock(tempoMapMutex);
+        events = tempoEvents;
+    }
 
-    // Loop
+    auto bpmAtBeat = [&events, this](double beat) -> double {
+        if (events.empty()) return tempo.load(std::memory_order_relaxed);
+        double bpm = events.front().bpm;
+        for (auto& e : events) {
+            if (e.beat > beat + 1e-9) break;
+            bpm = e.bpm;
+        }
+        return bpm;
+    };
+
+    auto nextEventAfter = [&events](double beat) -> const TempoEvent* {
+        for (auto& e : events) {
+            if (e.beat > beat + 1e-9) return &e;
+        }
+        return nullptr;
+    };
+
+    double remaining = deltaSeconds;
+    double currentBpm = bpmAtBeat(pos);
+
+    // Walk segments: at each step, advance until we hit the next
+    // tempo event or run out of time, whichever comes first.
+    while (remaining > 0.0) {
+        double secondsPerBeat = 60.0 / currentBpm;
+        const TempoEvent* next = nextEventAfter(pos);
+        if (!next) {
+            pos += remaining / secondsPerBeat;
+            break;
+        }
+        double beatsToNext   = next->beat - pos;
+        double secondsToNext = beatsToNext * secondsPerBeat;
+        if (secondsToNext > remaining) {
+            pos += remaining / secondsPerBeat;
+            break;
+        }
+        pos        = next->beat;
+        remaining -= secondsToNext;
+        currentBpm = next->bpm;
+    }
+
+    // Push the now-effective BPM into the atomic so audio-thread
+    // readers (e.g., future PositionInfo population for plugins) see
+    // the right value.
+    tempo.store(currentBpm, std::memory_order_relaxed);
+
+    // Loop wrap. NOTE: a tempo change inside the loop range will lose
+    // continuity at wrap (we re-compute tempo from the wrapped position).
+    // Acceptable V1 limitation; document if a tester trips on it.
     if (loopEnabled.load(std::memory_order_relaxed)) {
-        double end = loopEnd.load(std::memory_order_relaxed);
+        double end   = loopEnd.load(std::memory_order_relaxed);
         double start = loopStart.load(std::memory_order_relaxed);
         if (pos >= end && end > start)
             pos = start + std::fmod(pos - start, end - start);
@@ -138,6 +190,16 @@ void InternalSequencer::advance(double deltaSeconds) {
     if (currentBeat > lastBeatNotified) {
         lastBeatNotified = currentBeat;
         std::lock_guard<std::mutex> lock(callbackMutex);
-        if (beatCallback) beatCallback(pos, bpm);
+        if (beatCallback) beatCallback(pos, currentBpm);
     }
+}
+
+void InternalSequencer::setTempoEvents(const std::vector<TempoEvent>& events) {
+    std::lock_guard<std::mutex> lock(tempoMapMutex);
+    tempoEvents = events;
+    // Keep the atomic in sync with event[0] for getTempo() correctness
+    // when transport is stopped (advance() doesn't run, so the tempo
+    // atomic wouldn't otherwise reflect updates).
+    if (!tempoEvents.empty())
+        tempo.store(tempoEvents.front().bpm, std::memory_order_relaxed);
 }

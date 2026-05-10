@@ -2046,6 +2046,96 @@ public:
 static SequencerTests sequencerTests;
 
 // ============================================================================
+// SequencerTempoMap tests (Phase 3c — runtime evaluation of multi-event tempo)
+// ============================================================================
+
+class SequencerTempoMapTests : public juce::UnitTest {
+public:
+    SequencerTempoMapTests() : juce::UnitTest("SequencerTempoMap") {}
+
+    void runTest() override {
+        beginTest("constant tempo (single event) advances at expected rate");
+        {
+            InternalSequencer seq;
+            seq.setTempo(120.0);
+            seq.setTempoEvents({{0.0, 120.0}});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            // 120 BPM = 2 beats/sec. 1 second = 2 beats.
+            seq.advance(1.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 2.0, 0.001);
+        }
+
+        beginTest("tempo change at beat 4: BPM doubles, second half goes faster");
+        {
+            InternalSequencer seq;
+            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            // First 4 beats at 60 BPM = 1 beat/sec → 4 seconds.
+            // Then continue at 120 BPM = 2 beats/sec.
+            // 5 seconds total: 4s for first 4 beats + 1s at 120 = 4 + 2 = 6 beats.
+            seq.advance(5.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 6.0, 0.001);
+        }
+
+        beginTest("tempo change exactly at advance boundary");
+        {
+            InternalSequencer seq;
+            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            // Advance exactly to beat 4 (4 seconds at 60 BPM).
+            seq.advance(4.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 4.0, 0.001);
+            // Now 1 more second at 120 BPM = 2 beats.
+            seq.advance(1.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 6.0, 0.001);
+        }
+
+        beginTest("getTempo reflects current effective tempo after crossing");
+        {
+            InternalSequencer seq;
+            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            seq.advance(2.0);   // halfway through the 60 BPM segment
+            expectWithinAbsoluteError(seq.getTempo(), 60.0, 0.001);
+            seq.advance(3.0);   // crosses into 120 BPM segment
+            expectWithinAbsoluteError(seq.getTempo(), 120.0, 0.001);
+        }
+
+        beginTest("empty tempo events: falls back to atomic tempo");
+        {
+            InternalSequencer seq;
+            seq.setTempo(150.0);
+            seq.setTempoEvents({});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            // 150 BPM = 2.5 beats/sec. 1 second = 2.5 beats.
+            seq.advance(1.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 2.5, 0.001);
+        }
+
+        beginTest("multiple tempo changes within one advance");
+        {
+            InternalSequencer seq;
+            seq.setTempoEvents({{0.0, 60.0}, {1.0, 120.0}, {3.0, 60.0}});
+            seq.setBeatPosition(0.0);
+            seq.play();
+            // 0..1 at 60 BPM:  1 beat in 1.0s
+            // 1..3 at 120 BPM: 2 beats in 1.0s
+            // 3..4 at 60 BPM:  1 beat in 1.0s
+            // Total: 4 beats in 3 seconds. Try advancing 3 seconds at once.
+            seq.advance(3.0);
+            expectWithinAbsoluteError(seq.getBeatPosition(), 4.0, 0.001);
+        }
+    }
+};
+
+static SequencerTempoMapTests sequencerTempoMapTests;
+
+// ============================================================================
 // Arrangement tests
 // ============================================================================
 
