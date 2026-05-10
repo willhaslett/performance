@@ -116,9 +116,6 @@ void PersistenceLayer::createSchema() {
             name TEXT NOT NULL,
             master_gain REAL DEFAULT 1.0,
             initial_state TEXT,
-            tempo REAL DEFAULT 120.0,
-            time_sig_num INTEGER DEFAULT 4,
-            time_sig_den INTEGER DEFAULT 4,
             cycle_start REAL DEFAULT 0.0,
             cycle_end REAL DEFAULT 0.0,
             cycle_enabled INTEGER DEFAULT 0,
@@ -207,9 +204,14 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "DROP TABLE IF EXISTS region_events", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN active_take_id TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN color INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN tempo REAL DEFAULT 120.0", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN time_sig_num INTEGER DEFAULT 4", nullptr, nullptr, nullptr);
-    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN time_sig_den INTEGER DEFAULT 4", nullptr, nullptr, nullptr);
+    // Legacy single-event tempo / timesig columns. Replaced in
+    // schema-2 by tempo_events / timesig_events tables. Drop on any
+    // existing tester DB so the schema doesn't carry dead columns.
+    // SQLite 3.35+ supports DROP COLUMN; SQLITE_MIN_VERSION_NUMBER on
+    // macOS 11 is 3.32 → 12.0+ ships 3.36+, all our targets work.
+    sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN tempo", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_num", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_den", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_start REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_end REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_enabled INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
@@ -880,12 +882,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         }
     }
     for (auto& song : state.allSongs()) {
-        // Song. Tempo / timesig / key are written to per-event tables
-        // below; the legacy scalar columns are populated with safe
-        // defaults to satisfy NOT NULL semantics on the existing schema
-        // but are never read back (see "Legacy scalar columns" note in
-        // the schema-creation block).
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, tempo, time_sig_num, time_sig_den, cycle_start, cycle_end, cycle_enabled, focused_track_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        // Tempo / timesig / key live in per-event tables below.
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, cycle_start, cycle_end, cycle_enabled, focused_track_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -893,13 +891,10 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_text(stmt, 4, song.initialState.c_str(), -1, SQLITE_TRANSIENT);
         else
             sqlite3_bind_null(stmt, 4);
-        sqlite3_bind_double(stmt, 5, 120.0);   // legacy scalar — defaulted, unread
-        sqlite3_bind_int(stmt, 6, 4);          // legacy scalar — defaulted, unread
-        sqlite3_bind_int(stmt, 7, 4);          // legacy scalar — defaulted, unread
-        sqlite3_bind_double(stmt, 8, song.cycleStart);
-        sqlite3_bind_double(stmt, 9, song.cycleEnd);
-        sqlite3_bind_int(stmt, 10, song.cycleEnabled ? 1 : 0);
-        sqlite3_bind_text(stmt, 11, song.focusedTrackId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_double(stmt, 5, song.cycleStart);
+        sqlite3_bind_double(stmt, 6, song.cycleEnd);
+        sqlite3_bind_int(stmt, 7, song.cycleEnabled ? 1 : 0);
+        sqlite3_bind_text(stmt, 8, song.focusedTrackId.c_str(), -1, SQLITE_TRANSIENT);
         stepWrite(stmt, "save");
 
         // Tempo / timesig / key event maps.

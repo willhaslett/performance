@@ -821,15 +821,14 @@ void PerformanceCoordinator::drainRecordFIFO() {
 
 void PerformanceCoordinator::syncTempoFromState() {
     if (!stateAPI || !sequencerImpl) return;
-    sequencerImpl->setTempo(stateAPI->getSongTempo());
     auto [num, den] = stateAPI->getSongTimeSignature();
     sequencerImpl->setTimeSignature(num, den);
-    // Push the full multi-event tempo map so the sequencer's advance()
-    // can switch BPM as it crosses tempo events. Empty vector falls
-    // back to the simple atomic-tempo behavior set above. Cast to the
-    // concrete type since multi-event support is sequencer-specific
-    // (not part of the SequencerAPI interface — external sequencer
-    // backends would do their own tempo-map handling internally).
+    // Push the full tempo map. setTempoEvents writes the events vector
+    // and updates the sequencer's atomic tempo to events.front().bpm,
+    // so we don't need a separate setTempo() call. Cast to the
+    // concrete type — multi-event support is sequencer-specific (not
+    // part of SequencerAPI; external sequencer backends would do their
+    // own tempo-map handling internally).
     if (auto* internal = dynamic_cast<InternalSequencer*>(sequencerImpl.get())) {
         if (auto* song = stateAPI->currentSong())
             internal->setTempoEvents(song->tempoEvents);
