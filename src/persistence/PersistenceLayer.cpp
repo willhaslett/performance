@@ -18,36 +18,15 @@ void PersistenceLayer::open(const std::string& dbPath) {
     }
     exec("PRAGMA journal_mode=WAL");
     exec("PRAGMA foreign_keys=ON");
-
-    // Read existing schema version BEFORE createSchema so destructive
-    // migrations inside it know whether they're crossing a version
-    // boundary. Brand-new DB → config table doesn't exist yet → SELECT
-    // fails silently → existingSchemaVersion stays 0.
-    int existingSchemaVersion = 0;
-    {
-        sqlite3_stmt* stmt = nullptr;
-        if (sqlite3_prepare_v2(db, "SELECT value FROM config WHERE key = 'schema_version'",
-                                 -1, &stmt, nullptr) == SQLITE_OK) {
-            if (sqlite3_step(stmt) == SQLITE_ROW) {
-                auto* text = sqlite3_column_text(stmt, 0);
-                if (text) {
-                    try { existingSchemaVersion = std::stoi(reinterpret_cast<const char*>(text)); }
-                    catch (...) {}
-                }
-            }
-            sqlite3_finalize(stmt);
-        }
-    }
-    schemaVersionBeforeMigrate = existingSchemaVersion;
-
     createSchema();
-
-    // Stamp current version after the schema has been created /
-    // migrated.
+    // Stamp current schema version. Pre-beta convention (CLAUDE.md
+    // "no migration code"): we don't migrate. If the on-disk schema
+    // doesn't match the current code, the right answer is to delete
+    // state.db (or run `bin/reset`). The schema_version row exists
+    // only as a diagnostic marker visible in the log line below.
     exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')");
 
-    perfLog("[Persistence] Opened database: %s (schema %d → 3)\n",
-            dbPath.c_str(), existingSchemaVersion);
+    perfLog("[Persistence] Opened database: %s (schema 3)\n", dbPath.c_str());
 }
 
 void PersistenceLayer::close() {
@@ -227,18 +206,12 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_num", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_den", nullptr, nullptr, nullptr);
 
-    // Schema-3: tempo / timesig / key events gain a unified `id`
-    // primary key (the EventId) so they can be addressed by id from
-    // the unified Lua event API. Pre-3 DBs had composite (song_id, beat)
-    // PKs and no id column — drop the legacy tables (data forfeit;
-    // beat-0 invariant gets backfilled on load). Run ONLY when crossing
-    // the schema boundary, otherwise we'd nuke fresh-saved data on
-    // every subsequent open.
-    if (schemaVersionBeforeMigrate > 0 && schemaVersionBeforeMigrate < 3) {
-        sqlite3_exec(db, "DROP TABLE IF EXISTS tempo_events",   nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "DROP TABLE IF EXISTS timesig_events", nullptr, nullptr, nullptr);
-        sqlite3_exec(db, "DROP TABLE IF EXISTS key_events",     nullptr, nullptr, nullptr);
-    }
+    // (Pre-beta: no migration code per CLAUDE.md. If a tester's DB
+    // has a stale schema for the event tables — e.g. composite
+    // PK from before EventId was added — they delete state.db or run
+    // bin/reset and start fresh. The CREATE TABLE IF NOT EXISTS
+    // statements above are the only schema setup.)
+
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_start REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_end REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_enabled INTEGER DEFAULT 0", nullptr, nullptr, nullptr);

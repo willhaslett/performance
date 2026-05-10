@@ -34,11 +34,6 @@ private:
     // saveFrom() checks this before COMMIT — any single write failure ->
     // ROLLBACK instead of committing partial / broken data.
     bool saveHadError = false;
-    // schema_version read at open() time, BEFORE we stamp the current
-    // version. Lets createSchema() run destructive migrations only when
-    // crossing the relevant boundary (e.g. event tables drop+recreate
-    // when schemaVersionBeforeMigrate < 3). 0 = brand-new DB.
-    int schemaVersionBeforeMigrate = 0;
 
     void createSchema();
     // Returns true on SQLITE_OK. Errors are logged.
