@@ -219,6 +219,12 @@ SongId StateAPI::createSong(const std::string& name) {
     SongState s;
     s.id = SongId{generateId()};
     s.name = name;
+    // Every project starts with a beat-0 tempo + time-signature event
+    // (Logic-style invariant). The user can edit these via setTempo /
+    // setTimeSignature but never has to call create for them. Key
+    // stays empty by default — no implicit key signature.
+    s.tempoEvents.push_back({ 0.0, 120.0 });
+    s.timeSigEvents.push_back({ 0.0, 4, 4 });
     state.songs.push_back(std::move(s));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id.str(), "" });

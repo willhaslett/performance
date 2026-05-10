@@ -483,6 +483,17 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_finalize(es);
         }
 
+        // Backfill the beat-0 tempo + time-signature invariant for any
+        // project that was saved before the invariant existed (legacy
+        // schema-1 data) or that lost the events somehow. Newly-created
+        // projects already get these from StateAPI::createSong; this
+        // catches the load path so existing testers' projects pick up
+        // the same default playback behavior.
+        if (song.tempoEvents.empty())
+            song.tempoEvents.push_back({ 0.0, 120.0 });
+        if (song.timeSigEvents.empty())
+            song.timeSigEvents.push_back({ 0.0, 4, 4 });
+
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, color, output_target, input_monitoring FROM tracks WHERE song_id = ? ORDER BY position");
         sqlite3_bind_text(ts, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);

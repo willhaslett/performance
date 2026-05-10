@@ -824,6 +824,45 @@ public:
     StateAPIEventMapTests() : juce::UnitTest("StateAPIEventMaps") {}
 
     void runTest() override {
+        beginTest("new song has beat-0 tempo (120) + timesig (4/4) by default");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Fresh");
+            s.setCurrentSong(songId);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 1);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);
+            expectEquals((int) song->timeSigEvents.size(), 1);
+            expectEquals(song->timeSigEvents[0].beat, 0.0);
+            expectEquals(song->timeSigEvents[0].numerator, 4);
+            expectEquals(song->timeSigEvents[0].denominator, 4);
+            // Key has no implicit default — empty by design.
+            expect(song->keyEvents.empty());
+        }
+
+        beginTest("createTempo at bar 5 preserves the implicit beat-0 event");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+            // Don't touch beat 0 — go straight to a mid-piece event.
+            s.setTempoEvent(16.0, 90.0);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 2);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);   // unchanged
+            expectEquals(song->tempoEvents[1].beat, 16.0);
+            expectEquals(song->tempoEvents[1].bpm, 90.0);
+            // Effective lookup spans the gap correctly.
+            expectEquals(s.effectiveTempoAt(0.0),   120.0);
+            expectEquals(s.effectiveTempoAt(15.99), 120.0);
+            expectEquals(s.effectiveTempoAt(16.0),  90.0);
+            expectEquals(s.effectiveTempoAt(100.0), 90.0);
+        }
+
         beginTest("tempo events: insert + sorted + effective lookup");
         {
             StateAPI s;
