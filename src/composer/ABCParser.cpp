@@ -62,12 +62,19 @@ struct Header {
 
 // ---------------- Per-voice state -----------------------------------------
 
+// Dynamic marks → MIDI velocity (matches V2 / common DAW convention).
+const std::unordered_map<std::string, int> kDynamicVelocity = {
+    {"ppp", 20}, {"pp", 35}, {"p", 50}, {"mp", 64},
+    {"mf", 80}, {"f", 96}, {"ff", 112}, {"fff", 124},
+};
+
 struct Voice {
     std::string name;
     bool isDrums = false;
     std::vector<ComposerOutput::Note> notes;
     double cursor = 0.0;        // current beat position
     int barNumber = 1;          // 1-based — for diagnostics
+    int currentVelocity = 80;   // sticky — set by !ff! / !p! etc, applied to subsequent notes
     // Carry-tied note: if the previous note ended with `-`, the next
     // note of matching pitch extends rather than starting fresh.
     struct Tie {
@@ -279,12 +286,20 @@ bool parseBodyLine(const std::string& lineIn,
             continue;
         }
 
-        // Decorations like !ff! or +p+ — skip silently.
+        // Decorations like !ff! or +p+. If the body matches a known
+        // dynamic mark, update the voice's sticky velocity. Otherwise
+        // skip silently.
         if (c == '!' || c == '+') {
             char term = c;
             ++pos;
-            while (pos < line.size() && line[pos] != term) ++pos;
+            std::string body;
+            while (pos < line.size() && line[pos] != term) {
+                body.push_back(line[pos]);
+                ++pos;
+            }
             if (pos < line.size()) ++pos;
+            auto dit = kDynamicVelocity.find(trimCopy(body));
+            if (dit != kDynamicVelocity.end()) voice.currentVelocity = dit->second;
             continue;
         }
 
@@ -353,7 +368,7 @@ bool parseBodyLine(const std::string& lineIn,
                 n.startBeat     = voice.cursor;
                 n.durationBeats = dur;
                 n.pitch         = p;
-                n.velocity      = 80.0f / 127.0f;
+                n.velocity      = static_cast<float>(voice.currentVelocity) / 127.0f;
                 voice.notes.push_back(n);
             }
             voice.cursor += dur;
@@ -392,7 +407,7 @@ bool parseBodyLine(const std::string& lineIn,
             n.startBeat     = voice.cursor;
             n.durationBeats = mult * L_beats;
             n.pitch         = pitch;
-            n.velocity      = 80.0f / 127.0f;
+            n.velocity      = static_cast<float>(voice.currentVelocity) / 127.0f;
             voice.notes.push_back(n);
             voice.cursor += n.durationBeats;
             continue;
@@ -426,7 +441,7 @@ bool parseBodyLine(const std::string& lineIn,
                 n.startBeat     = voice.cursor;
                 n.durationBeats = dur;
                 n.pitch         = *pitch;
-                n.velocity      = 80.0f / 127.0f;
+                n.velocity      = static_cast<float>(voice.currentVelocity) / 127.0f;
                 voice.notes.push_back(n);
                 if (tied) voice.openTies.push_back({*pitch, voice.notes.size() - 1});
             } else if (tied) {

@@ -4038,9 +4038,37 @@ L:1/4
 Q:1/4=120
 M:4/4
 K:none
-!ff! C +mp+ D "text" E
+"text" C "more text" D
 )"));
-            expectEquals((int) out.notes.size(), 3);
+            expectEquals((int) out.notes.size(), 2);
+        }
+
+        beginTest("dynamics (!ff!, !p!) set sticky velocity");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+C !ff! D !p! E F
+)"));
+            // C with default mf=80, D with ff=112, E and F with p=50.
+            expectEquals((int) out.notes.size(), 4);
+            // Sort guarantees C E F D (by pitch within same trackName).
+            // Find each by pitch.
+            auto findPitch = [&](int p) -> ComposerOutput::Note* {
+                for (auto& n : out.notes) if (n.pitch == p) return &n;
+                return nullptr;
+            };
+            auto* nC = findPitch(60);
+            auto* nD = findPitch(62);
+            auto* nE = findPitch(64);
+            auto* nF = findPitch(65);
+            expect(nC && nD && nE && nF);
+            expectWithinAbsoluteError(nC->velocity, 80.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nD->velocity, 112.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nE->velocity, 50.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nF->velocity, 50.0f / 127.0f, 0.001f);
         }
     }
 };
@@ -4175,6 +4203,47 @@ public:
             }
             expectEquals(pianoCount, 2);
             expectEquals(drumCount, 2);
+        }
+
+        beginTest("dynamics emit on velocity change and round-trip");
+        {
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});   // mf
+            v.notes.push_back({1.0, 1.0, 62, 112});  // ff
+            v.notes.push_back({2.0, 1.0, 64, 50});   // p
+            v.notes.push_back({3.0, 1.0, 65, 50});   // still p — no new mark expected
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            // First note is mf (matches default), so no leading mark.
+            // Then !ff! before D, !p! before E. F should not re-emit !p!.
+            expect(abc.find("!ff!") != std::string::npos);
+            expect(abc.find("!p!") != std::string::npos);
+            // Crude check: only one !p! occurrence.
+            auto firstP = abc.find("!p!");
+            expect(firstP != std::string::npos);
+            expect(abc.find("!p!", firstP + 1) == std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 4);
+            // Velocities should round-trip (parser sets 80/112/50/50).
+            int vel60 = 0, vel62 = 0, vel64 = 0, vel65 = 0;
+            for (auto& n : out.notes) {
+                int v127 = static_cast<int>(std::lround(n.velocity * 127.0f));
+                if (n.pitch == 60) vel60 = v127;
+                if (n.pitch == 62) vel62 = v127;
+                if (n.pitch == 64) vel64 = v127;
+                if (n.pitch == 65) vel65 = v127;
+            }
+            expectEquals(vel60, 80);
+            expectEquals(vel62, 112);
+            expectEquals(vel64, 50);
+            expectEquals(vel65, 50);
         }
 
         beginTest("varying time signature (3/4) round-trips");

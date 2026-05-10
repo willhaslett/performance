@@ -55,6 +55,29 @@ std::string encodePitch(int midi) {
     return out;
 }
 
+// ---------------- Dynamics -----------------------------------------------
+//
+// MIDI velocity → ABC dynamic mark. Buckets cover 0-127. We snap to
+// nearest-bucket midpoint and emit a `!xxx!` decoration when the bucket
+// changes from the running level. Inverse of the parser's velocity table.
+//
+// Bucket midpoints: ppp=20 pp=35 p=50 mp=64 mf=80 f=96 ff=112 fff=124
+struct DynamicBucket { const char* name; int midpoint; };
+const DynamicBucket kDynamicBuckets[] = {
+    {"ppp", 20}, {"pp", 35}, {"p", 50}, {"mp", 64},
+    {"mf", 80}, {"f", 96}, {"ff", 112}, {"fff", 124},
+};
+
+const char* dynamicNameForVelocity(int vel) {
+    const char* best = "mf";
+    int bestDist = 128;
+    for (auto& b : kDynamicBuckets) {
+        int d = std::abs(vel - b.midpoint);
+        if (d < bestDist) { bestDist = d; best = b.name; }
+    }
+    return best;
+}
+
 // ---------------- Drum letters -------------------------------------------
 //
 // Custom drum-letter macros emitted into a `%%MIDI drummap` directive.
@@ -139,6 +162,7 @@ struct GroupedNote {
     double startBeat;
     double durationBeats;
     std::vector<int> pitches;   // 1+ — chord if >1
+    int velocity = 80;          // representative velocity (chord uses first note's)
 };
 
 std::vector<GroupedNote> groupChords(const std::vector<ABCWriteInput::Note>& notes) {
@@ -158,7 +182,7 @@ std::vector<GroupedNote> groupChords(const std::vector<ABCWriteInput::Note>& not
             && std::abs(out.back().durationBeats - n.durationBeats) < kEps) {
             out.back().pitches.push_back(n.pitch);
         } else {
-            out.push_back({n.startBeat, n.durationBeats, {n.pitch}});
+            out.push_back({n.startBeat, n.durationBeats, {n.pitch}, n.velocity});
         }
     }
     return out;
@@ -174,6 +198,7 @@ struct BarPiece {
     double startBeat;        // within this piece's bar
     double durationBeats;
     std::vector<int> pitches;
+    int velocity = 80;
     bool tiesOut = false;    // emit trailing `-`
     bool isRest = false;
 };
@@ -232,6 +257,7 @@ std::vector<BarContent> splitIntoBars(const std::vector<GroupedNote>& notes,
             p.startBeat     = remStart - barIdx * beatsPerBar;
             p.durationBeats = pieceEnd - remStart;
             p.pitches       = n.pitches;
+            p.velocity      = n.velocity;
             p.tiesOut       = (pieceEnd < noteEnd - kEps);
             bars[barIdx].pieces.push_back(p);
             remStart = pieceEnd;
@@ -290,6 +316,9 @@ std::string emitPiece(const BarPiece& p, bool isDrums) {
 std::string emitVoiceBody(const std::vector<BarContent>& bars, bool isDrums) {
     constexpr int kBarsPerLine = 4;
     std::string out;
+    // Sticky dynamic level. Starts at "mf" (matches parser's default).
+    // Emit a `!xxx!` decoration before any note whose bucket differs.
+    std::string currentDynamic = "mf";
     for (size_t i = 0; i < bars.size(); ++i) {
         if (i > 0 && (i % kBarsPerLine == 0)) out += "|\n";
         else if (i > 0)                       out += "| ";
@@ -297,7 +326,15 @@ std::string emitVoiceBody(const std::vector<BarContent>& bars, bool isDrums) {
         const auto& bar = bars[i];
         for (size_t j = 0; j < bar.pieces.size(); ++j) {
             if (j > 0) out += " ";
-            out += emitPiece(bar.pieces[j], isDrums);
+            const auto& piece = bar.pieces[j];
+            if (!piece.isRest) {
+                std::string want = dynamicNameForVelocity(piece.velocity);
+                if (want != currentDynamic) {
+                    out += "!" + want + "! ";
+                    currentDynamic = want;
+                }
+            }
+            out += emitPiece(piece, isDrums);
         }
         if (bar.pieces.empty()) out += "z" + encodeDuration(bar.barLengthBeats);
     }
