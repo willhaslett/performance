@@ -18,29 +18,36 @@ void PersistenceLayer::open(const std::string& dbPath) {
     }
     exec("PRAGMA journal_mode=WAL");
     exec("PRAGMA foreign_keys=ON");
-    createSchema();
 
-    // Read existing schema version (if any) so destructive migrations
-    // below can run only when crossing the relevant boundary, then
-    // stamp the current version.
-    int existingSchemaVersion = 0;   // 0 = brand-new DB
+    // Read existing schema version BEFORE createSchema so destructive
+    // migrations inside it know whether they're crossing a version
+    // boundary. Brand-new DB → config table doesn't exist yet → SELECT
+    // fails silently → existingSchemaVersion stays 0.
+    int existingSchemaVersion = 0;
     {
-        auto* stmt = prepare("SELECT value FROM config WHERE key = 'schema_version'");
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            auto* text = sqlite3_column_text(stmt, 0);
-            if (text) {
-                try { existingSchemaVersion = std::stoi(reinterpret_cast<const char*>(text)); }
-                catch (...) {}
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2(db, "SELECT value FROM config WHERE key = 'schema_version'",
+                                 -1, &stmt, nullptr) == SQLITE_OK) {
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                auto* text = sqlite3_column_text(stmt, 0);
+                if (text) {
+                    try { existingSchemaVersion = std::stoi(reinterpret_cast<const char*>(text)); }
+                    catch (...) {}
+                }
             }
+            sqlite3_finalize(stmt);
         }
-        sqlite3_finalize(stmt);
     }
-    // Stamp current version (writes happen in createSchema below; this
-    // is just the bookkeeping value).
-    exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')");
     schemaVersionBeforeMigrate = existingSchemaVersion;
 
-    perfLog("[Persistence] Opened database: %s\n", dbPath.c_str());
+    createSchema();
+
+    // Stamp current version after the schema has been created /
+    // migrated.
+    exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')");
+
+    perfLog("[Persistence] Opened database: %s (schema %d → 3)\n",
+            dbPath.c_str(), existingSchemaVersion);
 }
 
 void PersistenceLayer::close() {
