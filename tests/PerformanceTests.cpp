@@ -4439,6 +4439,140 @@ C2 D2 E2 F2 |
 static RegionContentTests regionContentTests;
 
 // ============================================================================
+// RegionContent track / project view tests (Phase 2b read-only surface)
+// ============================================================================
+
+class RegionContentViewTests : public juce::UnitTest {
+public:
+    RegionContentViewTests() : juce::UnitTest("RegionContentViews") {}
+
+    static RegionState makeRegionWithNotes(double startBeat, double lengthBeats,
+                                             const std::vector<int>& pitches) {
+        RegionState r;
+        r.id          = RegionId{juce::Uuid().toString().toStdString()};
+        r.startBeat   = startBeat;
+        r.lengthBeats = lengthBeats;
+        TakeState take;
+        take.id = TakeId{juce::Uuid().toString().toStdString()};
+        double cursor = 0.0;
+        for (int p : pitches) {
+            MidiEventState on;
+            on.beatOffset = cursor; on.status = 0x90; on.channel = 1; on.data1 = p; on.data2 = 80;
+            MidiEventState off;
+            off.beatOffset = cursor + 1.0; off.status = 0x80; off.channel = 1; off.data1 = p; off.data2 = 0;
+            take.events.push_back(on);
+            take.events.push_back(off);
+            cursor += 1.0;
+        }
+        r.takes.push_back(take);
+        r.activeTakeId = take.id;
+        return r;
+    }
+
+    void runTest() override {
+        beginTest("trackToABC emits one P:B<beat> per region in beat order");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+            track.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+            track.regions.push_back(makeRegionWithNotes(8.0, 4.0, {67, 69, 71, 72}));
+
+            auto abc = RegionContent::trackToABC(track, song);
+            expect(abc.find("P:B0") != std::string::npos);
+            expect(abc.find("P:B8") != std::string::npos);
+            expect(abc.find("P:B0") < abc.find("P:B8"));
+        }
+
+        beginTest("trackToABC parses back as 8 notes (4 per region)");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+            track.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+            track.regions.push_back(makeRegionWithNotes(8.0, 4.0, {67, 69, 71, 72}));
+
+            auto abc = RegionContent::trackToABC(track, song);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            bool ok = p.parse(juce::String(abc), out, err);
+            if (!ok) logMessage("parse failed: " + juce::String(err));
+            expect(ok);
+            expectEquals((int) out.notes.size(), 8);
+        }
+
+        beginTest("projectToABC declares one V: per instrument track");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState piano;
+            piano.id   = TrackId{juce::Uuid().toString().toStdString()};
+            piano.name = "Piano";
+            piano.sourceType = TrackSourceType::Instrument;
+            piano.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+
+            TrackState drums;
+            drums.id   = TrackId{juce::Uuid().toString().toStdString()};
+            drums.name = "Drums";
+            drums.sourceType = TrackSourceType::Instrument;
+            drums.regions.push_back(makeRegionWithNotes(0.0, 4.0, {36, 38, 36, 38}));
+
+            song.tracks.push_back(piano);
+            song.tracks.push_back(drums);
+
+            auto abc = RegionContent::projectToABC(song);
+            expect(abc.find("V:Piano") != std::string::npos);
+            expect(abc.find("V:Drums") != std::string::npos);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+        }
+
+        beginTest("projectToABC excludes non-instrument tracks (audio input, action)");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState piano;
+            piano.id   = TrackId{juce::Uuid().toString().toStdString()};
+            piano.name = "Piano";
+            piano.sourceType = TrackSourceType::Instrument;
+            piano.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+
+            TrackState audio;
+            audio.id   = TrackId{juce::Uuid().toString().toStdString()};
+            audio.name = "Mic";
+            audio.sourceType = TrackSourceType::AudioInput;
+
+            TrackState action;
+            action.id   = TrackId{juce::Uuid().toString().toStdString()};
+            action.name = "Triggers";
+            action.sourceType = TrackSourceType::Action;
+
+            song.tracks.push_back(piano);
+            song.tracks.push_back(audio);
+            song.tracks.push_back(action);
+
+            auto abc = RegionContent::projectToABC(song);
+            expect(abc.find("V:Piano")    != std::string::npos);
+            expect(abc.find("V:Mic")      == std::string::npos);
+            expect(abc.find("V:Triggers") == std::string::npos);
+        }
+    }
+};
+
+static RegionContentViewTests regionContentViewTests;
+
+// ============================================================================
 // ComposerWriter tests
 // ============================================================================
 

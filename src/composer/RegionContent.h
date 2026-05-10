@@ -32,4 +32,16 @@ bool abcToRegion(const std::string& abc,
                   RegionState& region,
                   std::string& err);
 
+// Render all regions on a track as one ABC document, single voice,
+// each region marked with `P:B<beat>` so the LLM can refer back via
+// getRegion(track, beat). Notes are positioned at piece-absolute
+// beats (= each region's startBeat + per-event beatOffset). Header
+// (M:, Q:) comes from the song.
+std::string trackToABC(const TrackState& track, const SongState& song);
+
+// Render the whole project as one ABC document, multi-voice (one V:
+// per track), each voice's regions marked with `P:B<beat>`. Read-only
+// — there is no setProject; mutation goes through region/track verbs.
+std::string projectToABC(const SongState& song);
+
 }  // namespace RegionContent

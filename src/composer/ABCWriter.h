@@ -29,10 +29,22 @@ struct ABCWriteInput {
         int velocity = 80;          // 1-127 (currently informational; ABC dynamics not emitted in V1)
     };
 
+    // Optional region-segmentation marker. When a voice has segments,
+    // each segment's notes are emitted preceded by `P:LABEL` so callers
+    // (getTrack / getProject) can mark region boundaries in the output.
+    // The label is conventionally `B<beat>` (e.g., `B0`, `B16`) — the
+    // same beat the LLM would pass to getRegion(track, beat).
+    struct Segment {
+        std::string label;            // e.g., "B0", "B16"
+        std::vector<Note> notes;      // beats are piece-absolute (same as Voice::notes)
+    };
+
     struct Voice {
-        std::string name;           // "Piano", "Drums", ...
-        bool isDrums = false;       // emits %%MIDI drummap + drum-letter macros
-        std::vector<Note> notes;    // need not be sorted; writer sorts internally
+        std::string name;             // "Piano", "Drums", ...
+        bool isDrums = false;         // emits %%MIDI drummap + drum-letter macros
+        std::vector<Note> notes;      // single-segment shorthand (no P: marker emitted)
+        std::vector<Segment> segments;// multi-segment with P: labels — when non-empty,
+                                      // takes precedence over `notes`
     };
 
     double tempo = 120.0;

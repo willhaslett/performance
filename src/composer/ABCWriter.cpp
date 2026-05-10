@@ -313,17 +313,45 @@ std::string emitPiece(const BarPiece& p, bool isDrums) {
     return body;
 }
 
-std::string emitVoiceBody(const std::vector<BarContent>& bars, bool isDrums) {
+// Per-voice segment marker — instructs emitVoiceBody to insert a P:label
+// line before any bar whose range contains `startBeat`.
+struct SegmentMarker {
+    std::string label;
+    double startBeat = 0.0;
+};
+
+std::string emitVoiceBody(const std::vector<BarContent>& bars,
+                           bool isDrums,
+                           const std::vector<SegmentMarker>& markers = {}) {
     constexpr int kBarsPerLine = 4;
     std::string out;
-    // Sticky dynamic level. Starts at "mf" (matches parser's default).
-    // Emit a `!xxx!` decoration before any note whose bucket differs.
     std::string currentDynamic = "mf";
-    for (size_t i = 0; i < bars.size(); ++i) {
-        if (i > 0 && (i % kBarsPerLine == 0)) out += "|\n";
-        else if (i > 0)                       out += "| ";
+    constexpr double kEps = 1e-6;
+    size_t markerIdx = 0;
 
+    for (size_t i = 0; i < bars.size(); ++i) {
         const auto& bar = bars[i];
+
+        // Inject P: markers whose beat falls within this bar's range
+        // (barStart <= beat < barEnd). On a bar boundary, the marker
+        // appears at the start of the bar it begins (not the previous).
+        double barEnd = bar.barStartBeat + bar.barLengthBeats;
+        while (markerIdx < markers.size()
+               && markers[markerIdx].startBeat < barEnd - kEps) {
+            if (markers[markerIdx].startBeat >= bar.barStartBeat - kEps) {
+                if (!out.empty() && out.back() != '\n') out += "\n";
+                out += "P:" + markers[markerIdx].label + "\n";
+            }
+            ++markerIdx;
+        }
+
+        if (i > 0 && (i % kBarsPerLine == 0) && (out.empty() || out.back() != '\n'))
+            out += "|\n";
+        else if (i > 0 && out.back() != '\n')
+            out += "| ";
+        else if (i > 0 && out.back() == '\n')
+            ;  // P: marker just emitted; the bar that follows starts the line
+
         for (size_t j = 0; j < bar.pieces.size(); ++j) {
             if (j > 0) out += " ";
             const auto& piece = bar.pieces[j];
@@ -356,12 +384,18 @@ std::string drummapDirective() {
 }  // namespace
 
 std::string ABCWriter::write(const ABCWriteInput& input) {
-    // Resolve length.
+    // Resolve length. Consider both v.notes (single-segment voices) and
+    // v.segments[*].notes (multi-segment voices).
     double length = input.lengthBeats;
     if (length <= 0.0) {
         for (auto& v : input.voices) {
             for (auto& n : v.notes) {
                 length = std::max(length, n.startBeat + n.durationBeats);
+            }
+            for (auto& seg : v.segments) {
+                for (auto& n : seg.notes) {
+                    length = std::max(length, n.startBeat + n.durationBeats);
+                }
             }
         }
     }
@@ -386,19 +420,53 @@ std::string ABCWriter::write(const ABCWriteInput& input) {
     for (auto& v : input.voices) anyDrums = anyDrums || v.isDrums;
     if (anyDrums) os << drummapDirective();
 
-    if (input.voices.size() == 1) {
+    // Per-voice helper: flatten segments (if present) into a notes list
+    // + matching segment markers. When segments is empty, falls back to
+    // v.notes with no markers.
+    auto buildVoiceContent = [](const ABCWriteInput::Voice& v)
+        -> std::pair<std::vector<ABCWriteInput::Note>, std::vector<SegmentMarker>> {
+        std::vector<ABCWriteInput::Note> notes;
+        std::vector<SegmentMarker> markers;
+        if (v.segments.empty()) {
+            notes = v.notes;
+            return {std::move(notes), std::move(markers)};
+        }
+        for (auto& seg : v.segments) {
+            // Marker beat = first note's startBeat (or omit if segment empty).
+            if (!seg.notes.empty()) {
+                double minBeat = seg.notes.front().startBeat;
+                for (auto& n : seg.notes) minBeat = std::min(minBeat, n.startBeat);
+                markers.push_back({seg.label, minBeat});
+            }
+            for (auto& n : seg.notes) notes.push_back(n);
+        }
+        std::sort(markers.begin(), markers.end(),
+            [](const SegmentMarker& a, const SegmentMarker& b) {
+                return a.startBeat < b.startBeat;
+            });
+        return {std::move(notes), std::move(markers)};
+    };
+
+    // Single voice with no segments: emit as a flat folk-tune-style block,
+    // no V: declaration. Single voice WITH segments (project / track view
+    // with one track): still emit V: so callers can rely on the voice
+    // declaration for parsing and the LLM sees the structural shape.
+    bool singleFlat = input.voices.size() == 1 && input.voices.front().segments.empty();
+    if (singleFlat) {
         const auto& v = input.voices.front();
-        auto grouped = groupChords(v.notes);
+        auto [notes, markers] = buildVoiceContent(v);
+        auto grouped = groupChords(notes);
         auto bars    = splitIntoBars(grouped, barCount, beatsPerBar);
-        os << emitVoiceBody(bars, v.isDrums) << "\n";
+        os << emitVoiceBody(bars, v.isDrums, markers) << "\n";
     } else {
         // Voice declarations first, then one block per voice.
         for (auto& v : input.voices) os << "V:" << v.name << "\n";
         for (auto& v : input.voices) {
             os << "V:" << v.name << "\n";
-            auto grouped = groupChords(v.notes);
+            auto [notes, markers] = buildVoiceContent(v);
+            auto grouped = groupChords(notes);
             auto bars    = splitIntoBars(grouped, barCount, beatsPerBar);
-            os << emitVoiceBody(bars, v.isDrums) << "\n";
+            os << emitVoiceBody(bars, v.isDrums, markers) << "\n";
         }
     }
     return os.str();

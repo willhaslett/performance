@@ -142,3 +142,85 @@ bool RegionContent::abcToRegion(const std::string& abc,
     if (out.lengthBeats > 0.0) region.lengthBeats = out.lengthBeats;
     return true;
 }
+
+namespace {
+
+// Build a Voice with one Segment per region, notes shifted to
+// piece-absolute beats (region.startBeat + event.beatOffset).
+ABCWriteInput::Voice buildVoiceForTrack(const TrackState& track) {
+    ABCWriteInput::Voice v;
+    v.name    = track.name;
+    v.isDrums = nameHasDrum(track.name);
+
+    // Sort regions by startBeat so segment markers come out in order.
+    std::vector<const RegionState*> sorted;
+    sorted.reserve(track.regions.size());
+    for (auto& r : track.regions) sorted.push_back(&r);
+    std::sort(sorted.begin(), sorted.end(),
+        [](const RegionState* a, const RegionState* b) {
+            return a->startBeat < b->startBeat;
+        });
+
+    for (auto* region : sorted) {
+        const TakeState* take = region->activeTake();
+        if (!take) continue;
+        ABCWriteInput::Segment seg;
+        // Label format: "B<beat>" — same beat the LLM passes to getRegion.
+        seg.label = "B" + std::to_string(static_cast<long long>(std::llround(region->startBeat)));
+        auto noteList = notesFromEvents(take->events);
+        for (auto& n : noteList) {
+            n.startBeat += region->startBeat;       // shift to piece-absolute
+            seg.notes.push_back(n);
+        }
+        v.segments.push_back(std::move(seg));
+    }
+    return v;
+}
+
+double trackLengthBeats(const TrackState& track) {
+    double len = 0.0;
+    for (auto& r : track.regions) {
+        len = std::max(len, r.startBeat + r.lengthBeats);
+    }
+    return len;
+}
+
+}  // namespace
+
+std::string RegionContent::trackToABC(const TrackState& track, const SongState& song) {
+    ABCWriteInput in;
+    in.title = track.name;
+    in.tempo = song.tempoEvents.empty() ? 120.0 : song.tempoEvents.front().bpm;
+    if (!song.timeSigEvents.empty()) {
+        in.timeSignatureNum = song.timeSigEvents.front().numerator;
+        in.timeSignatureDen = song.timeSigEvents.front().denominator;
+    }
+    in.key         = "none";
+    in.lengthBeats = trackLengthBeats(track);
+    in.voices.push_back(buildVoiceForTrack(track));
+
+    ABCWriter w;
+    return w.write(in);
+}
+
+std::string RegionContent::projectToABC(const SongState& song) {
+    ABCWriteInput in;
+    in.title = song.name;
+    in.tempo = song.tempoEvents.empty() ? 120.0 : song.tempoEvents.front().bpm;
+    if (!song.timeSigEvents.empty()) {
+        in.timeSignatureNum = song.timeSigEvents.front().numerator;
+        in.timeSignatureDen = song.timeSigEvents.front().denominator;
+    }
+    in.key = "none";
+
+    double maxLen = 0.0;
+    for (auto& t : song.tracks) {
+        if (t.sourceType != TrackSourceType::Instrument) continue;
+        in.voices.push_back(buildVoiceForTrack(t));
+        maxLen = std::max(maxLen, trackLengthBeats(t));
+    }
+    in.lengthBeats = maxLen;
+
+    ABCWriter w;
+    return w.write(in);
+}
