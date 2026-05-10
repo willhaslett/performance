@@ -2095,7 +2095,7 @@ public:
         {
             InternalSequencer seq;
             seq.setTempo(120.0);
-            seq.setTempoEvents({{0.0, 120.0}});
+            seq.setTempoEvents({{EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0}});
             seq.setBeatPosition(0.0);
             seq.play();
             // 120 BPM = 2 beats/sec. 1 second = 2 beats.
@@ -2106,7 +2106,7 @@ public:
         beginTest("tempo change at beat 4: BPM doubles, second half goes faster");
         {
             InternalSequencer seq;
-            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setTempoEvents({{EventId{juce::Uuid().toString().toStdString()}, 0.0, 60.0}, {EventId{juce::Uuid().toString().toStdString()}, 4.0, 120.0}});
             seq.setBeatPosition(0.0);
             seq.play();
             // First 4 beats at 60 BPM = 1 beat/sec → 4 seconds.
@@ -2119,7 +2119,7 @@ public:
         beginTest("tempo change exactly at advance boundary");
         {
             InternalSequencer seq;
-            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setTempoEvents({{EventId{juce::Uuid().toString().toStdString()}, 0.0, 60.0}, {EventId{juce::Uuid().toString().toStdString()}, 4.0, 120.0}});
             seq.setBeatPosition(0.0);
             seq.play();
             // Advance exactly to beat 4 (4 seconds at 60 BPM).
@@ -2133,7 +2133,7 @@ public:
         beginTest("getTempo reflects current effective tempo after crossing");
         {
             InternalSequencer seq;
-            seq.setTempoEvents({{0.0, 60.0}, {4.0, 120.0}});
+            seq.setTempoEvents({{EventId{juce::Uuid().toString().toStdString()}, 0.0, 60.0}, {EventId{juce::Uuid().toString().toStdString()}, 4.0, 120.0}});
             seq.setBeatPosition(0.0);
             seq.play();
             seq.advance(2.0);   // halfway through the 60 BPM segment
@@ -2157,7 +2157,7 @@ public:
         beginTest("multiple tempo changes within one advance");
         {
             InternalSequencer seq;
-            seq.setTempoEvents({{0.0, 60.0}, {1.0, 120.0}, {3.0, 60.0}});
+            seq.setTempoEvents({{EventId{juce::Uuid().toString().toStdString()}, 0.0, 60.0}, {EventId{juce::Uuid().toString().toStdString()}, 1.0, 120.0}, {EventId{juce::Uuid().toString().toStdString()}, 3.0, 60.0}});
             seq.setBeatPosition(0.0);
             seq.play();
             // 0..1 at 60 BPM:  1 beat in 1.0s
@@ -4273,8 +4273,8 @@ public:
         beginTest("regionToABC produces ABC with header from project metadata");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 96.0});
-            song.timeSigEvents.push_back({0.0, 3, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 96.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 3, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4304,8 +4304,8 @@ public:
         beginTest("regionToABC encodes a drum-named track with drummap");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4368,8 +4368,8 @@ C2 D2 E2 F2 |
         beginTest("region round-trip preserves note pitches and timings");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4461,8 +4461,8 @@ public:
         beginTest("trackToABC emits one P:B<beat> per region in beat order");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4479,8 +4479,8 @@ public:
         beginTest("trackToABC parses back as 8 notes (4 per region)");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4500,8 +4500,8 @@ public:
         beginTest("projectToABC declares one V: per instrument track");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState piano;
             piano.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4527,8 +4527,8 @@ public:
         beginTest("projectToABC excludes non-instrument tracks (audio input, action)");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{juce::Uuid().toString().toStdString()}, 0.0, 4, 4});
 
             TrackState piano;
             piano.id   = TrackId{juce::Uuid().toString().toStdString()};

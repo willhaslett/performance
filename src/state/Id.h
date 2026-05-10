@@ -53,6 +53,7 @@ using RegionId      = Id<struct RegionTag>;
 using TakeId        = Id<struct TakeTag>;
 using BindingId     = Id<struct BindingTag>;
 using ActionEventId = Id<struct ActionEventTag>;
+using EventId       = Id<struct EventTag>;       // unified id space for tempo/timesig/key events; action events keep ActionEventId for now
 
 namespace std {
     template <class Tag>

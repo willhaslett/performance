@@ -20,18 +20,25 @@ void PersistenceLayer::open(const std::string& dbPath) {
     exec("PRAGMA foreign_keys=ON");
     createSchema();
 
-    // Set / update schema version. Bumped to 2 for the multi-event
-    // tempo / timesig / key tables. Pre-beta — no migration code per
-    // CLAUDE.md; existing testers' scalar tempo / time-sig values are
-    // silently dropped (events tables are empty until they edit).
-    auto* stmt = prepare("SELECT value FROM config WHERE key = 'schema_version'");
-    if (sqlite3_step(stmt) != SQLITE_ROW) {
+    // Read existing schema version (if any) so destructive migrations
+    // below can run only when crossing the relevant boundary, then
+    // stamp the current version.
+    int existingSchemaVersion = 0;   // 0 = brand-new DB
+    {
+        auto* stmt = prepare("SELECT value FROM config WHERE key = 'schema_version'");
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            auto* text = sqlite3_column_text(stmt, 0);
+            if (text) {
+                try { existingSchemaVersion = std::stoi(reinterpret_cast<const char*>(text)); }
+                catch (...) {}
+            }
+        }
         sqlite3_finalize(stmt);
-        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')");
-    } else {
-        sqlite3_finalize(stmt);
-        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '2')");
     }
+    // Stamp current version (writes happen in createSchema below; this
+    // is just the bookkeeping value).
+    exec("INSERT OR REPLACE INTO config (key, value) VALUES ('schema_version', '3')");
+    schemaVersionBeforeMigrate = existingSchemaVersion;
 
     perfLog("[Persistence] Opened database: %s\n", dbPath.c_str());
 }
@@ -212,6 +219,19 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN tempo", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_num", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs DROP COLUMN time_sig_den", nullptr, nullptr, nullptr);
+
+    // Schema-3: tempo / timesig / key events gain a unified `id`
+    // primary key (the EventId) so they can be addressed by id from
+    // the unified Lua event API. Pre-3 DBs had composite (song_id, beat)
+    // PKs and no id column — drop the legacy tables (data forfeit;
+    // beat-0 invariant gets backfilled on load). Run ONLY when crossing
+    // the schema boundary, otherwise we'd nuke fresh-saved data on
+    // every subsequent open.
+    if (schemaVersionBeforeMigrate > 0 && schemaVersionBeforeMigrate < 3) {
+        sqlite3_exec(db, "DROP TABLE IF EXISTS tempo_events",   nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "DROP TABLE IF EXISTS timesig_events", nullptr, nullptr, nullptr);
+        sqlite3_exec(db, "DROP TABLE IF EXISTS key_events",     nullptr, nullptr, nullptr);
+    }
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_start REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_end REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_enabled INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
@@ -317,23 +337,23 @@ void PersistenceLayer::createSchema() {
         -- the schema as harmless ghosts (we don't migrate at this
         -- pre-beta stage — see CLAUDE.md "no migration code" rule).
         CREATE TABLE IF NOT EXISTS tempo_events (
+            id TEXT PRIMARY KEY,
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             beat REAL NOT NULL,
-            bpm REAL NOT NULL,
-            PRIMARY KEY (song_id, beat)
+            bpm REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS timesig_events (
+            id TEXT PRIMARY KEY,
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             beat REAL NOT NULL,
             num INTEGER NOT NULL,
-            den INTEGER NOT NULL,
-            PRIMARY KEY (song_id, beat)
+            den INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS key_events (
+            id TEXT PRIMARY KEY,
             song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
             beat REAL NOT NULL,
-            key TEXT NOT NULL,
-            PRIMARY KEY (song_id, beat)
+            key TEXT NOT NULL
         );
     )");
 }
@@ -449,38 +469,41 @@ void PersistenceLayer::readSongs(AppState& out) {
                 song.focusedTrackId = TrackId{focusedId};
         }
 
-        // Tempo / timesig / key event maps.
+        // Tempo / timesig / key event maps. Read id as the first column.
         {
-            auto* es = prepare("SELECT beat, bpm FROM tempo_events WHERE song_id = ? ORDER BY beat");
+            auto* es = prepare("SELECT id, beat, bpm FROM tempo_events WHERE song_id = ? ORDER BY beat");
             sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(es) == SQLITE_ROW) {
-                song.tempoEvents.push_back({
-                    sqlite3_column_double(es, 0),
-                    sqlite3_column_double(es, 1)
-                });
+                TempoEvent e;
+                e.id   = EventId{col_str(es, 0)};
+                e.beat = sqlite3_column_double(es, 1);
+                e.bpm  = sqlite3_column_double(es, 2);
+                song.tempoEvents.push_back(std::move(e));
             }
             sqlite3_finalize(es);
         }
         {
-            auto* es = prepare("SELECT beat, num, den FROM timesig_events WHERE song_id = ? ORDER BY beat");
+            auto* es = prepare("SELECT id, beat, num, den FROM timesig_events WHERE song_id = ? ORDER BY beat");
             sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(es) == SQLITE_ROW) {
-                song.timeSigEvents.push_back({
-                    sqlite3_column_double(es, 0),
-                    sqlite3_column_int(es, 1),
-                    sqlite3_column_int(es, 2)
-                });
+                TimeSignatureEvent e;
+                e.id          = EventId{col_str(es, 0)};
+                e.beat        = sqlite3_column_double(es, 1);
+                e.numerator   = sqlite3_column_int(es, 2);
+                e.denominator = sqlite3_column_int(es, 3);
+                song.timeSigEvents.push_back(std::move(e));
             }
             sqlite3_finalize(es);
         }
         {
-            auto* es = prepare("SELECT beat, key FROM key_events WHERE song_id = ? ORDER BY beat");
+            auto* es = prepare("SELECT id, beat, key FROM key_events WHERE song_id = ? ORDER BY beat");
             sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(es) == SQLITE_ROW) {
-                song.keyEvents.push_back({
-                    sqlite3_column_double(es, 0),
-                    col_str(es, 1)
-                });
+                KeyEvent e;
+                e.id   = EventId{col_str(es, 0)};
+                e.beat = sqlite3_column_double(es, 1);
+                e.key  = col_str(es, 2);
+                song.keyEvents.push_back(std::move(e));
             }
             sqlite3_finalize(es);
         }
@@ -491,10 +514,19 @@ void PersistenceLayer::readSongs(AppState& out) {
         // projects already get these from StateAPI::createSong; this
         // catches the load path so existing testers' projects pick up
         // the same default playback behavior.
-        if (song.tempoEvents.empty())
-            song.tempoEvents.push_back({ 0.0, 120.0 });
-        if (song.timeSigEvents.empty())
-            song.timeSigEvents.push_back({ 0.0, 4, 4 });
+        auto newId = [] { return EventId{juce::Uuid().toString().toStdString()}; };
+        if (song.tempoEvents.empty()) {
+            TempoEvent e; e.id = newId(); e.beat = 0.0; e.bpm = 120.0;
+            song.tempoEvents.push_back(std::move(e));
+        }
+        if (song.timeSigEvents.empty()) {
+            TimeSignatureEvent e; e.id = newId(); e.beat = 0.0; e.numerator = 4; e.denominator = 4;
+            song.timeSigEvents.push_back(std::move(e));
+        }
+        // Defensive: any event somehow loaded without an id gets one now.
+        for (auto& e : song.tempoEvents)   if (e.id.empty()) e.id = newId();
+        for (auto& e : song.timeSigEvents) if (e.id.empty()) e.id = newId();
+        for (auto& e : song.keyEvents)     if (e.id.empty()) e.id = newId();
 
         // Tracks
         auto* ts = prepare("SELECT id, name, plugin_id, preset_id, output_gain, position, processor_state, processor_state_hash, source_type, channel_mode, input_channel_start, input_channel_count, color, output_target, input_monitoring FROM tracks WHERE song_id = ? ORDER BY position");
@@ -897,27 +929,31 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_text(stmt, 8, song.focusedTrackId.c_str(), -1, SQLITE_TRANSIENT);
         stepWrite(stmt, "save");
 
-        // Tempo / timesig / key event maps.
+        // Tempo / timesig / key event maps. Each event has its own id
+        // (the unified EventId space), used as the row primary key.
         for (auto& e : song.tempoEvents) {
-            auto* es = prepare("INSERT INTO tempo_events (song_id, beat, bpm) VALUES (?, ?, ?)");
-            sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_double(es, 2, e.beat);
-            sqlite3_bind_double(es, 3, e.bpm);
+            auto* es = prepare("INSERT INTO tempo_events (id, song_id, beat, bpm) VALUES (?, ?, ?, ?)");
+            sqlite3_bind_text(es, 1, e.id.c_str(),   -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(es, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_double(es, 3, e.beat);
+            sqlite3_bind_double(es, 4, e.bpm);
             stepWrite(es, "save");
         }
         for (auto& e : song.timeSigEvents) {
-            auto* es = prepare("INSERT INTO timesig_events (song_id, beat, num, den) VALUES (?, ?, ?, ?)");
-            sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_double(es, 2, e.beat);
-            sqlite3_bind_int(es, 3, e.numerator);
-            sqlite3_bind_int(es, 4, e.denominator);
+            auto* es = prepare("INSERT INTO timesig_events (id, song_id, beat, num, den) VALUES (?, ?, ?, ?, ?)");
+            sqlite3_bind_text(es, 1, e.id.c_str(),   -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(es, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_double(es, 3, e.beat);
+            sqlite3_bind_int(es, 4, e.numerator);
+            sqlite3_bind_int(es, 5, e.denominator);
             stepWrite(es, "save");
         }
         for (auto& e : song.keyEvents) {
-            auto* es = prepare("INSERT INTO key_events (song_id, beat, key) VALUES (?, ?, ?)");
-            sqlite3_bind_text(es, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_double(es, 2, e.beat);
-            sqlite3_bind_text(es, 3, e.key.c_str(), -1, SQLITE_TRANSIENT);
+            auto* es = prepare("INSERT INTO key_events (id, song_id, beat, key) VALUES (?, ?, ?, ?)");
+            sqlite3_bind_text(es, 1, e.id.c_str(),   -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(es, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_double(es, 3, e.beat);
+            sqlite3_bind_text(es, 4, e.key.c_str(), -1, SQLITE_TRANSIENT);
             stepWrite(es, "save");
         }
 

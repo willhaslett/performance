@@ -295,26 +295,31 @@ struct BindingState {
     int scorePosition = -1;  // order within score (-1 = not a score step)
 };
 
-// Tempo change at a specific beat position.
-// The first event (beat 0) sets the initial tempo.
+// Tempo / time-signature / key-signature events live on the project
+// timeline alongside action events — the LLM and (eventually) the
+// timeline UI treat them uniformly via the unified Event API. Storage
+// stays per-type (separate vectors on SongState) for type safety;
+// addressing across types uses the shared EventId space.
+//
+// First event (beat 0) is the initial value — every project has at
+// least a beat-0 tempo + timesig event by invariant (key is optional).
 struct TempoEvent {
+    EventId id;
     double beat = 0.0;
     double bpm = 120.0;
 };
 
-// Time signature change at a specific beat position.
-// The first event (beat 0) sets the initial time signature.
 struct TimeSignatureEvent {
+    EventId id;
     double beat = 0.0;
     int numerator = 4;
     int denominator = 4;
 };
 
-// Key signature change at a specific beat position. ABC-style strings:
-// "C", "Am", "F#mix", "none". Empty / absent vector = no key declared
-// (writer emits K:none). When set, the first event (beat 0) is the
-// initial key.
+// Key as ABC-style strings: "C", "Am", "F#mix", "none". Empty vector =
+// no key declared (writer emits K:none).
 struct KeyEvent {
+    EventId id;
     double beat = 0.0;
     std::string key = "C";
 };

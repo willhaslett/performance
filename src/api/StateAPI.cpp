@@ -223,8 +223,12 @@ SongId StateAPI::createSong(const std::string& name) {
     // (Logic-style invariant). The user can edit these via setTempo /
     // setTimeSignature but never has to call create for them. Key
     // stays empty by default — no implicit key signature.
-    s.tempoEvents.push_back({ 0.0, 120.0 });
-    s.timeSigEvents.push_back({ 0.0, 4, 4 });
+    TempoEvent t0;          t0.id = EventId{generateId()};
+                             t0.beat = 0.0;       t0.bpm = 120.0;
+    TimeSignatureEvent ts0; ts0.id = EventId{generateId()};
+                             ts0.beat = 0.0;     ts0.numerator = 4; ts0.denominator = 4;
+    s.tempoEvents.push_back(std::move(t0));
+    s.timeSigEvents.push_back(std::move(ts0));
     state.songs.push_back(std::move(s));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id.str(), "" });
@@ -270,10 +274,15 @@ float StateAPI::getMasterGain() const {
 void StateAPI::setSongTempo(double bpm) {
     pushUndo();
     auto& s = song();
-    if (s.tempoEvents.empty())
-        s.tempoEvents.push_back({ 0.0, bpm });
-    else
+    if (s.tempoEvents.empty()) {
+        TempoEvent e;
+        e.id   = EventId{juce::Uuid().toString().toStdString()};
+        e.beat = 0.0;
+        e.bpm  = bpm;
+        s.tempoEvents.push_back(std::move(e));
+    } else {
         s.tempoEvents[0].bpm = bpm;
+    }
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
 }
@@ -287,9 +296,14 @@ double StateAPI::getSongTempo() const {
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
     pushUndo();
     auto& s = song();
-    if (s.timeSigEvents.empty())
-        s.timeSigEvents.push_back({ 0.0, numerator, denominator });
-    else {
+    if (s.timeSigEvents.empty()) {
+        TimeSignatureEvent e;
+        e.id          = EventId{juce::Uuid().toString().toStdString()};
+        e.beat        = 0.0;
+        e.numerator   = numerator;
+        e.denominator = denominator;
+        s.timeSigEvents.push_back(std::move(e));
+    } else {
         s.timeSigEvents[0].numerator = numerator;
         s.timeSigEvents[0].denominator = denominator;
     }
@@ -314,12 +328,18 @@ std::pair<int,int> StateAPI::getSongTimeSignature() const {
 namespace {
 constexpr double kBeatEps = 1e-6;
 
+// Generate a UUID via the same path everything else uses.
+inline std::string newEventIdString() {
+    return juce::Uuid().toString().toStdString();
+}
+
 template <typename Event, typename Update>
 void upsertSorted(std::vector<Event>& v, double beat, Update update) {
     for (auto& e : v) {
         if (std::abs(e.beat - beat) < kBeatEps) { update(e); return; }
     }
     Event e;
+    e.id = EventId{newEventIdString()};
     e.beat = beat;
     update(e);
     v.push_back(e);
