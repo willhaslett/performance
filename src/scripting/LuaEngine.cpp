@@ -8,6 +8,10 @@
 #include "composer/ComposerOutput.h"
 #include "composer/NotationParser.h"
 #include "composer/ComposerWriter.h"
+#include "composer/RegionContent.h"
+#include "daw/Arrangement.h"
+#include "state/StateModel.h"
+#include "state/StateEvents.h"
 #include <juce_events/juce_events.h>
 #include <filesystem>
 #include <set>
@@ -498,6 +502,137 @@ void LuaEngine::registerAPI() {
                       out.lengthBeats,
                       startBeat.value_or(0.0));
         return std::string(buf);
+    });
+
+    // ---- Region content CRUD (composition-abc Phase 2a) ------------------
+    //
+    // listTracks() / listRegions(track) / getRegion(track, beat) /
+    // setRegion(track, beat, abc) / createRegion(track, beat, abc) /
+    // deleteRegion(track, beat).
+    //
+    // ABC text uses region-local time (beat 0 = region start). Header
+    // (M:, Q:, K:) is taken from the project. Track resolved by name.
+    // `beat` identifies a region by its startBeat (matched within 1e-6
+    // tolerance — listRegions returns the canonical values to use).
+
+    auto findRegionAtBeat = [](TrackState& tr, double beat) -> RegionState* {
+        constexpr double kEps = 1e-6;
+        for (auto& r : tr.regions) {
+            if (std::abs(r.startBeat - beat) < kEps) return &r;
+        }
+        return nullptr;
+    };
+
+    auto findTrackByName = [&state](const std::string& name) -> TrackState* {
+        auto* song = state.currentSong();
+        if (!song) return nullptr;
+        for (auto& t : song->tracks) if (t.name == name) return &t;
+        return nullptr;
+    };
+
+    auto emitTrackUpdated = [&state](const TrackId& tid) {
+        StateEvent ev;
+        ev.action   = StateEvent::Updated;
+        ev.entity   = StateEvent::Track;
+        ev.entityId = tid.str();
+        state.events().emit(ev);
+    };
+
+    lua.set_function("listTracks", [this, &state]() -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (song) {
+            int i = 1;
+            for (auto& t : song->tracks) out[i++] = t.name;
+        }
+        return out;
+    });
+
+    lua.set_function("listRegions", [this, &state](const std::string& trackName) -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) return out;
+        TrackState* track = nullptr;
+        for (auto& t : song->tracks) if (t.name == trackName) { track = &t; break; }
+        if (!track) {
+            throw std::runtime_error("listRegions: no track named '" + trackName + "'");
+        }
+        int i = 1;
+        for (auto& r : track->regions) {
+            sol::table row = sv.create_table();
+            row["beat"]   = r.startBeat;
+            row["length"] = r.lengthBeats;
+            row["name"]   = r.name;
+            out[i++] = row;
+        }
+        return out;
+    });
+
+    lua.set_function("getRegion", [&state, findTrackByName, findRegionAtBeat]
+                     (const std::string& trackName, double beat) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("getRegion: no current song");
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("getRegion: no track named '" + trackName + "'");
+        auto* region = findRegionAtBeat(*track, beat);
+        if (!region) throw std::runtime_error("getRegion: no region at beat "
+                                                + std::to_string(beat)
+                                                + " on track '" + trackName + "'");
+        return RegionContent::regionToABC(*region, *track, *song);
+    });
+
+    lua.set_function("setRegion", [&state, findTrackByName, findRegionAtBeat, emitTrackUpdated]
+                     (const std::string& trackName, double beat, const std::string& abc) -> std::string {
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("setRegion: no track named '" + trackName + "'");
+        auto* region = findRegionAtBeat(*track, beat);
+        if (!region) throw std::runtime_error("setRegion: no region at beat "
+                                                + std::to_string(beat)
+                                                + " on track '" + trackName + "'");
+        std::string err;
+        if (!RegionContent::abcToRegion(abc, *region, err)) {
+            throw std::runtime_error("setRegion: " + err);
+        }
+        emitTrackUpdated(track->id);
+        return std::string("ok");
+    });
+
+    lua.set_function("createRegion", [&state, &coord, findTrackByName, findRegionAtBeat, emitTrackUpdated]
+                     (const std::string& trackName, double beat, const std::string& abc) -> std::string {
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("createRegion: no track named '" + trackName + "'");
+        if (findRegionAtBeat(*track, beat)) {
+            throw std::runtime_error("createRegion: a region already exists at beat "
+                                       + std::to_string(beat) + " — use setRegion to replace it");
+        }
+        // Create the region with a placeholder length; abcToRegion will
+        // overwrite lengthBeats from the parsed content.
+        auto* region = coord.arrangement().addMidiRegion(track->id, beat, 4.0);
+        if (!region) throw std::runtime_error("createRegion: failed to create region");
+        std::string err;
+        if (!RegionContent::abcToRegion(abc, *region, err)) {
+            // Roll back the empty region so failure leaves no trace.
+            coord.arrangement().removeRegion(region->id);
+            throw std::runtime_error("createRegion: " + err);
+        }
+        emitTrackUpdated(track->id);
+        return region->id.str();
+    });
+
+    lua.set_function("deleteRegion", [&state, &coord, findTrackByName, findRegionAtBeat, emitTrackUpdated]
+                     (const std::string& trackName, double beat) -> std::string {
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("deleteRegion: no track named '" + trackName + "'");
+        auto* region = findRegionAtBeat(*track, beat);
+        if (!region) throw std::runtime_error("deleteRegion: no region at beat "
+                                                + std::to_string(beat)
+                                                + " on track '" + trackName + "'");
+        RegionId rid = region->id;
+        coord.arrangement().removeRegion(rid);
+        emitTrackUpdated(track->id);
+        return std::string("ok");
     });
 
     // Devices
