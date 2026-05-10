@@ -823,21 +823,21 @@ void PerformanceCoordinator::syncTempoFromState() {
     if (!stateAPI || !sequencerImpl) return;
     auto [num, den] = stateAPI->getSongTimeSignature();
     sequencerImpl->setTimeSignature(num, den);
-    // Push the full tempo map. setTempoEvents writes the events vector
-    // and updates the sequencer's atomic tempo to events.front().bpm,
-    // so we don't need a separate setTempo() call. Cast to the
-    // concrete type — multi-event support is sequencer-specific (not
-    // part of SequencerAPI; external sequencer backends would do their
-    // own tempo-map handling internally).
-    if (auto* internal = dynamic_cast<InternalSequencer*>(sequencerImpl.get())) {
-        if (auto* song = stateAPI->currentSong())
-            internal->setTempoEvents(song->tempoEvents);
-        else
-            internal->setTempoEvents({});
-    }
+    // Push the full tempo map to BOTH:
+    //   - InternalSequencer (UI-side beat clock + getTempo for the LCD)
+    //   - AudioEngine / GraphWrapper (the actual playback path —
+    //     this is what makes a tempo change at bar 5 audible)
+    // setTempoEvents updates the sequencer's atomic tempo to
+    // events.front().bpm, so we don't need a separate setTempo() call.
+    auto* song = stateAPI->currentSong();
+    const std::vector<TempoEvent> emptyMap;
+    const auto& events = song ? song->tempoEvents : emptyMap;
+    if (auto* internal = dynamic_cast<InternalSequencer*>(sequencerImpl.get()))
+        internal->setTempoEvents(events);
+    if (audioEngine)
+        audioEngine->setPlaybackTempoEvents(events);
 
     // Restore cycle range from song
-    auto* song = stateAPI->currentSong();
     if (song && song->cycleEnd > song->cycleStart) {
         sequencerImpl->setLoopRange(song->cycleStart, song->cycleEnd);
         sequencerImpl->setLoopEnabled(song->cycleEnabled);

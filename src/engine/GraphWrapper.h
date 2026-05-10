@@ -8,6 +8,8 @@
 #include "engine/AudioRecordFIFO.h"
 #include <atomic>
 #include <map>
+#include <memory>
+#include <vector>
 
 // Wraps an AudioProcessorGraph so we can do per-buffer work (MIDI scheduling)
 // before the graph processes. Connected to AudioProcessorPlayer in place of
@@ -66,6 +68,19 @@ public:
         playing.store(true, std::memory_order_release);
     }
     void setTempo(double bpm) { tempo.store(bpm, std::memory_order_release); }
+
+    // --- Multi-event tempo map ---
+    // Push the project's tempo events from message thread. Audio thread
+    // walks them per-buffer via tempoMap.load() and switches the live
+    // `tempo` atomic at each event boundary it crosses. New BPM takes
+    // effect at the next buffer (~1-10ms quantization at typical
+    // buffer sizes — acoustically negligible). Pass an empty vector
+    // to disable tempo-map walking and fall back to the constant
+    // `tempo` atomic alone.
+    void setTempoEvents(const std::vector<TempoEvent>& events) {
+        auto copy = std::make_shared<const std::vector<TempoEvent>>(events);
+        std::atomic_store_explicit(&tempoMap, copy, std::memory_order_release);
+    }
     void setBeatPosition(double beat) {
         bool isPlaying = playing.load(std::memory_order_acquire);
         if (isPlaying) flushAllNotes();
@@ -210,6 +225,31 @@ public:
 
             double prevBeat = base + samples * beatsPerSample;
             double nextBeat = base + (samples + numSamples) * beatsPerSample;
+
+            // Multi-event tempo map walk. If any tempo events fall in
+            // [prevBeat, nextBeat), the LAST one's bpm becomes the new
+            // `tempo` for the NEXT buffer. Current buffer is processed
+            // at the prevBeat tempo (acoustically negligible quantization
+            // — sub-buffer accuracy = 1-10ms at typical sizes).
+            //
+            // Reset baseBeat / samplesSinceStart so next buffer's beat
+            // math uses the new tempo from a fresh anchor.
+            if (auto map = std::atomic_load_explicit(&tempoMap, std::memory_order_acquire);
+                    map && !map->empty()) {
+                double newBpm = bpm;
+                bool crossed = false;
+                for (auto& e : *map) {
+                    if (e.beat >= prevBeat - 1e-9 && e.beat < nextBeat - 1e-9) {
+                        newBpm = e.bpm;
+                        crossed = true;
+                    }
+                }
+                if (crossed && std::abs(newBpm - bpm) > 1e-9) {
+                    tempo.store(newBpm, std::memory_order_release);
+                    baseBeat.store(nextBeat, std::memory_order_release);
+                    samplesSinceStart.store(0, std::memory_order_release);
+                }
+            }
 
             // Loop wrapping
             if (loopEnabled.load(std::memory_order_acquire)) {
@@ -463,6 +503,9 @@ private:
     // Legacy atomics (still used for per-buffer position tracking)
     std::atomic<bool> playing { false };
     std::atomic<double> tempo { 120.0 };
+    // Multi-event tempo map (audio-thread visible). nullptr / empty
+    // vector → fall back to constant `tempo` atomic above.
+    std::shared_ptr<const std::vector<TempoEvent>> tempoMap;
     std::atomic<double> beatPosition { 0.0 };
     std::atomic<double> baseBeat { 0.0 };
     std::atomic<int64_t> samplesSinceStart { 0 };
