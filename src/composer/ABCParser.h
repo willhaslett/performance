@@ -1,9 +1,10 @@
 #pragma once
 
-#include "composer/NotationParser.h"
+#include "composer/ComposerOutput.h"
+#include <juce_core/juce_core.h>
+#include <string>
 
-// ABC notation parser. Implements `NotationParser` so it can plug into
-// the same composer pipeline as V2NotationParser.
+// ABC notation parser. Consumes ABC text, emits ComposerOutput.
 //
 // Subset supported (V1 — what the LLM actually emits):
 //   - Headers: X: T: L: Q: M: K: (and K:none)
@@ -25,9 +26,13 @@
 //   - Mid-piece K: changes (key changes)
 //   - Macros (m:)
 //   - Decorations like !ff! — silently skipped, no velocity mapping in V1
-class ABCParser : public NotationParser {
+class ABCParser {
 public:
+    // Parse `input`. On success, fills `out` and returns true.
+    // On failure, fills `err` with a human-readable message and
+    // returns false; `out` may be partially populated (callers
+    // must ignore it on failure).
     bool parse(const juce::String& input,
                ComposerOutput& out,
-               std::string& err) override;
+               std::string& err);
 };
