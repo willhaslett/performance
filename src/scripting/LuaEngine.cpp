@@ -1028,24 +1028,124 @@ void LuaEngine::registerAPI() {
     // Custom actions. paramSchemaJson is the same typed grammar documented
     // in runtime/SYSTEM_PROMPT.md — e.g. '[{"name":"track","type":"channelRef","scope":["track"]}]'.
     // Omit for a zero-arg action (just a macro).
-    lua.set_function("createAction", [&state](const std::string& name, const std::string& label,
-                                               const std::string& luaCode,
-                                               sol::optional<std::string> paramSchemaJson,
-                                               sol::optional<std::string> songId) -> std::string {
+    //
+    // Renamed from `createAction` (composition-abc Phase 4) to free the
+    // `create...` verb space for the new event-scheduling op below.
+    auto defineActionImpl = [&state](const std::string& name, const std::string& label,
+                                       const std::string& luaCode,
+                                       sol::optional<std::string> paramSchemaJson,
+                                       sol::optional<std::string> songId) -> std::string {
         std::vector<ParamSchema> params;
         if (paramSchemaJson.has_value() && !paramSchemaJson.value().empty())
             params = ParamSchemaJson::fromJson(paramSchemaJson.value());
         SongId sid = songId.has_value() ? SongId{songId.value()} : SongId{};
         auto id = state.createCustomAction(name, label, luaCode, std::move(params), sid);
-        perfLog("[Lua] Created custom action: %s (id=%s, %d params)\n",
+        perfLog("[Lua] Defined custom action: %s (id=%s, %d params)\n",
                 name.c_str(), id.c_str(), (int)params.size());
         return id.str();
-    });
+    };
+    lua.set_function("defineAction", defineActionImpl);
+    lua.set_function("createAction", defineActionImpl);   // legacy alias, will go in Phase 6 cleanup
     lua.set_function("removeAction", [&state](const std::string& id) {
         state.removeAction(ActionId{id});
     });
     lua.set_function("triggerAction", [&coord](const std::string& actionName) {
         coord.executeAction(actionName, juce::var(), 1.0f);
+    });
+
+    // ---- Action-event CRUD (composition-abc Phase 4) ---------------------
+    //
+    // Action events are beat-triggered firings of a registered action with
+    // packed args. Stored at song level (the "Action track" pane is a
+    // visual surface; the events themselves are not per-track). The LLM
+    // / scripter uses these to schedule transport-time effects, mode
+    // switches, automation triggers, etc. without writing them as MIDI.
+
+    auto findEventById = [](std::vector<SongState::ActionEvent>& events,
+                              const std::string& idStr) -> SongState::ActionEvent* {
+        ActionEventId aeid{idStr};
+        for (auto& e : events) if (e.id == aeid) return &e;
+        return nullptr;
+    };
+
+    lua.set_function("listActionEvents", [this, &state]() -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) return out;
+        // Resolve actionId -> name once for readability.
+        std::unordered_map<std::string, std::string> idToName;
+        for (auto& a : state.allActions()) idToName[a.id.str()] = a.name;
+        int i = 1;
+        for (auto& ev : song->actionEvents) {
+            sol::table row = sv.create_table();
+            row["id"]     = ev.id.str();
+            row["beat"]   = ev.beat;
+            auto it = idToName.find(ev.actionId.str());
+            row["action"] = (it != idToName.end()) ? it->second : ev.actionId.str();
+            row["args"]   = ev.argsJson;
+            out[i++] = row;
+        }
+        return out;
+    });
+
+    lua.set_function("getActionEvent", [this, &state, findEventById]
+                     (const std::string& idStr) -> sol::table {
+        sol::state_view sv(lua.lua_state());
+        sol::table out = sv.create_table();
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("getActionEvent: no current song");
+        auto* ev = findEventById(song->actionEvents, idStr);
+        if (!ev) throw std::runtime_error("getActionEvent: no event with id '" + idStr + "'");
+        out["id"]   = ev->id.str();
+        out["beat"] = ev->beat;
+        // Resolve action name.
+        std::string name = ev->actionId.str();
+        for (auto& a : state.allActions()) if (a.id == ev->actionId) { name = a.name; break; }
+        out["action"] = name;
+        out["args"]   = ev->argsJson;
+        return out;
+    });
+
+    lua.set_function("createActionEvent", [&state]
+                     (double beat, const std::string& actionName,
+                      sol::optional<std::string> argsJson) -> std::string {
+        auto* info = state.findActionByName(actionName);
+        if (!info) throw std::runtime_error("createActionEvent: no action named '" + actionName + "'");
+        std::string args = argsJson.value_or("[]");
+        auto id = state.addActionEvent(beat, info->id, args);
+        return id.str();
+    });
+
+    lua.set_function("setActionEvent", [&state, findEventById]
+                     (const std::string& idStr,
+                      sol::optional<double> beat,
+                      sol::optional<std::string> actionName,
+                      sol::optional<std::string> argsJson) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("setActionEvent: no current song");
+        auto* ev = findEventById(song->actionEvents, idStr);
+        if (!ev) throw std::runtime_error("setActionEvent: no event with id '" + idStr + "'");
+        if (beat.has_value())
+            state.setActionEventBeat(ActionEventId{idStr}, beat.value());
+        if (actionName.has_value()) {
+            auto* info = state.findActionByName(actionName.value());
+            if (!info) throw std::runtime_error("setActionEvent: no action named '" + actionName.value() + "'");
+            ev->actionId = info->id;
+        }
+        if (argsJson.has_value())
+            ev->argsJson = argsJson.value();
+        return std::string("ok");
+    });
+
+    lua.set_function("deleteActionEvent", [&state, findEventById]
+                     (const std::string& idStr) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("deleteActionEvent: no current song");
+        if (!findEventById(song->actionEvents, idStr))
+            throw std::runtime_error("deleteActionEvent: no event with id '" + idStr + "'");
+        state.removeActionEvent(ActionEventId{idStr});
+        return std::string("ok");
     });
     lua.set_function("currentSongId", [&state]() -> std::string {
         auto* song = state.currentSong();
