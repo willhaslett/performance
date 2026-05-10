@@ -70,16 +70,15 @@ Legend: ✓ exists today · ★ new · ⤳ rename suggested · ⌫ removal propo
 | | `replaceLoop()` / `overdubLoop()` / `undoLoop()` / `redoLoop()` | ✓ | |
 | | `clearLoop()` / `clearAllLoops()` / `resetLooperSession()` | ✓ | |
 | | `getLoopActionState()` | ✓ | |
-| **Project content (NEW)** | `getProject()` | ★ | ABC of current project |
-| | `setProject(abc)` | ★ | replace whole musical content (diff-detected) |
+| **Project content (NEW)** | `getProject()` | ★ | ABC of current project (read-only) |
 | **Track content (NEW)** | `listTracks()` | ⤳ | exists as `registryList("track")`; alias for symmetry |
-| | `getTrack(name)` | ★ | ABC of all musical content on the track |
-| | `setTrack(name, abc)` | ★ | replace content (track must exist) |
+| | `getTrack(name)` | ★ | ABC of all musical content on the track (read-only) |
 | **Region content (NEW)** | `listRegions(track)` | ★ | `[{beat, length, name}, ...]` |
 | | `getRegion(track, beat)` | ★ | ABC of region at that beat |
 | | `setRegion(track, beat, abc)` | ★ | update only — region must exist |
 | | `createRegion(track, beat, abc)` | ★ | explicit creation |
 | | `deleteRegion(track, beat)` | ★ | |
+| | `moveRegion(track, oldBeat, newBeat)` | ★ | structural move (form-restructuring) |
 | **Action events (NEW)** | `listActionEvents(track)` | ★ | `[{id, beat, action, args}, ...]` |
 | | `getActionEvent(id)` | ★ | one event |
 | | `createActionEvent(track, beat, action, args)` | ★ | returns new id |
@@ -111,19 +110,29 @@ Legend: ✓ exists today · ★ new · ⤳ rename suggested · ⌫ removal propo
 - `createAction` → `defineAction` (frees the verb for the new event-scheduling op).
 - `registryList("track")` → `listTracks()` (alias, both keep working).
 - `compose()` removed — fully replaced by content CRUD.
+- **`setProject` and `setTrack` removed (2026-05-09).** Originally planned as bulk-mutation verbs with diff-detection. Replaced by the LLM coordinating sequences of region/transport verbs (parallel tool use makes the cost of multiple verbs trivial). `getProject` / `getTrack` survive as read-only views. See "Why no `setProject`" below.
 
 ### Rules the new API needs the prompt to enforce
 
-- **Use the smallest scope that contains both the material you're acting on AND any material affected by the act.** In-place edits → region or track scope. Structural changes (insert/delete time, restructure form, change tempo at a point) → project scope, because everything downstream shifts.
-- **Before composing into existing material, read the relevant scope first.** Don't compose blind into a track that already has content.
-- **Use named regions / `P:` part labels in ABC** so the LLM can refer to "the bridge" / "the A section" by name across calls. Adopt the convention; teach it in the prompt.
+- **Mutate at region scope or below.** All structural changes go through verb sequences (`createRegion`, `setRegion`, `moveRegion`, `deleteRegion`, plus Phase 3's transport verbs). Use parallel tool calls in one assistant turn to compose multi-region edits.
+- **Before composing into existing material, read the relevant scope first.** `getRegion` for one, `getTrack` to scan a track, `getProject` for the whole picture.
+- **`P:B<n>` beat-based labels** are mechanical identifiers in `getTrack` / `getProject` ABC text. Round-trip through them, but they don't carry meaning — the same `beat` you'd pass to `getRegion(track, beat)`.
+
+### Why no `setProject`
+
+Briefly captured because the original plan committed to it: `setProject(abc)` was meant as a one-shot "replace whole musical content" verb with diff-detection to preserve un-touched regions. In the design pass it became clear:
+
+- Diff inference + authority semantics (preserve vs delete absent regions) + hand-recorded protection + tempo/time-sig handling + track-creation rejection = a state-management surface with five+ branching rules in one entry point. Each rule a place subtle bugs let data corruption through.
+- Round-trip fragility lives at exactly the seam where setProject expects faithful echo of un-touched material.
+- Token cost is *higher* than per-verb mutation: setProject must transmit the full project ABC even when changing one region; per-verb sends only the verbs called.
+- LLM tool use is *good* at "many small verbs in one parallel batch." We were going to build complexity to accommodate a pattern the LLM doesn't actually need.
+- Atomicity (the one thing setProject would have offered that batched calls don't) isn't worth the cost. If we ever genuinely need transactional sequences, that's a separate `begin`/`commit` primitive, not a baked-in side-effect of one verb.
 
 ## Hard problems we're committing to solve
 
 1. **MIDI → ABC transcription.** When the user records or hand-edits MIDI, we have raw events, not ABC. Going back to musically-correct ABC is a known-hard problem (rhythm quantization, voicing inference, articulation guess). **V1 punt:** only emit ABC for material the LLM composed itself (where we have the source ABC stored alongside the MIDI). For hand-recorded / hand-edited regions, return a placeholder (`% region recorded by user; notation unavailable`) so the LLM knows it exists but doesn't try to read it as notation. Best-effort transcription comes later.
 2. **Round-trip stability via "house style".** When the LLM reads region X as ABC, edits, writes back, then reads it again later, version C should look very close to version B. Means our generator and the LLM's emitter need to converge on the same ABC conventions: bar-line frequency, voice naming, key inference, default note length, header field order. Document as a "house style" in the system prompt and produce matching output from the project-state-to-ABC writer.
-3. **Diff-detection on `setProject`.** Replacing the whole project with new ABC must not silently destroy material the LLM didn't intend to change. Server-side: compare new ABC to current project ABC region-by-region; only modify regions the LLM actually changed; warn if hand-recorded material would be lost.
-4. **ABC parser robustness for what the LLM emits.** The spec is mature but full of edge cases. Either pull in an existing C++ ABC parser (license-permitting) or write a focused subset that handles what the LLM tends to produce. Prefer the latter for now — bounded scope, no new deps.
+3. **ABC parser robustness for what the LLM emits.** The spec is mature but full of edge cases. We rolled our own parser (~470 lines) covering the subset the LLM produces, rejecting unsupported constructs explicitly so material isn't silently lost.
 
 ## What's deliberately out of scope this pass
 
@@ -145,10 +154,17 @@ Sequential phases, each landable as a separate commit (or small commit set) on `
 
 ### Phase 2 — Content CRUD Lua API
 
-- All `getProject` / `setProject` / `getTrack` / `setTrack` / `getRegion` / `setRegion` / `createRegion` / `deleteRegion` / `listRegions`.
-- Diff-detection on `setProject` (separate file: `src/composer/ProjectDiff.h/.cpp`).
-- `listTracks()` alias (forwards to `registryList("track")`).
-- Tests: each CRUD op in isolation; cross-CRUD interactions; diff-detection preserves un-touched regions.
+**Phase 2a (shipped):** `listTracks` / `listRegions` / `getRegion` / `setRegion` / `createRegion` / `deleteRegion` via `RegionContent` bridge. Tests cover each op + round-trip preservation.
+
+**Phase 2b (next):**
+- `getTrack(name)` — read-only stitched view of a track's regions, single voice with `P:B<n>` beat-labels per region, rests filling gaps between regions.
+- `getProject()` — read-only project-wide view, multi-voice (one `V:` per track), `P:B<n>` labels per region within each voice.
+- `moveRegion(track, oldBeat, newBeat)` — structural move primitive. Errors if newBeat collides with another region.
+- Tests: round-trip via parser confirms read views are parseable; moveRegion respects collisions and emits Track::Updated.
+
+`setProject` / `setTrack` deliberately omitted — see "Why no `setProject`" above.
+
+`ProjectDiff.h/.cpp` no longer needed.
 
 ### Phase 3 — Tempo / time signature / key CRUD
 
