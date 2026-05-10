@@ -8,7 +8,7 @@
 #     hardware + control mappings — re-pairing every reset is tedious)
 #
 # The app recreates everything else on next launch:
-# - default "Untitled" song with DLS Electric Piano + Audio In
+# - default "Untitled" song with DLS Piano + Audio In
 # - plugin catalog (re-populated from plugin-cache.xml)
 # - actions, presets, config rows
 

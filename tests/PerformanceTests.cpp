@@ -3046,7 +3046,7 @@ public:
                 PerformanceCoordinator coord;
                 coord.initialise(db.path());
                 // DLS must be in the catalog for createDefaultSong to set up
-                // the Electric Piano track. In production the audio engine
+                // the Piano track. In production the audio engine
                 // registers it during scan; here we do it by hand.
                 coord.state().registerPlugin("DLSMusicDevice", "Apple", "AudioUnit", true);
                 auto songId = coord.createDefaultSong("Untitled");
@@ -3067,7 +3067,7 @@ public:
             expect(song != nullptr);
             if (song) {
                 expectEquals(song->name, std::string("Untitled"));
-                // Action + Electric Piano + Audio In = at least 3 tracks
+                // Action + Piano + Audio In = at least 3 tracks
                 expect((int)song->tracks.size() >= 2);
             }
         }

@@ -578,7 +578,7 @@ The whole window is sidebar-on-the-left + main content area + collapsible mixer 
 
 ### Your first sound
 
-On first launch the app creates a song called "Untitled" with two tracks: an instrument track using DLS Electric Piano (the macOS built-in synth) and an audio input track. Press a key on your MIDI controller — or open Musical Typing (⌘⇧K) and use your computer keyboard — and you should hear sound.
+On first launch the app creates a song called "Untitled" with two tracks: an instrument track using DLS Piano (the macOS built-in synth) and an audio input track. Press a key on your MIDI controller — or open Musical Typing (⌘⇧K) and use your computer keyboard — and you should hear sound.
 
 If you don't hear anything, the most likely fixes are: (1) check Settings → Audio (⌘,) and make sure the right output device is selected, (2) check your system volume, (3) make sure you're using a MIDI controller the app recognizes — open Settings → MIDI to see what's connected.
 
