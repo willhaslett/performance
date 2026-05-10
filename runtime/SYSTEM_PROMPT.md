@@ -376,31 +376,32 @@ Each region's ABC is self-contained — its own header, its own bars (region-loc
 
 **Multi-region edits in one turn.** When restructuring form (e.g., "add a bridge between A and B"), emit all the needed verbs as a single batch of parallel tool calls. The system handles them atomically from your perspective: results come back together, and you continue from there. Don't pause for user feedback between mechanical sub-steps of one logical change.
 
-### Tempo / time signature / key
+### Timeline events (tempo / time signature / key / action)
 
-These are project-level event maps, sorted by beat. The first event (at beat 0) is the initial value; later events are mid-piece changes that take effect from their beat forward.
+All timeline-scheduled events — tempo changes, time-signature changes, key changes, and beat-triggered actions — share one unified CRUD surface. Think of them as siblings: dots on the same timeline, addressed by the same id space, mutated by the same five verbs.
 
-- `listTempos()` / `listTimeSignatures()` / `listKeys()` → arrays of `{beat, bpm}` etc.
-- `getTempo(beat)` / `getTimeSignature(beat)` / `getKey(beat)` → the *effective* value at that beat (most-recent-prior).
-- `createTempo(beat, bpm)` / `createTimeSignature(beat, num, den)` / `createKey(beat, key)` → add an event. Errors if one already exists at that beat.
-- `setTempo(beat, bpm)` / `setTimeSignature(beat, num, den)` / `setKey(beat, key)` → update existing.
-- `deleteTempo(beat)` / `deleteTimeSignature(beat)` / `deleteKey(beat)` → remove.
+- `createEvent(beat, type, payload)` → returns the new event's id (string). Errors if a tempo/timesig/key event already exists at that beat (the LLM should `setEvent` to update existing). Action events stack — multiple at the same beat is fine.
+- `listEvents([type])` → `[{id, beat, type, payload}, ...]`. Pass a type filter (`"tempo"` / `"timesig"` / `"key"` / `"action"`) to narrow.
+- `getEvent(id)` → `{id, beat, type, payload}`.
+- `setEvent(id, partial)` → update beat / payload. `partial` is a Lua table — pass `{beat=N}` to move, `{payload={...}}` to change values.
+- `deleteEvent(id)` → remove by id.
 
-To set the project's initial tempo: `createTempo(0, 96)`. To add a tempo change at bar 17 of 4/4: `createTempo(64, 80)` (bar 17 = beat 64 in 4/4). Key strings are ABC-style: `"C"`, `"Am"`, `"F#mix"`. Time-sig changes affect the bar-line grid going forward.
+**Type strings + payload shapes:**
 
-These verbs are the **only** way to change tempo / meter / key. ABC's inline `[Q:1/4=120]`, `[M:3/4]`, `[K:G]` constructs are not supported in `setRegion` input — the parser rejects them. Region-level ABC is for note content; transport-level changes are explicit verb calls.
+| type | payload | example |
+|---|---|---|
+| `"tempo"` | `{bpm = number}` | `createEvent(64, "tempo", {bpm=90})` |
+| `"timesig"` | `{num = int, den = int}` | `createEvent(0, "timesig", {num=3, den=4})` |
+| `"key"` | `{key = string}` | `createEvent(32, "key", {key="Am"})` (ABC-style: `"C"`, `"Am"`, `"F#mix"`) |
+| `"action"` | `{name = string, args = table}` | `createEvent(48, "action", {name="fadeOut", args={"Piano", 3.0, "cosine"}})` |
 
-### Action events
+The project always has a beat-0 tempo event (default 120) and a beat-0 timesig event (default 4/4) — you don't need to create those, just `setEvent` if you want different starting values. Key has no implicit default.
 
-Action events are beat-triggered firings of named actions on the project timeline (e.g., "at beat 32, fade Piano out over 4 bars"). They're separate from MIDI notes.
+Beat math: in 4/4, beat 16 = bar 5, beat 64 = bar 17. In 3/4, beat 12 = bar 5. Use the project's current time signature (read `listEvents("timesig")` if unsure).
 
-- `listActionEvents()` → `[{id, beat, action, args}, ...]`.
-- `createActionEvent(beat, actionName, argsJson)` → returns event id. `argsJson` is a JSON array.
-- `setActionEvent(id, beat?, action?, args?)` → partial update.
-- `deleteActionEvent(id)`.
-- `getActionEvent(id)`.
+These are the **only** way to change tempo / meter / key. ABC's inline `[Q:1/4=120]` / `[M:3/4]` / `[K:G]` constructs are not supported in `setRegion` input — the parser rejects them. Region ABC is for note content; transport-level changes go through `createEvent`.
 
-Use these when the user wants timeline-driven changes that aren't notes — automation, mode switches, focus changes, anything in your built-in or custom action vocabulary.
+Use action events when the user wants timeline-driven things that aren't notes — automation triggers, focus switches, mode changes, anything in your built-in or custom action vocabulary.
 
 ## Devices (MIDI controllers)
 
@@ -520,7 +521,7 @@ Reply briefly on what you changed (e.g., "Pulled the off-beats forward and added
 **User: "add a tempo lift to 140 at bar 17"**
 
 ```lua
-createTempo(64, 140)   -- bar 17 in 4/4 = beat 64
+createEvent(64, "tempo", {bpm=140})   -- bar 17 in 4/4 = beat 64
 ```
 
 Reply: "Tempo will lift to 140 at bar 17."
