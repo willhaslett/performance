@@ -6,6 +6,7 @@
 #include "engine/AudioFileNode.h"
 #include "engine/RecordFIFO.h"
 #include "engine/AudioRecordFIFO.h"
+#include "engine/BeatState.h"
 #include <atomic>
 #include <map>
 
@@ -65,16 +66,14 @@ public:
         if (!p) { stopPlayback(); return; }
         playing.store(true, std::memory_order_release);
     }
-    void setTempo(double bpm) { tempo.store(bpm, std::memory_order_release); }
+    void setTempo(double bpm) { beatState.setTempo(bpm); }
     void setBeatPosition(double beat) {
         bool isPlaying = playing.load(std::memory_order_acquire);
         if (isPlaying) flushAllNotes();
-        beatPosition.store(beat, std::memory_order_release);
-        samplesSinceStart.store(0, std::memory_order_release);
-        baseBeat.store(beat, std::memory_order_release);
+        beatState.resetPosition(beat);
     }
 
-    double getBeatPosition() const { return beatPosition.load(std::memory_order_acquire); }
+    double getBeatPosition() const { return beatState.getBeatPosition(); }
 
     void setLoop(bool enabled, double start, double end) {
         loopEnabled.store(enabled, std::memory_order_release);
@@ -189,31 +188,22 @@ public:
             lastTransportSeq = seq;
             auto& cmd = transportBuf[transportActive.load(std::memory_order_acquire)];
             playing.store(cmd.playing, std::memory_order_release);
-            tempo.store(cmd.bpm, std::memory_order_release);
             loopEnabled.store(cmd.loopEnabled, std::memory_order_release);
             loopStart.store(cmd.loopStart, std::memory_order_release);
             loopEnd.store(cmd.loopEnd, std::memory_order_release);
-            if (cmd.playing) {
-                beatPosition.store(cmd.beat, std::memory_order_release);
-                baseBeat.store(cmd.beat, std::memory_order_release);
-                samplesSinceStart.store(0, std::memory_order_release);
-            }
+            if (cmd.playing)
+                beatState.resetTransport(cmd.beat, cmd.bpm);
+            else
+                beatState.setTempo(cmd.bpm);
         }
 
         if (playing.load(std::memory_order_acquire) && currentSampleRate > 0) {
-            double bpm = tempo.load(std::memory_order_acquire);
-            double base = baseBeat.load(std::memory_order_acquire);
-            int64_t samples = samplesSinceStart.load(std::memory_order_acquire);
-
             int numSamples = buffer.getNumSamples();
-            double beatsPerSample = (bpm / 60.0) / currentSampleRate;
-
-            double prevBeat = base + samples * beatsPerSample;
-            double nextBeat = base + (samples + numSamples) * beatsPerSample;
-
-            // (Tempo-map walk removed — see docs/UNIFIED_EVENTS.md.
-            // Tempo events have no audio-thread playback effect during
-            // the engine refactor; will be wired back in Phase E3.)
+            auto window = beatState.beginBlock(numSamples, currentSampleRate);
+            double prevBeat       = window.prevBeat;
+            double nextBeat       = window.nextBeat;
+            double beatsPerSample = window.beatsPerSample;
+            bool reanchored = false;
 
             // Loop wrapping
             if (loopEnabled.load(std::memory_order_acquire)) {
@@ -225,9 +215,7 @@ public:
                     nextBeat = lStart + std::fmod(offset, loopLen);
                     prevBeat = nextBeat - numSamples * beatsPerSample;
                     if (prevBeat < lStart) prevBeat = lStart;
-                    // Reset sample counter to match new position
-                    baseBeat.store(nextBeat, std::memory_order_release);
-                    samplesSinceStart.store(0, std::memory_order_release);
+                    reanchored = true;
                     // Flush active notes NOW — before the scan picks up new notes.
                     // Only flush via MidiSourceNodes (sequencer path), NOT the live
                     // midi buffer — a live-path noteOff can arrive after the new noteOn
@@ -246,13 +234,11 @@ public:
                 }
             }
 
-            // Update running position
-            samplesSinceStart.store(
-                loopEnabled.load(std::memory_order_acquire)
-                    ? samplesSinceStart.load(std::memory_order_acquire) + numSamples
-                    : samples + numSamples,
-                std::memory_order_release);
-            beatPosition.store(nextBeat, std::memory_order_release);
+            // Commit beat-state advance for THIS buffer. Reanchored
+            // (loop wrap) restarts samples-since-start counter from
+            // the new base; continuous accumulates.
+            if (reanchored) beatState.commitReanchored(nextBeat);
+            else            beatState.commitContinuous(numSamples, nextBeat);
 
             // Scan arrangement and schedule per-track MIDI
             auto* arr = arrangement.load(std::memory_order_acquire);
@@ -404,16 +390,16 @@ public:
         // Forward to the graph
         graph.processBlock(buffer, midi);
 
-        // Metronome click — mix into output after graph processing
+        // Metronome click — mix into output after graph processing.
+        // beatState has already been advanced for this buffer; nextBeat
+        // is the new playhead and prevBeat = nextBeat - numSamples*beatsPerSample.
         if (metronomeOn.load(std::memory_order_acquire)
             && playing.load(std::memory_order_acquire) && currentSampleRate > 0) {
-            double bpm = tempo.load(std::memory_order_acquire);
-            double base = baseBeat.load(std::memory_order_acquire);
-            int64_t samples = samplesSinceStart.load(std::memory_order_acquire);
             int numSamples = buffer.getNumSamples();
+            double bpm = beatState.getTempo();
             double beatsPerSample = (bpm / 60.0) / currentSampleRate;
-            double prevBeat = base + (samples - numSamples) * beatsPerSample;
-            double nextBeat = base + samples * beatsPerSample;
+            double nextBeat = beatState.getBeatPosition();
+            double prevBeat = nextBeat - numSamples * beatsPerSample;
             int bpb = metronomeBPB.load(std::memory_order_acquire);
             float vol = metronomeVol.load(std::memory_order_acquire);
 
@@ -464,12 +450,11 @@ private:
     std::atomic<int64_t> transportSeq { 0 };
     int64_t lastTransportSeq = 0;
 
-    // Legacy atomics (still used for per-buffer position tracking)
+    // playing is owned by GraphWrapper because it gates more than just
+    // beat math (recording dispatch, transport callbacks, etc.).
+    // The four coupled beat atomics live inside `beatState`.
     std::atomic<bool> playing { false };
-    std::atomic<double> tempo { 120.0 };
-    std::atomic<double> beatPosition { 0.0 };
-    std::atomic<double> baseBeat { 0.0 };
-    std::atomic<int64_t> samplesSinceStart { 0 };
+    BeatState beatState;
     double currentSampleRate = 0;
 
     // Loop

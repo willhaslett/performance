@@ -14,6 +14,7 @@
 #include "composer/ABCWriter.h"
 #include "composer/RegionContent.h"
 #include "composer/ComposerOutput.h"
+#include "engine/BeatState.h"
 #include "daw/Arrangement.h"
 #include "state/StateModel.h"
 
@@ -2171,6 +2172,100 @@ public:
 };
 
 static SequencerTempoMapTests sequencerTempoMapTests;
+
+// ============================================================================
+// BeatState tests (UNIFIED_EVENTS Phase E2 — explicit beat-state machine)
+// ============================================================================
+
+class BeatStateTests : public juce::UnitTest {
+public:
+    BeatStateTests() : juce::UnitTest("BeatState") {}
+
+    void runTest() override {
+        const double sr = 48000.0;
+        const int bs = 256;
+
+        beginTest("default state — beat 0, tempo 120");
+        {
+            BeatState bs0;
+            expectEquals(bs0.getBeatPosition(), 0.0);
+            expectEquals(bs0.getTempo(), 120.0);
+        }
+
+        beginTest("beginBlock computes prevBeat / nextBeat / beatsPerSample");
+        {
+            BeatState s;
+            s.setTempo(120.0);
+            auto w = s.beginBlock(bs, sr);
+            expectEquals(w.prevBeat, 0.0);
+            expectWithinAbsoluteError(w.beatsPerSample, (120.0 / 60.0) / sr, 1e-12);
+            expectWithinAbsoluteError(w.nextBeat, bs * w.beatsPerSample, 1e-12);
+        }
+
+        beginTest("commitContinuous accumulates samples; nextBeat advances per buffer");
+        {
+            BeatState s;
+            s.setTempo(120.0);
+            // Three back-to-back buffers at constant tempo.
+            for (int i = 0; i < 3; ++i) {
+                auto w = s.beginBlock(bs, sr);
+                s.commitContinuous(bs, w.nextBeat);
+            }
+            // After 3 buffers of bs samples each at 120 BPM:
+            // total samples = 3*bs; total beats = 3*bs * (120/60)/sr.
+            double expected = 3.0 * bs * (120.0 / 60.0) / sr;
+            expectWithinAbsoluteError(s.getBeatPosition(), expected, 1e-9);
+        }
+
+        beginTest("commitReanchored resets samples-since-start to zero");
+        {
+            BeatState s;
+            s.setTempo(120.0);
+            // Advance a few buffers, then reanchor to beat 16.
+            for (int i = 0; i < 5; ++i) {
+                auto w = s.beginBlock(bs, sr);
+                s.commitContinuous(bs, w.nextBeat);
+            }
+            s.commitReanchored(16.0);
+            expectEquals(s.getBeatPosition(), 16.0);
+            // Next beginBlock starts AT beat 16 (samples=0, base=16).
+            auto w = s.beginBlock(bs, sr);
+            expectEquals(w.prevBeat, 16.0);
+            expectWithinAbsoluteError(w.nextBeat, 16.0 + bs * w.beatsPerSample, 1e-9);
+        }
+
+        beginTest("setTempo affects subsequent beginBlock calculations");
+        {
+            BeatState s;
+            s.setTempo(60.0);
+            auto w1 = s.beginBlock(bs, sr);
+            s.commitContinuous(bs, w1.nextBeat);
+
+            s.setTempo(120.0);
+            auto w2 = s.beginBlock(bs, sr);
+            // bps doubled vs w1.
+            expectWithinAbsoluteError(w2.beatsPerSample, 2.0 * w1.beatsPerSample, 1e-12);
+            // nextBeat = current base (still from buffer 1) + (samples + bs) * new bps.
+            // Since base hasn't moved (continuous), w2.prevBeat reflects samples-so-far
+            // at the NEW tempo — beat-position math is local to whatever tempo is
+            // current at beginBlock time. (This is the legacy single-tempo behavior;
+            // E3 will introduce the multi-event tempo map for proper handling.)
+        }
+
+        beginTest("resetTransport sets tempo + beat together");
+        {
+            BeatState s;
+            s.resetTransport(/*beat*/ 8.0, /*bpm*/ 90.0);
+            expectEquals(s.getBeatPosition(), 8.0);
+            expectEquals(s.getTempo(), 90.0);
+            auto w = s.beginBlock(bs, sr);
+            expectEquals(w.prevBeat, 8.0);
+            expectWithinAbsoluteError(w.beatsPerSample, (90.0 / 60.0) / sr, 1e-12);
+        }
+    }
+};
+
+static BeatStateTests beatStateTests;
 
 // ============================================================================
 // Arrangement tests
