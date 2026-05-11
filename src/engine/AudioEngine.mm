@@ -1731,10 +1731,6 @@ void AudioEngine::setPlaybackState(bool playing, double bpm) {
     graphWrapper->setTempo(bpm);
 }
 
-void AudioEngine::setPlaybackTempoEvents(const std::vector<TempoEvent>& events) {
-    graphWrapper->setTempoEvents(events);
-}
-
 void AudioEngine::setPlaybackBeatPosition(double beat) {
     graphWrapper->setBeatPosition(beat);
 }

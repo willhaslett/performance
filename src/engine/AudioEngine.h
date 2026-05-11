@@ -124,9 +124,6 @@ public:
 
     // Sequencer playback — audio-thread-accurate scheduling
     void setPlaybackState(bool playing, double bpm);
-    // Push the project's tempo map to the audio thread so playback can
-    // walk events and switch BPM as the playhead crosses each.
-    void setPlaybackTempoEvents(const std::vector<TempoEvent>& events);
     void setPlaybackBeatPosition(double beat);
     double getPlaybackBeatPosition() const;
     void setPlaybackLoop(bool enabled, double start, double end);
