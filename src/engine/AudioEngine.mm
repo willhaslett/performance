@@ -1735,6 +1735,10 @@ void AudioEngine::setPlaybackTempoEvents(const std::vector<TempoEvent>& events) 
     graphWrapper->setTempoEvents(events);
 }
 
+int    AudioEngine::tempoMapSize()     const { return graphWrapper ? graphWrapper->tempoMapSize() : 0; }
+int    AudioEngine::tempoCrossCount()  const { return graphWrapper ? graphWrapper->tempoCrossCount() : 0; }
+double AudioEngine::tempoLastCrossed() const { return graphWrapper ? graphWrapper->tempoLastCrossed() : 0.0; }
+
 void AudioEngine::setPlaybackBeatPosition(double beat) {
     graphWrapper->setBeatPosition(beat);
 }

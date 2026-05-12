@@ -74,6 +74,11 @@ public:
     void setTempoEvents(const std::vector<TempoEvent>& events) {
         beatState.setTempoMap(events);
     }
+
+    // Tempo-map diagnostics — see BeatState.
+    int    tempoMapSize()     const { return beatState.readMapSize(); }
+    int    tempoCrossCount()  const { return beatState.readCrossCount(); }
+    double tempoLastCrossed() const { return beatState.readLastCrossedBpm(); }
     void setBeatPosition(double beat) {
         bool isPlaying = playing.load(std::memory_order_acquire);
         if (isPlaying) flushAllNotes();

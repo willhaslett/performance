@@ -108,10 +108,23 @@ public:
             if (crossed) {
                 tempo.store(newBpm, std::memory_order_release);
                 commitReanchored(window.nextBeat);
+                lastCrossedBpm.store(newBpm, std::memory_order_relaxed);
+                crossCount.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
         }
         commitContinuous(numSamples, window.nextBeat);
+    }
+
+    // --- Audio-thread → message-thread diagnostics (temporary) ---
+    // Bumped on each tempo-event crossing detected in commitBlock.
+    // Lets the message-thread poll figure out whether the audio path
+    // actually sees + acts on tempo events.
+    int  readCrossCount()  const { return crossCount.load(std::memory_order_relaxed); }
+    double readLastCrossedBpm() const { return lastCrossedBpm.load(std::memory_order_relaxed); }
+    int  readMapSize() const {
+        auto map = std::atomic_load_explicit(&tempoMap, std::memory_order_acquire);
+        return map ? static_cast<int>(map->size()) : 0;
     }
 
     // Push the project's tempo events from the message thread. Audio
@@ -176,4 +189,7 @@ private:
     // because libc++ on macOS doesn't yet support
     // std::atomic<std::shared_ptr<T>> (requires trivially-copyable T).
     std::shared_ptr<const std::vector<TempoEvent>> tempoMap;
+    // Diagnostics (audio-thread writes, message-thread reads).
+    std::atomic<int> crossCount { 0 };
+    std::atomic<double> lastCrossedBpm { 0.0 };
 };

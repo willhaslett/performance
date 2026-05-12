@@ -425,8 +425,13 @@ void PerformanceCoordinator::timerCallback() {
             double audioBeat = audioEngine->getPlaybackBeatPosition();
             // Keep the UI sequencer in sync with the audio-thread position
             static_cast<InternalSequencer*>(sequencerImpl.get())->setBeatPositionSilent(audioBeat);
-            // Forward tempo and metronome state to engine
-            audioEngine->setPlaybackState(true, sequencerImpl->getTempo());
+            // Note: we deliberately do NOT push tempo to the audio engine
+            // here. Pre-tempo-events, this was a per-tick "keep tempo in
+            // sync" overwrite — but now that BeatState updates tempo when
+            // it crosses tempo events on the audio thread, that per-tick
+            // push clobbers tempo-event changes within ~16ms. Tempo flows
+            // to the audio engine via syncTempoFromState (on Song::Updated)
+            // and via startPlayback (on transport start).
             float metVol = 0.5f;
             auto metVolStr = stateAPI->getConfig("metronome_volume");
             if (!metVolStr.empty()) metVol = std::stof(metVolStr);
@@ -855,8 +860,11 @@ void PerformanceCoordinator::syncTempoFromState() {
     arrangementImpl.updateLooperMode(looperMode,
                                       looperMode && song ? song->cycleEnd : 0.0);
 
-    perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d\n",
-            stateAPI->getSongTempo(), num, den);
+    perfLog("[Coordinator] Synced tempo %.1f bpm, time sig %d/%d (map: %d events, %d crossings so far, last %.1f bpm)\n",
+            stateAPI->getSongTempo(), num, den,
+            audioEngine ? audioEngine->tempoMapSize() : 0,
+            audioEngine ? audioEngine->tempoCrossCount() : 0,
+            audioEngine ? audioEngine->tempoLastCrossed() : 0.0);
 }
 
 void PerformanceCoordinator::loadAudioFilesIntoEngine() {

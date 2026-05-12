@@ -127,6 +127,11 @@ public:
     // Push the project's tempo events to the audio thread for
     // sample-accurate-at-buffer-boundary tempo switching.
     void setPlaybackTempoEvents(const std::vector<TempoEvent>& events);
+
+    // Tempo-map diagnostics (audio-thread observable state).
+    int    tempoMapSize() const;
+    int    tempoCrossCount() const;
+    double tempoLastCrossed() const;
     void setPlaybackBeatPosition(double beat);
     double getPlaybackBeatPosition() const;
     void setPlaybackLoop(bool enabled, double start, double end);
