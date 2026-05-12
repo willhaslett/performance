@@ -823,18 +823,21 @@ void PerformanceCoordinator::syncTempoFromState() {
     if (!stateAPI || !sequencerImpl) return;
     auto [num, den] = stateAPI->getSongTimeSignature();
     sequencerImpl->setTimeSignature(num, den);
-    // Push the tempo map to InternalSequencer (UI-side clock + LCD).
-    // Audio-thread tempo-event playback is currently disabled — being
-    // rebuilt via docs/UNIFIED_EVENTS.md Phase E3. For now playback
-    // uses event[0].bpm as a constant tempo.
+    // Push the tempo map to:
+    //   - InternalSequencer (UI-side beat clock for the LCD)
+    //   - AudioEngine / GraphWrapper / BeatState (audio-thread
+    //     playback — Phase α: tempo events trigger reanchored
+    //     commits at next buffer boundary, ~1 buffer of drift max).
     auto* song = stateAPI->currentSong();
     const std::vector<TempoEvent> emptyMap;
     const auto& events = song ? song->tempoEvents : emptyMap;
     if (auto* internal = dynamic_cast<InternalSequencer*>(sequencerImpl.get()))
         internal->setTempoEvents(events);
-    if (audioEngine)
+    if (audioEngine) {
         audioEngine->setPlaybackState(sequencerImpl->isPlaying(),
                                        events.empty() ? 120.0 : events.front().bpm);
+        audioEngine->setPlaybackTempoEvents(events);
+    }
 
     // Restore cycle range from song
     if (song && song->cycleEnd > song->cycleStart) {

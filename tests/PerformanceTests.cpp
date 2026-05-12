@@ -2262,6 +2262,79 @@ public:
             expectEquals(w.prevBeat, 8.0);
             expectWithinAbsoluteError(w.beatsPerSample, (90.0 / 60.0) / sr, 1e-12);
         }
+
+        beginTest("commitBlock with empty tempo map == commitContinuous");
+        {
+            BeatState s;
+            s.setTempo(120.0);
+            s.setTempoMap({});   // explicitly empty
+            auto w = s.beginBlock(bs, sr);
+            s.commitBlock(bs, w);
+            expectWithinAbsoluteError(s.getBeatPosition(), w.nextBeat, 1e-12);
+            expectEquals(s.getTempo(), 120.0);   // unchanged
+        }
+
+        beginTest("commitBlock crosses tempo event → reanchored + new tempo");
+        {
+            BeatState s;
+            s.setTempo(120.0);
+            // Advance buffers until prevBeat < 1.0 ≤ nextBeat (the tempo
+            // event is at beat 1.0). At 120 BPM / 256-sample buffers,
+            // that's ~94 buffers in.
+            TempoEvent e1; e1.beat = 0.0;  e1.bpm = 120.0;
+            TempoEvent e2; e2.beat = 1.0;  e2.bpm = 90.0;
+            s.setTempoMap({e1, e2});
+            bool crossed = false;
+            for (int i = 0; i < 1000 && !crossed; ++i) {
+                auto w = s.beginBlock(bs, sr);
+                if (w.prevBeat < 1.0 && w.nextBeat >= 1.0) {
+                    s.commitBlock(bs, w);
+                    expectEquals(s.getTempo(), 90.0);
+                    // Reanchored at nextBeat; samplesSinceStart reset.
+                    expectWithinAbsoluteError(s.getBeatPosition(), w.nextBeat, 1e-9);
+                    crossed = true;
+                } else {
+                    s.commitBlock(bs, w);
+                }
+            }
+            expect(crossed, "tempo event was never crossed");
+        }
+
+        beginTest("commitBlock with multiple events in same buffer — last one wins");
+        {
+            BeatState s;
+            s.setTempo(60.0);   // slow start so multiple events fit in one buffer
+            // Three events between beat 0 and beat 0.001 — all should
+            // fit into the first buffer at 60 BPM / sr=48000 / bs=256:
+            //   buffer covers ~0.00533 beats. Events at 0.001/0.002/0.003.
+            TempoEvent e0; e0.beat = 0.0;     e0.bpm = 60.0;
+            TempoEvent e1; e1.beat = 0.001;   e1.bpm = 80.0;
+            TempoEvent e2; e2.beat = 0.002;   e2.bpm = 100.0;
+            TempoEvent e3; e3.beat = 0.003;   e3.bpm = 140.0;
+            s.setTempoMap({e0, e1, e2, e3});
+            auto w = s.beginBlock(bs, sr);
+            s.commitBlock(bs, w);
+            // The last event in [prev, next) is e3 → bpm 140.
+            expectEquals(s.getTempo(), 140.0);
+        }
+
+        beginTest("setTempoMap seeds initial tempo from event at beat 0");
+        {
+            BeatState s;
+            s.setTempo(120.0);   // would-be initial
+            TempoEvent e0; e0.beat = 0.0; e0.bpm = 90.0;
+            s.setTempoMap({e0});
+            // setTempoMap seeds tempo from the most-recent-prior-or-equal
+            // event at the current beat (0). e0 IS at beat 0, so tempo
+            // becomes 90 immediately, not after a "crossing."
+            expectEquals(s.getTempo(), 90.0);
+            // commitBlock doesn't fire a re-anchor either: event is at
+            // prevBeat, not strictly after it. No reanchor needed since
+            // tempo is already correct.
+            auto w = s.beginBlock(bs, sr);
+            s.commitBlock(bs, w);
+            expectEquals(s.getTempo(), 90.0);
+        }
     }
 };
 

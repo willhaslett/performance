@@ -1,6 +1,9 @@
 #pragma once
 
+#include "state/StateModel.h"
 #include <atomic>
+#include <memory>
+#include <vector>
 
 // Beat-tracking state for the audio thread. Owns the four atomics that
 // the per-buffer beat math depends on:
@@ -72,6 +75,67 @@ public:
         beatPosition.store(newBaseBeat, std::memory_order_release);
     }
 
+    // Tempo-map-aware commit. Checks the tempo map for events whose
+    // beat falls in [window.prevBeat, window.nextBeat) and, if any
+    // crossed, sets tempo to the LAST one's bpm and reanchors at
+    // window.nextBeat. Otherwise advances continuously like
+    // commitContinuous. The (α) accuracy contract is: the new tempo
+    // takes effect at the NEXT buffer boundary (up to one buffer
+    // length of drift per tempo event — see docs/UNIFIED_EVENTS.md).
+    // (β) would replace this with segment-emitting begin/commit; the
+    // tempo-map storage and crossed-event detection stay identical.
+    void commitBlock(int numSamples, const Window& window) {
+        // libc++ on macOS doesn't yet support std::atomic<std::shared_ptr<T>>
+        // (requires trivially-copyable T). Use the legacy
+        // std::atomic_load_explicit free function — deprecated in C++20
+        // but functional and widely used until atomic<shared_ptr> lands.
+        auto map = std::atomic_load_explicit(&tempoMap, std::memory_order_acquire);
+        if (map && !map->empty()) {
+            double newBpm = 0.0;
+            bool crossed = false;
+            // "Crossed in this buffer" = event beat strictly AFTER
+            // prevBeat (not already-applied) and BEFORE nextBeat
+            // (still within this window). Events at exact prevBeat
+            // are already in effect — their bpm seeded the live
+            // tempo via setTempoMap.
+            for (auto& e : *map) {
+                if (e.beat > window.prevBeat + 1e-9
+                    && e.beat < window.nextBeat - 1e-9) {
+                    newBpm = e.bpm;
+                    crossed = true;
+                }
+            }
+            if (crossed) {
+                tempo.store(newBpm, std::memory_order_release);
+                commitReanchored(window.nextBeat);
+                return;
+            }
+        }
+        commitContinuous(numSamples, window.nextBeat);
+    }
+
+    // Push the project's tempo events from the message thread. Audio
+    // thread reads via `commitBlock` to detect crossings. Empty vector
+    // disables tempo-map handling and falls back to constant `tempo`.
+    void setTempoMap(const std::vector<TempoEvent>& events) {
+        auto copy = std::make_shared<const std::vector<TempoEvent>>(events);
+        std::atomic_store_explicit(&tempoMap, copy, std::memory_order_release);
+        // Seed the live tempo atomic with the most-recent-prior-or-equal
+        // event at the current beat position so the FIRST buffer after
+        // setTempoMap uses the right initial tempo. Without this seeding,
+        // commitBlock's strict-greater check wouldn't fire on a beat-0
+        // event when starting from beat 0 — the initial tempo would
+        // remain whatever setTempo had set most recently.
+        if (events.empty()) return;
+        double current = beatPosition.load(std::memory_order_acquire);
+        double bpm = events.front().bpm;
+        for (auto& e : events) {
+            if (e.beat > current + 1e-9) break;
+            bpm = e.bpm;
+        }
+        tempo.store(bpm, std::memory_order_release);
+    }
+
     // --- Direct setters (message thread) ---
 
     void setTempo(double bpm) {
@@ -106,4 +170,10 @@ private:
     std::atomic<double> baseBeat         { 0.0   };
     std::atomic<long long> samplesSinceStart { 0 };
     std::atomic<double> beatPosition     { 0.0   };
+    // Multi-event tempo map (audio-thread visible). Empty / nullptr
+    // = no tempo events; commitBlock falls back to commitContinuous.
+    // Accessed via the legacy std::atomic_load/_store free functions
+    // because libc++ on macOS doesn't yet support
+    // std::atomic<std::shared_ptr<T>> (requires trivially-copyable T).
+    std::shared_ptr<const std::vector<TempoEvent>> tempoMap;
 };

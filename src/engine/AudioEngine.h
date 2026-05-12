@@ -124,6 +124,9 @@ public:
 
     // Sequencer playback — audio-thread-accurate scheduling
     void setPlaybackState(bool playing, double bpm);
+    // Push the project's tempo events to the audio thread for
+    // sample-accurate-at-buffer-boundary tempo switching.
+    void setPlaybackTempoEvents(const std::vector<TempoEvent>& events);
     void setPlaybackBeatPosition(double beat);
     double getPlaybackBeatPosition() const;
     void setPlaybackLoop(bool enabled, double start, double end);

@@ -67,6 +67,13 @@ public:
         playing.store(true, std::memory_order_release);
     }
     void setTempo(double bpm) { beatState.setTempo(bpm); }
+
+    // Push the project's tempo events for the audio thread to walk
+    // per buffer. Empty vector disables tempo-map handling. Thread-safe
+    // (uses an internal atomic shared_ptr).
+    void setTempoEvents(const std::vector<TempoEvent>& events) {
+        beatState.setTempoMap(events);
+    }
     void setBeatPosition(double beat) {
         bool isPlaying = playing.load(std::memory_order_acquire);
         if (isPlaying) flushAllNotes();
@@ -234,11 +241,18 @@ public:
                 }
             }
 
-            // Commit beat-state advance for THIS buffer. Reanchored
-            // (loop wrap) restarts samples-since-start counter from
-            // the new base; continuous accumulates.
-            if (reanchored) beatState.commitReanchored(nextBeat);
-            else            beatState.commitContinuous(numSamples, nextBeat);
+            // Commit beat-state advance for THIS buffer. Three paths:
+            //   - Loop wrap: explicit reanchor to the wrapped beat.
+            //   - Tempo event crossed in this buffer: commitBlock
+            //     detects it via the tempo map, updates tempo, and
+            //     reanchors to nextBeat. New tempo takes effect at
+            //     next buffer boundary (~1 buffer of drift; see
+            //     docs/UNIFIED_EVENTS.md Phase α).
+            //   - Otherwise: continuous accumulation.
+            if (reanchored)
+                beatState.commitReanchored(nextBeat);
+            else
+                beatState.commitBlock(numSamples, window);
 
             // Scan arrangement and schedule per-track MIDI
             auto* arr = arrangement.load(std::memory_order_acquire);
