@@ -635,6 +635,44 @@ void LuaEngine::registerAPI() {
         return std::string("ok");
     });
 
+    lua.set_function("moveRegion", [&state, &coord, findTrackByName, findRegionAtBeat, emitTrackUpdated]
+                     (const std::string& trackName, double oldBeat, double newBeat) -> std::string {
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("moveRegion: no track named '" + trackName + "'");
+        auto* region = findRegionAtBeat(*track, oldBeat);
+        if (!region) throw std::runtime_error("moveRegion: no region at beat "
+                                                + std::to_string(oldBeat)
+                                                + " on track '" + trackName + "'");
+        // Reject collisions — newBeat must not match another region.
+        constexpr double kEps = 1e-6;
+        for (auto& other : track->regions) {
+            if (other.id == region->id) continue;
+            if (std::abs(other.startBeat - newBeat) < kEps) {
+                throw std::runtime_error("moveRegion: a region already exists at beat "
+                                           + std::to_string(newBeat)
+                                           + " on track '" + trackName + "'");
+            }
+        }
+        RegionId rid = region->id;
+        coord.arrangement().moveRegion(rid, track->id, newBeat);
+        emitTrackUpdated(track->id);
+        return std::string("ok");
+    });
+
+    lua.set_function("getTrack", [&state, findTrackByName](const std::string& trackName) -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("getTrack: no current song");
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("getTrack: no track named '" + trackName + "'");
+        return RegionContent::trackToABC(*track, *song);
+    });
+
+    lua.set_function("getProject", [&state]() -> std::string {
+        auto* song = state.currentSong();
+        if (!song) throw std::runtime_error("getProject: no current song");
+        return RegionContent::projectToABC(*song);
+    });
+
     // Devices
     lua.set_function("registerDevice", [&state, &coord](const std::string& name, const std::string& portName) -> std::string {
         auto id = state.registerDevice(name, portName);
