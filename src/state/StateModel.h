@@ -295,19 +295,34 @@ struct BindingState {
     int scorePosition = -1;  // order within score (-1 = not a score step)
 };
 
-// Tempo change at a specific beat position.
-// The first event (beat 0) sets the initial tempo.
+// Tempo / time-signature / key-signature events live on the project
+// timeline alongside action events — the LLM and (eventually) the
+// timeline UI treat them uniformly via the unified Event API. Storage
+// stays per-type (separate vectors on SongState) for type safety;
+// addressing across types uses the shared EventId space.
+//
+// Every project starts with a beat-0 tempo event (default 120) and a
+// beat-0 timesig event (default 4/4) — invariant set by createSong.
+// Key has no implicit default (empty vector = no key declared).
 struct TempoEvent {
+    EventId id;
     double beat = 0.0;
     double bpm = 120.0;
 };
 
-// Time signature change at a specific beat position.
-// The first event (beat 0) sets the initial time signature.
 struct TimeSignatureEvent {
+    EventId id;
     double beat = 0.0;
     int numerator = 4;
     int denominator = 4;
+};
+
+// Key as ABC-style strings: "C", "Am", "F#mix", "none". Empty vector =
+// no key declared (writer emits K:none).
+struct KeyEvent {
+    EventId id;
+    double beat = 0.0;
+    std::string key = "C";
 };
 
 struct SongState {
@@ -321,9 +336,11 @@ struct SongState {
     std::vector<DeviceId> deviceIds;    // which devices this song uses
     std::string initialState;                 // JSON snapshot
 
-    // Tempo and time signature maps (sorted by beat)
-    std::vector<TempoEvent> tempoEvents;           // empty = use sequencer default (120)
-    std::vector<TimeSignatureEvent> timeSigEvents;  // empty = use sequencer default (4/4)
+    // Tempo and time signature maps (sorted by beat). createSong
+    // populates each with a beat-0 default; subsequent edits append.
+    std::vector<TempoEvent> tempoEvents;
+    std::vector<TimeSignatureEvent> timeSigEvents;
+    std::vector<KeyEvent> keyEvents;                // empty = no key declared (K:none in ABC)
 
     // Cycle playback (per-song). Used by both the Producer's cycle mode
     // and the Looper. When the app is in `AppMode::Looper`, the

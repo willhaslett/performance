@@ -109,7 +109,7 @@ std::string RegionContent::regionToABC(const RegionState& region,
         in.timeSignatureNum = song.timeSigEvents.front().numerator;
         in.timeSignatureDen = song.timeSigEvents.front().denominator;
     }
-    in.key = "none";  // keyEvents added in a later step
+    in.key = song.keyEvents.empty() ? std::string("none") : song.keyEvents.front().key;
     in.lengthBeats       = region.lengthBeats;
 
     ABCWriteInput::Voice v;
@@ -195,7 +195,7 @@ std::string RegionContent::trackToABC(const TrackState& track, const SongState& 
         in.timeSignatureNum = song.timeSigEvents.front().numerator;
         in.timeSignatureDen = song.timeSigEvents.front().denominator;
     }
-    in.key         = "none";  // keyEvents added in a later step
+    in.key         = song.keyEvents.empty() ? std::string("none") : song.keyEvents.front().key;
     in.lengthBeats = trackLengthBeats(track);
     in.voices.push_back(buildVoiceForTrack(track));
 
@@ -211,7 +211,7 @@ std::string RegionContent::projectToABC(const SongState& song) {
         in.timeSignatureNum = song.timeSigEvents.front().numerator;
         in.timeSignatureDen = song.timeSigEvents.front().denominator;
     }
-    in.key = "none";  // keyEvents added in a later step
+    in.key = song.keyEvents.empty() ? std::string("none") : song.keyEvents.front().key;
 
     double maxLen = 0.0;
     for (auto& t : song.tracks) {

@@ -4287,8 +4287,8 @@ public:
         beginTest("regionToABC produces ABC with header from project metadata");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 96.0});
-            song.timeSigEvents.push_back({0.0, 3, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 96.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 3, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4318,8 +4318,8 @@ public:
         beginTest("regionToABC encodes a drum-named track with drummap");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4382,8 +4382,8 @@ C2 D2 E2 F2 |
         beginTest("region round-trip preserves note pitches and timings");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4476,8 +4476,8 @@ public:
         beginTest("trackToABC emits one P:B<beat> per region in beat order");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4494,8 +4494,8 @@ public:
         beginTest("trackToABC parses back as 8 notes (4 per region)");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState track;
             track.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4515,8 +4515,8 @@ public:
         beginTest("projectToABC declares one V: per instrument track");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState piano;
             piano.id   = TrackId{juce::Uuid().toString().toStdString()};
@@ -4542,8 +4542,8 @@ public:
         beginTest("projectToABC excludes non-instrument tracks (audio input, action)");
         {
             SongState song;
-            song.tempoEvents.push_back({0.0, 120.0});
-            song.timeSigEvents.push_back({0.0, 4, 4});
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
 
             TrackState piano;
             piano.id   = TrackId{juce::Uuid().toString().toStdString()};

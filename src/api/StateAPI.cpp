@@ -219,6 +219,16 @@ SongId StateAPI::createSong(const std::string& name) {
     SongState s;
     s.id = SongId{generateId()};
     s.name = name;
+    // Beat-0 invariant (Logic-style): every project starts with a
+    // beat-0 tempo + time-signature event. Users edit these via
+    // setTempo / setTimeSignature; they never have to create them.
+    // Key stays empty by default — no implicit key signature.
+    TempoEvent t0;          t0.id = EventId{generateId()};
+                             t0.beat = 0.0; t0.bpm = 120.0;
+    TimeSignatureEvent ts0; ts0.id = EventId{generateId()};
+                             ts0.beat = 0.0; ts0.numerator = 4; ts0.denominator = 4;
+    s.tempoEvents.push_back(std::move(t0));
+    s.timeSigEvents.push_back(std::move(ts0));
     state.songs.push_back(std::move(s));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id.str(), "" });
@@ -264,10 +274,15 @@ float StateAPI::getMasterGain() const {
 void StateAPI::setSongTempo(double bpm) {
     pushUndo();
     auto& s = song();
-    if (s.tempoEvents.empty())
-        s.tempoEvents.push_back({ 0.0, bpm });
-    else
+    if (s.tempoEvents.empty()) {
+        TempoEvent e;
+        e.id   = EventId{generateId()};
+        e.beat = 0.0;
+        e.bpm  = bpm;
+        s.tempoEvents.push_back(std::move(e));
+    } else {
         s.tempoEvents[0].bpm = bpm;
+    }
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
 }
@@ -281,9 +296,14 @@ double StateAPI::getSongTempo() const {
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
     pushUndo();
     auto& s = song();
-    if (s.timeSigEvents.empty())
-        s.timeSigEvents.push_back({ 0.0, numerator, denominator });
-    else {
+    if (s.timeSigEvents.empty()) {
+        TimeSignatureEvent e;
+        e.id          = EventId{generateId()};
+        e.beat        = 0.0;
+        e.numerator   = numerator;
+        e.denominator = denominator;
+        s.timeSigEvents.push_back(std::move(e));
+    } else {
         s.timeSigEvents[0].numerator = numerator;
         s.timeSigEvents[0].denominator = denominator;
     }
