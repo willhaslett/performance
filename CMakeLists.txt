@@ -111,6 +111,7 @@ target_sources(Performance PRIVATE
     src/composer/V2NotationParser.cpp
     src/composer/ABCParser.cpp
     src/composer/ABCWriter.cpp
+    src/composer/RegionContent.cpp
     src/composer/ComposerWriter.cpp
     src/gui/LogPane.cpp
     src/gui/MidiMonitorPane.cpp
@@ -231,6 +232,7 @@ target_sources(PerformanceTests PRIVATE
     src/composer/V2NotationParser.cpp
     src/composer/ABCParser.cpp
     src/composer/ABCWriter.cpp
+    src/composer/RegionContent.cpp
     src/composer/ComposerWriter.cpp
 )
 

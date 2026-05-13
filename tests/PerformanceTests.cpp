@@ -13,6 +13,7 @@
 #include "composer/V2NotationParser.h"
 #include "composer/ABCParser.h"
 #include "composer/ABCWriter.h"
+#include "composer/RegionContent.h"
 #include "composer/ComposerOutput.h"
 #include "composer/ComposerWriter.h"
 #include "daw/Arrangement.h"
@@ -4272,6 +4273,172 @@ public:
 };
 
 static ABCWriterTests abcWriterTests;
+
+
+// ============================================================================
+// RegionContent tests (bridge between RegionState <-> ABC text)
+// ============================================================================
+
+class RegionContentTests : public juce::UnitTest {
+public:
+    RegionContentTests() : juce::UnitTest("RegionContent") {}
+
+    void runTest() override {
+        beginTest("regionToABC produces ABC with header from project metadata");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 96.0});
+            song.timeSigEvents.push_back({0.0, 3, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 6.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Quarter note C4 at beat 0.
+            MidiEventState on;
+            on.beatOffset = 0.0; on.status = 0x90; on.channel = 1; on.data1 = 60; on.data2 = 80;
+            MidiEventState off;
+            off.beatOffset = 1.0; off.status = 0x80; off.channel = 1; off.data1 = 60; off.data2 = 0;
+            take.events = {on, off};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+            expect(abc.find("Q:1/4=96") != std::string::npos);
+            expect(abc.find("M:3/4") != std::string::npos);
+            expect(abc.find("K:none") != std::string::npos);
+        }
+
+        beginTest("regionToABC encodes a drum-named track with drummap");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Drum Kit";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Kick at beat 0 (MIDI 36).
+            MidiEventState on;
+            on.beatOffset = 0.0; on.status = 0x90; on.channel = 10; on.data1 = 36; on.data2 = 100;
+            MidiEventState off;
+            off.beatOffset = 0.5; off.status = 0x80; off.channel = 10; off.data1 = 36; off.data2 = 0;
+            take.events = {on, off};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+        }
+
+        beginTest("abcToRegion replaces events and sets length");
+        {
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Pre-existing event that should be wiped.
+            MidiEventState old;
+            old.beatOffset = 0.0; old.status = 0x90; old.channel = 1; old.data1 = 50; old.data2 = 80;
+            take.events = {old};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            std::string abc = R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2 D2 E2 F2 |
+)";
+            std::string err;
+            expect(RegionContent::abcToRegion(abc, region, err));
+            // Active take's events: 4 noteOn + 4 noteOff.
+            auto* t = region.activeTake();
+            expect(t != nullptr);
+            int onCount = 0;
+            for (auto& e : t->events) if ((e.status & 0xF0) == 0x90) ++onCount;
+            expectEquals(onCount, 4);
+            // The pre-existing pitch 50 should not be present.
+            for (auto& e : t->events) expect(e.data1 != 50);
+            expectGreaterOrEqual(region.lengthBeats, 4.0);
+        }
+
+        beginTest("region round-trip preserves note pitches and timings");
+        {
+            SongState song;
+            song.tempoEvents.push_back({0.0, 120.0});
+            song.timeSigEvents.push_back({0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+
+            // Three notes: C E G at beats 0, 1, 2 (each a quarter).
+            for (int i = 0; i < 3; ++i) {
+                int pitch = (i == 0 ? 60 : i == 1 ? 64 : 67);
+                MidiEventState on;
+                on.beatOffset = i * 1.0; on.status = 0x90; on.channel = 1; on.data1 = pitch; on.data2 = 80;
+                MidiEventState off;
+                off.beatOffset = i * 1.0 + 1.0; off.status = 0x80; off.channel = 1; off.data1 = pitch; off.data2 = 0;
+                take.events.push_back(on);
+                take.events.push_back(off);
+            }
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+
+            RegionState target;
+            target.id          = RegionId{juce::Uuid().toString().toStdString()};
+            target.lengthBeats = 4.0;
+            TakeState empty;
+            empty.id = TakeId{juce::Uuid().toString().toStdString()};
+            target.takes.push_back(empty);
+            target.activeTakeId = empty.id;
+
+            std::string err;
+            expect(RegionContent::abcToRegion(abc, target, err));
+            auto* tt = target.activeTake();
+            expect(tt != nullptr);
+
+            int found60 = 0, found64 = 0, found67 = 0;
+            for (auto& e : tt->events) {
+                if ((e.status & 0xF0) != 0x90) continue;
+                if (e.data1 == 60) ++found60;
+                if (e.data1 == 64) ++found64;
+                if (e.data1 == 67) ++found67;
+            }
+            expectEquals(found60, 1);
+            expectEquals(found64, 1);
+            expectEquals(found67, 1);
+        }
+    }
+};
+
+static RegionContentTests regionContentTests;
 
 
 // ============================================================================
