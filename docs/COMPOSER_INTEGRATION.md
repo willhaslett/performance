@@ -1,6 +1,8 @@
 # Composer integration
 
-**Status (2026-05-03):** **Shipped.** Phases 1–5 of the design (bottom of this doc) all landed on `main` on 2026-04-20. The investigation block immediately below is preserved as the "why" — the design + ship details are in the **Design** section further down. Read the design section for what's in code; read the investigation for the original framing.
+**Status (2026-05-10):** **Historical.** Superseded by `docs/AI_COMPOSITION_API.md` (the ABC + content-CRUD redesign on the `composition-abc` branch). `compose()`, `V2NotationParser`, and `ComposerWriter` (the V2-state writer) are deleted. New surface: `getRegion` / `setRegion` / `createRegion` / `deleteRegion` / `moveRegion` over ABC text + per-event tempo/timesig/key CRUD. Read `AI_COMPOSITION_API.md` first; the rest of this doc is preserved as historical context for the V2 era.
+
+**Original status (2026-05-03):** **Shipped.** Phases 1–5 of the design (bottom of this doc) all landed on `main` on 2026-04-20. The investigation block immediately below is preserved as the "why" — the design + ship details are in the **Design** section further down. Read the design section for what's in code; read the investigation for the original framing.
 **Date started:** 2026-04-20.
 **Source project:** `~/ideas_and_projects/dawai/` (standalone, git-tracked, phase 11 "prompt & workflow tuning").
 

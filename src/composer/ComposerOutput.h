@@ -5,12 +5,10 @@
 #include <utility>
 #include <vector>
 
-// Format-independent output of any NotationParser.
-//
-// Every parser emits this struct; ComposerWriter consumes it.
-// Keeping the surface flat (no nested regions, no structural
-// metadata beyond tempo / time signature) makes it easy to add
-// a new parser — it just needs to produce these notes.
+// Output of ABCParser. Flat list of notes (no nested regions, no
+// structural metadata beyond tempo / time signature), consumed by
+// RegionContent::abcToRegion when committing parsed ABC into a
+// region's MIDI events.
 struct ComposerOutput {
     double tempo = 120.0;
     // Optional overrides. Empty vector = use the project's current signature.
