@@ -817,6 +817,168 @@ public:
 
 static StateAPITests stateAPITests;
 
+
+// ============================================================================
+// StateAPI multi-event tempo / timesig / key tests (Phase 3b backing)
+// ============================================================================
+
+class StateAPIEventMapTests : public juce::UnitTest {
+public:
+    StateAPIEventMapTests() : juce::UnitTest("StateAPIEventMaps") {}
+
+    void runTest() override {
+        beginTest("new song has beat-0 tempo (120) + timesig (4/4) by default");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Fresh");
+            s.setCurrentSong(songId);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 1);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);
+            expectEquals((int) song->timeSigEvents.size(), 1);
+            expectEquals(song->timeSigEvents[0].beat, 0.0);
+            expectEquals(song->timeSigEvents[0].numerator, 4);
+            expectEquals(song->timeSigEvents[0].denominator, 4);
+            // Key has no implicit default — empty by design.
+            expect(song->keyEvents.empty());
+        }
+
+        beginTest("createTempo at bar 5 preserves the implicit beat-0 event");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+            // Don't touch beat 0 — go straight to a mid-piece event.
+            s.setTempoEvent(16.0, 90.0);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 2);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);   // unchanged
+            expectEquals(song->tempoEvents[1].beat, 16.0);
+            expectEquals(song->tempoEvents[1].bpm, 90.0);
+            // Effective lookup spans the gap correctly.
+            expectEquals(s.effectiveTempoAt(0.0),   120.0);
+            expectEquals(s.effectiveTempoAt(15.99), 120.0);
+            expectEquals(s.effectiveTempoAt(16.0),  90.0);
+            expectEquals(s.effectiveTempoAt(100.0), 90.0);
+        }
+
+        beginTest("tempo events: insert + sorted + effective lookup");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTempoEvent(0.0,  120.0);
+            s.setTempoEvent(32.0, 140.0);
+            s.setTempoEvent(16.0, 100.0);   // out of order — should sort
+
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 3);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[1].beat, 16.0);
+            expectEquals(song->tempoEvents[2].beat, 32.0);
+
+            // Effective tempo: most-recent-prior.
+            expectEquals(s.effectiveTempoAt(0.0),   120.0);
+            expectEquals(s.effectiveTempoAt(15.99), 120.0);
+            expectEquals(s.effectiveTempoAt(16.0),  100.0);
+            expectEquals(s.effectiveTempoAt(31.99), 100.0);
+            expectEquals(s.effectiveTempoAt(32.0),  140.0);
+            expectEquals(s.effectiveTempoAt(100.0), 140.0);
+        }
+
+        beginTest("tempo events: upsert + remove");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTempoEvent(0.0,  120.0);
+            s.setTempoEvent(0.0,  130.0);   // upsert: same beat, replaces
+            auto* song = s.findSong(songId);
+            expectEquals((int) song->tempoEvents.size(), 1);
+            expectEquals(song->tempoEvents[0].bpm, 130.0);
+
+            expect(s.removeTempoEvent(0.0));
+            expectEquals((int) song->tempoEvents.size(), 0);
+            expect(!s.removeTempoEvent(0.0));   // already gone
+            expectEquals(s.effectiveTempoAt(0.0), 120.0);  // default
+        }
+
+        beginTest("time-sig events: insert + effective lookup");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTimeSigEvent(0.0, 4, 4);
+            s.setTimeSigEvent(16.0, 3, 4);
+
+            auto sig0  = s.effectiveTimeSignatureAt(0.0);
+            auto sig15 = s.effectiveTimeSignatureAt(15.0);
+            auto sig20 = s.effectiveTimeSignatureAt(20.0);
+            expectEquals(sig0.first, 4);   expectEquals(sig0.second, 4);
+            expectEquals(sig15.first, 4);  expectEquals(sig15.second, 4);
+            expectEquals(sig20.first, 3);  expectEquals(sig20.second, 4);
+        }
+
+        beginTest("key events: insert + effective lookup; empty default");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            // No keys set — effective is empty string.
+            expect(s.effectiveKeyAt(0.0).empty());
+
+            s.setKeyEvent(0.0,  "C");
+            s.setKeyEvent(32.0, "Am");
+
+            expectEquals(s.effectiveKeyAt(0.0),   std::string("C"));
+            expectEquals(s.effectiveKeyAt(31.99), std::string("C"));
+            expectEquals(s.effectiveKeyAt(32.0),  std::string("Am"));
+        }
+
+        beginTest("event maps round-trip through PersistenceLayer");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            original.setCurrentSong(songId);
+            original.setTempoEvent(0.0,  120.0);
+            original.setTempoEvent(16.0, 140.0);
+            original.setTimeSigEvent(0.0, 4, 4);
+            original.setTimeSigEvent(16.0, 3, 4);
+            original.setKeyEvent(0.0, "C");
+            original.setKeyEvent(8.0, "Am");
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.findSong(songId);
+            expect(loadedSong != nullptr);
+            expectEquals((int) loadedSong->tempoEvents.size(), 2);
+            expectEquals(loadedSong->tempoEvents[0].bpm, 120.0);
+            expectEquals(loadedSong->tempoEvents[1].bpm, 140.0);
+            expectEquals((int) loadedSong->timeSigEvents.size(), 2);
+            expectEquals(loadedSong->timeSigEvents[1].numerator, 3);
+            expectEquals((int) loadedSong->keyEvents.size(), 2);
+            expectEquals(loadedSong->keyEvents[0].key, std::string("C"));
+            expectEquals(loadedSong->keyEvents[1].key, std::string("Am"));
+        }
+    }
+};
+
+static StateAPIEventMapTests stateAPIEventMapTests;
+
 // ============================================================================
 // PersistenceLayer round-trip tests
 // ============================================================================
