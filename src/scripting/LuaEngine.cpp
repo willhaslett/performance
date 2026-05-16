@@ -551,7 +551,8 @@ void LuaEngine::registerAPI() {
     });
 
     lua.set_function("createRegion", [&state, &coord, findTrackByName, findRegionAtBeat, emitTrackUpdated]
-                     (const std::string& trackName, double beat, const std::string& abc) -> std::string {
+                     (const std::string& trackName, double beat, const std::string& abc,
+                      sol::optional<std::string> name) -> std::string {
         auto* track = findTrackByName(trackName);
         if (!track) throw std::runtime_error("createRegion: no track named '" + trackName + "'");
         if (findRegionAtBeat(*track, beat)) {
@@ -562,6 +563,7 @@ void LuaEngine::registerAPI() {
         // overwrite lengthBeats from the parsed content.
         auto* region = coord.arrangement().addMidiRegion(track->id, beat, 4.0);
         if (!region) throw std::runtime_error("createRegion: failed to create region");
+        if (name.has_value() && !name.value().empty()) region->name = name.value();
         std::string err;
         if (!RegionContent::abcToRegion(abc, *region, err)) {
             // Roll back the empty region so failure leaves no trace.
@@ -570,6 +572,22 @@ void LuaEngine::registerAPI() {
         }
         emitTrackUpdated(track->id);
         return region->id.str();
+    });
+
+    // Optional rename for an existing region — addresses the region by
+    // its current startBeat (same identity model as setRegion / deleteRegion
+    // / moveRegion).
+    lua.set_function("renameRegion", [&state, findTrackByName, findRegionAtBeat, emitTrackUpdated]
+                     (const std::string& trackName, double beat, const std::string& newName) -> std::string {
+        auto* track = findTrackByName(trackName);
+        if (!track) throw std::runtime_error("renameRegion: no track named '" + trackName + "'");
+        auto* region = findRegionAtBeat(*track, beat);
+        if (!region) throw std::runtime_error("renameRegion: no region at beat "
+                                                + std::to_string(beat)
+                                                + " on track '" + trackName + "'");
+        region->name = newName;
+        emitTrackUpdated(track->id);
+        return std::string("ok");
     });
 
     lua.set_function("deleteRegion", [&state, &coord, findTrackByName, findRegionAtBeat, emitTrackUpdated]
