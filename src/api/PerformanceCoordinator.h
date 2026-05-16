@@ -55,7 +55,7 @@ public:
 
     // --- Song lifecycle ---
     std::string createSong(const juce::String& name);
-    std::string createDefaultSong(const std::string& name);  // DLS Electric Piano + Audio In template
+    std::string createDefaultSong(const std::string& name);  // DLS Piano + Audio In template
     bool needsStartupSongChooser() const;
     void syncPluginCatalog();  // rebuild state plugin catalog from engine after a fresh scan
     void loadSong(const std::string& songId);

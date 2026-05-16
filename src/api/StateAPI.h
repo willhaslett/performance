@@ -30,6 +30,24 @@ public:
     std::pair<int,int> getSongTimeSignature() const;
     std::string getMasterOutputId() const;
 
+    // --- Multi-event tempo / time signature / key maps ---
+    // setXxxEvent inserts a new event at `beat` or updates the existing
+    // one at the same beat (matched within 1e-6). Vectors stay sorted
+    // by beat. removeXxxEvent erases the event at `beat`; returns true
+    // if found, false if not. Effective-value lookups walk the sorted
+    // events and return the most-recent-prior.
+    void setTempoEvent(double beat, double bpm);
+    bool removeTempoEvent(double beat);
+    double effectiveTempoAt(double beat) const;
+
+    void setTimeSigEvent(double beat, int numerator, int denominator);
+    bool removeTimeSigEvent(double beat);
+    std::pair<int,int> effectiveTimeSignatureAt(double beat) const;
+
+    void setKeyEvent(double beat, const std::string& key);
+    bool removeKeyEvent(double beat);
+    std::string effectiveKeyAt(double beat) const;
+
     // --- App mode (see docs/PANE_MODE_MODEL.md + docs/LIVE_LOOPING.md) ---
     // Workflow/session mode. Arrangement = play from track.regions;
     // Looper = play from track.loops. Setting Looper forces cycle on

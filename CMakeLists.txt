@@ -107,9 +107,9 @@ target_sources(Performance PRIVATE
     src/telemetry/TelemetryShipper.cpp
     src/install/BundledPluginInstaller.cpp
     src/gui/PluginInstallDialog.cpp
-    src/composer/NotationParser.cpp
-    src/composer/V2NotationParser.cpp
-    src/composer/ComposerWriter.cpp
+    src/composer/ABCParser.cpp
+    src/composer/ABCWriter.cpp
+    src/composer/RegionContent.cpp
     src/gui/LogPane.cpp
     src/gui/MidiMonitorPane.cpp
     src/gui/ChatView.cpp
@@ -225,9 +225,9 @@ target_sources(PerformanceTests PRIVATE
     src/rendering/OfflineRenderer.cpp
     src/install/BundledPluginInstaller.cpp
     src/telemetry/InstallId.cpp
-    src/composer/NotationParser.cpp
-    src/composer/V2NotationParser.cpp
-    src/composer/ComposerWriter.cpp
+    src/composer/ABCParser.cpp
+    src/composer/ABCWriter.cpp
+    src/composer/RegionContent.cpp
 )
 
 target_include_directories(PerformanceTests PRIVATE src /opt/homebrew/include ${CMAKE_BINARY_DIR}/generated)

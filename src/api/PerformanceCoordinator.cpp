@@ -1113,8 +1113,8 @@ std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
     stateAPI->setCurrentSong(songId);
     stateAPI->createActionTrack("Actions");
 
-    // Track 1: DLS Electric Piano (program 4)
-    auto trackId = stateAPI->createTrack("Electric Piano");
+    // Track 1: DLS Piano (program 4)
+    auto trackId = stateAPI->createTrack("Piano");
     // Find DLS plugin in catalog
     for (auto& p : stateAPI->allPlugins()) {
         if (p.name == "DLSMusicDevice" && p.isInstrument) {
@@ -1144,10 +1144,10 @@ std::string PerformanceCoordinator::createDefaultSong(const std::string& name) {
 
     // Focus-on-create moved focus to whichever track was created last
     // (the Audio In). The default-song intent is for the user to play
-    // into the Electric Piano, so restore focus there.
+    // into the Piano, so restore focus there.
     stateAPI->setFocusedTrackId(trackId);
 
-    perfLog("[Coordinator] Created default song '%s' with DLS Electric Piano + Audio In\n",
+    perfLog("[Coordinator] Created default song '%s' with DLS Piano + Audio In\n",
             name.c_str());
     return songId.str();
 }

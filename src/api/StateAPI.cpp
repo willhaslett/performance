@@ -219,6 +219,16 @@ SongId StateAPI::createSong(const std::string& name) {
     SongState s;
     s.id = SongId{generateId()};
     s.name = name;
+    // Beat-0 invariant (Logic-style): every project starts with a
+    // beat-0 tempo + time-signature event. Users edit these via
+    // setTempo / setTimeSignature; they never have to create them.
+    // Key stays empty by default — no implicit key signature.
+    TempoEvent t0;          t0.id = EventId{generateId()};
+                             t0.beat = 0.0; t0.bpm = 120.0;
+    TimeSignatureEvent ts0; ts0.id = EventId{generateId()};
+                             ts0.beat = 0.0; ts0.numerator = 4; ts0.denominator = 4;
+    s.tempoEvents.push_back(std::move(t0));
+    s.timeSigEvents.push_back(std::move(ts0));
     state.songs.push_back(std::move(s));
     markDirty();
     eventBus.emit({ StateEvent::Created, StateEvent::Song, state.songs.back().id.str(), "" });
@@ -264,10 +274,15 @@ float StateAPI::getMasterGain() const {
 void StateAPI::setSongTempo(double bpm) {
     pushUndo();
     auto& s = song();
-    if (s.tempoEvents.empty())
-        s.tempoEvents.push_back({ 0.0, bpm });
-    else
+    if (s.tempoEvents.empty()) {
+        TempoEvent e;
+        e.id   = EventId{generateId()};
+        e.beat = 0.0;
+        e.bpm  = bpm;
+        s.tempoEvents.push_back(std::move(e));
+    } else {
         s.tempoEvents[0].bpm = bpm;
+    }
     markDirty();
     eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
 }
@@ -281,9 +296,14 @@ double StateAPI::getSongTempo() const {
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
     pushUndo();
     auto& s = song();
-    if (s.timeSigEvents.empty())
-        s.timeSigEvents.push_back({ 0.0, numerator, denominator });
-    else {
+    if (s.timeSigEvents.empty()) {
+        TimeSignatureEvent e;
+        e.id          = EventId{generateId()};
+        e.beat        = 0.0;
+        e.numerator   = numerator;
+        e.denominator = denominator;
+        s.timeSigEvents.push_back(std::move(e));
+    } else {
         s.timeSigEvents[0].numerator = numerator;
         s.timeSigEvents[0].denominator = denominator;
     }
@@ -297,6 +317,140 @@ std::pair<int,int> StateAPI::getSongTimeSignature() const {
         return { s->timeSigEvents[0].numerator, s->timeSigEvents[0].denominator };
     return { 4, 4 };
 }
+
+
+// --- Multi-event tempo / timesig / key maps ----------------------------------
+//
+// Each setXxxEvent inserts a new event or updates the existing one at the
+// same beat (1e-6 tolerance). Vectors maintained sorted by beat.
+// removeXxxEvent erases by beat; returns whether anything was removed.
+// effectiveXxxAt walks the sorted events for the most-recent-prior value.
+
+namespace {
+constexpr double kBeatEps = 1e-6;
+
+// Generate a UUID via the same path everything else uses.
+inline std::string newEventIdString() {
+    return juce::Uuid().toString().toStdString();
+}
+
+template <typename Event, typename Update>
+void upsertSorted(std::vector<Event>& v, double beat, Update update) {
+    for (auto& e : v) {
+        if (std::abs(e.beat - beat) < kBeatEps) { update(e); return; }
+    }
+    Event e;
+    e.id = EventId{newEventIdString()};
+    e.beat = beat;
+    update(e);
+    v.push_back(e);
+    std::sort(v.begin(), v.end(),
+        [](const Event& a, const Event& b) { return a.beat < b.beat; });
+}
+
+template <typename Event>
+bool eraseAtBeat(std::vector<Event>& v, double beat) {
+    for (auto it = v.begin(); it != v.end(); ++it) {
+        if (std::abs(it->beat - beat) < kBeatEps) { v.erase(it); return true; }
+    }
+    return false;
+}
+}  // namespace
+
+void StateAPI::setTempoEvent(double beat, double bpm) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.tempoEvents, beat, [bpm](TempoEvent& e) { e.bpm = bpm; });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeTempoEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.tempoEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+double StateAPI::effectiveTempoAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->tempoEvents.empty()) return 120.0;
+    double bpm = s->tempoEvents.front().bpm;
+    for (auto& e : s->tempoEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        bpm = e.bpm;
+    }
+    return bpm;
+}
+
+void StateAPI::setTimeSigEvent(double beat, int numerator, int denominator) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.timeSigEvents, beat,
+        [numerator, denominator](TimeSignatureEvent& e) {
+            e.numerator   = numerator;
+            e.denominator = denominator;
+        });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeTimeSigEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.timeSigEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+std::pair<int,int> StateAPI::effectiveTimeSignatureAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->timeSigEvents.empty()) return { 4, 4 };
+    auto effective = s->timeSigEvents.front();
+    for (auto& e : s->timeSigEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        effective = e;
+    }
+    return { effective.numerator, effective.denominator };
+}
+
+void StateAPI::setKeyEvent(double beat, const std::string& key) {
+    pushUndo();
+    auto& s = song();
+    upsertSorted(s.keyEvents, beat, [&key](KeyEvent& e) { e.key = key; });
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+bool StateAPI::removeKeyEvent(double beat) {
+    pushUndo();
+    auto& s = song();
+    bool removed = eraseAtBeat(s.keyEvents, beat);
+    if (removed) {
+        markDirty();
+        eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    }
+    return removed;
+}
+
+std::string StateAPI::effectiveKeyAt(double beat) const {
+    auto* s = currentSong();
+    if (!s || s->keyEvents.empty()) return {};
+    std::string key = s->keyEvents.front().key;
+    for (auto& e : s->keyEvents) {
+        if (e.beat > beat + kBeatEps) break;
+        key = e.key;
+    }
+    return key;
+}
+
 
 std::string StateAPI::getMasterOutputId() const {
     return state.currentSongId.str();

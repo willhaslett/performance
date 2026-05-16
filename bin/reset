@@ -1,60 +1,38 @@
 #!/bin/bash
-# Full reset — simulates a first-ever launch.
-# Wipes user state, caches, recordings, presets, and song-side DB
-# content. Preserves:
-#   - ~/.config/performance/keys/      (notarization + telemetry config)
+# Full reset — simulates a first-ever launch with a clean DB.
+# Wipes user state, caches, recordings, presets, and the entire
+# state.db file. Preserves only:
+#   - ~/.config/performance/keys/             (notarization + telemetry config)
 #   - ~/.config/performance/plugin-cache.xml  (AU scan results — re-scan can hang on bad plugins)
-#   - the devices + device_controls tables in state.db (registered MIDI
-#     hardware + control mappings — re-pairing every reset is tedious)
 #
 # The app recreates everything else on next launch:
-# - default "Untitled" song with DLS Electric Piano + Audio In
+# - state.db with the current code's schema (no migration / version drift)
+# - default "Untitled" song with DLS Piano + Audio In
 # - plugin catalog (re-populated from plugin-cache.xml)
 # - actions, presets, config rows
+#
+# Pre-beta convention: no DB migration code (CLAUDE.md). If the on-disk
+# schema doesn't match the current code, this script is the answer.
+# MIDI device mappings get wiped along with everything else; re-pair
+# from Settings > MIDI on next launch.
 
 set -euo pipefail
 
 CONFIG_DIR="$HOME/.config/performance"
-DB="$CONFIG_DIR/state.db"
 
 if [ ! -d "$CONFIG_DIR" ]; then
     echo "Nothing to reset — $CONFIG_DIR doesn't exist."
     exit 0
 fi
 
-echo "Resetting $CONFIG_DIR (preserving keys/, plugin-cache.xml, MIDI device mappings)..."
+echo "Resetting $CONFIG_DIR (preserving keys/, plugin-cache.xml)..."
 
-# Surgical wipe of state.db — keep devices + device_controls, drop
-# everything else. schema_version stays so the app sees a known DB and
-# proceeds with the normal startup path; zero songs triggers the default
-# "Untitled" creation.
-if [ -f "$DB" ]; then
-    sqlite3 "$DB" <<'SQL'
-DELETE FROM take_events;
-DELETE FROM takes;
-DELETE FROM regions;
-DELETE FROM action_events;
-DELETE FROM bindings;
-DELETE FROM sends;
-DELETE FROM effects;
-DELETE FROM busses;
-DELETE FROM tracks;
-DELETE FROM song_devices;
-DELETE FROM songs;
-DELETE FROM presets;
-DELETE FROM plugins;
-DELETE FROM actions;
-DELETE FROM config;
-VACUUM;
-SQL
-fi
-
-# Filesystem-level wipe — preset blobs, track presets, user themes,
-# .bak backup, and anything else outside the preservation list.
+# Filesystem wipe — everything except the preserved entries above.
+# Includes state.db, state.bak.db, presets/, track_presets/, themes/,
+# any audio recording dirs, etc.
 find "$CONFIG_DIR" -mindepth 1 -maxdepth 1 \
     ! -name keys \
     ! -name plugin-cache.xml \
-    ! -name state.db \
     -exec rm -rf {} +
 
 echo "Done. Restart the app for a fresh first-launch experience."

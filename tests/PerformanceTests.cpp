@@ -10,9 +10,10 @@
 #include "state/UndoHistory.h"
 #include "song/SongRuntime.h"
 #include "install/BundledPluginInstaller.h"
-#include "composer/V2NotationParser.h"
+#include "composer/ABCParser.h"
+#include "composer/ABCWriter.h"
+#include "composer/RegionContent.h"
 #include "composer/ComposerOutput.h"
-#include "composer/ComposerWriter.h"
 #include "daw/Arrangement.h"
 #include "state/StateModel.h"
 
@@ -813,6 +814,168 @@ public:
 };
 
 static StateAPITests stateAPITests;
+
+
+// ============================================================================
+// StateAPI multi-event tempo / timesig / key tests (Phase 3b backing)
+// ============================================================================
+
+class StateAPIEventMapTests : public juce::UnitTest {
+public:
+    StateAPIEventMapTests() : juce::UnitTest("StateAPIEventMaps") {}
+
+    void runTest() override {
+        beginTest("new song has beat-0 tempo (120) + timesig (4/4) by default");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Fresh");
+            s.setCurrentSong(songId);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 1);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);
+            expectEquals((int) song->timeSigEvents.size(), 1);
+            expectEquals(song->timeSigEvents[0].beat, 0.0);
+            expectEquals(song->timeSigEvents[0].numerator, 4);
+            expectEquals(song->timeSigEvents[0].denominator, 4);
+            // Key has no implicit default — empty by design.
+            expect(song->keyEvents.empty());
+        }
+
+        beginTest("createTempo at bar 5 preserves the implicit beat-0 event");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+            // Don't touch beat 0 — go straight to a mid-piece event.
+            s.setTempoEvent(16.0, 90.0);
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 2);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[0].bpm, 120.0);   // unchanged
+            expectEquals(song->tempoEvents[1].beat, 16.0);
+            expectEquals(song->tempoEvents[1].bpm, 90.0);
+            // Effective lookup spans the gap correctly.
+            expectEquals(s.effectiveTempoAt(0.0),   120.0);
+            expectEquals(s.effectiveTempoAt(15.99), 120.0);
+            expectEquals(s.effectiveTempoAt(16.0),  90.0);
+            expectEquals(s.effectiveTempoAt(100.0), 90.0);
+        }
+
+        beginTest("tempo events: insert + sorted + effective lookup");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTempoEvent(0.0,  120.0);
+            s.setTempoEvent(32.0, 140.0);
+            s.setTempoEvent(16.0, 100.0);   // out of order — should sort
+
+            auto* song = s.findSong(songId);
+            expect(song != nullptr);
+            expectEquals((int) song->tempoEvents.size(), 3);
+            expectEquals(song->tempoEvents[0].beat, 0.0);
+            expectEquals(song->tempoEvents[1].beat, 16.0);
+            expectEquals(song->tempoEvents[2].beat, 32.0);
+
+            // Effective tempo: most-recent-prior.
+            expectEquals(s.effectiveTempoAt(0.0),   120.0);
+            expectEquals(s.effectiveTempoAt(15.99), 120.0);
+            expectEquals(s.effectiveTempoAt(16.0),  100.0);
+            expectEquals(s.effectiveTempoAt(31.99), 100.0);
+            expectEquals(s.effectiveTempoAt(32.0),  140.0);
+            expectEquals(s.effectiveTempoAt(100.0), 140.0);
+        }
+
+        beginTest("tempo events: upsert + remove");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTempoEvent(0.0,  120.0);
+            s.setTempoEvent(0.0,  130.0);   // upsert: same beat, replaces
+            auto* song = s.findSong(songId);
+            expectEquals((int) song->tempoEvents.size(), 1);
+            expectEquals(song->tempoEvents[0].bpm, 130.0);
+
+            expect(s.removeTempoEvent(0.0));
+            expectEquals((int) song->tempoEvents.size(), 0);
+            expect(!s.removeTempoEvent(0.0));   // already gone
+            expectEquals(s.effectiveTempoAt(0.0), 120.0);  // default
+        }
+
+        beginTest("time-sig events: insert + effective lookup");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            s.setTimeSigEvent(0.0, 4, 4);
+            s.setTimeSigEvent(16.0, 3, 4);
+
+            auto sig0  = s.effectiveTimeSignatureAt(0.0);
+            auto sig15 = s.effectiveTimeSignatureAt(15.0);
+            auto sig20 = s.effectiveTimeSignatureAt(20.0);
+            expectEquals(sig0.first, 4);   expectEquals(sig0.second, 4);
+            expectEquals(sig15.first, 4);  expectEquals(sig15.second, 4);
+            expectEquals(sig20.first, 3);  expectEquals(sig20.second, 4);
+        }
+
+        beginTest("key events: insert + effective lookup; empty default");
+        {
+            StateAPI s;
+            auto songId = s.createSong("Test");
+            s.setCurrentSong(songId);
+
+            // No keys set — effective is empty string.
+            expect(s.effectiveKeyAt(0.0).empty());
+
+            s.setKeyEvent(0.0,  "C");
+            s.setKeyEvent(32.0, "Am");
+
+            expectEquals(s.effectiveKeyAt(0.0),   std::string("C"));
+            expectEquals(s.effectiveKeyAt(31.99), std::string("C"));
+            expectEquals(s.effectiveKeyAt(32.0),  std::string("Am"));
+        }
+
+        beginTest("event maps round-trip through PersistenceLayer");
+        {
+            TempDB db;
+
+            StateAPI original;
+            auto songId = original.createSong("Test");
+            original.setCurrentSong(songId);
+            original.setTempoEvent(0.0,  120.0);
+            original.setTempoEvent(16.0, 140.0);
+            original.setTimeSigEvent(0.0, 4, 4);
+            original.setTimeSigEvent(16.0, 3, 4);
+            original.setKeyEvent(0.0, "C");
+            original.setKeyEvent(8.0, "Am");
+
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.saveFrom(original); }
+
+            StateAPI loaded;
+            { PersistenceLayer p; p.open(db.path().toStdString()); p.loadInto(loaded); }
+
+            auto* loadedSong = loaded.findSong(songId);
+            expect(loadedSong != nullptr);
+            expectEquals((int) loadedSong->tempoEvents.size(), 2);
+            expectEquals(loadedSong->tempoEvents[0].bpm, 120.0);
+            expectEquals(loadedSong->tempoEvents[1].bpm, 140.0);
+            expectEquals((int) loadedSong->timeSigEvents.size(), 2);
+            expectEquals(loadedSong->timeSigEvents[1].numerator, 3);
+            expectEquals((int) loadedSong->keyEvents.size(), 2);
+            expectEquals(loadedSong->keyEvents[0].key, std::string("C"));
+            expectEquals(loadedSong->keyEvents[1].key, std::string("Am"));
+        }
+    }
+};
+
+static StateAPIEventMapTests stateAPIEventMapTests;
 
 // ============================================================================
 // PersistenceLayer round-trip tests
@@ -3570,17 +3733,18 @@ public:
 
 static BundledPluginInstallerTests bundledPluginInstallerTests;
 
+
 // ============================================================================
-// V2NotationParser tests
+// ABCParser tests
 // ============================================================================
 
-class V2NotationParserTests : public juce::UnitTest {
+class ABCParserTests : public juce::UnitTest {
 public:
-    V2NotationParserTests() : juce::UnitTest("V2NotationParser") {}
+    ABCParserTests() : juce::UnitTest("ABCParser") {}
 
 private:
     static ComposerOutput parseOrFail(juce::UnitTest& t, const juce::String& input) {
-        V2NotationParser p;
+        ABCParser p;
         ComposerOutput out;
         std::string err;
         bool ok = p.parse(input, out, err);
@@ -3591,23 +3755,23 @@ private:
 
 public:
     void runTest() override {
-        beginTest("empty / invalid input returns error");
+        beginTest("missing K: header is rejected");
         {
-            V2NotationParser p;
+            ABCParser p;
             ComposerOutput out;
             std::string err;
-            expect(!p.parse("", out, err));
-            expect(!err.empty());
+            expect(!p.parse("X:1\nL:1/8\nQ:1/4=120\nM:4/4\nC D E F\n", out, err));
+            expect(err.find("K:") != std::string::npos);
         }
 
-        beginTest("metadata parses (tempo, time signature)");
+        beginTest("headers parse (tempo, meter, key)");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 92
-time_signature: 3/4
-key: D minor
-feel: straight
-tracks:
-  Piano: 0
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+T:Test
+L:1/8
+Q:1/4=92
+M:3/4
+K:Dmin
 )"));
             expectEquals(out.tempo, 92.0);
             expectEquals((int) out.timeSignature.size(), 1);
@@ -3615,411 +3779,701 @@ tracks:
             expectEquals(out.timeSignature[0].second, 4);
         }
 
-        beginTest("single note parses (pitch, beat, duration, velocity)");
+        beginTest("single note parses (pitch, start, duration)");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 q mf
+            // L:1/8, so bare 'C' = eighth note (0.5 beats), 'C2' = quarter (1.0 beats).
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2
 )"));
             expectEquals((int) out.notes.size(), 1);
-            auto& n = out.notes[0];
-            expectEquals(juce::String(n.trackName), juce::String("Piano"));
-            expectEquals(n.startBeat, 0.0);
-            expectEquals(n.durationBeats, 1.0);
-            expectEquals(n.pitch, 60);                 // C4 = MIDI 60
-            expectWithinAbsoluteError(n.velocity, 80.0f / 127.0f, 0.001f);
+            expectEquals(out.notes[0].startBeat, 0.0);
+            expectEquals(out.notes[0].durationBeats, 1.0);
+            expectEquals(out.notes[0].pitch, 60);   // middle C
         }
 
-        beginTest("offbeat + position parses as half-beat offset");
+        beginTest("octave markers (lowercase, ', ,)");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 2+ E4 8th mf
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+C c c' C,
 )"));
-            expectEquals((int) out.notes.size(), 1);
-            expectEquals(out.notes[0].startBeat, 1.5);  // beat 2 + half → offset 1.5
-            expectEquals(out.notes[0].durationBeats, 0.5);
-            expectEquals(out.notes[0].pitch, 64);       // E4
+            expectEquals((int) out.notes.size(), 4);
+            expectEquals(out.notes[0].pitch, 60);  // C  = C4
+            expectEquals(out.notes[1].pitch, 72);  // c  = C5
+            expectEquals(out.notes[2].pitch, 84);  // c' = C6
+            expectEquals(out.notes[3].pitch, 48);  // C, = C3
         }
 
-        beginTest("chord expands to multiple notes with the same timing");
+        beginTest("accidentals (^ and _)");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 [C4 E4 G4] h f
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+^C _D =E
 )"));
             expectEquals((int) out.notes.size(), 3);
-            // All same startBeat + duration + velocity; pitches differ.
+            expectEquals(out.notes[0].pitch, 61);  // C# = 61
+            expectEquals(out.notes[1].pitch, 61);  // Db = 61
+            expectEquals(out.notes[2].pitch, 64);  // E natural = 64
+        }
+
+        beginTest("chord [CEG] expands to multiple notes at same beat");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+[CEG]2
+)"));
+            expectEquals((int) out.notes.size(), 3);
             for (auto& n : out.notes) {
                 expectEquals(n.startBeat, 0.0);
                 expectEquals(n.durationBeats, 2.0);
-                expectWithinAbsoluteError(n.velocity, 96.0f / 127.0f, 0.001f);
             }
-            // Sorted by (trackName, startBeat, pitch) → ascending pitch.
-            expectEquals(out.notes[0].pitch, 60);  // C4
-            expectEquals(out.notes[1].pitch, 64);  // E4
-            expectEquals(out.notes[2].pitch, 67);  // G4
+            // Pitches sort to C E G.
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[1].pitch, 64);
+            expectEquals(out.notes[2].pitch, 67);
         }
 
-        beginTest("bar numbering offsets startBeat correctly");
+        beginTest("rests advance cursor without emitting notes");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 q mf
-
-bar 3 | G
-  Piano: beat 1 D4 q mf
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+z C z C
 )"));
             expectEquals((int) out.notes.size(), 2);
-            expectEquals(out.notes[0].startBeat, 0.0);   // bar 1 beat 1
-            expectEquals(out.notes[1].startBeat, 8.0);   // bar 3 beat 1 (2 bars * 4 beats)
+            expectEquals(out.notes[0].startBeat, 1.0);
+            expectEquals(out.notes[1].startBeat, 3.0);
         }
 
-        beginTest("multiple events on one voice line split on |");
+        beginTest("ties merge tied notes of same pitch");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Bass: 33
+            // Two C2 notes tied = single quarter (in L:1/8, 2 = 2 eighths).
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2-C2
+)"));
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[0].durationBeats, 2.0);
+        }
 
-bar 1 | C
-  Bass: beat 1 C2 q mf | beat 2 D2 q mf | beat 3 E2 q mf | beat 4 F2 q mf
+        beginTest("multi-voice (V:Piano, V:Drums)");
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+%%MIDI drummap B 36
+%%MIDI drummap S 38
+V:Piano
+V:Drums
+V:Piano
+C D E F
+V:Drums
+B S B S
+)"));
+            // 4 piano + 4 drum
+            expectEquals((int) out.notes.size(), 8);
+            int pianoCount = 0, drumCount = 0;
+            for (auto& n : out.notes) {
+                if (n.trackName == "Piano") ++pianoCount;
+                if (n.trackName == "Drums") ++drumCount;
+            }
+            expectEquals(pianoCount, 4);
+            expectEquals(drumCount, 4);
+        }
+
+        beginTest("inline header [Q:...] is rejected");
+        {
+            ABCParser p;
+            ComposerOutput out;
+            std::string err;
+            expect(!p.parse(juce::String(R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2 [Q:1/4=140] D2
+)"), out, err));
+            expect(err.find("Q") != std::string::npos);
+        }
+
+        beginTest("comment lines and inline %") ;
+        {
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+% leading comment
+C D % trailing comment
+E F
 )"));
             expectEquals((int) out.notes.size(), 4);
-            expectEquals(out.notes[0].pitch, 36);        // C2
-            expectEquals(out.notes[3].pitch, 41);        // F2
-            expectEquals(out.notes[0].startBeat, 0.0);
-            expectEquals(out.notes[1].startBeat, 1.0);
-            expectEquals(out.notes[2].startBeat, 2.0);
-            expectEquals(out.notes[3].startBeat, 3.0);
         }
 
-        beginTest("drums track uses drum-name → pitch mapping");
+        beginTest("decoration tokens (!ff!, +p+) are skipped silently");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Kit: drums
-
-bar 1 | -
-  Kit: beat 1 kick q mf | beat 2 snare q mf | beat 3 hhc q mf
-)"));
-            expectEquals((int) out.notes.size(), 3);
-            expectEquals(out.notes[0].pitch, 36);  // kick
-            expectEquals(out.notes[1].pitch, 38);  // snare
-            expectEquals(out.notes[2].pitch, 42);  // hhc
-        }
-
-        beginTest("multiple tracks, bar-grouped");
-        {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-  Bass: 33
-
-bar 1 | C
-  Piano: beat 1 C4 q mf
-  Bass: beat 1 C2 q mf
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+"text" C "more text" D
 )"));
             expectEquals((int) out.notes.size(), 2);
-            // Sorted by trackName — Bass < Piano alphabetically.
-            expectEquals(juce::String(out.notes[0].trackName), juce::String("Bass"));
-            expectEquals(juce::String(out.notes[1].trackName), juce::String("Piano"));
         }
 
-        beginTest("sharps and flats parse correctly");
+        beginTest("dynamics (!ff!, !p!) set sticky velocity");
         {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C#4 8th mf | beat 2 Bb3 8th mf
+            auto out = parseOrFail(*this, juce::String(R"(X:1
+L:1/4
+Q:1/4=120
+M:4/4
+K:none
+C !ff! D !p! E F
 )"));
-            expectEquals((int) out.notes.size(), 2);
-            // sorted by pitch ascending within same startBeat → but here
-            // startBeats differ, so order is by startBeat.
-            expectEquals(out.notes[0].pitch, 61);  // C#4
-            expectEquals(out.notes[1].pitch, 58);  // Bb3
-        }
-
-        beginTest("rest is skipped, not emitted");
-        {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 q mf | beat 2 r q mf | beat 3 D4 q mf
-)"));
-            // Rest is not a note.
-            expectEquals((int) out.notes.size(), 2);
-            expectEquals(out.notes[0].pitch, 60);
-            expectEquals(out.notes[1].pitch, 62);
-        }
-
-        beginTest("lengthBeats reflects bar count");
-        {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 q mf
-
-bar 2 | C
-  Piano: beat 1 C4 q mf
-)"));
-            expectEquals(out.lengthBeats, 8.0);  // 2 bars × 4 beats/bar
-        }
-
-        beginTest("lengthBeats extends to cover notes whose tail runs past last bar");
-        {
-            // Half note on beat 4 of bar 2 = startBeat 7, duration 2 → ends at beat 9.
-            // Region length should grow from 8 (2 bars * 4) to 9.
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 q mf
-
-bar 2 | C
-  Piano: beat 4 C4 h mf
-)"));
-            expectEquals(out.lengthBeats, 9.0);
-        }
-
-        beginTest("swing shifts offbeat eighths to triplet grid");
-        {
-            auto out = parseOrFail(*this, juce::String(R"(tempo: 120
-time_signature: 4/4
-feel: swing
-tracks:
-  Piano: 0
-
-bar 1 | C
-  Piano: beat 1 C4 8th mf | beat 1+ D4 8th mf
-)"));
-            expectEquals((int) out.notes.size(), 2);
-            expectEquals(out.notes[0].startBeat, 0.0);
-            // 1+ is half-beat offset; swing pushes it to 2/3 of a beat.
-            expectWithinAbsoluteError(out.notes[1].startBeat, 2.0 / 3.0, 0.001);
+            // C with default mf=80, D with ff=112, E and F with p=50.
+            expectEquals((int) out.notes.size(), 4);
+            // Sort guarantees C E F D (by pitch within same trackName).
+            // Find each by pitch.
+            auto findPitch = [&](int p) -> ComposerOutput::Note* {
+                for (auto& n : out.notes) if (n.pitch == p) return &n;
+                return nullptr;
+            };
+            auto* nC = findPitch(60);
+            auto* nD = findPitch(62);
+            auto* nE = findPitch(64);
+            auto* nF = findPitch(65);
+            expect(nC && nD && nE && nF);
+            expectWithinAbsoluteError(nC->velocity, 80.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nD->velocity, 112.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nE->velocity, 50.0f / 127.0f, 0.001f);
+            expectWithinAbsoluteError(nF->velocity, 50.0f / 127.0f, 0.001f);
         }
     }
 };
 
-static V2NotationParserTests v2NotationParserTests;
+static ABCParserTests abcParserTests;
 
 // ============================================================================
-// ComposerWriter tests
+// ABCWriter tests
 // ============================================================================
 
-class ComposerWriterTests : public juce::UnitTest {
+class ABCWriterTests : public juce::UnitTest {
 public:
-    ComposerWriterTests() : juce::UnitTest("ComposerWriter") {}
+    ABCWriterTests() : juce::UnitTest("ABCWriter") {}
 
-private:
-    static ComposerOutput::Note makeNote(const std::string& trackName,
-                                          double startBeat,
-                                          double durationBeats,
-                                          int pitch,
-                                          float velocity = 0.63f) {
-        ComposerOutput::Note n;
-        n.trackName = trackName;
-        n.startBeat = startBeat;
-        n.durationBeats = durationBeats;
-        n.pitch = pitch;
-        n.velocity = velocity;
-        return n;
-    }
-
-    // Find the region the writer created on the named track.
-    static RegionState* regionOn(PerformanceCoordinator& coord,
-                                  const juce::String& trackName) {
-        auto tid = coord.state().findTrackIdByName(trackName.toStdString());
-        if (tid.empty()) return nullptr;
-        auto* song = coord.state().currentSong();
-        if (!song) return nullptr;
-        for (auto& t : song->tracks) {
-            if (t.id == tid) {
-                return t.regions.empty() ? nullptr : &t.regions.back();
-            }
-        }
-        return nullptr;
-    }
-
-public:
     void runTest() override {
-        beginTest("apply fails when output has no notes");
+        beginTest("header order and required fields");
         {
-            TestCoordinator tc;
-            tc.state().createTrack("Piano");
-
-            ComposerWriter w(tc.get());
-            ComposerOutput out;
-            out.lengthBeats = 4.0;
-            std::string err;
-            expect(!w.apply(out, 0.0, err));
-            expect(!err.empty());
+            ABCWriteInput in;
+            in.tempo = 120; in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriter w;
+            auto abc = w.write(in);
+            // Header order: X T L Q M K (T optional, no title here).
+            auto x = abc.find("X:");
+            auto l = abc.find("L:");
+            auto q = abc.find("Q:");
+            auto m = abc.find("M:");
+            auto k = abc.find("K:");
+            expect(x < l);
+            expect(l < q);
+            expect(q < m);
+            expect(m < k);
+            expect(abc.find("L:1/8") != std::string::npos);
+            expect(abc.find("K:none") != std::string::npos);
         }
 
-        beginTest("apply fails on unknown track name");
+        beginTest("middle C single note round-trips through parser");
         {
-            TestCoordinator tc;
-            tc.state().createTrack("Piano");
+            ABCWriteInput in;
+            in.tempo = 120; in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});  // middle C, quarter
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
 
+            ABCWriter w;
+            auto abc = w.write(in);
+
+            ABCParser p;
             ComposerOutput out;
-            out.lengthBeats = 4.0;
-            out.notes.push_back(makeNote("Keyboard", 0.0, 1.0, 60));
-
-            ComposerWriter w(tc.get());
             std::string err;
-            expect(!w.apply(out, 0.0, err));
-            expect(err.find("Keyboard") != std::string::npos);
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].pitch, 60);
+            expectEquals(out.notes[0].durationBeats, 1.0);
         }
 
-        beginTest("single-track apply creates a region with noteOn+noteOff");
+        beginTest("chord round-trips");
         {
-            TestCoordinator tc;
-            tc.state().createTrack("Piano");
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 2.0, 60, 80});
+            v.notes.push_back({0.0, 2.0, 64, 80});
+            v.notes.push_back({0.0, 2.0, 67, 80});
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
 
-            ComposerOutput out;
-            out.lengthBeats = 4.0;
-            out.notes.push_back(makeNote("Piano", 0.0, 1.0, 60, 80.0f / 127.0f));
+            ABCWriter w;
+            auto abc = w.write(in);
+            // Chord syntax should appear.
+            expect(abc.find("[") != std::string::npos);
 
-            ComposerWriter w(tc.get());
-            std::string err;
-            expect(w.apply(out, 2.0, err));
-
-            auto* region = regionOn(tc.get(), "Piano");
-            expect(region != nullptr);
-            expectEquals(region->startBeat, 2.0);
-            expectEquals(region->lengthBeats, 4.0);
-
-            auto* take = region->activeTake();
-            expect(take != nullptr);
-            expectEquals((int) take->events.size(), 2);
-
-            // Events sorted by (beat, status) — noteOn (0x90) at beat 0,
-            // noteOff (0x80) at beat 1.
-            auto& a = take->events[0];
-            auto& b = take->events[1];
-            expectEquals(a.beatOffset, 0.0);
-            expectEquals(a.status, 0x90);
-            expectEquals(a.data1, 60);
-            expect(a.data2 >= 79 && a.data2 <= 81);  // velocity 80 ± round
-
-            expectEquals(b.beatOffset, 1.0);
-            expectEquals(b.status, 0x80);
-            expectEquals(b.data1, 60);
-            expectEquals(b.data2, 0);
-        }
-
-        beginTest("multi-track apply creates one region per named track");
-        {
-            TestCoordinator tc;
-            tc.state().createTrack("Piano");
-            tc.state().createTrack("Bass");
-
-            ComposerOutput out;
-            out.lengthBeats = 4.0;
-            out.notes.push_back(makeNote("Piano", 0.0, 1.0, 60));
-            out.notes.push_back(makeNote("Piano", 1.0, 1.0, 64));
-            out.notes.push_back(makeNote("Bass",  0.0, 2.0, 36));
-
-            ComposerWriter w(tc.get());
-            std::string err;
-            expect(w.apply(out, 0.0, err));
-
-            auto* piano = regionOn(tc.get(), "Piano");
-            auto* bass  = regionOn(tc.get(), "Bass");
-            expect(piano != nullptr && bass != nullptr);
-            expect(piano->activeTake() != nullptr && bass->activeTake() != nullptr);
-
-            expectEquals((int) piano->activeTake()->events.size(), 4);  // 2 notes × 2 events
-            expectEquals((int) bass->activeTake()->events.size(), 2);
-        }
-
-        beginTest("apply fires Track::Updated event per affected track");
-        {
-            TestCoordinator tc;
-            tc.state().createTrack("Piano");
-            tc.state().createTrack("Bass");
-
-            std::vector<std::pair<int, std::string>> seen;  // action, entityId
-            int subId = tc.state().events().subscribe([&](const StateEvent& ev) {
-                if (ev.entity == StateEvent::Track && ev.action == StateEvent::Updated) {
-                    seen.emplace_back(ev.action, ev.entityId);
-                }
-            });
-
-            ComposerOutput out;
-            out.lengthBeats = 4.0;
-            out.notes.push_back(makeNote("Piano", 0.0, 1.0, 60));
-            out.notes.push_back(makeNote("Bass",  0.0, 1.0, 36));
-
-            ComposerWriter w(tc.get());
-            std::string err;
-            expect(w.apply(out, 0.0, err));
-
-            tc.state().events().unsubscribe(subId);
-
-            // One Updated event per affected track.
-            expectEquals((int) seen.size(), 2);
-        }
-
-        beginTest("velocity 0 floors to MIDI 1, 1.0 maps to 127");
-        {
-            TestCoordinator tc;
-            tc.state().createTrack("T");
-
-            ComposerOutput out;
-            out.lengthBeats = 2.0;
-            out.notes.push_back(makeNote("T", 0.0, 0.5, 60, 0.0f));
-            out.notes.push_back(makeNote("T", 1.0, 0.5, 60, 1.0f));
-
-            ComposerWriter w(tc.get());
-            std::string err;
-            expect(w.apply(out, 0.0, err));
-
-            auto* region = regionOn(tc.get(), "T");
-            auto* take = region->activeTake();
-
-            // Find the two note-ons and inspect their velocities.
-            int seenVels[2] = {-1, -1};
-            int i = 0;
-            for (auto& e : take->events) {
-                if (e.status == 0x90 && i < 2) seenVels[i++] = e.data2;
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 3);
+            for (auto& n : out.notes) {
+                expectEquals(n.startBeat, 0.0);
+                expectEquals(n.durationBeats, 2.0);
             }
-            expectEquals(seenVels[0], 1);
-            expectEquals(seenVels[1], 127);
+        }
+
+        beginTest("note crossing bar line is split with tie");
+        {
+            // 4/4, half note starting at beat 3 → spans into bar 2.
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({3.0, 2.0, 60, 80});  // starts beat 3, lasts 2 beats
+            in.voices.push_back(v);
+            in.lengthBeats = 8.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("-") != std::string::npos);   // tie present
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            // The tied pair should re-merge into one note (length 2.0).
+            expectEquals((int) out.notes.size(), 1);
+            expectEquals(out.notes[0].startBeat, 3.0);
+            expectEquals(out.notes[0].durationBeats, 2.0);
+        }
+
+        beginTest("multi-voice round-trip preserves voices");
+        {
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice piano; piano.name = "Piano";
+            piano.notes.push_back({0.0, 1.0, 60, 80});
+            piano.notes.push_back({1.0, 1.0, 62, 80});
+            ABCWriteInput::Voice drums; drums.name = "Drums"; drums.isDrums = true;
+            drums.notes.push_back({0.0, 0.5, 36, 80});  // kick
+            drums.notes.push_back({1.0, 0.5, 38, 80});  // snare
+            in.voices.push_back(piano);
+            in.voices.push_back(drums);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("V:Piano") != std::string::npos);
+            expect(abc.find("V:Drums") != std::string::npos);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            bool ok = p.parse(juce::String(abc), out, err);
+            if (!ok) logMessage("parse failed: " + juce::String(err));
+            expect(ok);
+            int pianoCount = 0, drumCount = 0;
+            for (auto& n : out.notes) {
+                if (n.trackName == "Piano") ++pianoCount;
+                if (n.trackName == "Drums") ++drumCount;
+            }
+            expectEquals(pianoCount, 2);
+            expectEquals(drumCount, 2);
+        }
+
+        beginTest("dynamics emit on velocity change and round-trip");
+        {
+            ABCWriteInput in;
+            in.timeSignatureNum = 4; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});   // mf
+            v.notes.push_back({1.0, 1.0, 62, 112});  // ff
+            v.notes.push_back({2.0, 1.0, 64, 50});   // p
+            v.notes.push_back({3.0, 1.0, 65, 50});   // still p — no new mark expected
+            in.voices.push_back(v);
+            in.lengthBeats = 4.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            // First note is mf (matches default), so no leading mark.
+            // Then !ff! before D, !p! before E. F should not re-emit !p!.
+            expect(abc.find("!ff!") != std::string::npos);
+            expect(abc.find("!p!") != std::string::npos);
+            // Crude check: only one !p! occurrence.
+            auto firstP = abc.find("!p!");
+            expect(firstP != std::string::npos);
+            expect(abc.find("!p!", firstP + 1) == std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals((int) out.notes.size(), 4);
+            // Velocities should round-trip (parser sets 80/112/50/50).
+            int vel60 = 0, vel62 = 0, vel64 = 0, vel65 = 0;
+            for (auto& n : out.notes) {
+                int v127 = static_cast<int>(std::lround(n.velocity * 127.0f));
+                if (n.pitch == 60) vel60 = v127;
+                if (n.pitch == 62) vel62 = v127;
+                if (n.pitch == 64) vel64 = v127;
+                if (n.pitch == 65) vel65 = v127;
+            }
+            expectEquals(vel60, 80);
+            expectEquals(vel62, 112);
+            expectEquals(vel64, 50);
+            expectEquals(vel65, 50);
+        }
+
+        beginTest("varying time signature (3/4) round-trips");
+        {
+            ABCWriteInput in;
+            in.tempo = 100; in.timeSignatureNum = 3; in.timeSignatureDen = 4;
+            ABCWriteInput::Voice v; v.name = "Piano";
+            v.notes.push_back({0.0, 1.0, 60, 80});
+            v.notes.push_back({1.0, 1.0, 62, 80});
+            v.notes.push_back({2.0, 1.0, 64, 80});
+            in.voices.push_back(v);
+            in.lengthBeats = 3.0;
+
+            ABCWriter w;
+            auto abc = w.write(in);
+            expect(abc.find("M:3/4") != std::string::npos);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            expect(p.parse(juce::String(abc), out, err));
+            expectEquals(out.timeSignature[0].first, 3);
+            expectEquals(out.timeSignature[0].second, 4);
+            expectEquals((int) out.notes.size(), 3);
         }
     }
 };
 
-static ComposerWriterTests composerWriterTests;
+static ABCWriterTests abcWriterTests;
+
+
+// ============================================================================
+// RegionContent tests (bridge between RegionState <-> ABC text)
+// ============================================================================
+
+class RegionContentTests : public juce::UnitTest {
+public:
+    RegionContentTests() : juce::UnitTest("RegionContent") {}
+
+    void runTest() override {
+        beginTest("regionToABC produces ABC with header from project metadata");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 96.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 3, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 6.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Quarter note C4 at beat 0.
+            MidiEventState on;
+            on.beatOffset = 0.0; on.status = 0x90; on.channel = 1; on.data1 = 60; on.data2 = 80;
+            MidiEventState off;
+            off.beatOffset = 1.0; off.status = 0x80; off.channel = 1; off.data1 = 60; off.data2 = 0;
+            take.events = {on, off};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+            expect(abc.find("Q:1/4=96") != std::string::npos);
+            expect(abc.find("M:3/4") != std::string::npos);
+            expect(abc.find("K:none") != std::string::npos);
+        }
+
+        beginTest("regionToABC encodes a drum-named track with drummap");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Drum Kit";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Kick at beat 0 (MIDI 36).
+            MidiEventState on;
+            on.beatOffset = 0.0; on.status = 0x90; on.channel = 10; on.data1 = 36; on.data2 = 100;
+            MidiEventState off;
+            off.beatOffset = 0.5; off.status = 0x80; off.channel = 10; off.data1 = 36; off.data2 = 0;
+            take.events = {on, off};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+        }
+
+        beginTest("abcToRegion replaces events and sets length");
+        {
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+            // Pre-existing event that should be wiped.
+            MidiEventState old;
+            old.beatOffset = 0.0; old.status = 0x90; old.channel = 1; old.data1 = 50; old.data2 = 80;
+            take.events = {old};
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            std::string abc = R"(X:1
+L:1/8
+Q:1/4=120
+M:4/4
+K:none
+C2 D2 E2 F2 |
+)";
+            std::string err;
+            expect(RegionContent::abcToRegion(abc, region, err));
+            // Active take's events: 4 noteOn + 4 noteOff.
+            auto* t = region.activeTake();
+            expect(t != nullptr);
+            int onCount = 0;
+            for (auto& e : t->events) if ((e.status & 0xF0) == 0x90) ++onCount;
+            expectEquals(onCount, 4);
+            // The pre-existing pitch 50 should not be present.
+            for (auto& e : t->events) expect(e.data1 != 50);
+            expectGreaterOrEqual(region.lengthBeats, 4.0);
+        }
+
+        beginTest("region round-trip preserves note pitches and timings");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+
+            RegionState region;
+            region.id          = RegionId{juce::Uuid().toString().toStdString()};
+            region.startBeat   = 0.0;
+            region.lengthBeats = 4.0;
+            TakeState take;
+            take.id = TakeId{juce::Uuid().toString().toStdString()};
+
+            // Three notes: C E G at beats 0, 1, 2 (each a quarter).
+            for (int i = 0; i < 3; ++i) {
+                int pitch = (i == 0 ? 60 : i == 1 ? 64 : 67);
+                MidiEventState on;
+                on.beatOffset = i * 1.0; on.status = 0x90; on.channel = 1; on.data1 = pitch; on.data2 = 80;
+                MidiEventState off;
+                off.beatOffset = i * 1.0 + 1.0; off.status = 0x80; off.channel = 1; off.data1 = pitch; off.data2 = 0;
+                take.events.push_back(on);
+                take.events.push_back(off);
+            }
+            region.takes.push_back(take);
+            region.activeTakeId = take.id;
+
+            auto abc = RegionContent::regionToABC(region, track, song);
+
+            RegionState target;
+            target.id          = RegionId{juce::Uuid().toString().toStdString()};
+            target.lengthBeats = 4.0;
+            TakeState empty;
+            empty.id = TakeId{juce::Uuid().toString().toStdString()};
+            target.takes.push_back(empty);
+            target.activeTakeId = empty.id;
+
+            std::string err;
+            expect(RegionContent::abcToRegion(abc, target, err));
+            auto* tt = target.activeTake();
+            expect(tt != nullptr);
+
+            int found60 = 0, found64 = 0, found67 = 0;
+            for (auto& e : tt->events) {
+                if ((e.status & 0xF0) != 0x90) continue;
+                if (e.data1 == 60) ++found60;
+                if (e.data1 == 64) ++found64;
+                if (e.data1 == 67) ++found67;
+            }
+            expectEquals(found60, 1);
+            expectEquals(found64, 1);
+            expectEquals(found67, 1);
+        }
+    }
+};
+
+static RegionContentTests regionContentTests;
+
+
+// ============================================================================
+// RegionContent track / project view tests (Phase 2b read-only surface)
+// ============================================================================
+
+class RegionContentViewTests : public juce::UnitTest {
+public:
+    RegionContentViewTests() : juce::UnitTest("RegionContentViews") {}
+
+    static RegionState makeRegionWithNotes(double startBeat, double lengthBeats,
+                                             const std::vector<int>& pitches) {
+        RegionState r;
+        r.id          = RegionId{juce::Uuid().toString().toStdString()};
+        r.startBeat   = startBeat;
+        r.lengthBeats = lengthBeats;
+        TakeState take;
+        take.id = TakeId{juce::Uuid().toString().toStdString()};
+        double cursor = 0.0;
+        for (int p : pitches) {
+            MidiEventState on;
+            on.beatOffset = cursor; on.status = 0x90; on.channel = 1; on.data1 = p; on.data2 = 80;
+            MidiEventState off;
+            off.beatOffset = cursor + 1.0; off.status = 0x80; off.channel = 1; off.data1 = p; off.data2 = 0;
+            take.events.push_back(on);
+            take.events.push_back(off);
+            cursor += 1.0;
+        }
+        r.takes.push_back(take);
+        r.activeTakeId = take.id;
+        return r;
+    }
+
+    void runTest() override {
+        beginTest("trackToABC emits one P:B<beat> per region in beat order");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+            track.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+            track.regions.push_back(makeRegionWithNotes(8.0, 4.0, {67, 69, 71, 72}));
+
+            auto abc = RegionContent::trackToABC(track, song);
+            expect(abc.find("P:B0") != std::string::npos);
+            expect(abc.find("P:B8") != std::string::npos);
+            expect(abc.find("P:B0") < abc.find("P:B8"));
+        }
+
+        beginTest("trackToABC parses back as 8 notes (4 per region)");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState track;
+            track.id   = TrackId{juce::Uuid().toString().toStdString()};
+            track.name = "Piano";
+            track.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+            track.regions.push_back(makeRegionWithNotes(8.0, 4.0, {67, 69, 71, 72}));
+
+            auto abc = RegionContent::trackToABC(track, song);
+
+            ABCParser p; ComposerOutput out; std::string err;
+            bool ok = p.parse(juce::String(abc), out, err);
+            if (!ok) logMessage("parse failed: " + juce::String(err));
+            expect(ok);
+            expectEquals((int) out.notes.size(), 8);
+        }
+
+        beginTest("projectToABC declares one V: per instrument track");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState piano;
+            piano.id   = TrackId{juce::Uuid().toString().toStdString()};
+            piano.name = "Piano";
+            piano.sourceType = TrackSourceType::Instrument;
+            piano.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+
+            TrackState drums;
+            drums.id   = TrackId{juce::Uuid().toString().toStdString()};
+            drums.name = "Drums";
+            drums.sourceType = TrackSourceType::Instrument;
+            drums.regions.push_back(makeRegionWithNotes(0.0, 4.0, {36, 38, 36, 38}));
+
+            song.tracks.push_back(piano);
+            song.tracks.push_back(drums);
+
+            auto abc = RegionContent::projectToABC(song);
+            expect(abc.find("V:Piano") != std::string::npos);
+            expect(abc.find("V:Drums") != std::string::npos);
+            expect(abc.find("%%MIDI drummap") != std::string::npos);
+        }
+
+        beginTest("projectToABC excludes non-instrument tracks (audio input, action)");
+        {
+            SongState song;
+            song.tempoEvents.push_back({EventId{}, 0.0, 120.0});
+            song.timeSigEvents.push_back({EventId{}, 0.0, 4, 4});
+
+            TrackState piano;
+            piano.id   = TrackId{juce::Uuid().toString().toStdString()};
+            piano.name = "Piano";
+            piano.sourceType = TrackSourceType::Instrument;
+            piano.regions.push_back(makeRegionWithNotes(0.0, 4.0, {60, 62, 64, 65}));
+
+            TrackState audio;
+            audio.id   = TrackId{juce::Uuid().toString().toStdString()};
+            audio.name = "Mic";
+            audio.sourceType = TrackSourceType::AudioInput;
+
+            TrackState action;
+            action.id   = TrackId{juce::Uuid().toString().toStdString()};
+            action.name = "Triggers";
+            action.sourceType = TrackSourceType::Action;
+
+            song.tracks.push_back(piano);
+            song.tracks.push_back(audio);
+            song.tracks.push_back(action);
+
+            auto abc = RegionContent::projectToABC(song);
+            expect(abc.find("V:Piano")    != std::string::npos);
+            expect(abc.find("V:Mic")      == std::string::npos);
+            expect(abc.find("V:Triggers") == std::string::npos);
+        }
+    }
+};
+
+static RegionContentViewTests regionContentViewTests;
+
+
 
 // ============================================================================
 // Live looper — Phase 1: state model + persistence
