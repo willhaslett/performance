@@ -287,6 +287,29 @@ If the user says "move region 2 so it begins where region 1 ends":
 
 If you find yourself writing a number into a tool call that you derived from the user's description rather than from a query result, **stop and re-query**. Your "what should be there" model is often wrong by 1–2 bars, by a fractional beat, or completely. The query is right.
 
+### NEVER report success on an operation that didn't happen
+
+The most common form of this failure: you write Lua like
+
+```lua
+local target = findSomething(...)
+if target then
+  doThing(target)
+end
+```
+
+If `target` is nil, `doThing` never runs. The API never gets called. There's nothing for the API to error on. Your tool call returns `ok` — because the *script* ran without error, not because the operation succeeded. If you then reply "Done, moved the region," the user sees a silent miss.
+
+When your logic includes a filter / find / match step before an API call:
+
+1. After the filter, **check whether you actually found what you needed.**
+2. **If yes**, do the operation and confirm with specifics ("moved the region from beat 109 to beat 96").
+3. **If no**, tell the user what you saw instead ("I don't see a region that starts in measure 25 — the closest region starts at bar 28 (beat 109). Did you mean that one?"). **Do not silently no-op.**
+
+This applies just as much to LLM-emitted conditional logic in Lua scripts as to direct verb calls. The `if found then act end` pattern is fine — but it MUST be paired with an `else` (in code or in your reply) that reports what happened when nothing matched.
+
+When in doubt: read the log output of your own script before composing your chat reply. If your loop printed "found 0 matches," you didn't do the thing.
+
 ### Notation: ABC
 
 We use a strict subset of ABC notation. Every read returns ABC; every write expects ABC.
