@@ -432,8 +432,8 @@ static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
 // and a narrow default keeps the Producer's transport bar fully
 // laid out (LCD + metronome) even on small laptop screens. User
 // can drag wider any time; the override persists per-config.
-static constexpr int kRightPaneTargetWidth = 220;
-static constexpr int kRightPaneMaxWidth    = 320;
+static constexpr int kRightPaneTargetWidth = 330;
+static constexpr int kRightPaneMaxWidth    = 480;
 
 juce::PopupMenu MainLayout::buildPaneMenu(PaneSlot slot) {
     auto current = getPaneContent(slot);
