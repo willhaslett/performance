@@ -98,6 +98,33 @@ So every plugin instance lives directly in our `AudioProcessorGraph`, rendered o
 
 ---
 
+## Prior art — how the field handles AUv2 stability
+
+Researched 2026-06-13. The landscape splits cleanly into three camps.
+
+### Camp 1 — Apple does it with system infrastructure (Logic, MainStage, GarageBand)
+Apple hosts Audio Units out-of-process via a system service (`AUHostingService`, and `AUHostingCompatibilityService` for x86/Rosetta plugins). This appears to cover even *native AUv2* plugins — when Logic shows "an Audio Unit reported a problem… please restart," that's the XPC host process having died, not Logic. Apple also pre-validates every AU with `auvaltool` and caches the result. The catch: this is partly **privileged system infrastructure**. How much of it a third-party host gets by just asking is exactly our open question. (Notably, **MainStage is Apple's live-performance host** — our category — and it relies on this.)
+
+### Camp 2 — Serious third-party hosts build their own out-of-process host (Option B in the wild)
+- **Bitwig Studio** — the poster child. Runs plugins in separate processes with **configurable granularity**: all-in-engine / all-together / by-manufacturer / by-plugin / fully-individual. The user trades memory + CPU overhead for isolation level. "A plug-in crash will happen discreetly, allowing audio to continue." This is the clearest proof that Option B is worth it for a modern host — and the granularity knob is a key design idea (you don't have to pay per-plugin overhead).
+- **Reaper** — its own bridging (born for 32/64-bit, repurposed for isolation): *separate process* (all bridged plugins share one process; one crash takes that group down but not Reaper) vs *dedicated process* (per-plugin; a crash takes down nothing). User-selectable per plugin.
+- **AudioGridder** — open-source and **built on JUCE**, so it's a direct proof-of-concept that Option B is achievable on our exact framework. Runs plugins in separate server processes with SANDBOX_CHAIN / SANDBOX_PLUGIN modes; multi-threaded (separate message/audio/network/worker threads). A reference codebase if we go the B route.
+
+### Camp 3 — Take the cheap OS path (Option A in the wild)
+- **Mixxx** (PR #16106, "Fix AudioUnit startup crash by loading out-of-process") — **did exactly our Spike A**: switched to `AudioComponentInstantiate` + `kAudioComponentInstantiation_LoadOutOfProcess`. Their report: *"The XPC service dies, not Mixxx. The callback receives an error code, Mixxx skips the buggy plugin gracefully, logs a warning, and continues."* **Important caveat:** they verified only **instantiation-time** crashes (a plugin that faults in its static constructor / on load — which, notably, is the Kontakt-bad-sample-load shape). They did **not** test runtime *render* crashes, did **not** distinguish v2 vs v3, and did **not** confirm whether the OS actually moved a v2 unit out-of-process vs. silently loading it in-process. So Mixxx is encouraging evidence that the cheap path yields *at least* load-time isolation in a third-party host — but it leaves our central question (v2 *render* isolation) unproven. It also hands us a concrete reference implementation for the spike.
+
+### Camp 4 — Principled refusal (the honest counter-argument: Ardour)
+Ardour deliberately does **not** sandbox, and their reasoning is the most important thing to internalise before we commit:
+- **The cost is CPU/context-switching, paid inside the buffer deadline.** Each plugin round-trip across the process wall costs context switches. Their worst-case math: 128 tracks × 3 plugins → 256–768 context switches per audio block → 7–23 ms of pure overhead, against a 1.3 ms budget at 64-sample/48 kHz. Conclusion: "this isn't going to work" at low latency / large sessions; they argue viable sandboxing needs 700–2000-sample buffers (14–40 ms).
+- **They frame crashes as a bad-plugin problem** — "just don't use plugins that crash."
+
+**How Ardour's argument applies to *us* (this is where our situation differs):**
+- Their nightmare is a 128-track mixing session. **We are a solo performer with a handful of tracks** — likely well under 16 plugins. Context-switch overhead scales with plugin count, so our worst case is a small fraction of theirs.
+- Their math assumes *per-plugin* granularity. Bitwig's "together"/"by-manufacturer" modes show you can run *all* (or grouped) plugins in **one** helper process → one round-trip per block for the whole sandbox, not one per plugin. That collapses the overhead.
+- **But the core warning is real and load-bearing for us specifically:** we *already* have an unsolved audio-latency problem on this app (see the latency backlog item). A naive "send the buffer to the helper, read it back next block" design adds a **full buffer of latency** on top. The good designs (shared memory + a same-block real-time rendezvous, the way Apple/Bitwig do it) add **CPU cost and dropout-risk, not latency** — but they're harder to build. This is a tradeoff we must make consciously, not stumble into.
+
+**Net of the prior art:** Apple and every serious third-party live/production host *does* isolate plugins — the cheap OS path (Camp 3) buys at least load-time safety for third parties, and full coverage means building your own host (Camp 2), which is provably doable on JUCE. The only major holdout (Ardour) refuses on latency grounds that mostly bite large mixing sessions, not solo live rigs — but their warning ties directly to our existing latency problem, so we respect it by favouring **grouped (not per-plugin) sandboxing** and a **shared-memory same-block bridge**.
+
 ## What this means
 
 The project is **not** "wire up out-of-process hosting from scratch." It's narrower and sharper:
