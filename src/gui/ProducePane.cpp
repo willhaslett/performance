@@ -1170,61 +1170,73 @@ void ProducePane::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
                     }
                 }
 
-                // Audio waveform preview — tinted with the audio-track type color,
-                // gradient-filled vertically (intense at top, dim at bottom) so
-                // taller peaks visually pop a touch more than shorter ones.
-                // Subtle by design — the y-axis amplitude is the real signal; this
-                // is denormalized sugar.
+                // Audio waveform preview — flat audio-track type color (no
+                // gradient; keeps with the minimal theme). The y-axis amplitude
+                // is the real signal.
+                //
+                // Painted one column per on-screen pixel, aggregating min/max
+                // over the peaks that fall in that column. Cost is O(visible
+                // width), independent of file length — a multi-minute imported
+                // region paints as cheaply as a short recorded one (a naive
+                // loop over every peak dropped playback to ~3 fps).
                 if (r->type == "audio") {
                     auto* take = r->activeTake();
                     if (take && !take->peakData.peaks.empty()) {
                         auto inner = regionBounds.reduced(1, 3);
-                        float centreY = inner.getCentreY();
-                        float halfH = inner.getHeight() * 0.5f;
+                        const float centreY = inner.getCentreY();
+                        const float halfH = inner.getHeight() * 0.5f;
 
-                        auto base = Theme::color(Theme::Color::typeAudio);
-                        auto intense = base.brighter(0.25f).withAlpha(0.95f);
-                        auto dim     = base.darker(0.15f).withAlpha(0.8f);
-                        juce::ColourGradient grad(intense,
-                                                   (float)inner.getX(), (float)inner.getY(),
-                                                   intense,
-                                                   (float)inner.getX(), (float)inner.getBottom(),
-                                                   false);
-                        grad.addColour(0.5, dim);  // dim at the silent center, intense at peak excursions
-                        g.setGradientFill(grad);
+                        const int numPeaks = (int)take->peakData.peaks.size();
+                        const double beatsPerPeak = (take->peakData.samplesPerPeak / (double)take->sampleRate)
+                                                    * (take->recordTempo / 60.0);
+                        const double pxPerPeak = beatsPerPeak * pixelsPerBeat;
 
-                        // Map peaks to pixels
-                        int numPeaks = (int)take->peakData.peaks.size();
-                        double beatsPerPeak = (take->peakData.samplesPerPeak / (double)take->sampleRate)
-                                              * (take->recordTempo / 60.0);
-                        for (int pi = 0; pi < numPeaks; ++pi) {
-                            float px = (float)rx + (float)(pi * beatsPerPeak * pixelsPerBeat);
-                            float pw = std::max(1.0f, (float)(beatsPerPeak * pixelsPerBeat));
-                            if (px + pw < inner.getX() || px > inner.getRight()) continue;
+                        if (pxPerPeak > 0.0) {
+                            const int x0 = std::max(inner.getX(), (int)std::floor((double)rx));
+                            const int x1 = std::min(inner.getRight(),
+                                                    (int)std::ceil((double)rx + numPeaks * pxPerPeak));
 
-                            auto [mn, mx] = take->peakData.peaks[pi];
-                            // Nonlinear scaling: sqrt boosts quiet signals.
-                            // Clamp Y to the lane bounds so over-full-scale
-                            // peaks visually clip at the edge instead of
-                            // bleeding into the row above / below.
-                            float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
-                            float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
-                            float y1 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
-                                                      centreY - scaledMx * halfH);
-                            float y2 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
-                                                      centreY - scaledMn * halfH);
-                            float h = std::max(1.0f, y2 - y1);
-                            g.setGradientFill(grad);
-                            g.fillRect(px, y1, std::max(1.0f, pw), h);
-                            // Strict clip indicator — peak amplitude > 1.0.
-                            // "Just at full scale" reads as perfect, not red.
-                            if (mx > 1.0f || mn < -1.0f) {
-                                g.setColour(Theme::color(Theme::Color::meterRed));
-                                constexpr float clipStripH = 2.0f;
-                                if (mx > 1.0f)
-                                    g.fillRect(px, (float)inner.getY(), pw, clipStripH);
-                                if (mn < -1.0f)
-                                    g.fillRect(px, (float)inner.getBottom() - clipStripH, pw, clipStripH);
+                            const auto waveColour = Theme::color(Theme::Color::typeAudio).withAlpha(0.85f);
+                            const auto clipColour = Theme::color(Theme::Color::meterRed);
+                            constexpr float clipStripH = 2.0f;
+
+                            for (int x = x0; x < x1; ++x) {
+                                // Peaks covering the pixel column [x, x+1).
+                                int piLo = (int)std::floor((x - (double)rx) / pxPerPeak);
+                                int piHi = (int)std::floor((x + 1 - (double)rx) / pxPerPeak);
+                                piLo = juce::jlimit(0, numPeaks - 1, piLo);
+                                piHi = juce::jlimit(piLo + 1, numPeaks, piHi);
+
+                                float mn = 0.0f, mx = 0.0f;
+                                for (int pi = piLo; pi < piHi; ++pi) {
+                                    mn = std::min(mn, take->peakData.peaks[pi].first);
+                                    mx = std::max(mx, take->peakData.peaks[pi].second);
+                                }
+
+                                // Nonlinear scaling: sqrt boosts quiet signals.
+                                // Clamp Y to the lane bounds so over-full-scale
+                                // peaks clip at the edge instead of bleeding into
+                                // the row above / below.
+                                float scaledMx = (mx >= 0) ? std::sqrt(mx) : -std::sqrt(-mx);
+                                float scaledMn = (mn >= 0) ? std::sqrt(mn) : -std::sqrt(-mn);
+                                float y1 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
+                                                          centreY - scaledMx * halfH);
+                                float y2 = juce::jlimit((float)inner.getY(), (float)inner.getBottom(),
+                                                          centreY - scaledMn * halfH);
+                                float h = std::max(1.0f, y2 - y1);
+
+                                g.setColour(waveColour);
+                                g.fillRect((float)x, y1, 1.0f, h);
+
+                                // Strict clip indicator — peak amplitude > 1.0.
+                                // "Just at full scale" reads as perfect, not red.
+                                if (mx > 1.0f || mn < -1.0f) {
+                                    g.setColour(clipColour);
+                                    if (mx > 1.0f)
+                                        g.fillRect((float)x, (float)inner.getY(), 1.0f, clipStripH);
+                                    if (mn < -1.0f)
+                                        g.fillRect((float)x, (float)inner.getBottom() - clipStripH, 1.0f, clipStripH);
+                                }
                             }
                         }
                     }
