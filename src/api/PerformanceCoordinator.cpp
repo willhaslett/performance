@@ -16,6 +16,64 @@
 #include <juce_cryptography/juce_cryptography.h>
 #include <set>
 
+namespace {
+// Decode `reader` in full and write a canonical 24-bit WAV at `dest`,
+// resampling to `targetRate` when the source rate differs. Returns the
+// number of frames written, or 0 on failure. When the source is already
+// at the target rate we do a straight sample-accurate copy (no resampler
+// filtering) — the common case for WAVs recorded on the same device.
+int64_t writeCanonicalWav(juce::AudioFormatReader& reader, const juce::File& dest,
+                          int targetRate, int channels) {
+    if (channels < 1 || targetRate <= 0 || reader.sampleRate <= 0) return 0;
+
+    dest.deleteFile();
+    auto out = dest.createOutputStream();
+    if (!out) return 0;
+
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(out.get(), (double)targetRate,
+                            (unsigned int)channels, 24, {}, 0));
+    if (!writer) return 0;
+    out.release();  // writer owns the stream now
+
+    const int blockSize = 4096;
+    int64_t written = 0;
+
+    if ((int)reader.sampleRate == targetRate) {
+        juce::AudioBuffer<float> buf(channels, blockSize);
+        const int64_t total = reader.lengthInSamples;
+        for (int64_t pos = 0; pos < total; pos += blockSize) {
+            int n = (int)std::min((int64_t)blockSize, total - pos);
+            reader.read(&buf, 0, n, pos, true, true);
+            writer->writeFromAudioSampleBuffer(buf, 0, n);
+            written += n;
+        }
+    } else {
+        juce::AudioFormatReaderSource src(&reader, false);
+        juce::ResamplingAudioSource resampler(&src, false, channels);
+        resampler.setResamplingRatio((double)reader.sampleRate / (double)targetRate);
+        resampler.prepareToPlay(blockSize, (double)targetRate);
+
+        const int64_t outTotal = (int64_t)std::llround(
+            (double)reader.lengthInSamples * (double)targetRate / (double)reader.sampleRate);
+        juce::AudioBuffer<float> buf(channels, blockSize);
+        for (int64_t pos = 0; pos < outTotal; pos += blockSize) {
+            int n = (int)std::min((int64_t)blockSize, outTotal - pos);
+            buf.clear();
+            juce::AudioSourceChannelInfo info(&buf, 0, n);
+            resampler.getNextAudioBlock(info);
+            writer->writeFromAudioSampleBuffer(buf, 0, n);
+            written += n;
+        }
+        resampler.releaseResources();
+    }
+
+    writer.reset();  // flush + close
+    return written;
+}
+}  // namespace
+
 // ===== Algebra interpreter adapters ==========================================
 // Wire the abstract Scheduler / TargetIO / TemplateResolver to the real
 // AutomationEngine and StateAPI. Lives inside PerformanceCoordinator because
@@ -567,6 +625,98 @@ void PerformanceCoordinator::reloadAudioFiles() {
     loadAudioFilesIntoEngine();
 }
 
+bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId targetTrackId) {
+    if (!stateAPI || !audioEngine) return false;
+    if (!source.existsAsFile()) {
+        perfLog("[Coordinator] importAudioFile: no such file: %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    // Decode the source. AudioFormatManager handles WAV/AIFF/FLAC and the
+    // OS codecs (MP3/M4A/Ogg where registered) — a superset of the WAV-only
+    // path the rest of the engine uses, since we transcode to WAV below.
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source));
+    if (!reader || reader->numChannels == 0 || reader->sampleRate <= 0) {
+        perfLog("[Coordinator] importAudioFile: unsupported/unreadable file: %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    // Resolve the target track. Empty id → focused AudioInput track if one
+    // is focused, else a fresh AudioInput track. (A focused Instrument/Action
+    // track can't hold audio, so it falls through to create-new.)
+    TrackId trackId = targetTrackId;
+    if (trackId.str().empty()) {
+        auto focusedId = stateAPI->getFocusedTrackId();
+        auto* focused = focusedId.str().empty() ? nullptr : stateAPI->findTrack(focusedId);
+        if (focused && focused->sourceType == TrackSourceType::AudioInput)
+            trackId = focusedId;
+        else
+            trackId = stateAPI->createAudioInputTrack(
+                source.getFileNameWithoutExtension().toStdString(), 0, 2);
+    }
+
+    // Snapshot for undo — the whole import is one reversible step, matching
+    // how a recording commit is undoable.
+    stateAPI->pushUndo();
+
+    // Canonical form: device sample rate (fall back to 48k if no device is
+    // open, e.g. in tests), up to stereo. AudioFileNode reads at the file's
+    // stored rate with no runtime resampling, so the file MUST match the
+    // device rate or it plays back at the wrong speed.
+    double deviceRate = audioEngine->getCurrentSampleRate();
+    int targetRate = (deviceRate > 0.0) ? (int)deviceRate : 48000;
+    int channels = std::min(2, (int)reader->numChannels);
+
+    double startBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    double tempo = sequencerImpl ? sequencerImpl->getTempo() : stateAPI->getSongTempo();
+
+    auto* region = arrangementImpl.addMidiRegion(trackId, startBeat, 0.0);
+    if (!region) return false;
+    region->type = "audio";
+    auto* take = region->activeTake();
+    if (!take) { arrangementImpl.removeRegion(region->id); return false; }
+
+    auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                        .getChildFile(".config/performance/audio");
+    audioDir.createDirectory();
+    auto wavFile = audioDir.getChildFile(juce::String(take->id.str()) + ".wav");
+
+    int64_t frames = writeCanonicalWav(*reader, wavFile, targetRate, channels);
+    if (frames <= 0) {
+        arrangementImpl.removeRegion(region->id);
+        perfLog("[Coordinator] importAudioFile: transcode failed for %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    take->filePath = wavFile.getFullPathName().toStdString();
+    take->sampleRate = targetRate;
+    take->recordTempo = tempo;
+    take->channelCount = channels;
+    region->lengthBeats = audioFramesToBeats(frames, targetRate, tempo);
+
+    computeAudioPeaks(*take);
+    loadAudioFilesIntoEngine();
+
+    // Arrangement mutates TrackState directly and emits nothing, so nudge
+    // the message-thread listeners: a Song Updated event stamps the autosave
+    // clock and repaints the arrange view. (syncTempoFromState in the handler
+    // is a harmless re-push of the current tempo/cycle.)
+    stateAPI->markDirty();
+    stateAPI->events().emit({ StateEvent::Updated, StateEvent::Song,
+                              stateAPI->currentSong() ? stateAPI->currentSong()->id.str() : "",
+                              "" });
+
+    perfLog("[Coordinator] Imported %s → track %s: %lld frames @ %d Hz, %.2f beats\n",
+            source.getFileName().toRawUTF8(), trackId.c_str(), frames, targetRate,
+            region->lengthBeats);
+    return true;
+}
+
 void PerformanceCoordinator::stopRecordMode() {
     if (!stateAPI) return;
 
@@ -704,8 +854,8 @@ void PerformanceCoordinator::stopRecording() {
             if (region && region->activeTake()) {
                 auto* take = region->activeTake();
                 int64_t frames = session.writer->getTotalFramesWritten();
-                double seconds = (take->sampleRate > 0) ? (double)frames / take->sampleRate : 0.0;
-                region->lengthBeats = seconds * (take->recordTempo / 60.0);
+                region->lengthBeats = audioFramesToBeats(frames, take->sampleRate,
+                                                          take->recordTempo);
 
                 // Get peaks from writer thread (already computed during write)
                 auto writerPeaks = session.writer->getPeaks();
@@ -874,6 +1024,13 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
         loadFromPool(track.regions);
         loadFromPool(track.loops);
     }
+}
+
+double PerformanceCoordinator::audioFramesToBeats(int64_t frames, int sampleRate,
+                                                   double tempo) const {
+    if (sampleRate <= 0) return 0.0;
+    double seconds = (double)frames / (double)sampleRate;
+    return seconds * (tempo / 60.0);
 }
 
 void PerformanceCoordinator::computeAudioPeaks(TakeState& take) {

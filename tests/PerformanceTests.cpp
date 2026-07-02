@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include "api/StateAPI.h"
 #include "api/EngineAPI.h"
 #include "api/PerformanceCoordinator.h"
@@ -1486,6 +1487,181 @@ public:
 };
 
 static IntegrationTests integrationTests;
+
+// ============================================================================
+// Audio file import (PerformanceCoordinator::importAudioFile)
+// ============================================================================
+
+class AudioImportTests : public juce::UnitTest {
+public:
+    AudioImportTests() : UnitTest("Audio Import", "Performance") {}
+
+    // Write a sine-tone WAV at the given rate/frames/channels to a temp file.
+    static juce::File writeTestWav(int sampleRate, int64_t frames, int channels) {
+        auto file = juce::File::createTempFile(".wav");
+        file.deleteFile();
+        juce::WavAudioFormat wav;
+        auto out = file.createOutputStream();
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            wav.createWriterFor(out.get(), (double)sampleRate,
+                                (unsigned int)channels, 16, {}, 0));
+        out.release();
+        juce::AudioBuffer<float> buf(channels, (int)frames);
+        for (int ch = 0; ch < channels; ++ch) {
+            auto* d = buf.getWritePointer(ch);
+            for (int64_t i = 0; i < frames; ++i)
+                d[(int)i] = 0.25f * (float)std::sin(2.0 * juce::MathConstants<double>::pi
+                                                     * 220.0 * (double)i / sampleRate);
+        }
+        writer->writeFromAudioSampleBuffer(buf, 0, (int)frames);
+        writer.reset();
+        return file;
+    }
+
+    static const RegionState* firstAudioRegion(StateAPI& s, const TrackState** ownerOut = nullptr) {
+        auto* song = s.currentSong();
+        if (!song) return nullptr;
+        for (auto& t : song->tracks)
+            for (auto& r : t.regions)
+                if (r.type == "audio") { if (ownerOut) *ownerOut = &t; return &r; }
+        return nullptr;
+    }
+
+    static int countAudioTracks(StateAPI& s) {
+        auto* song = s.currentSong();
+        if (!song) return 0;
+        int n = 0;
+        for (auto& t : song->tracks)
+            if (t.sourceType == TrackSourceType::AudioInput) ++n;
+        return n;
+    }
+
+    // Read back a WAV's sample rate + frame count for verification.
+    static std::pair<int, int64_t> readWav(const juce::String& path) {
+        juce::WavAudioFormat wav;
+        auto in = juce::File(path).createInputStream();
+        if (!in) return { 0, 0 };
+        std::unique_ptr<juce::AudioFormatReader> r(wav.createReaderFor(in.release(), true));
+        if (!r) return { 0, 0 };
+        return { (int)r->sampleRate, r->lengthInSamples };
+    }
+
+    void runTest() override {
+        beginTest("Import creates a new audio track when none is focused");
+        {
+            TestCoordinator tc;
+            tc.state().setFocusedTrackId(TrackId{});  // no focus → must create
+            int beforeAudio = countAudioTracks(tc.state());
+            auto src = writeTestWav(44100, 44100, 2);  // 1.0s stereo @ 44.1k
+
+            expect(tc->importAudioFile(src));
+            expectEquals(countAudioTracks(tc.state()), beforeAudio + 1);
+
+            const TrackState* owner = nullptr;
+            auto* region = firstAudioRegion(tc.state(), &owner);
+            expect(region != nullptr);
+            expect(owner != nullptr && owner->sourceType == TrackSourceType::AudioInput);
+
+            // Duration is preserved across the transcode regardless of the
+            // device/target rate: 1.0s at 120 bpm = 2.0 beats.
+            expectWithinAbsoluteError(region->lengthBeats, 2.0, 0.05);
+
+            auto* take = region->activeTake();
+            expect(take != nullptr && !take->filePath.empty());
+            juce::File written(take->filePath);
+            expect(written.existsAsFile());
+
+            // The written file's rate matches what the take records, and the
+            // canonical copy lives in the app's audio dir (self-contained).
+            auto [wavRate, wavFrames] = readWav(take->filePath);
+            expectEquals(wavRate, take->sampleRate);
+            expect(take->sampleRate > 0);
+            expect(written.getParentDirectory().getFullPathName().endsWith("performance/audio"));
+            expect(std::abs((double)wavFrames / wavRate - 1.0) < 0.02);  // ~1.0s preserved
+
+            src.deleteFile();
+            written.deleteFile();
+        }
+
+        beginTest("Import reuses the focused audio track");
+        {
+            TestCoordinator tc;
+            auto audioTrack = tc.state().createAudioInputTrack("Mic", 0, 2);  // focuses it
+            int beforeTracks = (int)tc.state().listTracks().size();
+            auto src = writeTestWav(48000, 24000, 2);  // 0.5s @ 48k (no resample)
+
+            expect(tc->importAudioFile(src));
+            expectEquals((int)tc.state().listTracks().size(), beforeTracks);  // no new track
+
+            auto* t = tc.state().findTrack(audioTrack);
+            expect(t != nullptr);
+            int audioRegions = 0;
+            std::string writtenPath;
+            for (auto& r : t->regions)
+                if (r.type == "audio") { audioRegions++; if (auto* k = r.activeTake()) writtenPath = k->filePath; }
+            expectEquals(audioRegions, 1);
+
+            src.deleteFile();
+            if (!writtenPath.empty()) juce::File(writtenPath).deleteFile();
+        }
+
+        beginTest("Import with an instrument track focused creates a new audio track");
+        {
+            TestCoordinator tc;
+            auto inst = tc.state().createTrack("Synth");  // Instrument
+            tc.state().setFocusedTrackId(inst);
+            int beforeAudio = countAudioTracks(tc.state());
+            auto src = writeTestWav(48000, 48000, 1);  // 1.0s mono
+
+            expect(tc->importAudioFile(src));
+            expectEquals(countAudioTracks(tc.state()), beforeAudio + 1);
+
+            // The instrument track never receives audio content.
+            auto* it = tc.state().findTrack(inst);
+            expect(it != nullptr);
+            for (auto& r : it->regions)
+                expect(r.type != "audio");
+
+            const TrackState* owner = nullptr;
+            auto* region = firstAudioRegion(tc.state(), &owner);
+            expect(region != nullptr);
+            std::string writtenPath;
+            if (auto* k = region ? region->activeTake() : nullptr) writtenPath = k->filePath;
+
+            src.deleteFile();
+            if (!writtenPath.empty()) juce::File(writtenPath).deleteFile();
+        }
+
+        beginTest("Import lands the region at the playhead");
+        {
+            TestCoordinator tc;
+            tc.state().setFocusedTrackId(TrackId{});
+            if (auto* seq = tc->sequencer()) seq->setBeatPosition(8.0);
+            auto src = writeTestWav(48000, 48000, 2);
+
+            expect(tc->importAudioFile(src));
+            auto* region = firstAudioRegion(tc.state());
+            expect(region != nullptr);
+            expectWithinAbsoluteError(region->startBeat, 8.0, 0.001);
+
+            std::string writtenPath;
+            if (auto* k = region ? region->activeTake() : nullptr) writtenPath = k->filePath;
+            src.deleteFile();
+            if (!writtenPath.empty()) juce::File(writtenPath).deleteFile();
+        }
+
+        beginTest("Import of a nonexistent / unreadable file fails cleanly");
+        {
+            TestCoordinator tc;
+            int beforeTracks = (int)tc.state().listTracks().size();
+            expect(!tc->importAudioFile(juce::File("/no/such/file.wav")));
+            expectEquals((int)tc.state().listTracks().size(), beforeTracks);  // no side effects
+            expect(firstAudioRegion(tc.state()) == nullptr);
+        }
+    }
+};
+
+static AudioImportTests audioImportTests;
 
 // ============================================================================
 // Mock AudioEngine for EngineSync tests

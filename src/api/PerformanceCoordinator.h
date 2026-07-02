@@ -176,6 +176,17 @@ public:
     void startRecordMode();   // enter record mode and start playback
     void stopRecordMode();    // exit record mode (keeps playing)
     void reloadAudioFiles();  // re-scan regions and load audio files into engine
+
+    // Import an existing audio file as an audio region. Decodes any
+    // format JUCE can read (WAV/AIFF/FLAC/MP3/Ogg), transcodes it to a
+    // canonical device-rate 24-bit WAV in ~/.config/performance/audio,
+    // and lands it as a region at the current playhead — the same
+    // terminal state a recording produces.
+    //
+    // Target resolution: if `targetTrackId` is empty, the region goes on
+    // the focused track when that track is an AudioInput; otherwise a new
+    // AudioInput track is created. Returns true on success.
+    bool importAudioFile(const juce::File& source, TrackId targetTrackId = {});
     // True if any recording flow is active — arrangement recording, an
     // in-flight looper bootstrap, or any focused-track loopAction other
     // than None. Used by the transport record button to drive its
@@ -276,6 +287,11 @@ private:
     void stopRecording();
     void drainRecordFIFO();
     void computeAudioPeaks(TakeState& take);
+    // frames→beats at a given sample rate + tempo. The single source of
+    // truth for audio length math — both the recording commit and
+    // importAudioFile go through it so they can never diverge (the
+    // storage-is-region-local / math-is-global beat rule bit us once).
+    double audioFramesToBeats(int64_t frames, int sampleRate, double tempo) const;
     // Sum-mix the just-recorded overdub temp file with the existing
     // target file and write the result back to the target. Deletes
     // the temp file. No-op for non-overdub sessions.

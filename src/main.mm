@@ -182,7 +182,7 @@ static void installMenuStyling() {
 
 enum CommandIDs {
     // File
-    newSong = 1, saveSong = 2, closeSong = 3, bounceSong = 4,
+    newSong = 1, saveSong = 2, closeSong = 3, bounceSong = 4, importAudio = 5,
     // Edit
     menuUndo = 10, menuRedo = 11, menuSplit = 12, menuDuplicate = 13,
     menuDelete = 14, menuSelectAll = 15, menuCycleFromSel = 16,
@@ -255,6 +255,9 @@ public:
 
             menu.addItem(shortcut(CommandIDs::saveSong, "Save", "file.save"));
             menu.addSeparator();
+            menu.addItem(CommandIDs::importAudio,
+                         juce::String::fromUTF8("Import Audio\xe2\x80\xa6"),
+                         coord.state().currentSong() != nullptr);
             menu.addItem(CommandIDs::bounceSong,
                          juce::String::fromUTF8("Bounce\xe2\x80\xa6"),
                          coord.state().currentSong() != nullptr);
@@ -324,6 +327,44 @@ public:
             break;
         }
         case CommandIDs::saveSong: coord.save(); break;
+        case CommandIDs::importAudio: {
+            if (!coord.state().currentSong()) break;
+
+            auto lastFolderStr = coord.state().getConfig("last_import_folder");
+            juce::File defaultFolder = lastFolderStr.empty()
+                ? juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+                : juce::File(juce::String(lastFolderStr));
+            if (!defaultFolder.isDirectory())
+                defaultFolder = juce::File::getSpecialLocation(juce::File::userMusicDirectory);
+
+            auto chooser = std::make_shared<juce::FileChooser>(
+                "Import audio file",
+                defaultFolder,
+                "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.m4a;*.ogg");
+
+            chooser->launchAsync(
+                juce::FileBrowserComponent::openMode
+                    | juce::FileBrowserComponent::canSelectFiles,
+                [this, chooser](const juce::FileChooser& fc) {
+                    auto file = fc.getResult();
+                    if (file == juce::File{}) return;  // user cancelled
+
+                    coord.state().setConfig("last_import_folder",
+                        file.getParentDirectory().getFullPathName().toStdString());
+
+                    layout.showOverlay(juce::String::fromUTF8("Importing\xe2\x80\xa6"));
+                    juce::MessageManager::callAsync([this, file] {
+                        bool ok = coord.importAudioFile(file);
+                        layout.hideOverlay();
+                        if (!ok) {
+                            layout.showOverlay(juce::String::fromUTF8(
+                                "Couldn\xe2\x80\x99t import that file."));
+                            juce::Timer::callAfterDelay(1500, [this] { layout.hideOverlay(); });
+                        }
+                    });
+                });
+            break;
+        }
         case CommandIDs::bounceSong: {
             auto* song = coord.state().currentSong();
             if (!song) break;
