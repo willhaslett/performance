@@ -28,7 +28,7 @@ ChatView::ChatView(LuaEngine& lua) : client(lua) {
     // Input field — rounded, chat-style
     inputField.setMultiLine(false);
     inputField.setReturnKeyStartsNewLine(false);
-    inputField.setFont(Theme::font(Theme::fontSizeLg));
+    inputField.setFont(Theme::font(Theme::fontSizeChat));
     inputField.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     inputField.setColour(juce::TextEditor::textColourId, Theme::color(Theme::Color::textOnColor));
     inputField.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
@@ -182,8 +182,8 @@ ChatView::Bubble* ChatView::addBubble(Bubble::Type type, const juce::String& tex
     editor->setReadOnly(true);
     editor->setScrollbarsShown(false);
     editor->setPopupMenuEnabled(true);  // right-click copy
-    editor->setFont(type == Bubble::Tool ? Theme::fontMono(Theme::fontSizeSm)
-                                          : Theme::font(Theme::fontSizeSm));
+    editor->setFont(type == Bubble::Tool ? Theme::fontMono(Theme::fontSizeChat)
+                                          : Theme::font(Theme::fontSizeChat));
     editor->setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
     editor->setColour(juce::TextEditor::textColourId, textColor(type));
     editor->setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);

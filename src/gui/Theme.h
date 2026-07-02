@@ -129,6 +129,7 @@ namespace Theme {
     inline float fontSizeXs       = 9.0f;
     inline float fontSizePill     = 13.0f;
     inline float fontSizeMeter    = 10.0f;
+    inline float fontSizeChat     = 18.0f;  // chat bubbles + input — larger for readability while conversing
 
     // LCD display (ProducePane transport)
     inline float fontSizeLcdLg    = 29.0f;
