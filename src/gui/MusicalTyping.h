@@ -51,6 +51,9 @@ private:
     void mouseDrag(const juce::MouseEvent& event) override;
     juce::ComponentDragger dragger;
 
+    // Octave/velocity +/- button hit rects — set during paint(), hit-tested in mouseDown().
+    juce::Rectangle<float> ocDownRect, ocUpRect, velDownRect, velUpRect;
+
     static constexpr int panelWidth = 470;
     static constexpr int panelHeight = 150;
 };

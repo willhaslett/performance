@@ -136,6 +136,14 @@ bool MusicalTyping::handleKey(const juce::KeyPress& key, bool isKeyDown) {
 // --- Paint ---
 
 void MusicalTyping::mouseDown(const juce::MouseEvent& event) {
+    // Clickable controls mirror the keyboard handlers (Z/X octave, C/V velocity).
+    auto p = event.position;
+    if (ocDownRect.contains(p))  { baseOctave = std::max(0, baseOctave - 1); allNotesOff(); repaint(); return; }
+    if (ocUpRect.contains(p))    { baseOctave = std::min(8, baseOctave + 1); allNotesOff(); repaint(); return; }
+    if (velDownRect.contains(p)) { velocity = std::max(1, velocity - 10); repaint(); return; }
+    if (velUpRect.contains(p))   { velocity = std::min(127, velocity + 10); repaint(); return; }
+
+    // Otherwise drag the panel.
     dragger.startDraggingComponent(this, event);
 }
 
@@ -200,19 +208,19 @@ void MusicalTyping::paint(juce::Graphics& g) {
     g.drawText(juce::String("C") + juce::String(baseOctave), cx, y, 24, 24, juce::Justification::centredLeft);
     cx += 24;
 
-    auto ocDown = juce::Rectangle<float>(cx, y + 1, 24, 22);
-    auto ocUp = juce::Rectangle<float>(cx + 26, y + 1, 24, 22);
+    ocDownRect = juce::Rectangle<float>(cx, y + 1, 24, 22);
+    ocUpRect = juce::Rectangle<float>(cx + 26, y + 1, 24, 22);
     g.setColour(juce::Colour(0xff8a7a2e));
-    g.fillRoundedRectangle(ocDown, 3.0f);
-    g.fillRoundedRectangle(ocUp, 3.0f);
+    g.fillRoundedRectangle(ocDownRect, 3.0f);
+    g.fillRoundedRectangle(ocUpRect, 3.0f);
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(11.0f));
-    g.drawText("-", ocDown, juce::Justification::centred);
-    g.drawText("+", ocUp, juce::Justification::centred);
+    g.drawText("-", ocDownRect, juce::Justification::centred);
+    g.drawText("+", ocUpRect, juce::Justification::centred);
     g.setFont(Theme::font(7.0f));
     g.setColour(Theme::color(Theme::Color::textDim));
-    g.drawText("Z", ocDown.translated(0, 10), juce::Justification::centred);
-    g.drawText("X", ocUp.translated(0, 10), juce::Justification::centred);
+    g.drawText("Z", ocDownRect.translated(0, 10), juce::Justification::centred);
+    g.drawText("X", ocUpRect.translated(0, 10), juce::Justification::centred);
 
     cx += 70;
     g.setColour(Theme::color(Theme::Color::textSecondary));
@@ -224,19 +232,19 @@ void MusicalTyping::paint(juce::Graphics& g) {
     g.drawText(juce::String(velocity), cx, y, 28, 24, juce::Justification::centredLeft);
     cx += 28;
 
-    auto velDown = juce::Rectangle<float>(cx, y + 1, 24, 22);
-    auto velUp = juce::Rectangle<float>(cx + 26, y + 1, 24, 22);
+    velDownRect = juce::Rectangle<float>(cx, y + 1, 24, 22);
+    velUpRect = juce::Rectangle<float>(cx + 26, y + 1, 24, 22);
     g.setColour(juce::Colour(0xffaa6622));
-    g.fillRoundedRectangle(velDown, 3.0f);
-    g.fillRoundedRectangle(velUp, 3.0f);
+    g.fillRoundedRectangle(velDownRect, 3.0f);
+    g.fillRoundedRectangle(velUpRect, 3.0f);
     g.setColour(Theme::color(Theme::Color::textPrimary));
     g.setFont(Theme::font(11.0f));
-    g.drawText("-", velDown, juce::Justification::centred);
-    g.drawText("+", velUp, juce::Justification::centred);
+    g.drawText("-", velDownRect, juce::Justification::centred);
+    g.drawText("+", velUpRect, juce::Justification::centred);
     g.setFont(Theme::font(7.0f));
     g.setColour(Theme::color(Theme::Color::textDim));
-    g.drawText("C", velDown.translated(0, 10), juce::Justification::centred);
-    g.drawText("V", velUp.translated(0, 10), juce::Justification::centred);
+    g.drawText("C", velDownRect.translated(0, 10), juce::Justification::centred);
+    g.drawText("V", velUpRect.translated(0, 10), juce::Justification::centred);
 
     // Cmd+K hint
     g.setColour(Theme::color(Theme::Color::textDim));
