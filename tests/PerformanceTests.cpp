@@ -18,6 +18,7 @@
 #include "daw/Arrangement.h"
 #include "state/StateModel.h"
 #include "engine/DeviceRateBridge.h"
+#include "engine/AudioFileNode.h"
 
 // ============================================================================
 // Test helpers
@@ -1836,6 +1837,78 @@ public:
 };
 
 static DeviceRateBridgeTests deviceRateBridgeTests;
+
+// ============================================================================
+// AudioFileNode — file->engine-rate resampling on playback
+// ============================================================================
+
+class AudioFileNodeTests : public juce::UnitTest {
+public:
+    AudioFileNodeTests() : UnitTest("AudioFileNode", "Performance") {}
+
+    // Play a file (loaded at fileRate) through a node running at outRate for
+    // ~`seconds` of real time; return channel-0 output. Drives the node's beat
+    // forward as the transport would (tempo 120 → 2 beats/sec).
+    static std::vector<float> playNode(const juce::File& wav, int fileRate, int outRate,
+                                       double seconds) {
+        AudioFileNode node;
+        node.prepareToPlay((double)outRate, 512);
+        node.loadFile("r1", wav.getFullPathName(), 120.0, fileRate);
+
+        juce::AudioBuffer<float> buf(2, 512);
+        juce::MidiBuffer mb;
+        std::vector<float> out;
+        const double beatPerBlock = 2.0 * 512.0 / (double)outRate;  // tempo 120
+        double beat = 0.0;
+        const int blocks = (int)std::ceil(seconds * outRate / 512.0);
+        for (int b = 0; b < blocks; ++b) {
+            node.setActiveRegion("r1", 0.0, beat);
+            buf.clear();
+            node.processBlock(buf, mb);
+            for (int i = 0; i < 512; ++i) out.push_back(buf.getSample(0, i));
+            beat += beatPerBlock;
+        }
+        return out;
+    }
+
+    // writeTestWav emits a 220 Hz sine; verify it survives resampling.
+    void expectTone(const std::vector<float>& out, double outRate, const juce::String& label) {
+        expect(DeviceRateBridgeTests::finiteAndAudible(out), label + " audible");
+        double f = DeviceRateBridgeTests::estimateFreq(out, outRate, 1024);
+        expect(std::abs(f - 220.0) < 8.0, label + " freq=" + juce::String(f) + " (expect ~220)");
+    }
+
+    void runTest() override {
+        beginTest("Matched rate plays clean (fast path)");
+        {
+            auto wav = AudioImportTests::writeTestWav(48000, 48000, 1);
+            expectTone(playNode(wav, 48000, 48000, 0.8), 48000.0, "matched");
+            wav.deleteFile();
+        }
+
+        beginTest("44.1k file on 48k engine resamples to correct pitch");
+        {
+            auto wav = AudioImportTests::writeTestWav(44100, 44100, 1);
+            auto out = playNode(wav, 44100, 48000, 0.8);
+            expectTone(out, 48000.0, "44.1->48");
+            // No block-boundary buzz: per-sample delta near the sine's slope.
+            float maxDelta = 0.0f;
+            for (size_t i = 1025; i < out.size(); ++i)
+                maxDelta = juce::jmax(maxDelta, std::abs(out[i] - out[i - 1]));
+            expect(maxDelta < 0.05f, "maxDelta=" + juce::String(maxDelta));
+            wav.deleteFile();
+        }
+
+        beginTest("48k file on 44.1k engine resamples to correct pitch");
+        {
+            auto wav = AudioImportTests::writeTestWav(48000, 48000, 1);
+            expectTone(playNode(wav, 48000, 44100, 0.8), 44100.0, "48->44.1");
+            wav.deleteFile();
+        }
+    }
+};
+
+static AudioFileNodeTests audioFileNodeTests;
 
 // ============================================================================
 // Mock AudioEngine for EngineSync tests
