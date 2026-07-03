@@ -140,6 +140,15 @@ public:
     void clearAudioRecordTargets();
     void setMetronome(bool on, int beatsPerBar, float volume = -1.0f);
     double getCurrentSampleRate() const;
+
+    // Request the per-project engine sample rate. We ask the hardware to run
+    // at this rate (setAudioDeviceSetup); if the device supports it, the graph
+    // ends up running at the engine rate — matching stored audio, no SRC
+    // needed. If the device refuses (e.g. SCO Bluetooth = 16k), the graph
+    // falls back to the device rate (Phase 4 adds the async SRC for that case).
+    // See docs/AUDIO_DEVICE_BOUNDARY.md. No-op if unchanged.
+    void setEngineSampleRate(double rate);
+
     void loadAudioFileForTrack(const juce::String& trackId, const juce::String& regionId,
                                 const juce::String& filePath, double recordTempo, int fileSampleRate);
 
@@ -160,6 +169,13 @@ private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList knownPlugins;
     bool pluginScanNeeded = false;
+
+    // Per-project engine rate: the rate we ask the device to run at. The graph
+    // is always prepared at the device's *actual* rate; when the device honors
+    // the request they're equal. See setEngineSampleRate.
+    double requestedEngineRate = 48000.0;
+    void applyEngineRate();                     // request rate on device, then rebuild
+    bool deviceSupportsRate(double rate) const; // rate is in getAvailableSampleRates
 
     std::unique_ptr<juce::AudioProcessorGraph> graph;
     std::unique_ptr<GraphWrapper> graphWrapper;

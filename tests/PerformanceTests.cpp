@@ -17,6 +17,7 @@
 #include "composer/ComposerOutput.h"
 #include "daw/Arrangement.h"
 #include "state/StateModel.h"
+#include "engine/DeviceRateBridge.h"
 
 // ============================================================================
 // Test helpers
@@ -591,6 +592,16 @@ public:
             expectEquals(track->inputChannelCount, 2);
         }
 
+        beginTest("Song sample rate default and set");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            expectEquals(s.getSongSampleRate(), 48000);  // per-project default
+            s.setSongSampleRate(96000);
+            expectEquals(s.getSongSampleRate(), 96000);
+            expectEquals(s.currentSong()->sampleRate, 96000);
+        }
+
         beginTest("Set track input channels");
         {
             StateAPI s;
@@ -1002,6 +1013,7 @@ public:
             auto songId = original.createSong("My Song");
             original.setCurrentSong(songId);
             original.setMasterGain(0.8f);
+            original.setSongSampleRate(44100);
 
             auto t1 = original.createTrack("Keys");
             original.setTrackGain(t1, 0.6f);
@@ -1045,6 +1057,7 @@ public:
             auto* song = loaded.currentSong();
             expect(song != nullptr);
             expectWithinAbsoluteError(song->masterGain, 0.8f, 0.001f);
+            expectEquals(song->sampleRate, 44100);
 
             // Tracks
             auto tracks = loaded.listTracks();
@@ -1662,6 +1675,167 @@ public:
 };
 
 static AudioImportTests audioImportTests;
+
+// ============================================================================
+// DeviceRateBridge — engine<->device sample-rate conversion (pure component)
+// ============================================================================
+
+class DeviceRateBridgeTests : public juce::UnitTest {
+public:
+    DeviceRateBridgeTests() : UnitTest("DeviceRateBridge", "Performance") {}
+
+    // Continuous sine generator at a given rate — the source under test.
+    struct SineSource : EngineRateSource {
+        double freq, rate, phase = 0.0, amp;
+        SineSource(double f, double r, double a = 0.25) : freq(f), rate(r), amp(a) {}
+        void fillNextBlock(juce::AudioBuffer<float>& dest, int numFrames) override {
+            const double inc = 2.0 * juce::MathConstants<double>::pi * freq / rate;
+            for (int i = 0; i < numFrames; ++i) {
+                const float s = (float)(amp * std::sin(phase));
+                phase += inc;
+                for (int ch = 0; ch < dest.getNumChannels(); ++ch)
+                    dest.setSample(ch, i, s);
+            }
+        }
+    };
+
+    // Frequency from rising-edge zero crossings (one per period). Robust for a
+    // clean sine; we skip a warm-up region so the interpolator's initial ramp
+    // doesn't skew the count.
+    static double estimateFreq(const std::vector<float>& x, double rate, int warmup) {
+        int crossings = 0, counted = 0;
+        for (size_t i = (size_t)juce::jmax(1, warmup); i < x.size(); ++i) {
+            if (x[i - 1] < 0.0f && x[i] >= 0.0f) crossings++;
+            counted++;
+        }
+        const double seconds = counted / rate;
+        return seconds > 0.0 ? crossings / seconds : 0.0;
+    }
+
+    // Pull `totalDst` frames through the bridge in blocks of `blockSize`,
+    // returning channel-0 output.
+    static std::vector<float> run(DeviceRateBridge& b, EngineRateSource& src,
+                                  int totalDst, int blockSize, int channels = 1) {
+        std::vector<float> out;
+        out.reserve((size_t)totalDst);
+        juce::AudioBuffer<float> buf(channels, blockSize);
+        int produced = 0;
+        while (produced < totalDst) {
+            const int n = juce::jmin(blockSize, totalDst - produced);
+            buf.clear();
+            b.process(buf, n, src);
+            for (int i = 0; i < n; ++i) out.push_back(buf.getSample(0, i));
+            produced += n;
+        }
+        return out;
+    }
+
+    static bool finiteAndAudible(const std::vector<float>& x) {
+        double sumSq = 0.0;
+        for (float v : x) { if (!std::isfinite(v)) return false; sumSq += (double)v * v; }
+        const double rms = std::sqrt(sumSq / juce::jmax((size_t)1, x.size()));
+        return rms > 0.05;  // a 0.25-amp sine is ~0.177 RMS
+    }
+
+    void expectFreq(const std::vector<float>& out, double rate, double expected,
+                    const juce::String& label) {
+        const double f = estimateFreq(out, rate, 512);
+        expect(std::abs(f - expected) < expected * 0.02,
+               label + " freq=" + juce::String(f) + " expected~" + juce::String(expected));
+    }
+
+    void runTest() override {
+        const int chans = 2;
+
+        beginTest("Pass-through when rates match");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 48000.0, 48000.0, 512);
+            expect(b.isPassthrough());
+            SineSource src(1000.0, 48000.0);
+            auto out = run(b, src, 48000, 512, chans);
+            expect(finiteAndAudible(out));
+            expectFreq(out, 48000.0, 1000.0, "passthrough");
+        }
+
+        beginTest("Downsample 48k -> 44.1k preserves frequency");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 48000.0, 44100.0, 512);
+            expect(!b.isPassthrough());
+            SineSource src(1000.0, 48000.0);
+            auto out = run(b, src, 44100, 512, chans);
+            expect(finiteAndAudible(out));
+            expectFreq(out, 44100.0, 1000.0, "48->44.1");
+        }
+
+        beginTest("Downsample 48k -> 16k (SCO Bluetooth) preserves frequency");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 48000.0, 16000.0, 512);
+            SineSource src(1000.0, 48000.0);   // 1kHz well under 8k Nyquist
+            auto out = run(b, src, 16000, 512, chans);
+            expect(finiteAndAudible(out));
+            expectFreq(out, 16000.0, 1000.0, "48->16");
+        }
+
+        beginTest("Upsample 44.1k -> 48k preserves frequency");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 44100.0, 48000.0, 512);
+            SineSource src(1000.0, 44100.0);
+            auto out = run(b, src, 48000, 512, chans);
+            expect(finiteAndAudible(out));
+            expectFreq(out, 48000.0, 1000.0, "44.1->48");
+        }
+
+        beginTest("Ragged block sizes stay continuous (async SRC stress)");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 48000.0, 44100.0, 512);
+            SineSource src(1000.0, 48000.0);
+
+            // Uneven, prime-ish block sizes exercise the leftover/consume path.
+            const int sizes[] = { 37, 128, 1, 200, 64, 313, 99 };
+            std::vector<float> out;
+            juce::AudioBuffer<float> buf(chans, 512);
+            int produced = 0, si = 0;
+            while (produced < 44100) {
+                const int n = juce::jmin(sizes[si++ % 7], 44100 - produced);
+                buf.clear();
+                b.process(buf, n, src);
+                for (int i = 0; i < n; ++i) out.push_back(buf.getSample(0, i));
+                produced += n;
+            }
+
+            expect(finiteAndAudible(out));
+            expectFreq(out, 44100.0, 1000.0, "ragged");
+
+            // No block-boundary glitch: max per-sample delta stays near the
+            // sine's own slope (~0.036 for 1kHz@44.1k, amp 0.25). A skip/repeat
+            // would spike well past this.
+            float maxDelta = 0.0f;
+            for (size_t i = 513; i < out.size(); ++i)
+                maxDelta = juce::jmax(maxDelta, std::abs(out[i] - out[i - 1]));
+            expect(maxDelta < 0.08f, "maxDelta=" + juce::String(maxDelta));
+        }
+
+        beginTest("reset() clears state between streams");
+        {
+            DeviceRateBridge b;
+            b.prepare(chans, 48000.0, 44100.0, 512);
+            SineSource src(1000.0, 48000.0);
+            (void)run(b, src, 4410, 256, chans);
+            b.reset();
+            SineSource src2(1000.0, 48000.0);
+            auto out = run(b, src2, 44100, 512, chans);
+            expect(finiteAndAudible(out));
+            expectFreq(out, 44100.0, 1000.0, "post-reset");
+        }
+    }
+};
+
+static DeviceRateBridgeTests deviceRateBridgeTests;
 
 // ============================================================================
 // Mock AudioEngine for EngineSync tests

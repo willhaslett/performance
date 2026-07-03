@@ -124,13 +124,16 @@ void SettingsWindow::AudioPage::refresh() {
                 bufferBox.setSelectedItemIndex(i, juce::dontSendNotification);
         }
 
-        // Sample rates
+        // Sample rates. This control sets the per-project ENGINE rate; the
+        // selection reflects the song's engine rate (stable across the async
+        // device switch), not the raw device rate.
         sampleRateBox.clear(juce::dontSendNotification);
         auto rates = device->getAvailableSampleRates();
-        double currentRate = device->getCurrentSampleRate();
+        double currentRate = device->getCurrentSampleRate();  // actual device rate (for latency display)
+        double engineRate = (double)state.getSongSampleRate();
         for (int i = 0; i < rates.size(); ++i) {
             sampleRateBox.addItem(juce::String((int)rates[i]) + " Hz", i + 1);
-            if (std::abs(rates[i] - currentRate) < 1.0)
+            if (std::abs(rates[i] - engineRate) < 1.0)
                 sampleRateBox.setSelectedItemIndex(i, juce::dontSendNotification);
         }
 
@@ -188,10 +191,10 @@ void SettingsWindow::AudioPage::applySampleRate() {
     auto rates = device->getAvailableSampleRates();
     int idx = sampleRateBox.getSelectedItemIndex();
     if (idx < 0 || idx >= rates.size()) return;
-    auto setup = dm.getAudioDeviceSetup();
-    setup.sampleRate = rates[idx];
-    state.setConfig("audio_sample_rate", std::to_string((int)rates[idx]));
-    dm.setAudioDeviceSetup(setup, true);
+    // Set the per-project ENGINE rate; the engine asks the device to follow
+    // (AudioEngine::setEngineSampleRate). We no longer poke the device directly
+    // — that would fight the per-song rate on the next state sync.
+    state.setSongSampleRate((int)rates[idx]);
     refresh();
 }
 

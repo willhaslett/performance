@@ -334,14 +334,16 @@ void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source) {
                 auto* dev = deviceManager.getCurrentAudioDevice();
                 if (dev) {
                     perfLog("[Engine] Device available after retry: %s\n", dev->getName().toRawUTF8());
-                    rebuildGraph();
+                    applyEngineRate();
                 } else {
                     perfLog("[Engine] Device still null after retry\n");
                 }
             });
             return;
         }
-        rebuildGraph();
+        // Re-assert the engine rate on the (possibly new) device before
+        // rebuilding — a freshly plugged device may default to another rate.
+        applyEngineRate();
     }
 }
 
@@ -1804,4 +1806,47 @@ void AudioEngine::setMetronome(bool on, int beatsPerBar, float volume) {
 double AudioEngine::getCurrentSampleRate() const {
     auto* device = deviceManager.getCurrentAudioDevice();
     return device ? device->getCurrentSampleRate() : 48000.0;
+}
+
+bool AudioEngine::deviceSupportsRate(double rate) const {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (!device) return false;
+    for (double r : device->getAvailableSampleRates())
+        if (std::abs(r - rate) < 0.5) return true;
+    return false;
+}
+
+void AudioEngine::setEngineSampleRate(double rate) {
+    if (rate <= 0.0 || std::abs(rate - requestedEngineRate) < 0.5) return;  // no change
+    requestedEngineRate = rate;
+    perfLog("[Engine] Engine sample rate requested: %.0f\n", rate);
+    applyEngineRate();
+}
+
+void AudioEngine::applyEngineRate() {
+    auto* device = deviceManager.getCurrentAudioDevice();
+    if (!device) return;
+
+    // If the device isn't already at the engine rate and can do it, ask it to
+    // switch. setAudioDeviceSetup restarts the device, which fires a change
+    // notification → changeListenerCallback → applyEngineRate again; that
+    // second pass finds the rate already correct and just rebuilds. Bounded
+    // because we only request when the current rate differs AND is supported.
+    if (std::abs(device->getCurrentSampleRate() - requestedEngineRate) > 0.5
+        && deviceSupportsRate(requestedEngineRate)) {
+        auto setup = deviceManager.getAudioDeviceSetup();
+        setup.sampleRate = requestedEngineRate;
+        auto err = deviceManager.setAudioDeviceSetup(setup, true);
+        perfLog("[Engine] Requested device rate %.0f: %s\n",
+                requestedEngineRate, err.isEmpty() ? "ok" : err.toRawUTF8());
+        return;  // rebuild happens on the resulting change notification
+    }
+
+    // Device is at the engine rate, or can't do it (e.g. SCO 16k) — rebuild the
+    // graph at whatever the device actually runs at. Phase 4 will insert the
+    // async SRC for the can't-do-it case.
+    if (std::abs(device->getCurrentSampleRate() - requestedEngineRate) > 0.5)
+        perfLog("[Engine] Device %.0f can't match engine %.0f — running at device rate (SRC pending)\n",
+                device->getCurrentSampleRate(), requestedEngineRate);
+    rebuildGraph();
 }

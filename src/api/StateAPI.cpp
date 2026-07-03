@@ -293,6 +293,19 @@ double StateAPI::getSongTempo() const {
     return 120.0;
 }
 
+void StateAPI::setSongSampleRate(int rate) {
+    pushUndo();
+    auto& s = song();
+    s.sampleRate = rate;
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
+int StateAPI::getSongSampleRate() const {
+    auto* s = currentSong();
+    return s ? s->sampleRate : 48000;
+}
+
 void StateAPI::setSongTimeSignature(int numerator, int denominator) {
     pushUndo();
     auto& s = song();

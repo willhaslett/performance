@@ -118,7 +118,8 @@ void PersistenceLayer::createSchema() {
             cycle_start REAL DEFAULT 0.0,
             cycle_end REAL DEFAULT 0.0,
             cycle_enabled INTEGER DEFAULT 0,
-            focused_track_id TEXT DEFAULT ''
+            focused_track_id TEXT DEFAULT '',
+            sample_rate INTEGER DEFAULT 48000
         );
 
         CREATE TABLE IF NOT EXISTS tracks (
@@ -209,6 +210,7 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_start REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_end REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN cycle_enabled INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE songs ADD COLUMN sample_rate INTEGER DEFAULT 48000", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE tracks ADD COLUMN input_monitoring INTEGER DEFAULT 1", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE busses ADD COLUMN output_target TEXT DEFAULT ''", nullptr, nullptr, nullptr);
@@ -422,7 +424,7 @@ void PersistenceLayer::readActions(AppState& out) {
 }
 
 void PersistenceLayer::readSongs(AppState& out) {
-    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, cycle_start, cycle_end, cycle_enabled, focused_track_id FROM songs");
+    auto* songStmt = prepare("SELECT id, name, master_gain, initial_state, cycle_start, cycle_end, cycle_enabled, focused_track_id, sample_rate FROM songs");
     while (sqlite3_step(songStmt) == SQLITE_ROW) {
         SongState song;
         song.id = SongId{col_str(songStmt, 0)};
@@ -438,6 +440,8 @@ void PersistenceLayer::readSongs(AppState& out) {
             if (!focusedId.empty())
                 song.focusedTrackId = TrackId{focusedId};
         }
+        song.sampleRate = sqlite3_column_int(songStmt, 8);
+        if (song.sampleRate <= 0) song.sampleRate = 48000;  // guard legacy/empty rows
 
         // Per-event maps. Each event has its own EventId stored as the
         // table's PRIMARY KEY; the unified Lua event API uses this id
@@ -884,7 +888,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         // Song. Tempo / timesig / key live in per-event tables below;
         // the legacy songs.tempo / time_sig_num / time_sig_den columns
         // are no longer written (their DEFAULTs satisfy schema NOT-NULL).
-        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, cycle_start, cycle_end, cycle_enabled, focused_track_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        auto* stmt = prepare("INSERT INTO songs (id, name, master_gain, initial_state, cycle_start, cycle_end, cycle_enabled, focused_track_id, sample_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
         sqlite3_bind_text(stmt, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_text(stmt, 2, song.name.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_double(stmt, 3, song.masterGain);
@@ -896,6 +900,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
         sqlite3_bind_double(stmt, 6, song.cycleEnd);
         sqlite3_bind_int(stmt, 7, song.cycleEnabled ? 1 : 0);
         sqlite3_bind_text(stmt, 8, song.focusedTrackId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 9, song.sampleRate);
         stepWrite(stmt, "save");
 
         // Per-event maps. Each event has its own EventId stored as the

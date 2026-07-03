@@ -28,6 +28,9 @@ public:
     double getSongTempo() const;
     void setSongTimeSignature(int numerator, int denominator);
     std::pair<int,int> getSongTimeSignature() const;
+    // Per-project engine sample rate (see docs/AUDIO_DEVICE_BOUNDARY.md).
+    void setSongSampleRate(int rate);
+    int getSongSampleRate() const;
     std::string getMasterOutputId() const;
 
     // --- Multi-event tempo / time signature / key maps ---

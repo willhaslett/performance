@@ -329,6 +329,10 @@ struct SongState {
     SongId id;
     std::string name;
     float masterGain = 1.0f;
+    // Per-project engine (processing) sample rate. The whole audio graph runs
+    // at this rate; recorded/imported audio is stored at it; the device
+    // boundary converts to/from the hardware rate. See docs/AUDIO_DEVICE_BOUNDARY.md.
+    int sampleRate = 48000;
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;

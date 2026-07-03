@@ -975,6 +975,11 @@ void PerformanceCoordinator::syncTempoFromState() {
     auto [num, den] = stateAPI->getSongTimeSignature();
     sequencerImpl->setTimeSignature(num, den);
 
+    // Drive the engine to the current song's per-project sample rate. No-op
+    // when unchanged; when it changes, the engine asks the device to follow.
+    if (audioEngine)
+        audioEngine->setEngineSampleRate((double)stateAPI->getSongSampleRate());
+
     // Restore cycle range from song
     auto* song = stateAPI->currentSong();
     if (song && song->cycleEnd > song->cycleStart) {
