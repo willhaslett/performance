@@ -36,7 +36,13 @@ OfflineRenderer::Result OfflineRenderer::render(AudioEngine& engine,
 
     auto& graph = engine.getGraph();
     auto& wrapper = engine.getGraphWrapper();
-    const double sampleRate = engine.getCurrentSampleRate();
+    // Render at the project's ENGINE rate, not the live device rate — export
+    // quality must not depend on whatever output device is plugged in (e.g.
+    // bouncing while on a 16k SCO Bluetooth device must still produce 48k).
+    // The graph is re-prepared here for the render; resumeDeviceProcessing()
+    // re-preps it back to the device rate afterward, so this is self-restoring.
+    double sampleRate = engine.getEngineSampleRate();
+    if (sampleRate <= 0.0) sampleRate = engine.getCurrentSampleRate();
     if (sampleRate <= 0.0) {
         result.errorMessage = "engine has no sample rate (device not open?)";
         return result;

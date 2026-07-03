@@ -663,12 +663,12 @@ bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId t
     // how a recording commit is undoable.
     stateAPI->pushUndo();
 
-    // Canonical form: device sample rate (fall back to 48k if no device is
-    // open, e.g. in tests), up to stereo. AudioFileNode reads at the file's
-    // stored rate with no runtime resampling, so the file MUST match the
-    // device rate or it plays back at the wrong speed.
-    double deviceRate = audioEngine->getCurrentSampleRate();
-    int targetRate = (deviceRate > 0.0) ? (int)deviceRate : 48000;
+    // Canonical form: the project ENGINE rate (fall back to 48k if unset), up
+    // to stereo. Storing at the engine rate keeps takes uniform and makes the
+    // 1:1 playback fast-path the common case; AudioFileNode resamples anyway if
+    // the engine rate later changes (see docs/AUDIO_DEVICE_BOUNDARY.md).
+    double engineRate = audioEngine->getEngineSampleRate();
+    int targetRate = (engineRate > 0.0) ? (int)engineRate : 48000;
     int channels = std::min(2, (int)reader->numChannels);
 
     double startBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;

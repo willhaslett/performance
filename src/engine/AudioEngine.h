@@ -141,6 +141,11 @@ public:
     void setMetronome(bool on, int beatsPerBar, float volume = -1.0f);
     double getCurrentSampleRate() const;
 
+    // The per-project engine (processing) rate we're driving toward — what the
+    // graph is meant to run at, independent of the live device rate. Bounce
+    // renders at this so export quality never depends on the output device.
+    double getEngineSampleRate() const { return requestedEngineRate; }
+
     // Request the per-project engine sample rate. We ask the hardware to run
     // at this rate (setAudioDeviceSetup); if the device supports it, the graph
     // ends up running at the engine rate — matching stored audio, no SRC
