@@ -284,14 +284,23 @@ choices:
 1. **Per-project engine rate through state + persistence** (no audio-thread
    change). `SongState.sampleRate`, StateAPI get/set, DB column, tests. ✅
 2. **`DeviceRateBridge` pure component + unit tests** (no wiring). ✅
-3. **Graph decoupled from device rate + fast path.** Graph always preps at the
-   song's engine rate; on device setup/change, request engine rate; if honored,
-   1:1 callback (≡ today). If not, fall back to running at device rate *for now*
-   (safe interim until Phase 4). ✅
-4. **Output async SRC** — wire `DeviceRateBridge` into a custom device callback
-   for the device≠engine case. Click-test SCO output. ✅
+3. **[DONE] Request engine rate at the device + Settings control.** Graph preps
+   at the device's actual rate; on setup/change we request the engine rate, so
+   compliant devices run at it (SCO falls back to device rate). Settings "Sample
+   Rate" sets the per-project rate. Click-tested.
+3b. **[DONE] `AudioFileNode` file→engine resampling** (reordered ahead of 4).
+   Stored audio plays at correct pitch at any engine rate — `processBlock`
+   branches on `fileSampleRate/outputRate`: equal → bit-exact 1:1; differ →
+   stateless 4-point Catmull-Rom from the beat-derived fractional position.
+   Fixes the reported distortion + mixed-rate content. Cubic (not the streaming
+   WindowedSinc) because this node is random-access/beat-anchored. Confirmed by
+   ear + 3 unit tests. This is the file→engine half of the boundary.
+4. **[NEXT] Output async SRC** — wire `DeviceRateBridge` into a custom device
+   callback for the device≠engine case (the engine→device half). Fixes SCO
+   Bluetooth, where the device physically can't run at the engine rate. The
+   real-time commitment. Click-test SCO output.
 5. **Input async SRC + store-at-engine-rate** — record path converts to engine
-   rate; import retargets; commit math updated. ✅
+   rate; import retargets; commit math updated.
 6. **Bounce at engine rate + latency compensation** — `OfflineRenderer` rate
    pin; input/output latency comp on record commit; fold in the built-in-mic
    investigation. ✅
