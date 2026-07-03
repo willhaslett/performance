@@ -19,6 +19,7 @@
 #include "state/StateModel.h"
 #include "engine/DeviceRateBridge.h"
 #include "engine/AudioFileNode.h"
+#include "engine/RateBridgeProcessor.h"
 
 // ============================================================================
 // Test helpers
@@ -1909,6 +1910,121 @@ public:
 };
 
 static AudioFileNodeTests audioFileNodeTests;
+
+// ============================================================================
+// RateBridgeProcessor — graph pinned at engine rate, device-boundary SRC
+// ============================================================================
+
+class RateBridgeProcessorTests : public juce::UnitTest {
+public:
+    RateBridgeProcessorTests() : UnitTest("RateBridgeProcessor", "Performance") {}
+
+    // Inner "graph" stub: either generates a 220 Hz sine (ignoring input) at its
+    // prepared rate, or passes input straight through to output.
+    struct StubInner : juce::AudioProcessor {
+        enum Mode { GenerateSine, PassThrough };
+        Mode mode;
+        double rate = 48000.0, phase = 0.0;
+        explicit StubInner(Mode m)
+            : AudioProcessor(BusesProperties()
+                  .withInput("In", juce::AudioChannelSet::stereo())
+                  .withOutput("Out", juce::AudioChannelSet::stereo())), mode(m) {}
+        void prepareToPlay(double sr, int) override { rate = sr; phase = 0.0; }
+        void releaseResources() override {}
+        void processBlock(juce::AudioBuffer<float>& buf, juce::MidiBuffer&) override {
+            if (mode == PassThrough) return;  // input already present = output
+            const double inc = 2.0 * juce::MathConstants<double>::pi * 220.0 / rate;
+            for (int i = 0; i < buf.getNumSamples(); ++i) {
+                const float s = 0.25f * (float)std::sin(phase);
+                phase += inc;
+                for (int ch = 0; ch < buf.getNumChannels(); ++ch) buf.setSample(ch, i, s);
+            }
+        }
+        const juce::String getName() const override { return "Stub"; }
+        double getTailLengthSeconds() const override { return 0; }
+        bool acceptsMidi() const override { return false; }
+        bool producesMidi() const override { return false; }
+        juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+        bool hasEditor() const override { return false; }
+        int getNumPrograms() override { return 1; }
+        int getCurrentProgram() override { return 0; }
+        void setCurrentProgram(int) override {}
+        const juce::String getProgramName(int) override { return {}; }
+        void changeProgramName(int, const juce::String&) override {}
+        void getStateInformation(juce::MemoryBlock&) override {}
+        void setStateInformation(const void*, int) override {}
+    };
+
+    // Drive the wrapper at deviceRate for ~seconds; return ch0 output. When
+    // feedInput, fill the input with a 220 Hz sine at deviceRate each block.
+    static std::vector<float> drive(RateBridgeProcessor& w, int deviceRate,
+                                    double seconds, bool feedInput) {
+        juce::AudioBuffer<float> buf(2, 256);
+        juce::MidiBuffer mb;
+        std::vector<float> out;
+        double phase = 0.0;
+        const double inc = 2.0 * juce::MathConstants<double>::pi * 220.0 / deviceRate;
+        const int blocks = (int)std::ceil(seconds * deviceRate / 256.0);
+        for (int b = 0; b < blocks; ++b) {
+            buf.clear();
+            if (feedInput)
+                for (int i = 0; i < 256; ++i) {
+                    const float s = 0.25f * (float)std::sin(phase);
+                    phase += inc;
+                    buf.setSample(0, i, s);
+                    buf.setSample(1, i, s);
+                }
+            w.processBlock(buf, mb);
+            for (int i = 0; i < 256; ++i) out.push_back(buf.getSample(0, i));
+        }
+        return out;
+    }
+
+    void runTest() override {
+        beginTest("Passthrough when engine == device");
+        {
+            StubInner inner(StubInner::GenerateSine);
+            RateBridgeProcessor w(inner);
+            w.setEngineSampleRate(48000);
+            w.setPlayConfigDetails(2, 2, 48000, 256);
+            w.prepareToPlay(48000, 256);
+            expect(w.isPassthrough());
+            auto out = drive(w, 48000, 0.5, false);
+            expect(DeviceRateBridgeTests::finiteAndAudible(out));
+            double f = DeviceRateBridgeTests::estimateFreq(out, 48000.0, 1024);
+            expect(std::abs(f - 220.0) < 8.0, "passthrough f=" + juce::String(f));
+        }
+
+        beginTest("Engine 48k -> device 16k output resamples (SCO case)");
+        {
+            StubInner inner(StubInner::GenerateSine);
+            RateBridgeProcessor w(inner);
+            w.setEngineSampleRate(48000);
+            w.setPlayConfigDetails(2, 2, 16000, 256);
+            w.prepareToPlay(16000, 256);
+            expect(!w.isPassthrough());
+            auto out = drive(w, 16000, 0.5, false);
+            expect(DeviceRateBridgeTests::finiteAndAudible(out));
+            double f = DeviceRateBridgeTests::estimateFreq(out, 16000.0, 1024);
+            expect(std::abs(f - 220.0) < 8.0, "48->16 out f=" + juce::String(f));
+        }
+
+        beginTest("Input+output round-trip preserves frequency (device 44.1k, engine 48k)");
+        {
+            StubInner inner(StubInner::PassThrough);
+            RateBridgeProcessor w(inner);
+            w.setEngineSampleRate(48000);
+            w.setPlayConfigDetails(2, 2, 44100, 256);
+            w.prepareToPlay(44100, 256);
+            auto out = drive(w, 44100, 0.6, /*feedInput*/true);
+            expect(DeviceRateBridgeTests::finiteAndAudible(out));
+            double f = DeviceRateBridgeTests::estimateFreq(out, 44100.0, 2048);
+            expect(std::abs(f - 220.0) < 10.0, "roundtrip f=" + juce::String(f));
+        }
+    }
+};
+
+static RateBridgeProcessorTests rateBridgeProcessorTests;
 
 // ============================================================================
 // Mock AudioEngine for EngineSync tests
