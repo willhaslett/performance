@@ -1,6 +1,7 @@
 #pragma once
 #include "engine/AudioEngineInterface.h"
 #include "engine/GraphWrapper.h"
+#include "engine/RateBridgeProcessor.h"
 #include "engine/MidiSourceNode.h"
 #include "engine/RecordFIFO.h"
 #include "engine/AudioRecordFIFO.h"
@@ -185,6 +186,12 @@ private:
     std::unique_ptr<juce::AudioProcessorGraph> graph;
     std::unique_ptr<GraphWrapper> graphWrapper;
     std::unique_ptr<juce::AudioProcessorPlayer> player;
+    // Sits between the player (device rate) and graphWrapper (engine rate),
+    // resampling at the boundary when they differ. Passthrough when equal.
+    std::unique_ptr<RateBridgeProcessor> rateBridge;
+    // Bind the player to the rate bridge with the current engine rate. Used
+    // wherever we (re)attach the processor to the device.
+    void attachProcessor();
 
     // Graph node IDs
     juce::AudioProcessorGraph::NodeID midiInputNodeId;

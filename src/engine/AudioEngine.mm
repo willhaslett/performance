@@ -160,6 +160,14 @@ AudioEngine::AudioEngine()
       graphWrapper(std::make_unique<GraphWrapper>(*graph)),
       player(std::make_unique<juce::AudioProcessorPlayer>()) {
     juce::addDefaultFormatsToManager(formatManager);
+    // The rate bridge wraps the graph wrapper; the player drives the bridge.
+    rateBridge = std::make_unique<RateBridgeProcessor>(*graphWrapper);
+}
+
+void AudioEngine::attachProcessor() {
+    if (!player || !rateBridge) return;
+    rateBridge->setEngineSampleRate(requestedEngineRate);
+    player->setProcessor(rateBridge.get());
 }
 
 AudioEngine::~AudioEngine() {
@@ -203,7 +211,7 @@ void AudioEngine::pauseDeviceProcessing() {
 }
 
 void AudioEngine::resumeDeviceProcessing() {
-    if (player && graphWrapper) player->setProcessor(graphWrapper.get());
+    if (player && graphWrapper) attachProcessor();
 }
 
 void AudioEngine::setupGraph() {
@@ -250,7 +258,7 @@ void AudioEngine::setupGraph() {
     graphWrapper->prepareToPlay(
         device->getCurrentSampleRate(),
         device->getCurrentBufferSizeSamples());
-    player->setProcessor(graphWrapper.get());
+    attachProcessor();
     deviceManager.addAudioCallback(player.get());
 }
 
@@ -308,7 +316,7 @@ void AudioEngine::rebuildGraph() {
     graphWrapper->prepareToPlay(
         device->getCurrentSampleRate(),
         device->getCurrentBufferSizeSamples());
-    player->setProcessor(graphWrapper.get());
+    attachProcessor();
     deviceManager.addAudioCallback(player.get());
 
     // Rewire all connections with new IO nodes
