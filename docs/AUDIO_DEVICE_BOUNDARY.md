@@ -295,12 +295,17 @@ choices:
    Fixes the reported distortion + mixed-rate content. Cubic (not the streaming
    WindowedSinc) because this node is random-access/beat-anchored. Confirmed by
    ear + 3 unit tests. This is the file→engine half of the boundary.
-4. **[NEXT] Output async SRC** — wire `DeviceRateBridge` into a custom device
-   callback for the device≠engine case (the engine→device half). Fixes SCO
-   Bluetooth, where the device physically can't run at the engine rate. The
-   real-time commitment. Click-test SCO output.
-5. **Input async SRC + store-at-engine-rate** — record path converts to engine
-   rate; import retargets; commit math updated.
+4. **[DONE] Device-boundary SRC via `RateBridgeProcessor`** — the player drives
+   the graph through the bridge (`AudioEngine::attachProcessor`); the graph runs
+   at the engine rate, the bridge resamples device↔engine when they differ
+   (output pull-driven; input best-effort; MIDI positions scaled). Passthrough
+   when equal (all 48k rigs → byte-identical to before). 3 unit tests
+   (passthrough / 48k→16k output / 44.1k↔48k round-trip); app-launch smoke test
+   confirmed the passthrough path by ear. Fixes SCO Bluetooth (graph stays at
+   48k, only the final output drops to 16k).
+5. **[DONE, 5a] Import + bounce at engine rate**; **store-at-engine-rate for
+   recordings is automatic post-phase-4** (the record tap is downstream of the
+   bridge's engine-rate graph). No separate work needed.
 6. **Bounce at engine rate + latency compensation** — `OfflineRenderer` rate
    pin; input/output latency comp on record commit; fold in the built-in-mic
    investigation. ✅
