@@ -46,7 +46,9 @@ public:
     virtual void removeEffect(const juce::String& parentId, const juce::String& effectId) = 0;
 
     // Sends
-    virtual void addSend(const juce::String& trackId, const juce::String& busId, float gain = 1.0f) = 0;
+    virtual void addSend(const juce::String& trackId, const juce::String& busId,
+                         const juce::String& sendId, float gain = 1.0f) = 0;
+    virtual void removeSend(const juce::String& sendId) = 0;
     virtual void setSendGain(const juce::String& trackId, const juce::String& busId, float gain) = 0;
 
     // Master

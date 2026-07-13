@@ -2122,8 +2122,12 @@ public:
         calls.push_back({"removeEffect", parent.toStdString(), fxId.toStdString()});
     }
 
-    void addSend(const juce::String& track, const juce::String& bus, float gain) override {
-        calls.push_back({"addSend", track.toStdString(), bus.toStdString(), "", gain});
+    void addSend(const juce::String& track, const juce::String& bus,
+                 const juce::String& sendId, float gain) override {
+        calls.push_back({"addSend", track.toStdString(), bus.toStdString(), sendId.toStdString(), gain});
+    }
+    void removeSend(const juce::String& sendId) override {
+        calls.push_back({"removeSend", sendId.toStdString()});
     }
     void setSendGain(const juce::String& track, const juce::String& bus, float gain) override {
         calls.push_back({"setSendGain", track.toStdString(), bus.toStdString(), "", gain});
@@ -2293,6 +2297,36 @@ public:
             state.removeTrack(trackId);
 
             expect(mock.hasCall("removeTrack"));
+        }
+
+        beginTest("Send create + remove propagate to engine (phantom-send fix)");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+            auto busId = state.createBus("Reverb");
+
+            state.setCurrentSong(SongId{});
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            auto sendId = state.addSend(trackId, busId, 0.5f);
+            auto* add = mock.findCall("addSend");
+            expect(add != nullptr);
+            // The engine must learn the send's identity so it can later remove it.
+            expectEquals(add->arg3, sendId.str());
+
+            mock.clear();
+            state.removeSend(sendId);
+            // Without this call the engine keeps re-wiring the send on every
+            // rebuild -> live audio stuck on the bus after the send is gone.
+            auto* rem = mock.findCall("removeSend");
+            expect(rem != nullptr);
+            expectEquals(rem->arg1, sendId.str());
         }
 
         beginTest("Master gain update propagates to engine");

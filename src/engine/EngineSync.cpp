@@ -248,7 +248,8 @@ void EngineSync::onSendCreated(const std::string& sendId) {
     for (auto& track : song->tracks) {
         for (auto& send : track.sends) {
             if (send.id.str() == sendId) {
-                engine.addSend(juce::String(track.id.str()), juce::String(send.busId.str()), send.gain);
+                engine.addSend(juce::String(track.id.str()), juce::String(send.busId.str()),
+                               juce::String(send.id.str()), send.gain);
                 return;
             }
         }
@@ -327,6 +328,8 @@ void EngineSync::onEntityDeleted(const std::string& entityType, const std::strin
         engine.removeTrack(id);
     else if (entityType == "bus")
         engine.removeBus(id);
+    else if (entityType == "send")
+        engine.removeSend(id);
     else if (entityType == "effect") {
         // Try all parents including master output
         auto* song = stateAPI.findSong(SongId{activeSongId});

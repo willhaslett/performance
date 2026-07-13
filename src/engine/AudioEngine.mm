@@ -1094,7 +1094,8 @@ void AudioEngine::clearAllBusses() {
 
 // --- Sends ---
 
-void AudioEngine::addSend(const juce::String& trackId, const juce::String& busId, float gain) {
+void AudioEngine::addSend(const juce::String& trackId, const juce::String& busId,
+                          const juce::String& sendId, float gain) {
     auto it = tracks.find(trackId);
     if (it == tracks.end()) return;
 
@@ -1102,10 +1103,30 @@ void AudioEngine::addSend(const juce::String& trackId, const juce::String& busId
     if (auto* proc = dynamic_cast<GainProcessor*>(gainNode->getProcessor()))
         proc->setGain(gain);
 
-    it->second.sends.push_back({ busId, gainNode });
+    it->second.sends.push_back({ sendId, busId, gainNode });
     rebuildConnections();
-    perfLog("[Engine] Added send: track \"%s\" -> bus \"%s\" (gain %.2f)\n",
-            trackId.toRawUTF8(), busId.toRawUTF8(), gain);
+    perfLog("[Engine] Added send: track \"%s\" -> bus \"%s\" (id=%s, gain %.2f)\n",
+            trackId.toRawUTF8(), busId.toRawUTF8(), sendId.toRawUTF8(), gain);
+}
+
+void AudioEngine::removeSend(const juce::String& sendId) {
+    // Sends carry no trackId at deletion time (state already erased them), so
+    // scan every track for the matching send id. Removing the graph node and
+    // the SendNode entry is what actually kills the routing — without this the
+    // phantom send gets re-wired on every rebuildConnections().
+    for (auto& [trackId, track] : tracks) {
+        auto& sends = track.sends;
+        for (auto sit = sends.begin(); sit != sends.end(); ++sit) {
+            if (sit->id != sendId) continue;
+            if (sit->gainNode) graph->removeNode(sit->gainNode->nodeID);
+            sends.erase(sit);
+            rebuildConnections();
+            perfLog("[Engine] Removed send: id=%s from track \"%s\"\n",
+                    sendId.toRawUTF8(), trackId.toRawUTF8());
+            return;
+        }
+    }
+    perfLog("[Engine] removeSend: id=%s not found\n", sendId.toRawUTF8());
 }
 
 void AudioEngine::setSendGain(const juce::String& trackId, const juce::String& busId, float gain) {
@@ -1254,23 +1275,35 @@ void AudioEngine::rebuildConnections() {
             }
         }
 
-        // For sends, use the last node before outputGain (effects chain end or source)
+        // Sends tap the track's pre-fader signal.
+        //   - Instrument track, or audio track WITH insert effects: the effect-chain
+        //     end (prevNodeId) already carries the summed signal, so tap it directly.
+        //   - Audio track with NO effects: there is no single pre-fader sum node
+        //     (file playback and live input feed the output gain in parallel), so we
+        //     must tap the raw sources -- file playback (always) + live input (when
+        //     monitored) -- mirroring exactly how they feed the output gain above.
+        //     Relying on the effect-chain `prevNodeId` here would tap an unset node,
+        //     which is how sends from a file-playback audio track went silent.
+        bool audioTrackNoFx = (track.sourceType == TrackSourceType::AudioInput
+                               && track.audioEnabled && track.effects.empty());
         auto sendSourceId = prevNodeId;
-        if (isAudioInput && track.effects.empty()) {
-            // No effects: sends tapped from the gain node input isn't right.
-            // Sends should tap from the same point as the gain node -- the audio input itself.
-            // We re-wire sends directly from audio input.
-        }
         for (auto& send : track.sends) {
             if (!send.gainNode) continue;
-            if (isAudioInput && track.effects.empty()) {
-                // Wire sends from audio input directly
-                if (track.inputChannelCount == 1) {
-                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
-                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 1 }});
-                } else {
-                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
-                    graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { send.gainNode->nodeID, 1 }});
+            if (audioTrackNoFx) {
+                // File playback -> send (always present on an audio track)
+                if (track.audioFileNode) {
+                    for (int ch = 0; ch < 2; ++ch)
+                        graph->addConnection({ { track.audioFileNode->nodeID, ch }, { send.gainNode->nodeID, ch } });
+                }
+                // Live input -> send, only when monitored + assigned (matches output path)
+                if (track.inputMonitoring && track.inputChannelStart >= 0 && track.inputChannelCount > 0) {
+                    if (track.inputChannelCount == 1) {
+                        graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
+                        graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 1 }});
+                    } else {
+                        graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
+                        graph->addConnection({{ audioInputNodeId, track.inputChannelStart + 1 }, { send.gainNode->nodeID, 1 }});
+                    }
                 }
             } else {
                 for (int ch = 0; ch < prevNumOut; ++ch)

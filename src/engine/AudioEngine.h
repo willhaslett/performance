@@ -85,7 +85,9 @@ public:
     std::vector<EffectInfo> getMasterEffects() const;
 
     // Sends
-    void addSend(const juce::String& trackId, const juce::String& busId, float gain = 1.0f) override;
+    void addSend(const juce::String& trackId, const juce::String& busId,
+                 const juce::String& sendId, float gain = 1.0f) override;
+    void removeSend(const juce::String& sendId) override;
     void setSendGain(const juce::String& trackId, const juce::String& busId, float gain) override;
 
     // Access loaded processors by ID
@@ -226,6 +228,7 @@ private:
         std::vector<EffectNode> effects;
 
         struct SendNode {
+            juce::String id;     // send UUID (state identity, for removal)
             juce::String busId;  // UUID key into busses map
             juce::AudioProcessorGraph::Node::Ptr gainNode;
         };
