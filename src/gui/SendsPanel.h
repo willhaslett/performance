@@ -15,6 +15,9 @@ public:
         juce::String busId;
         float gain;
         float peakLevel;
+        juce::String sendId;
+        bool preFader = false;
+        bool muted = false;
     };
     void setSends(const std::vector<SendInfo>& sends);
 
@@ -41,6 +44,9 @@ private:
         juce::String busId;    // UUID
         float gain = 1.0f;
         float peakLevel = 0.0f;
+        juce::String sendId;   // send UUID (identity for pre/post/mute/remove)
+        bool preFader = false;
+        bool muted = false;
     };
     std::vector<SendRow> rows;
     std::vector<BusOption> availableBusses;

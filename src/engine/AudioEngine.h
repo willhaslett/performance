@@ -89,6 +89,8 @@ public:
                  const juce::String& sendId, float gain = 1.0f) override;
     void removeSend(const juce::String& sendId) override;
     void setSendGain(const juce::String& trackId, const juce::String& busId, float gain) override;
+    void setSendPreFader(const juce::String& sendId, bool preFader) override;
+    void setSendMuted(const juce::String& sendId, bool muted) override;
 
     // Access loaded processors by ID
     juce::AudioProcessor* getTrackInstrumentProcessor(const juce::String& trackId) const override;
@@ -230,6 +232,7 @@ private:
         struct SendNode {
             juce::String id;     // send UUID (state identity, for removal)
             juce::String busId;  // UUID key into busses map
+            bool preFader = false;  // false = post-fader (tap output gain); true = pre-fader (tap source)
             juce::AudioProcessorGraph::Node::Ptr gainNode;
         };
         std::vector<SendNode> sends;

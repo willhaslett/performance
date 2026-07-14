@@ -1174,6 +1174,36 @@ void StateAPI::setSendGain(const SendId& sendId, float gain) {
     }
 }
 
+void StateAPI::setSendPreFader(const SendId& sendId, bool preFader) {
+    pushUndo();
+    auto& s = song();
+    for (auto& t : s.tracks) {
+        for (auto& send : t.sends) {
+            if (send.id == sendId) {
+                send.preFader = preFader;
+                markDirty();
+                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId.str(), t.id.str() });
+                return;
+            }
+        }
+    }
+}
+
+void StateAPI::setSendMuted(const SendId& sendId, bool muted) {
+    pushUndo();
+    auto& s = song();
+    for (auto& t : s.tracks) {
+        for (auto& send : t.sends) {
+            if (send.id == sendId) {
+                send.muted = muted;
+                markDirty();
+                eventBus.emit({ StateEvent::Updated, StateEvent::Send, sendId.str(), t.id.str() });
+                return;
+            }
+        }
+    }
+}
+
 // --- Bindings ---
 
 BindingId StateAPI::addBinding(const SongId& songId, const std::string& controlType,
@@ -1877,7 +1907,7 @@ std::vector<StateAPI::TrackSendInfo> StateAPI::getTrackSends(const TrackId& trac
         std::string busName;
         auto* b = findBus(send.busId);
         if (b) busName = b->name;
-        result.push_back({ busName, send.busId, send.gain });
+        result.push_back({ busName, send.busId, send.gain, send.id, send.preFader, send.muted });
     }
     return result;
 }

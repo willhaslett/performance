@@ -166,7 +166,9 @@ void PersistenceLayer::createSchema() {
             id TEXT PRIMARY KEY,
             track_id TEXT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
             bus_id TEXT NOT NULL REFERENCES busses(id),
-            gain REAL DEFAULT 1.0
+            gain REAL DEFAULT 1.0,
+            pre_fader INTEGER DEFAULT 0,
+            muted INTEGER DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS bindings (
@@ -221,6 +223,8 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN record_tempo REAL DEFAULT 120.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN sample_rate INTEGER DEFAULT 48000", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN channel_count INTEGER DEFAULT 2", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sends ADD COLUMN pre_fader INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE sends ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
 
     // Live-looping: regions get a pool discriminator ('arrangement' | 'loop').
@@ -538,10 +542,13 @@ void PersistenceLayer::readSongs(AppState& out) {
             sqlite3_finalize(fxs);
 
             // Sends for this track
-            auto* ss = prepare("SELECT id, bus_id, gain FROM sends WHERE track_id = ?");
+            auto* ss = prepare("SELECT id, bus_id, gain, pre_fader, muted FROM sends WHERE track_id = ?");
             sqlite3_bind_text(ss, 1, t.id.c_str(), -1, SQLITE_TRANSIENT);
             while (sqlite3_step(ss) == SQLITE_ROW) {
-                t.sends.push_back({ SendId{col_str(ss, 0)}, BusId{col_str(ss, 1)}, (float)sqlite3_column_double(ss, 2) });
+                t.sends.push_back({ SendId{col_str(ss, 0)}, BusId{col_str(ss, 1)},
+                                    (float)sqlite3_column_double(ss, 2),
+                                    sqlite3_column_int(ss, 3) != 0,
+                                    sqlite3_column_int(ss, 4) != 0 });
             }
             sqlite3_finalize(ss);
 
@@ -1026,11 +1033,14 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
             // Sends
             for (auto& s : t.sends) {
-                auto* ss = prepare("INSERT INTO sends (id, track_id, bus_id, gain) VALUES (?, ?, ?, ?)");
+                auto* ss = prepare("INSERT INTO sends (id, track_id, bus_id, gain, pre_fader, muted) "
+                                   "VALUES (?, ?, ?, ?, ?, ?)");
                 sqlite3_bind_text(ss, 1, s.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(ss, 2, t.id.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(ss, 3, s.busId.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_double(ss, 4, s.gain);
+                sqlite3_bind_int(ss, 5, s.preFader ? 1 : 0);
+                sqlite3_bind_int(ss, 6, s.muted ? 1 : 0);
                 stepWrite(ss, "save");
             }
 

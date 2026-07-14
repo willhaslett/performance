@@ -50,6 +50,8 @@ public:
                          const juce::String& sendId, float gain = 1.0f) = 0;
     virtual void removeSend(const juce::String& sendId) = 0;
     virtual void setSendGain(const juce::String& trackId, const juce::String& busId, float gain) = 0;
+    virtual void setSendPreFader(const juce::String& sendId, bool preFader) = 0;
+    virtual void setSendMuted(const juce::String& sendId, bool muted) = 0;
 
     // Master
     virtual void setMasterGain(float gain) = 0;

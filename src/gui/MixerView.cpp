@@ -156,7 +156,8 @@ void MixerView::timerCallback() {
             auto stateSends = state.getTrackSends(TrackId{TrackId{id.toStdString()}});
             std::vector<SendsPanel::SendInfo> sends;
             for (auto& s : stateSends)
-                sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f });
+                sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f,
+                              juce::String(s.id.str()), s.preFader, s.muted });
             trackStrips[i]->setSends(sends);
             trackStrips[i]->setAvailableBusses(busOptions);
 
@@ -241,7 +242,8 @@ void MixerView::rebuildStrips() {
         auto stateSends = state.getTrackSends(TrackId{TrackId{t.id.toStdString()}});
         std::vector<SendsPanel::SendInfo> sends;
         for (auto& s : stateSends)
-            sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f });
+            sends.push_back({ juce::String(s.busName), juce::String(s.busId.str()), s.gain, 0.0f,
+                              juce::String(s.id.str()), s.preFader, s.muted });
         strip->setSends(sends);
 
         // Wire track preset callbacks from coordinator

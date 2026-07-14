@@ -21,7 +21,7 @@ void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
     if (changed) {
         rows.clear();
         for (auto& s : sends)
-            rows.push_back({ s.busName, s.busId, s.gain, s.peakLevel });
+            rows.push_back({ s.busName, s.busId, s.gain, s.peakLevel, s.sendId, s.preFader, s.muted });
         if (!availableBusses.empty())
             rows.push_back({ {}, {}, 1.0f, 0.0f });  // empty "add send" row (only if busses exist)
 
@@ -33,6 +33,9 @@ void SendsPanel::setSends(const std::vector<SendInfo>& sends) {
     for (size_t i = 0; i < sends.size() && i < rows.size(); ++i) {
         rows[i].gain = sends[i].gain;
         rows[i].peakLevel = sends[i].peakLevel;
+        rows[i].sendId = sends[i].sendId;
+        rows[i].preFader = sends[i].preFader;
+        rows[i].muted = sends[i].muted;
     }
 
     repaint();
@@ -132,7 +135,9 @@ void SendsPanel::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(pill.toFloat(), Theme::cornerRadiusSm);
 
         if (rows[i].busName.isNotEmpty()) {
-            g.setColour(Theme::color(Theme::Color::slotEffect));
+            // A muted send stays wired but dims to signal it's not sounding.
+            float alpha = rows[i].muted ? 0.4f : 1.0f;
+            g.setColour(Theme::color(Theme::Color::slotEffect).withAlpha(alpha));
             g.drawText(rows[i].busName, pill.reduced(6, 0),
                        juce::Justification::centredLeft, true);
             paintKnob(g, getKnobBounds((int)i), rows[i].gain, rows[i].peakLevel);
@@ -156,30 +161,29 @@ void SendsPanel::mouseDown(const juce::MouseEvent& event) {
 
         if (getPillBounds((int)i).contains(event.getPosition())) {
             if (event.mods.isPopupMenu() && rows[i].busName.isNotEmpty()) {
-                // Right-click on existing send — delete
-                auto sendId = rows[i].busId;
-                auto tId = trackId;
+                // Right-click on existing send — fader mode / mute / remove.
+                SendId sendId{ rows[i].sendId.toStdString() };
+                bool preFader = rows[i].preFader;
+                bool muted = rows[i].muted;
+
+                enum { kPreFader = 1, kPostFader, kMute, kRemove };
                 juce::PopupMenu menu;
-                menu.addItem(1, "Remove Send");
+                menu.addItem(kPreFader,  "Pre-Fader",  true, preFader);
+                menu.addItem(kPostFader, "Post-Fader", true, !preFader);
+                menu.addSeparator();
+                menu.addItem(kMute, "Mute", true, muted);
+                menu.addSeparator();
+                menu.addItem(kRemove, "Remove Send");
+
                 menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
                     juce::Rectangle<int>(event.getScreenX(), event.getScreenY(), 1, 1)),
-                    [this, sendId, tId](int result) {
-                        if (result == 1) {
-                            // Find the send entity by bus ID and remove it
-                            auto* song = state.currentSong();
-                            if (song) {
-                                for (auto& t : song->tracks) {
-                                    if (t.id.str() == tId.toStdString()) {
-                                        for (auto& s : t.sends) {
-                                            if (s.busId.str() == sendId.toStdString()) {
-                                                state.removeSend(s.id);
-                                                break;
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
+                    [this, sendId, muted](int result) {
+                        switch (result) {
+                            case kPreFader:  state.setSendPreFader(sendId, true);  break;
+                            case kPostFader: state.setSendPreFader(sendId, false); break;
+                            case kMute:      state.setSendMuted(sendId, !muted);   break;
+                            case kRemove:    state.removeSend(sendId);             break;
+                            default: break;
                         }
                     });
             } else if (rows[i].busName.isEmpty()) {

@@ -193,6 +193,8 @@ public:
     void removeSend(const SendId& sendId);
     void setSendGain(const SendId& sendId, float gain);
     void setSendGainByBus(const TrackId& trackId, const BusId& busId, float gain);
+    void setSendPreFader(const SendId& sendId, bool preFader);
+    void setSendMuted(const SendId& sendId, bool muted);
 
     // --- Bindings (songId empty = global, deviceId empty = any device) ---
     BindingId addBinding(const SongId& songId, const std::string& controlType,
@@ -314,7 +316,7 @@ public:
     struct TrackInfo { TrackId id; std::string name; };
     struct BusInfo { BusId id; std::string name; };
     struct EffectSlotInfo { EffectId effectId; std::string pluginName; };
-    struct TrackSendInfo { std::string busName; BusId busId; float gain; };
+    struct TrackSendInfo { std::string busName; BusId busId; float gain; SendId id; bool preFader; bool muted; };
 
     std::vector<TrackInfo> listTracks() const;
     std::vector<BusInfo> listBusses() const;

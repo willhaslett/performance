@@ -250,6 +250,8 @@ void EngineSync::onSendCreated(const std::string& sendId) {
             if (send.id.str() == sendId) {
                 engine.addSend(juce::String(track.id.str()), juce::String(send.busId.str()),
                                juce::String(send.id.str()), send.gain);
+                engine.setSendPreFader(juce::String(send.id.str()), send.preFader);
+                engine.setSendMuted(juce::String(send.id.str()), send.muted);
                 return;
             }
         }
@@ -309,7 +311,10 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         for (auto& t : song->tracks)
             for (auto& s : t.sends)
                 if (s.id.str() == entityId) {
+                    // Re-apply every send property; the event doesn't say which changed.
                     engine.setSendGain(juce::String(t.id.str()), juce::String(s.busId.str()), s.gain);
+                    engine.setSendPreFader(juce::String(s.id.str()), s.preFader);
+                    engine.setSendMuted(juce::String(s.id.str()), s.muted);
                     return;
                 }
     }

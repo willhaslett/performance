@@ -1103,7 +1103,7 @@ void AudioEngine::addSend(const juce::String& trackId, const juce::String& busId
     if (auto* proc = dynamic_cast<GainProcessor*>(gainNode->getProcessor()))
         proc->setGain(gain);
 
-    it->second.sends.push_back({ sendId, busId, gainNode });
+    it->second.sends.push_back({ sendId, busId, /*preFader*/ false, gainNode });
     rebuildConnections();
     perfLog("[Engine] Added send: track \"%s\" -> bus \"%s\" (id=%s, gain %.2f)\n",
             trackId.toRawUTF8(), busId.toRawUTF8(), sendId.toRawUTF8(), gain);
@@ -1136,6 +1136,32 @@ void AudioEngine::setSendGain(const juce::String& trackId, const juce::String& b
         if (send.busId == busId) {
             if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor()))
                 proc->setGain(gain);
+            return;
+        }
+    }
+}
+
+void AudioEngine::setSendPreFader(const juce::String& sendId, bool preFader) {
+    // Changing the tap point (pre vs post output gain) is a topology change,
+    // so it must go through a rebuild.
+    for (auto& [trackId, track] : tracks) {
+        for (auto& send : track.sends) {
+            if (send.id != sendId) continue;
+            if (send.preFader == preFader) return;  // no-op
+            send.preFader = preFader;
+            rebuildConnections();
+            return;
+        }
+    }
+}
+
+void AudioEngine::setSendMuted(const juce::String& sendId, bool muted) {
+    // Send mute is just the send's own gain stage muting — no rewiring needed.
+    for (auto& [trackId, track] : tracks) {
+        for (auto& send : track.sends) {
+            if (send.id != sendId) continue;
+            if (auto* proc = dynamic_cast<GainProcessor*>(send.gainNode->getProcessor()))
+                proc->setMuted(muted);
             return;
         }
     }
@@ -1275,27 +1301,34 @@ void AudioEngine::rebuildConnections() {
             }
         }
 
-        // Sends tap the track's pre-fader signal.
-        //   - Instrument track, or audio track WITH insert effects: the effect-chain
-        //     end (prevNodeId) already carries the summed signal, so tap it directly.
-        //   - Audio track with NO effects: there is no single pre-fader sum node
-        //     (file playback and live input feed the output gain in parallel), so we
-        //     must tap the raw sources -- file playback (always) + live input (when
-        //     monitored) -- mirroring exactly how they feed the output gain above.
-        //     Relying on the effect-chain `prevNodeId` here would tap an unset node,
-        //     which is how sends from a file-playback audio track went silent.
+        // Send tap point depends on the send's fader mode:
+        //   POST-FADER (default): tap the track's output gain node, so the send
+        //     follows the track's mute / solo / fader. Uniform across all track
+        //     types since outputGainNode already carries the summed, post-fader
+        //     signal. This is what most people expect from an aux reverb/delay.
+        //   PRE-FADER: tap the raw pre-fader signal, independent of mute/fader.
+        //     - Instrument track, or audio track WITH insert effects: the
+        //       effect-chain end (prevNodeId) already carries the summed signal.
+        //     - Audio track with NO effects: there is no single pre-fader sum
+        //       node (file playback + live input feed the output gain in
+        //       parallel), so tap the raw sources -- file playback (always) +
+        //       live input (when monitored) -- mirroring the output path.
         bool audioTrackNoFx = (track.sourceType == TrackSourceType::AudioInput
                                && track.audioEnabled && track.effects.empty());
         auto sendSourceId = prevNodeId;
         for (auto& send : track.sends) {
             if (!send.gainNode) continue;
-            if (audioTrackNoFx) {
-                // File playback -> send (always present on an audio track)
+            if (!send.preFader) {
+                // Post-fader: tap the output gain (follows mute/solo/fader).
+                if (track.outputGainNode)
+                    for (int ch = 0; ch < 2; ++ch)
+                        graph->addConnection({ { track.outputGainNode->nodeID, ch }, { send.gainNode->nodeID, ch } });
+            } else if (audioTrackNoFx) {
+                // Pre-fader, audio track, no effects: tap the raw sources.
                 if (track.audioFileNode) {
                     for (int ch = 0; ch < 2; ++ch)
                         graph->addConnection({ { track.audioFileNode->nodeID, ch }, { send.gainNode->nodeID, ch } });
                 }
-                // Live input -> send, only when monitored + assigned (matches output path)
                 if (track.inputMonitoring && track.inputChannelStart >= 0 && track.inputChannelCount > 0) {
                     if (track.inputChannelCount == 1) {
                         graph->addConnection({{ audioInputNodeId, track.inputChannelStart }, { send.gainNode->nodeID, 0 }});
@@ -1306,6 +1339,7 @@ void AudioEngine::rebuildConnections() {
                     }
                 }
             } else {
+                // Pre-fader, instrument or audio-with-effects: tap the chain end.
                 for (int ch = 0; ch < prevNumOut; ++ch)
                     graph->addConnection({ { sendSourceId, ch }, { send.gainNode->nodeID, ch } });
             }

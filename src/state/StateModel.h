@@ -134,6 +134,8 @@ struct SendState {
     SendId id;
     BusId busId;
     float gain = 1.0f;
+    bool preFader = false;  // false = post-fader (default): follows track mute/solo/fader
+    bool muted = false;     // send-level mute: signal stays wired but outputs nothing to the bus
 };
 
 // A single MIDI event (noteOn, noteOff, CC, aftertouch, etc.)

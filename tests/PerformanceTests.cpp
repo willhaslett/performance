@@ -313,6 +313,28 @@ public:
             }
         }
 
+        beginTest("Send fader mode + mute defaults and setters");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto trackId = s.createTrack("T");
+            auto busId = s.createBus("Reverb");
+            auto sendId = s.addSend(trackId, busId, 1.0f);
+
+            // Default is post-fader, unmuted.
+            expect(!s.getTrackSends(trackId)[0].preFader);
+            expect(!s.getTrackSends(trackId)[0].muted);
+
+            s.setSendPreFader(sendId, true);
+            expect(s.getTrackSends(trackId)[0].preFader);
+            s.setSendPreFader(sendId, false);
+            expect(!s.getTrackSends(trackId)[0].preFader);
+
+            s.setSendMuted(sendId, true);
+            expect(s.getTrackSends(trackId)[0].muted);
+            expectEquals(s.getTrackSends(trackId)[0].id.str(), sendId.str());
+        }
+
         beginTest("Multiple tracks independent state");
         {
             StateAPI s;
@@ -1031,7 +1053,9 @@ public:
             original.addEffect(busId.str(), "Delay2", fxPluginId);
             original.addEffect(songId.str(), "MasterFX", fxPluginId);
 
-            original.addSend(t1, busId, 0.5f);
+            auto sendId = original.addSend(t1, busId, 0.5f);
+            original.setSendPreFader(sendId, true);
+            original.setSendMuted(sendId, true);
 
             auto actionId = original.findActionByName("fadeOut")->id;
             original.addBinding(songId, "cc", 1, 42, actionId, "[\"Keys\"]", "Fade keys");
@@ -1086,6 +1110,8 @@ public:
             auto sends = loaded.getTrackSends(keys->id);
             expectEquals((int)sends.size(), 1);
             expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
+            expect(sends[0].preFader);  // fader mode survives save/load
+            expect(sends[0].muted);     // send mute survives save/load
 
             // Bindings
             expectEquals((int)loaded.bindingsForSong(song->id).size(), 1);
@@ -2132,6 +2158,12 @@ public:
     void setSendGain(const juce::String& track, const juce::String& bus, float gain) override {
         calls.push_back({"setSendGain", track.toStdString(), bus.toStdString(), "", gain});
     }
+    void setSendPreFader(const juce::String& sendId, bool preFader) override {
+        calls.push_back({"setSendPreFader", sendId.toStdString(), "", "", 0, preFader});
+    }
+    void setSendMuted(const juce::String& sendId, bool muted) override {
+        calls.push_back({"setSendMuted", sendId.toStdString(), "", "", 0, muted});
+    }
 
     void setMasterGain(float gain) override {
         calls.push_back({"setMasterGain", "", "", "", gain});
@@ -2327,6 +2359,34 @@ public:
             auto* rem = mock.findCall("removeSend");
             expect(rem != nullptr);
             expectEquals(rem->arg1, sendId.str());
+        }
+
+        beginTest("Send fader mode + mute updates propagate to engine");
+        {
+            StateAPI state;
+            MockAudioEngine mock;
+
+            auto songId = state.createSong("S");
+            state.setCurrentSong(songId);
+            auto trackId = state.createTrack("T");
+            auto busId = state.createBus("Reverb");
+            auto sendId = state.addSend(trackId, busId, 1.0f);
+
+            state.setCurrentSong(SongId{});
+            EngineSync sync(mock, state);
+            state.setCurrentSong(songId);
+            mock.clear();
+
+            state.setSendPreFader(sendId, true);
+            auto* pf = mock.findCall("setSendPreFader");
+            expect(pf != nullptr);
+            expect(pf->boolArg);
+
+            mock.clear();
+            state.setSendMuted(sendId, true);
+            auto* mu = mock.findCall("setSendMuted");
+            expect(mu != nullptr);
+            expect(mu->boolArg);
         }
 
         beginTest("Master gain update propagates to engine");
