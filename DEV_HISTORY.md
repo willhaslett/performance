@@ -2,6 +2,14 @@
 
 Changelog, test inventory, completed work, and known issues. Archived from CLAUDE.md to keep the orientation doc lean. Authoritative source for "what changed" is still `git log`; this file captures context that doesn't fit in commit messages.
 
+## Bus sends — routing fixes + pre/post-fader (2026-07-13)
+
+Surfaced by a tester report that bus tracks "don't make sound." Two bugs fixed (commit `1d8101b`), then per-send fader mode + mute added (commit `be9cd13`).
+
+- **Silent sends from file-playback audio tracks.** An `AudioInput` track's playback branch wires `audioFileNode`/live-input straight to the output gain but never set `sourceNodeId`, and `isAudioInput` was only true when an input channel was assigned. So a send from a file-playback audio track (input unassigned, no effects) tapped an unset node and JUCE silently dropped the connection — the track played to master but its send was dead. Fix: the no-effects audio-track send tap now mirrors the output path (tap `audioFileNode` always + live input when monitored). Not unit-testable (graph-audio path; the known graph-mock gap) — verified by ear.
+- **Phantom send stuck on the bus.** `EngineSync::onEntityDeleted` handled track/bus/effect but not `"send"`, and the engine had no `removeSend`. A deleted send stayed in the engine's `track.sends` and got re-wired on every `rebuildConnections()`, so live audio stayed on the bus — and, because sends were pre-fader, it survived muting the source. Fix: `AudioEngine::removeSend` + the engine `SendNode` now carries its state id (deletion has no trackId to work with) + the missing delete case.
+- **Per-send pre/post-fader + mute.** Sends were implicitly pre-fader (surprising for an aux reverb — mute/fader didn't touch them). Now `SendState.preFader` (default false = **post-fader**, tapped from `outputGainNode` so it follows mute/solo/fader) and `SendState.muted` (mutes the sendGain stage). Post-fader tap is uniform across track types; pre-fader keeps the raw-source tap. Persistence: new `sends.pre_fader/muted` columns + additive `ALTER TABLE`, so existing dev DBs load without a reset (existing sends default to post-fader). UI: send-pill right-click menu (Pre-Fader / Post-Fader / Mute / Remove Send, ticked-item idiom); muted pill dims. Mid-piece note: the `addConnection` returns on send/bus audio edges are still unchecked — a rejected edge logs nothing. Left as-is since both bugs are now understood, but it's the first place to instrument if a send goes silent again.
+
 ## Pre-beta checklist — completed items (archived from CLAUDE.md)
 
 - Code signing + notarization pipeline

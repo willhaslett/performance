@@ -325,6 +325,7 @@ Mutations (GUI, Lua, IPC, MIDI bindings) → **StateAPI** → emits event → **
 Graph diagram + `GraphWrapper::processBlock` details in `docs/ARCHITECTURE.md`. Key constraints:
 
 - **No graph-level gating.** Every track and bus is wired into the graph. Mute lives at the per-track gain stage; nothing else gates routing.
+- **Sends are per-send, post-fader by default.** A send taps the track's `outputGainNode` (so it follows mute/solo/fader) unless its `preFader` flag is set, in which case it taps pre-fader (fx-chain end, or raw file/live sources for a no-fx audio track). Each send also has its own `muted` flag (mutes the sendGain stage, no rewire). `SendState.preFader/muted` → `StateAPI::setSendPreFader/setSendMuted` → `EngineSync` → `AudioEngine::setSendPreFader` (rewire) / `setSendMuted`. Deleting a send goes through `AudioEngine::removeSend` (engine `SendNode` carries the send id) — without it the send is re-wired every `rebuildConnections()` and gets stuck on the bus.
 - **Audio device switching:** `AudioEngine` listens to `AudioDeviceManager`. On change, `rebuildGraph()` tears down IO nodes, reconfigures, recreates, rewires. Output and input devices are independent (CoreAudio); selection persists in `config["audio_output_device"]` / `["audio_input_device"]`.
 
 ### Subsystems (one-line index)
@@ -355,7 +356,7 @@ All GUI components take `StateAPI&` + `EngineAPI&`. See `src/gui/` for individua
 - **FaderMeter** — fader + L/R meters, IEC dB scale (-60 to +6), peak hold, click-to-jump, full range from handle center.
 - **MusicalTyping** — Cmd+Shift+K. Logic-style keyboard layout, octave/velocity, sustain. Injects via `audioEngine.injectMidi()`.
 - **MorphEditor** — slot-based compound morph editor.
-- **PluginSlot**, **SendsPanel** — reusable controls.
+- **PluginSlot**, **SendsPanel** — reusable controls. SendsPanel is the send-pill strip in each mixer strip; right-click an assigned send for Pre-Fader / Post-Fader (ticked, mutually exclusive) / Mute (ticked) / Remove Send. A muted send's pill dims. Ticked-item idiom matches TrackStrip's target menus.
 - **Sidebar** — flat View + Songs list (see Active Work § Sidebar for details).
 - **PerformPane** — thin composer wrapping **ControllersPane** (MIDI device tree, learn mode) + **SongMappingsPane** (Atemporal + Score bindings) with an internal draggable divider. Drag-and-drop between all areas. Learn mode is port-aware single-shot. Stub bindings (no action) persist.
 - **DebugPane**, **LogPane**, **SettingsWindow** (Cmd+, — Audio / MIDI / About tabs, About shows install ID + diagnostics toggle), **ChatView**, **ClaudeClient**.
@@ -409,4 +410,4 @@ On startup, `initLog()` rescues any non-empty prior-session log to `/tmp/perform
 
 ## Tests
 
-Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, ~250 tests (252 at last count), all isolated. `MockAudioEngine` for EngineSync verification. `TestCoordinator` wraps a real `PerformanceCoordinator` against a temp DB for integration tests. BundledPluginInstaller tests use a file-path test hook (`setInstallManifestFileForTests`) to redirect the install-manifest path to a temp dir. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`. Tests that start the transport via the coordinator must call `resetLooperSession` (or `sequencer()->stop()`) before scope exit — otherwise the audio thread can segfault during teardown. Known coverage gaps: MIDI Learn end-to-end flow, mode-gated audio dispatch in `GraphWrapper` (audio-thread; needs a graph mock), phantom-cycle-wrap fix.
+Single file: `tests/PerformanceTests.cpp`, JUCE `UnitTest` framework, ~290 tests (288 at last count), all isolated. `MockAudioEngine` for EngineSync verification. `TestCoordinator` wraps a real `PerformanceCoordinator` against a temp DB for integration tests. BundledPluginInstaller tests use a file-path test hook (`setInstallManifestFileForTests`) to redirect the install-manifest path to a temp dir. Coverage gaps and per-class breakdown in `DEV_HISTORY.md`. Tests that start the transport via the coordinator must call `resetLooperSession` (or `sequencer()->stop()`) before scope exit — otherwise the audio thread can segfault during teardown. Known coverage gaps: MIDI Learn end-to-end flow, mode-gated audio dispatch in `GraphWrapper` (audio-thread; needs a graph mock), phantom-cycle-wrap fix.

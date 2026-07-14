@@ -60,18 +60,26 @@ AppState
 ```
 Per instrument track:
   midiInput ──────┐
-  midiSourceNode ─┤→ instrument → [fx…] ┬─ outputGain → masterGain
-                                         ├─ sendGain1  → Bus1
-                                         └─ sendGain2  → Bus2
+  midiSourceNode ─┤→ instrument → [fx…] → outputGain ┬─ → masterGain (or bus / none)
+                                                      └─ → sendGain1 → Bus1  (post-fader tap)
 
 Per audio input track:
   audioInput[ch] ─┐
-  audioFileNode ──┤→ [fx…] → outputGain/sends → masterGain
+  audioFileNode ──┤→ [fx…] → outputGain ─ → masterGain / bus, + sendGain… → Bus
   (mono inputs duplicated to stereo; input optional for playback-only tracks)
 
 Per bus:    (summed sends) → [busFx…] → busOutputGain → masterGain
 Master out: masterGain → [masterFx…] → audioOutput
 ```
+
+Sends are per-send **post-fader by default**: tapped from `outputGain`, so they
+follow the track's mute / solo / fader. Each send has an optional **pre-fader**
+mode (tapped *before* `outputGain` — the fx-chain end, or the raw file/live
+sources for a no-fx audio track, since there's no single pre-fader sum node
+there) and a **per-send mute** on the `sendGain` stage. Fader mode is a topology
+change (rewire); send mute is just the sendGain's mute flag. See `SendState`
+(`preFader`/`muted`), `AudioEngine::setSendPreFader`/`setSendMuted`, and the tap
+branch in `rebuildConnections`.
 
 `GraphWrapper` wraps the graph. In `processBlock` it: advances a sample-accurate beat clock; scans `Arrangement` for MIDI events in this buffer's beat range; routes to per-track `MidiSourceNode`s with sample offsets; captures live MIDI to `RecordFIFO` when recording; flushes notes (CC 123/120) on stop/seek/loop via per-channel bitset; then delegates to `graph.processBlock()`.
 
