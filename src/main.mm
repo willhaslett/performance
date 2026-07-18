@@ -1043,6 +1043,9 @@ private:
         k.registerCommand("track.newInstrument", "Track", "New Instrument Track", noKey);
         k.registerCommand("track.newAudioInput", "Track", "New Audio Input Track", noKey);
         k.registerCommand("track.newBus", "Track", "New Effects Bus", noKey);
+        // Unbound by default — user binds them (natural choice j/k) via the editor.
+        k.registerCommand("track.selectDown", "Track", "Select Next Track Down", noKey);
+        k.registerCommand("track.selectUp", "Track", "Select Next Track Up", noKey);
 
         k.loadOverrides(coordinator->state());
     }

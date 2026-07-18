@@ -1531,6 +1531,26 @@ void StateAPI::selectTrack(const TrackId& trackId, bool addToSelection) {
     eventBus.emit({ StateEvent::Updated, StateEvent::Selection, trackId.str(), "" });
 }
 
+void StateAPI::selectAdjacentTrack(bool down) {
+    auto tracks = listTracks();          // display order
+    if (tracks.empty()) return;
+    auto sel = selectedTrackIds();
+    if (sel.empty()) { selectTrack(tracks.front().id); return; }  // "or first track if none"
+
+    // Reference = the selection's extreme edge in the direction of travel, so
+    // moving off a multi-selection continues past its edge rather than into it.
+    int ref = down ? -1 : (int)tracks.size();
+    for (auto& id : sel)
+        for (int i = 0; i < (int)tracks.size(); ++i)
+            if (tracks[i].id == id)
+                ref = down ? std::max(ref, i) : std::min(ref, i);
+    if (ref < 0 || ref >= (int)tracks.size()) { selectTrack(tracks.front().id); return; }
+
+    int target = down ? std::min(ref + 1, (int)tracks.size() - 1)
+                      : std::max(ref - 1, 0);
+    selectTrack(tracks[target].id);
+}
+
 void StateAPI::selectBus(const BusId& busId, bool addToSelection) {
     auto& s = song();
     if (!addToSelection) {

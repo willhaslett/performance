@@ -287,6 +287,10 @@ public:
 
     // --- Selection ---
     void selectTrack(const TrackId& trackId, bool addToSelection = false);
+    // Move the (single) track selection one row down/up in display order,
+    // replacing the selection. With nothing selected, selects the first track.
+    // Clamps at the ends (no wrap).
+    void selectAdjacentTrack(bool down);
     void selectBus(const BusId& busId, bool addToSelection = false);
     void clearSelection();
     std::vector<TrackId> selectedTrackIds() const;

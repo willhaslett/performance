@@ -744,6 +744,14 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         if (onNewBus) onNewBus();
         return true;
     }
+    if (matches("track.selectDown", key)) {
+        state.selectAdjacentTrack(true);
+        return true;
+    }
+    if (matches("track.selectUp", key)) {
+        state.selectAdjacentTrack(false);
+        return true;
+    }
 
     // --- Edit (check redo before undo — redo has shift) ---
     if (matches("edit.redo", key)) {

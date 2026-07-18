@@ -496,6 +496,35 @@ public:
             expect(s.selectedBusIds().empty());
         }
 
+        beginTest("selectAdjacentTrack navigates and falls back to first");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("A");
+            auto t2 = s.createTrack("B");
+            auto t3 = s.createTrack("C");
+
+            auto selected = [&] { auto v = s.selectedTrackIds(); return v.empty() ? std::string() : v[0].str(); };
+
+            s.clearSelection();
+            s.selectAdjacentTrack(true);   // none → first
+            expectEquals(selected(), t1.str());
+            s.selectAdjacentTrack(true);   // first → second
+            expectEquals(selected(), t2.str());
+            s.selectAdjacentTrack(false);  // second → first
+            expectEquals(selected(), t1.str());
+            s.selectAdjacentTrack(false);  // clamps at top
+            expectEquals(selected(), t1.str());
+
+            s.selectTrack(t3);
+            s.selectAdjacentTrack(true);   // clamps at bottom
+            expectEquals(selected(), t3.str());
+
+            s.clearSelection();
+            s.selectAdjacentTrack(false);  // none → first (even going up)
+            expectEquals(selected(), t1.str());
+        }
+
         beginTest("Device registration and controls");
         {
             StateAPI s;
