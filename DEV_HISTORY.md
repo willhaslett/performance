@@ -2,6 +2,16 @@
 
 Changelog, test inventory, completed work, and known issues. Archived from CLAUDE.md to keep the orientation doc lean. Authoritative source for "what changed" is still `git log`; this file captures context that doesn't fit in commit messages.
 
+## Audio assets browser + cycle-chunk export (2026-07-18)
+
+Shipped phase 1 of the audio-asset system (commit `010247a`). Goal: browse/move audio independently of placement, and carve a good chunk out of a long import to drop into the looper as a right-sized loop.
+
+- **Assets pane** (Right slot, ⌘B): distinct project audio (dedup by path across `regions`/`loops` + the loose-file registry), grouped by origin (Recorded/Imported/Other), rows are drag sources.
+- **Drag-to-place:** asset → Looper track = becomes that track's loop (defines the cycle if none exists); asset → Producer timeline = audio region at the drop beat. `LooperPane`/`ProducePane` gained `DragAndDropTarget`; DnD mirrors the region-drag idiom (custom mouse for source, JUCE DnD for cross-pane).
+- **Provenance:** `TakeState.origin` set at record/import (persisted). **Loose files:** `SongState.audioAssets` + `audio_assets` table — the lightweight registry, *not* the deferred file-owned/ref-counted one. Peaks recomputed on load.
+- **Bounce Cycle:** cycle-mode-only Producer transport button (enabled only for a single selected audio region the cycle overlaps) → `exportRegionCycleChunk` slices the region file to the cycle window, writes a canonical WAV, registers it as a loose asset.
+- **Gotchas fixed mid-build:** (1) the Producer draws/edits the cycle via the *sequencer loop range*, but `song->cycleStart/End` lags it — the export now reads the sequencer range and persists it, so the asset-add's `Song/Updated` → `syncTempoFromState` can't snap the cycle back to a stale value. (2) Looper waveform for a loop longer than the cycle now clips at the cycle (scaled by the repetition's beat span) instead of cramming the whole file into the lane. (3) Assets pane retries rebuild while big-file peaks are still computing on load (they finish seconds later with no event).
+
 ## Bus sends — routing fixes + pre/post-fader (2026-07-13)
 
 Surfaced by a tester report that bus tracks "don't make sound." Two bugs fixed (commit `1d8101b`), then per-send fader mode + mute added (commit `be9cd13`).
