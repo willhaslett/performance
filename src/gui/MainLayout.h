@@ -10,6 +10,7 @@
 #include "gui/TransportBar.h"
 #include "gui/ProducePane.h"
 #include "gui/LooperPane.h"
+#include "gui/AssetsPane.h"
 #include "gui/Divider.h"
 #include "gui/MusicalTyping.h"
 #include "gui/KeyBindingManager.h"
@@ -35,7 +36,8 @@ enum class PaneContent {
     Chat,
     Logs,
     Mixer,
-    MidiMonitor
+    MidiMonitor,
+    Assets
 };
 
 class MainLayout : public juce::Component, public juce::DragAndDropContainer {
@@ -88,6 +90,7 @@ public:
     PerformPane performPane;
     ProducePane producePane;
     LooperPane looperPane;
+    AssetsPane assetsPane;
     ChatView chatView;
     LogPane logPane;
     MidiMonitorPane midiMonitorPane;

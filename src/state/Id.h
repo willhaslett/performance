@@ -51,6 +51,7 @@ using EffectId      = Id<struct EffectTag>;
 using SendId        = Id<struct SendTag>;
 using RegionId      = Id<struct RegionTag>;
 using TakeId        = Id<struct TakeTag>;
+using AssetId       = Id<struct AssetTag>;
 using BindingId     = Id<struct BindingTag>;
 using ActionEventId = Id<struct ActionEventTag>;
 using EventId       = Id<struct EventTag>;       // unified id space for tempo/timesig/key events; action events keep ActionEventId

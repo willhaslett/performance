@@ -256,9 +256,68 @@ void LooperPane::paint(juce::Graphics& g) {
         if (!t) continue;
         paintTrackHeader(g, *t, row);
         paintTrackTimeline(g, *t, row);
+
+        // Drop-target highlight for an in-flight audio-asset drag.
+        if (!dropTargetTrackId.str().empty() && row.trackId.str() == dropTargetTrackId.str()) {
+            g.setColour(Theme::color(Theme::Color::accent));
+            g.drawRoundedRectangle(row.timelineBounds.toFloat().reduced(1.0f),
+                                   Theme::cornerRadiusSm, 2.0f);
+        }
     }
 
     paintPlayhead(g);
+}
+
+// --- Drag-and-drop target (Assets pane audio row → this track's loop) ---
+
+bool LooperPane::isInterestedInDragSource(const SourceDetails& details) {
+    if (!details.description.isObject()) return false;
+    auto* obj = details.description.getDynamicObject();
+    return obj && obj->getProperty("kind").toString() == "asset";
+}
+
+TrackId LooperPane::trackIdAtPoint(juce::Point<int> p) const {
+    for (auto& row : rowGeoms)
+        if (row.rowBounds.contains(p)) return row.trackId;
+    return TrackId{};
+}
+
+void LooperPane::itemDragMove(const SourceDetails& details) {
+    // Highlight only lanes that can actually hold audio (AudioInput tracks).
+    TrackId valid;
+    TrackId over = trackIdAtPoint(details.localPosition);
+    if (!over.str().empty()) {
+        auto* t = state.findTrack(over);
+        if (t && t->sourceType == TrackSourceType::AudioInput) valid = over;
+    }
+    if (valid.str() != dropTargetTrackId.str()) {
+        dropTargetTrackId = valid;
+        repaint();
+    }
+}
+
+void LooperPane::itemDragExit(const SourceDetails&) {
+    if (!dropTargetTrackId.str().empty()) {
+        dropTargetTrackId = TrackId{};
+        repaint();
+    }
+}
+
+void LooperPane::itemDropped(const SourceDetails& details) {
+    dropTargetTrackId = TrackId{};
+    repaint();
+
+    auto* obj = details.description.getDynamicObject();
+    if (!obj) return;
+    TrackId target = trackIdAtPoint(details.localPosition);
+    if (target.str().empty()) return;
+    auto* t = state.findTrack(target);
+    if (!t || t->sourceType != TrackSourceType::AudioInput) return;  // audio only
+
+    juce::String filePath = obj->getProperty("filePath").toString();
+    juce::String origin   = obj->getProperty("origin").toString();
+    if (filePath.isEmpty()) return;
+    coord.placeAudioFileInLoop(juce::File(filePath), target, origin.toStdString());
 }
 
 void LooperPane::paintTopBar(juce::Graphics& g, juce::Rectangle<int> bounds) {
@@ -428,7 +487,11 @@ void LooperPane::paintTrackTimeline(juce::Graphics& g, const TrackState& t,
         // the take normally.
         if (! replacing) {
             if (loop.type == "audio" && take)
-                paintAudioWaveform(g, repBounds, *take, loopLen);
+                // Scale by this repetition's actual beat span, not the take's
+                // full length: a loop longer than the cycle must draw only the
+                // portion that plays (clipped at the cycle), otherwise the whole
+                // file gets compressed into the lane and reads as if it all loops.
+                paintAudioWaveform(g, repBounds, *take, repEnd - repStart);
             else
                 paintLoopNotes(g, repBounds, loop);
         }

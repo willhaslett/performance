@@ -287,6 +287,7 @@ public:
             menu.addItem(shortcut(CommandIDs::viewMixer, "Mixer", "view.mixer"));
             menu.addItem(shortcut(52, "Chat", "view.chat"));
             menu.addItem(shortcut(53, "Logs", "view.logs"));
+            menu.addItem(shortcut(57, "Assets", "view.assets"));
             menu.addItem(56, "MIDI Monitor");
             menu.addItem(shortcut(CommandIDs::viewMusicalTyping, "Musical Typing", "view.musicalTyping"));
             menu.addSeparator();
@@ -484,6 +485,7 @@ public:
         case 51: if (kb) layout.handleGlobalKey(kb->getKey("view.mappings")); break;
         case 52: if (kb) layout.handleGlobalKey(kb->getKey("view.chat")); break;
         case 53: if (kb) layout.handleGlobalKey(kb->getKey("view.logs")); break;
+        case 57: if (kb) layout.handleGlobalKey(kb->getKey("view.assets")); break;
         case 56: layout.toggleMidiMonitor(); break;
         case 55: if (kb) layout.handleGlobalKey(kb->getKey("view.looper")); break;
         case 54: juce::File("/tmp/performance.log").revealToUser(); break;
@@ -1028,6 +1030,8 @@ private:
             juce::KeyPress('i', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.logs", "View", "Logs",
             juce::KeyPress('l', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0));
+        k.registerCommand("view.assets", "View", "Assets",
+            juce::KeyPress('b', juce::ModifierKeys::commandModifier, 0));
         k.registerCommand("view.closeEditor", "View", "Close Plugin Editor", KB::closeEditor);
 
         // Region

@@ -1055,6 +1055,16 @@ public:
 
             auto sendId = original.addSend(t1, busId, 0.5f);
             original.setSendPreFader(sendId, true);
+
+            AudioAssetState asset;
+            asset.filePath = "/tmp/chunk.wav";
+            asset.name = "Chunk";
+            asset.origin = "imported";
+            asset.sampleRate = 48000;
+            asset.channelCount = 2;
+            asset.recordTempo = 120.0;
+            asset.lengthBeats = 4.0;
+            original.addAudioAsset(asset);
             original.setSendMuted(sendId, true);
 
             auto actionId = original.findActionByName("fadeOut")->id;
@@ -1111,6 +1121,12 @@ public:
             expectEquals((int)sends.size(), 1);
             expectWithinAbsoluteError(sends[0].gain, 0.5f, 0.001f);
             expect(sends[0].preFader);  // fader mode survives save/load
+
+            // Loose audio assets survive save/load
+            expectEquals((int)song->audioAssets.size(), 1);
+            expectEquals(song->audioAssets[0].name, std::string("Chunk"));
+            expectEquals(song->audioAssets[0].origin, std::string("imported"));
+            expectWithinAbsoluteError(song->audioAssets[0].lengthBeats, 4.0, 0.001);
             expect(sends[0].muted);     // send mute survives save/load
 
             // Bindings
@@ -1698,6 +1714,108 @@ public:
             expect(!tc->importAudioFile(juce::File("/no/such/file.wav")));
             expectEquals((int)tc.state().listTracks().size(), beforeTracks);  // no side effects
             expect(firstAudioRegion(tc.state()) == nullptr);
+        }
+
+        beginTest("Place audio into a loop defines the master cycle");
+        {
+            TestCoordinator tc;
+            tc.state().setMode(AppMode::Looper);
+            auto trackId = tc.state().createAudioInputTrack("Loop", 0, 2);
+            auto src = writeTestWav(48000, 48000, 2);  // 1.0s @ 48k = 2.0 beats @ 120bpm
+
+            expect(tc->placeAudioFileInLoop(src, trackId, "imported"));
+
+            auto* t = tc.state().findTrack(trackId);
+            expect(t != nullptr && !t->loops.empty());
+            auto& loop = t->loops[0];
+            expectEquals(loop.type, std::string("audio"));
+            expectWithinAbsoluteError(loop.startBeat, 0.0, 0.0001);   // loops anchor at 0
+            expectWithinAbsoluteError(loop.lengthBeats, 2.0, 0.05);
+            auto* take = loop.activeTake();
+            expect(take != nullptr && !take->filePath.empty());
+            expectEquals(take->origin, std::string("imported"));
+
+            // First loop defines the cycle — exactly like a first live record.
+            auto* song = tc.state().currentSong();
+            expect(song != nullptr);
+            expectWithinAbsoluteError(song->cycleEnd, 2.0, 0.05);
+
+            std::string writtenPath = take ? take->filePath : std::string();
+            src.deleteFile();
+            if (!writtenPath.empty()) juce::File(writtenPath).deleteFile();
+        }
+
+        beginTest("Placing into an existing cycle does not redefine it");
+        {
+            TestCoordinator tc;
+            tc.state().setMode(AppMode::Looper);
+            auto t1 = tc.state().createAudioInputTrack("Loop A", 0, 2);
+            auto t2 = tc.state().createAudioInputTrack("Loop B", 0, 2);
+
+            auto srcA = writeTestWav(48000, 48000, 2);  // 2.0 beats -> defines cycle
+            expect(tc->placeAudioFileInLoop(srcA, t1, "imported"));
+            double cycleAfterA = tc.state().currentSong()->cycleEnd;
+            expectWithinAbsoluteError(cycleAfterA, 2.0, 0.05);
+
+            auto srcB = writeTestWav(48000, 96000, 2);  // 2.0s = 4.0 beats, different length
+            expect(tc->placeAudioFileInLoop(srcB, t2, "imported"));
+
+            // Cycle is unchanged; the second loop keeps its own (longer) length
+            // and simply plays against the established cycle.
+            expectWithinAbsoluteError(tc.state().currentSong()->cycleEnd, cycleAfterA, 0.001);
+            auto* tb = tc.state().findTrack(t2);
+            expect(tb != nullptr && !tb->loops.empty());
+            expectWithinAbsoluteError(tb->loops[0].lengthBeats, 4.0, 0.05);
+
+            std::string pa, pb;
+            if (auto* t = tc.state().findTrack(t1)) if (!t->loops.empty()) if (auto* k = t->loops[0].activeTake()) pa = k->filePath;
+            if (tb && !tb->loops.empty()) if (auto* k = tb->loops[0].activeTake()) pb = k->filePath;
+            srcA.deleteFile(); srcB.deleteFile();
+            if (!pa.empty()) juce::File(pa).deleteFile();
+            if (!pb.empty()) juce::File(pb).deleteFile();
+        }
+
+        beginTest("Export cycle chunk slices the region's underlying file");
+        {
+            TestCoordinator tc;
+            tc.state().setFocusedTrackId(TrackId{});
+            if (auto* seq = tc->sequencer()) seq->setBeatPosition(0.0);
+            auto src = writeTestWav(48000, 192000, 2);  // 4.0s @ 48k = 8 beats @ 120
+            expect(tc->importAudioFile(src));
+            auto* region = firstAudioRegion(tc.state());
+            expect(region != nullptr);
+            auto regionId = region->id;
+            std::string srcPlaced;
+            if (auto* k = region->activeTake()) srcPlaced = k->filePath;
+
+            // Cycle over global beats [2, 6] — the middle 2 seconds of the file.
+            // The export reads the sequencer loop range (what the Producer shows).
+            auto* song = tc.state().currentSong();
+            if (auto* seq = tc->sequencer()) { seq->setLoopRange(2.0, 6.0); seq->setLoopEnabled(true); }
+
+            auto res = tc->exportRegionCycleChunk(regionId);
+            expect(res.ok);
+            expect(juce::File(res.filePath).existsAsFile());
+            expectWithinAbsoluteError(res.lengthBeats, 4.0, 0.05);  // 2s @ 120 = 4 beats
+            auto [rate, frames] = readWav(res.filePath);
+            expectEquals(rate, 48000);
+            expect(std::abs((double)frames / rate - 2.0) < 0.02);   // ~2.0s slice
+            expect(res.name.isNotEmpty());
+
+            // Registered as a loose project asset (with peaks) so it shows in
+            // the Assets browser and is draggable.
+            expect(res.assetId.isNotEmpty());
+            expectEquals((int)song->audioAssets.size(), 1);
+            expectEquals(song->audioAssets[0].filePath, res.filePath.toStdString());
+            expect(!song->audioAssets[0].peaks.empty());
+
+            // Guard: no active cycle → fails cleanly, no file leaked from this call.
+            if (auto* seq = tc->sequencer()) seq->setLoopEnabled(false);
+            expect(! tc->exportRegionCycleChunk(regionId).ok);
+
+            src.deleteFile();
+            if (!srcPlaced.empty()) juce::File(srcPlaced).deleteFile();
+            juce::File(res.filePath).deleteFile();
         }
     }
 };

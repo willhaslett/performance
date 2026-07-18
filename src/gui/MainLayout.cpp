@@ -19,6 +19,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
       debugPane(coordinator, engine),
       performPane(state, engine, coordinator),
       looperPane(state, engine, coordinator),
+      assetsPane(state),
       chatView(lua), mixerView(state, engine) {
     sidebar.setStateAPI(&state);
     sidebar.setEngineAPI(&engine);
@@ -29,6 +30,15 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     producePane.onStopRecordMode = [&coordinator]() { coordinator.stopRecordMode(); };
     producePane.onIsRecordMode = [&coordinator]() { return coordinator.isInRecordMode(); };
     producePane.onRegionsChanged = [&coordinator]() { coordinator.reloadAudioFiles(); };
+    producePane.onPlaceAudioAsset = [&coordinator](const juce::File& f, TrackId t,
+                                                   double beat, const std::string& origin) {
+        coordinator.importAudioFile(f, t, beat, origin);
+    };
+    producePane.onBounceCycle = [this, &coordinator](RegionId r) {
+        auto res = coordinator.exportRegionCycleChunk(r);
+        if (res.ok)  // reveal the Assets pane so the new chunk is visible
+            setPaneContent(PaneSlot::Right, PaneContent::Assets);
+    };
 
     looperPane.setSequencer(coordinator.sequencer());
     looperPane.setOnShowPerformPane([this] {
@@ -74,6 +84,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     sidebar.setVisible(false);
     producePane.setVisible(false);
     looperPane.setVisible(false);
+    assetsPane.setVisible(false);
     performPane.setVisible(false);
     debugPane.setVisible(false);
     chatView.setVisible(false);
@@ -84,6 +95,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
     addChildComponent(sidebar);
     addChildComponent(producePane);
     addChildComponent(looperPane);
+    addChildComponent(assetsPane);
     addChildComponent(performPane);
 
     // Single global MIDI monitor — coordinator.setGlobalMidiMonitor is a
@@ -239,6 +251,10 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
             auto cur = getPaneContent(PaneSlot::Right);
             setPaneContent(PaneSlot::Right,
                            cur == PaneContent::MidiMonitor ? PaneContent::Hidden : PaneContent::MidiMonitor);
+        } else if (viewName == "assets") {
+            auto cur = getPaneContent(PaneSlot::Right);
+            setPaneContent(PaneSlot::Right,
+                           cur == PaneContent::Assets ? PaneContent::Hidden : PaneContent::Assets);
         }
         savePaneConfig();
     };
@@ -250,6 +266,7 @@ MainLayout::MainLayout(StateAPI& state, EngineAPI& engine, LuaEngine& lua,
         if (viewName == "mixer")    return getPaneContent(PaneSlot::Bottom) == PaneContent::Mixer;
         if (viewName == "chat")     return getPaneContent(PaneSlot::Right) == PaneContent::Chat;
         if (viewName == "midi_monitor") return getPaneContent(PaneSlot::Right) == PaneContent::MidiMonitor;
+        if (viewName == "assets")   return getPaneContent(PaneSlot::Right) == PaneContent::Assets;
         return false;
     };
     // sidebar.onNewSong is wired by main.mm after layout construction.
@@ -320,6 +337,7 @@ juce::Component* MainLayout::componentForContent(PaneContent content) {
         case PaneContent::Logs:        return &logPane;
         case PaneContent::MidiMonitor: return &midiMonitorPane;
         case PaneContent::Mixer:       return &mixerView;
+        case PaneContent::Assets:      return &assetsPane;
         default:                       return nullptr;
     }
 }
@@ -336,6 +354,7 @@ std::string MainLayout::contentToString(PaneContent content) {
         case PaneContent::Logs:        return "logs";
         case PaneContent::MidiMonitor: return "midi_monitor";
         case PaneContent::Mixer:       return "mixer";
+        case PaneContent::Assets:      return "assets";
     }
     return "hidden";
 }
@@ -350,6 +369,7 @@ PaneContent MainLayout::stringToContent(const std::string& s) {
     if (s == "logs")         return PaneContent::Logs;
     if (s == "midi_monitor") return PaneContent::MidiMonitor;
     if (s == "mixer")        return PaneContent::Mixer;
+    if (s == "assets")       return PaneContent::Assets;
     return PaneContent::Hidden;  // includes legacy "controllers" / "song_mappings" / "mappings"
 }
 
@@ -365,6 +385,7 @@ const char* MainLayout::contentLabel(PaneContent content) {
         case PaneContent::Logs:        return "Logs";
         case PaneContent::MidiMonitor: return "MIDI Monitor";
         case PaneContent::Mixer:       return "Mixer";
+        case PaneContent::Assets:      return "Assets";
     }
     return "?";
 }
@@ -416,7 +437,7 @@ static std::vector<PaneContent> allowedContentForSlot(PaneSlot slot) {
     switch (slot) {
         case PaneSlot::Sidebar: return { PaneContent::Hidden, PaneContent::SidebarTree };
         case PaneSlot::Left:    return { PaneContent::Hidden, PaneContent::Produce, PaneContent::Perform, PaneContent::Debug };
-        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs, PaneContent::MidiMonitor };
+        case PaneSlot::Right:   return { PaneContent::Hidden, PaneContent::Chat, PaneContent::Logs, PaneContent::MidiMonitor, PaneContent::Assets };
         case PaneSlot::Bottom:  return { PaneContent::Hidden, PaneContent::Mixer };
     }
     return { PaneContent::Hidden };
@@ -671,6 +692,12 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         auto current = getPaneContent(PaneSlot::Right);
         setPaneContent(PaneSlot::Right,
                        current == PaneContent::Logs ? PaneContent::Hidden : PaneContent::Logs);
+        return true;
+    }
+    if (matches("view.assets", key)) {
+        auto current = getPaneContent(PaneSlot::Right);
+        setPaneContent(PaneSlot::Right,
+                       current == PaneContent::Assets ? PaneContent::Hidden : PaneContent::Assets);
         return true;
     }
     if (matches("view.closeEditor", key)) {

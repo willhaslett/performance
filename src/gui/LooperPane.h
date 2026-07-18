@@ -29,10 +29,18 @@ class PerformanceCoordinator;
 // pane's click handlers call (setTrackArmed, toggleLoopRecord,
 // setPendingTake, setCycleLength).
 class LooperPane : public juce::Component,
+                   public juce::DragAndDropTarget,
                    private juce::Timer {
 public:
     LooperPane(StateAPI& state, EngineAPI& engine, PerformanceCoordinator& coord);
     ~LooperPane() override;
+
+    // --- Drag target: drop an Assets-pane audio row onto a track's lane to
+    //     place it as that track's loop (see AssetsPane / placeAudioFileInLoop).
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     void setSequencer(SequencerAPI* seq) { sequencer = seq; }
     // Wired by MainLayout — fired when the user picks "Manage controls"
@@ -80,6 +88,12 @@ private:
         juce::Rectangle<int> inputButton;
     };
     std::vector<RowGeom> rowGeoms;
+
+    // Track whose lane a valid audio-asset drag is currently over (highlight).
+    TrackId dropTargetTrackId;
+    // Map a local point to the track whose row contains it (empty if none /
+    // over the top bar). Used by the drag-drop target.
+    TrackId trackIdAtPoint(juce::Point<int> p) const;
 
     // Bindable performer gesture buttons — one segmented strip in the
     // top bar, in performer order (play | replace overdub | undo redo

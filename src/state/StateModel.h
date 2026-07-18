@@ -174,6 +174,9 @@ struct TakeState {
     double recordTempo = 120.0;            // tempo at recording time (for beat↔sample)
     int sampleRate = 48000;                // sample rate of recorded audio
     int channelCount = 2;                  // channels in the audio file
+    // Provenance of this audio, for the Assets browser grouping.
+    // "recorded" | "imported" | "unknown" (legacy takes load as unknown).
+    std::string origin = "unknown";
 
     // Waveform peak cache (computed, not persisted)
     struct PeakData {
@@ -327,6 +330,25 @@ struct KeyEvent {
     std::string key = "C";
 };
 
+// A standalone audio file that belongs to the project but isn't placed on any
+// track/timeline — e.g. a chunk exported from a region, or (later) a bounce.
+// The Assets browser lists these alongside take-backed audio. This is the
+// lightweight "loose files" list, deliberately NOT the full asset registry
+// (no take-references / ref-counting). See memory/project_audio_assets_browser.
+struct AudioAssetState {
+    AssetId id;
+    std::string filePath;
+    std::string name;            // lineage-derived display name
+    std::string origin = "imported";  // "recorded"|"imported"|"bounced"|...
+    int sampleRate = 48000;
+    int channelCount = 2;
+    double recordTempo = 120.0;  // for beat↔time display
+    double lengthBeats = 0.0;
+    // Waveform peak cache — computed, not persisted (recomputed on load).
+    std::vector<std::pair<float, float>> peaks;
+    int samplesPerPeak = 256;
+};
+
 struct SongState {
     SongId id;
     std::string name;
@@ -338,6 +360,7 @@ struct SongState {
     std::vector<TrackState> tracks;
     std::vector<BusState> busses;
     std::vector<EffectState> masterEffects;
+    std::vector<AudioAssetState> audioAssets;  // loose files (not placed on a track)
     std::vector<BindingState> bindings;      // song-scoped bindings (includes score steps)
     std::vector<DeviceId> deviceIds;    // which devices this song uses
     std::string initialState;                 // JSON snapshot

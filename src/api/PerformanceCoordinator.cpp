@@ -72,6 +72,66 @@ int64_t writeCanonicalWav(juce::AudioFormatReader& reader, const juce::File& des
     writer.reset();  // flush + close
     return written;
 }
+
+// Write a frame range [startFrame, startFrame+numFrames) of `reader` to `dest`
+// at the reader's own rate (bit-exact slice, no resampling), 24-bit WAV.
+// Returns frames written (clamped to what's available).
+int64_t writeWavFrameRange(juce::AudioFormatReader& reader, const juce::File& dest,
+                           int sampleRate, int channels,
+                           int64_t startFrame, int64_t numFrames) {
+    if (channels < 1 || sampleRate <= 0 || numFrames <= 0) return 0;
+    startFrame = std::max((int64_t)0, startFrame);
+    int64_t avail = reader.lengthInSamples - startFrame;
+    if (avail <= 0) return 0;
+    numFrames = std::min(numFrames, avail);
+
+    dest.deleteFile();
+    auto out = dest.createOutputStream();
+    if (!out) return 0;
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(out.get(), (double)sampleRate,
+                            (unsigned int)channels, 24, {}, 0));
+    if (!writer) return 0;
+    out.release();
+
+    const int blockSize = 4096;
+    int64_t written = 0;
+    juce::AudioBuffer<float> buf(channels, blockSize);
+    for (int64_t pos = 0; pos < numFrames; pos += blockSize) {
+        int n = (int)std::min((int64_t)blockSize, numFrames - pos);
+        reader.read(&buf, 0, n, startFrame + pos, true, true);
+        writer->writeFromAudioSampleBuffer(buf, 0, n);
+        written += n;
+    }
+    writer.reset();
+    return written;
+}
+
+// Compute {min,max}-per-chunk waveform peaks for a WAV file. Used for loose
+// audio assets (which aren't takes, so don't go through computeAudioPeaks).
+std::vector<std::pair<float, float>> computeFilePeaks(const juce::File& file, int samplesPerPeak) {
+    std::vector<std::pair<float, float>> peaks;
+    if (!file.existsAsFile() || samplesPerPeak <= 0) return peaks;
+    juce::WavAudioFormat wav;
+    auto stream = file.createInputStream();
+    if (!stream) return peaks;
+    std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(stream.release(), true));
+    if (!reader) return peaks;
+    int64_t total = reader->lengthInSamples;
+    juce::AudioBuffer<float> buf((int)reader->numChannels, samplesPerPeak);
+    for (int64_t pos = 0; pos < total; pos += samplesPerPeak) {
+        int n = (int)std::min((int64_t)samplesPerPeak, total - pos);
+        reader->read(&buf, 0, n, pos, true, true);
+        float mn = 0, mx = 0;
+        for (int ch = 0; ch < (int)reader->numChannels; ++ch) {
+            auto* d = buf.getReadPointer(ch);
+            for (int i = 0; i < n; ++i) { mn = std::min(mn, d[i]); mx = std::max(mx, d[i]); }
+        }
+        peaks.push_back({ mn, mx });
+    }
+    return peaks;
+}
 }  // namespace
 
 // ===== Algebra interpreter adapters ==========================================
@@ -625,7 +685,8 @@ void PerformanceCoordinator::reloadAudioFiles() {
     loadAudioFilesIntoEngine();
 }
 
-bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId targetTrackId) {
+bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId targetTrackId,
+                                             double startBeatArg, const std::string& origin) {
     if (!stateAPI || !audioEngine) return false;
     if (!source.existsAsFile()) {
         perfLog("[Coordinator] importAudioFile: no such file: %s\n",
@@ -671,7 +732,9 @@ bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId t
     int targetRate = (engineRate > 0.0) ? (int)engineRate : 48000;
     int channels = std::min(2, (int)reader->numChannels);
 
-    double startBeat = sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0;
+    double startBeat = (startBeatArg >= 0.0)
+                     ? startBeatArg
+                     : (sequencerImpl ? sequencerImpl->getBeatPosition() : 0.0);
     double tempo = sequencerImpl ? sequencerImpl->getTempo() : stateAPI->getSongTempo();
 
     auto* region = arrangementImpl.addMidiRegion(trackId, startBeat, 0.0);
@@ -697,6 +760,7 @@ bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId t
     take->sampleRate = targetRate;
     take->recordTempo = tempo;
     take->channelCount = channels;
+    take->origin = origin.empty() ? "imported" : origin;
     region->lengthBeats = audioFramesToBeats(frames, targetRate, tempo);
 
     computeAudioPeaks(*take);
@@ -715,6 +779,197 @@ bool PerformanceCoordinator::importAudioFile(const juce::File& source, TrackId t
             source.getFileName().toRawUTF8(), trackId.c_str(), frames, targetRate,
             region->lengthBeats);
     return true;
+}
+
+bool PerformanceCoordinator::placeAudioFileInLoop(const juce::File& source, TrackId trackId,
+                                                  const std::string& origin) {
+    if (!stateAPI || !audioEngine) return false;
+    if (!source.existsAsFile()) {
+        perfLog("[Coordinator] placeAudioFileInLoop: no such file: %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+    // Audio loops need an AudioInput track (AudioFileNode playback), matching the
+    // region-drag audio→AudioInput compatibility rule.
+    auto* track = trackId.str().empty() ? nullptr : stateAPI->findTrack(trackId);
+    if (!track || track->sourceType != TrackSourceType::AudioInput) {
+        perfLog("[Coordinator] placeAudioFileInLoop: target is not an audio track\n");
+        return false;
+    }
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source));
+    if (!reader || reader->numChannels == 0 || reader->sampleRate <= 0) {
+        perfLog("[Coordinator] placeAudioFileInLoop: unreadable file: %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    stateAPI->pushUndo();
+
+    double engineRate = audioEngine->getEngineSampleRate();
+    int targetRate = (engineRate > 0.0) ? (int)engineRate : 48000;
+    int channels = std::min(2, (int)reader->numChannels);
+    double tempo = sequencerImpl ? sequencerImpl->getTempo() : stateAPI->getSongTempo();
+
+    // The loop pool has one region per track; placing replaces its single take
+    // (Replace semantics). Create it if the track has no loop yet.
+    auto* region = arrangementImpl.getOrCreateLoopRegion(trackId);
+    if (!region) return false;
+    auto* take = region->activeTake();
+    if (!take) return false;
+
+    auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                        .getChildFile(".config/performance/audio");
+    audioDir.createDirectory();
+    auto wavFile = audioDir.getChildFile(juce::String(take->id.str()) + ".wav");
+
+    // Transcode to the engine rate (a copy owned by this loop take), so the loop
+    // is self-contained and deleting the source asset can't orphan it.
+    int64_t frames = writeCanonicalWav(*reader, wavFile, targetRate, channels);
+    if (frames <= 0) {
+        perfLog("[Coordinator] placeAudioFileInLoop: transcode failed for %s\n",
+                source.getFullPathName().toRawUTF8());
+        return false;
+    }
+
+    region->type = "audio";
+    take->events.clear();          // in case this loop was previously MIDI
+    take->filePath = wavFile.getFullPathName().toStdString();
+    take->sampleRate = targetRate;
+    take->recordTempo = tempo;
+    take->channelCount = channels;
+    take->origin = origin.empty() ? "imported" : origin;
+    region->lengthBeats = audioFramesToBeats(frames, targetRate, tempo);
+
+    // First loop into an empty session defines the master cycle — exactly what a
+    // first live recording does. If a cycle already exists we leave it alone and
+    // the loop just plays against it.
+    auto* song = stateAPI->currentSong();
+    bool firstLoop = !song || song->cycleEnd <= song->cycleStart;
+    if (firstLoop && region->lengthBeats > 0.0)
+        stateAPI->setCycleLength(region->lengthBeats);
+
+    computeAudioPeaks(*take);
+    loadAudioFilesIntoEngine();
+    syncTempoFromState();          // push cycle bounds to the sequencer + looper
+
+    stateAPI->markDirty();
+    stateAPI->events().emit({ StateEvent::Updated, StateEvent::Track, trackId.str(), "" });
+
+    perfLog("[Coordinator] Placed %s → loop on track %s: %lld frames, %.2f beats (firstLoop=%d)\n",
+            source.getFileName().toRawUTF8(), trackId.c_str(), frames,
+            region->lengthBeats, firstLoop ? 1 : 0);
+    return true;
+}
+
+PerformanceCoordinator::ChunkExportResult
+PerformanceCoordinator::exportRegionCycleChunk(const RegionId& regionId) {
+    ChunkExportResult out;
+    if (!stateAPI) return out;
+    auto* song = stateAPI->currentSong();
+    if (!song) return out;
+
+    // Read the cycle the user actually set — the sequencer loop range the
+    // Producer displays and the ruler drag writes (song->cycle can lag behind
+    // it). Persist it back to song state so the Song/Updated our asset-add emits
+    // doesn't resync the sequencer to a stale song value — which would visibly
+    // snap the cycle start back to the region start.
+    double cycStart = sequencerImpl ? sequencerImpl->getLoopStart()  : song->cycleStart;
+    double cycEnd   = sequencerImpl ? sequencerImpl->getLoopEnd()    : song->cycleEnd;
+    bool   cycOn    = sequencerImpl ? sequencerImpl->isLoopEnabled() : song->cycleEnabled;
+    if (!cycOn || cycEnd <= cycStart) {
+        perfLog("[Coordinator] exportRegionCycleChunk: no active cycle\n");
+        return out;
+    }
+    song->cycleStart = cycStart;
+    song->cycleEnd = cycEnd;
+    song->cycleEnabled = true;
+
+    auto* region = arrangementImpl.findRegion(regionId);
+    if (!region || region->type != "audio") {
+        perfLog("[Coordinator] exportRegionCycleChunk: region not found / not audio\n");
+        return out;
+    }
+    auto* take = region->activeTake();
+    if (!take || take->filePath.empty()) {
+        perfLog("[Coordinator] exportRegionCycleChunk: region has no audio take\n");
+        return out;
+    }
+
+    // Intersect the cycle window with the region, in global beats.
+    double winStart = std::max(cycStart, region->startBeat);
+    double winEnd   = std::min(cycEnd, region->startBeat + region->lengthBeats);
+    if (winEnd <= winStart) {
+        perfLog("[Coordinator] exportRegionCycleChunk: cycle does not overlap region\n");
+        return out;
+    }
+
+    // Region-local beats → source frames, using the same beat↔frame mapping
+    // that lengthBeats / AudioFileNode use (recordTempo, not the live tempo).
+    double tempo = take->recordTempo > 0.0 ? take->recordTempo : 120.0;
+    int sr = take->sampleRate > 0 ? take->sampleRate : 48000;
+    double localStart = winStart - region->startBeat;
+    double localLen   = winEnd - winStart;
+    int64_t startFrame = (int64_t) std::llround(localStart * 60.0 / tempo * sr);
+    int64_t numFrames  = (int64_t) std::llround(localLen   * 60.0 / tempo * sr);
+    if (numFrames <= 0) return out;
+
+    juce::File source(take->filePath);
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(source));
+    if (!reader) {
+        perfLog("[Coordinator] exportRegionCycleChunk: can't read source %s\n",
+                take->filePath.c_str());
+        return out;
+    }
+    int channels = std::min(2, (int)reader->numChannels);
+
+    auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
+                        .getChildFile(".config/performance/audio");
+    audioDir.createDirectory();
+    juce::String fileId = juce::Uuid().toString();
+    auto wavFile = audioDir.getChildFile(fileId + ".wav");
+
+    int64_t frames = writeWavFrameRange(*reader, wavFile, sr, channels, startFrame, numFrames);
+    if (frames <= 0) {
+        perfLog("[Coordinator] exportRegionCycleChunk: slice write failed\n");
+        return out;
+    }
+
+    // Lineage: name it after the source region's owner track so the derivation
+    // is legible in the Assets browser.
+    juce::String base = "audio";
+    for (auto& t : song->tracks)
+        for (auto& r : t.regions)
+            if (r.id == region->id) base = juce::String(t.name);
+
+    out.ok = true;
+    out.filePath = wavFile.getFullPathName();
+    out.name = base + juce::String::formatted(" [%.1f-%.1f]", winStart, winEnd);
+    out.sampleRate = sr;
+    out.channelCount = channels;
+    out.lengthBeats = audioFramesToBeats(frames, sr, tempo);
+
+    // Register as a loose project asset so it shows in the Assets browser and is
+    // draggable to the looper / producer. Inherit the source's origin category.
+    AudioAssetState asset;
+    asset.filePath = out.filePath.toStdString();
+    asset.name = out.name.toStdString();
+    asset.origin = take->origin.empty() ? "imported" : take->origin;
+    asset.sampleRate = sr;
+    asset.channelCount = channels;
+    asset.recordTempo = tempo;
+    asset.lengthBeats = out.lengthBeats;
+    asset.peaks = computeFilePeaks(wavFile, 256);
+    asset.samplesPerPeak = 256;
+    out.assetId = stateAPI->addAudioAsset(std::move(asset)).str();
+
+    perfLog("[Coordinator] Exported cycle chunk from region %s: %lld frames, %.2f beats → %s\n",
+            regionId.str().c_str(), frames, out.lengthBeats, out.name.toRawUTF8());
+    return out;
 }
 
 void PerformanceCoordinator::stopRecordMode() {
@@ -789,6 +1044,7 @@ void PerformanceCoordinator::startRecording() {
             take->recordTempo = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
             take->sampleRate = (int)sr;
             take->channelCount = std::max(1, ts->inputChannelCount);
+            take->origin = "recorded";
 
             auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                                 .getChildFile(".config/performance/audio");
@@ -1029,6 +1285,12 @@ void PerformanceCoordinator::loadAudioFilesIntoEngine() {
         loadFromPool(track.regions);
         loadFromPool(track.loops);
     }
+
+    // Loose assets aren't loaded into the engine, but the Assets browser needs
+    // their waveform peaks (peaks aren't persisted — recompute on load).
+    for (auto& a : song->audioAssets)
+        if (a.peaks.empty() && !a.filePath.empty())
+            a.peaks = computeFilePeaks(juce::File(a.filePath), a.samplesPerPeak);
 }
 
 double PerformanceCoordinator::audioFramesToBeats(int64_t frames, int sampleRate,
@@ -1547,6 +1809,7 @@ void PerformanceCoordinator::openLoopCaptureForTrack(const TrackId& trackId,
             take->recordTempo  = sequencerImpl ? sequencerImpl->getTempo() : 120.0;
             take->sampleRate   = (int) sr;
             take->channelCount = std::max(1, focusedTrack->inputChannelCount);
+            take->origin       = "recorded";
 
             auto audioDir = juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                                 .getChildFile(".config/performance/audio");

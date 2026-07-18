@@ -295,6 +295,20 @@ void ProducePane::paint(juce::Graphics& g) {
         g.fillRect(0, srcY, getWidth(), heightAt(dragTrackIndex));
     }
 
+    // Asset drag-drop target highlight (audio row + insert beat).
+    if (assetDropTrackIdx >= 0) {
+        int top = 0, h = 0;
+        if (trackRowYRange(assetDropTrackIdx, top, h)) {
+            juce::Rectangle<int> lane(trackHeaderWidth, top, getWidth() - trackHeaderWidth, h);
+            g.setColour(Theme::color(Theme::Color::accent).withAlpha(0.15f));
+            g.fillRect(lane);
+            g.setColour(Theme::color(Theme::Color::accent));
+            g.drawRect(lane, 2);
+            int x = beatToX(assetDropBeat);
+            g.drawVerticalLine(x, (float)top, (float)(top + h));
+        }
+    }
+
     // Playhead overlaid
     if (sequencer) {
         auto fullGridArea = getLocalBounds()
@@ -314,9 +328,10 @@ void ProducePane::paint(juce::Graphics& g) {
 
 void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> bounds,
                                         TransportGlyph glyph, bool active,
-                                        bool hovered, juce::Colour activeCol) {
+                                        bool hovered, juce::Colour activeCol, bool enabled) {
     const float cornerR = 4.0f;
     auto boundsF = bounds.toFloat();
+    if (!enabled) { active = false; hovered = false; }  // disabled: dim glyph, no pill
 
     // Container — buttons live inside a shared group container, so at rest
     // they paint nothing. Active gets a colored pill; hover gets a subtle
@@ -331,7 +346,9 @@ void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> b
 
     // Glyph colour
     juce::Colour glyphCol;
-    if (active)
+    if (!enabled)
+        glyphCol = Theme::color(Theme::Color::textDim);
+    else if (active)
         glyphCol = Theme::color(Theme::Color::textOnColor);
     else
         glyphCol = hovered ? Theme::color(Theme::Color::textPrimary)
@@ -376,6 +393,18 @@ void ProducePane::paintTransportButton(juce::Graphics& g, juce::Rectangle<int> b
     case TransportGlyph::Record:
         g.fillEllipse(boundsF.reduced(7.0f));
         break;
+    case TransportGlyph::BounceCycle: {
+        // Down-arrow into a tray — "export the cycle to a file".
+        float cx = inner.getCentreX();
+        float arrowTip = inner.getY() + inner.getHeight() * 0.62f;
+        float hw = inner.getWidth() * 0.26f;
+        g.drawLine(cx, inner.getY(), cx, arrowTip - hw * 0.2f, 1.6f);
+        juce::Path head;
+        head.addTriangle(cx - hw, arrowTip - hw, cx + hw, arrowTip - hw, cx, arrowTip);
+        g.fillPath(head);
+        g.drawLine(inner.getX(), inner.getBottom(), inner.getRight(), inner.getBottom(), 1.6f);
+        break;
+    }
     case TransportGlyph::EventsToggle: {
         // Three small dots representing events on a timeline.
         const float dotR = 1.6f;
@@ -501,9 +530,11 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     // Group container — a single rounded-rect behind all five buttons,
     // Logic-style. Individual buttons paint glyph-only at rest; active /
     // hover paint their own colored pill inside this container.
+    // In cycle mode a sixth button (Bounce Cycle) joins the group.
+    int bounceExtra = looping ? (btnSize + btnGap) : 0;
     auto groupBounds = juce::Rectangle<int>(
         btnX - groupPad, btnY - groupPad,
-        totalButtonsW + 2 * groupPad + 4,  // +4 accounts for the cycle-button extra gap
+        totalButtonsW + 2 * groupPad + 4 + bounceExtra,  // +4 accounts for the cycle-button extra gap
         btnSize + 2 * groupPad);
     g.setColour(Theme::color(Theme::Color::bgControl));
     g.fillRoundedRectangle(groupBounds.toFloat(), 6.0f);
@@ -536,7 +567,22 @@ void ProducePane::paintTransport(juce::Graphics& g, juce::Rectangle<int> area) {
     paintTransportButton(g, cycleButtonBounds, TransportGlyph::Cycle,
                          looping, hoveredTransport == HoveredTransport::Cycle,
                          Theme::color(Theme::Color::accent));
-    btnX += btnSize + groupPad;
+    btnX += btnSize;
+
+    // Bounce Cycle — only in cycle mode. Exports the selected audio region's
+    // cycle interval to a new asset.
+    if (looping) {
+        btnX += btnGap;
+        bool bounceOk = canBounceCycle();
+        bounceCycleButtonBounds = juce::Rectangle<int>(btnX, btnY, btnSize, btnSize);
+        paintTransportButton(g, bounceCycleButtonBounds, TransportGlyph::BounceCycle,
+                             false, bounceOk && hoveredTransport == HoveredTransport::BounceCycle,
+                             Theme::color(Theme::Color::accent), bounceOk);
+        btnX += btnSize;
+    } else {
+        bounceCycleButtonBounds = {};
+    }
+    btnX += groupPad;
 
     // --- View group: a separate container right of the transport group,
     // for buttons that toggle UI visibility. Houses EventsToggle (Action
@@ -1524,6 +1570,84 @@ int ProducePane::getTrackIndexAtY(int y) const {
     return -1;
 }
 
+bool ProducePane::trackRowYRange(int index, int& topOut, int& heightOut) const {
+    if (!state || index < 0) return false;
+    auto tracks = state->listTracks();
+    if (index >= (int)tracks.size()) return false;
+    int cursor = transportHeight + rulerHeight - trackScrollY;
+    for (int i = 0; i < (int)tracks.size(); ++i) {
+        auto* ts = state->findTrack(tracks[i].id);
+        int h = ts ? rowHeightFor(*ts) : trackRowHeight;
+        if (i == index) { topOut = cursor; heightOut = h; return true; }
+        cursor += h;
+    }
+    return false;
+}
+
+bool ProducePane::canBounceCycle(RegionId* outRegion) const {
+    if (!sequencer || !arrangement || !sequencer->isLoopEnabled()) return false;
+    double cs = sequencer->getLoopStart(), ce = sequencer->getLoopEnd();
+    if (ce <= cs) return false;
+    if (selectedRegionIds.size() != 1) return false;   // unambiguous: exactly one
+    auto rid = *selectedRegionIds.begin();
+    auto* r = arrangement->findRegion(rid);
+    if (!r || r->type != "audio") return false;
+    if (std::min(ce, r->startBeat + r->lengthBeats) <= std::max(cs, r->startBeat))
+        return false;                                   // cycle must overlap the region
+    if (outRegion) *outRegion = rid;
+    return true;
+}
+
+// --- Drag target: Assets-pane audio row → place as an arrangement region ---
+
+bool ProducePane::isInterestedInDragSource(const SourceDetails& details) {
+    if (!details.description.isObject()) return false;
+    auto* obj = details.description.getDynamicObject();
+    return obj && obj->getProperty("kind").toString() == "asset";
+}
+
+void ProducePane::itemDragMove(const SourceDetails& details) {
+    int idx = -1;
+    double beat = 0.0;
+    auto p = details.localPosition;
+    if (p.getX() >= trackHeaderWidth && state) {
+        int t = getTrackIndexAtY(p.getY());
+        auto tracks = state->listTracks();
+        if (t >= 0 && t < (int)tracks.size()) {
+            auto* ts = state->findTrack(tracks[t].id);
+            if (ts && ts->sourceType == TrackSourceType::AudioInput) {  // audio only
+                idx = t;
+                beat = snapBeatToGrid(std::max(0.0, xToBeat(p.getX())));
+            }
+        }
+    }
+    if (idx != assetDropTrackIdx || beat != assetDropBeat) {
+        assetDropTrackIdx = idx;
+        assetDropBeat = beat;
+        repaint();
+    }
+}
+
+void ProducePane::itemDragExit(const SourceDetails&) {
+    if (assetDropTrackIdx != -1) { assetDropTrackIdx = -1; repaint(); }
+}
+
+void ProducePane::itemDropped(const SourceDetails& details) {
+    int idx = assetDropTrackIdx;
+    double beat = assetDropBeat;
+    assetDropTrackIdx = -1;
+    repaint();
+    if (idx < 0 || !state || !onPlaceAudioAsset) return;
+    auto* obj = details.description.getDynamicObject();
+    if (!obj) return;
+    auto tracks = state->listTracks();
+    if (idx >= (int)tracks.size()) return;
+    juce::String filePath = obj->getProperty("filePath").toString();
+    juce::String origin   = obj->getProperty("origin").toString();
+    if (filePath.isEmpty()) return;
+    onPlaceAudioAsset(juce::File(filePath), tracks[idx].id, beat, origin.toStdString());
+}
+
 void ProducePane::mouseDown(const juce::MouseEvent& event) {
     grabKeyboardFocus();
 
@@ -2422,6 +2546,12 @@ void ProducePane::mouseUp(const juce::MouseEvent& event) {
         repaint();
         return;
     }
+    if (!bounceCycleButtonBounds.isEmpty() && bounceCycleButtonBounds.contains(event.getPosition())) {
+        RegionId target;
+        if (canBounceCycle(&target) && onBounceCycle) onBounceCycle(target);  // no-op when disabled
+        repaint();
+        return;
+    }
     if (state && showActionTrackButtonBounds.contains(event.getPosition())) {
         bool show = state->getConfig("show_action_track") == "1";
         state->setConfig("show_action_track", show ? "0" : "1");
@@ -2491,6 +2621,7 @@ void ProducePane::mouseMove(const juce::MouseEvent& event) {
     else if (playButtonBounds.contains(mp))   newHover = HoveredTransport::Play;
     else if (recordButtonBounds.contains(mp)) newHover = HoveredTransport::Record;
     else if (cycleButtonBounds.contains(mp))  newHover = HoveredTransport::Cycle;
+    else if (!bounceCycleButtonBounds.isEmpty() && bounceCycleButtonBounds.contains(mp)) newHover = HoveredTransport::BounceCycle;
     else if (showActionTrackButtonBounds.contains(mp)) newHover = HoveredTransport::EventsToggle;
     else if (snapToggleButtonBounds.contains(mp)) newHover = HoveredTransport::SnapToggle;
     if (newHover != hoveredTransport) {

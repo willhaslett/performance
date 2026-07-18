@@ -196,6 +196,12 @@ public:
     void setSendPreFader(const SendId& sendId, bool preFader);
     void setSendMuted(const SendId& sendId, bool muted);
 
+    // --- Audio assets (loose files not placed on any track) ---
+    // Appends to the current song; mints an id if the passed asset has none.
+    // Returns the (possibly minted) id. Emits Song/Updated.
+    AssetId addAudioAsset(AudioAssetState asset);
+    void removeAudioAsset(const AssetId& id);
+
     // --- Bindings (songId empty = global, deviceId empty = any device) ---
     BindingId addBinding(const SongId& songId, const std::string& controlType,
                          int channel, int number, const ActionId& actionId,

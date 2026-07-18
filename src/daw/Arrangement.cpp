@@ -589,6 +589,27 @@ void Arrangement::stopRecording() {
 // loop recording adds a new take to the track's single loop region.
 // The region is created lazily on the first punch-in and persists
 // across subsequent captures; `activeTakeId` moves to the latest.
+RegionState* Arrangement::getOrCreateLoopRegion(const TrackId& trackId) {
+    PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
+    for (auto& t : *songTracks) {
+        if (t.id != trackId) continue;
+        if (!t.loops.empty()) return &t.loops[0];
+        RegionState r;
+        r.id = RegionId{generateId()};
+        r.type = "midi";           // caller sets "audio" when placing a file
+        r.startBeat = 0.0;
+        r.lengthBeats = 0.0;
+        TakeState take;
+        take.id = TakeId{generateId()};
+        take.name = "Take 1";
+        r.takes.push_back(std::move(take));
+        r.activeTakeId = r.takes.front().id;
+        t.loops.push_back(std::move(r));
+        return &t.loops[0];
+    }
+    return nullptr;
+}
+
 RegionState* Arrangement::startLoopRecording(const TrackId& trackId) {
     PERF_ASSERT(songTracks, "Arrangement: songTracks not set");
     for (auto& t : *songTracks) {

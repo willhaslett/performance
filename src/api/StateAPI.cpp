@@ -1204,6 +1204,28 @@ void StateAPI::setSendMuted(const SendId& sendId, bool muted) {
     }
 }
 
+AssetId StateAPI::addAudioAsset(AudioAssetState asset) {
+    // Not undo-tracked: assets are a project library, not timeline content, and
+    // the backing file write isn't reversible anyway.
+    auto& s = song();
+    if (asset.id.str().empty()) asset.id = AssetId{generateId()};
+    auto id = asset.id;
+    s.audioAssets.push_back(std::move(asset));
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+    return id;
+}
+
+void StateAPI::removeAudioAsset(const AssetId& id) {
+    auto& s = song();
+    auto& v = s.audioAssets;
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [&](const AudioAssetState& a) { return a.id == id; }),
+            v.end());
+    markDirty();
+    eventBus.emit({ StateEvent::Updated, StateEvent::Song, s.id.str(), "" });
+}
+
 // --- Bindings ---
 
 BindingId StateAPI::addBinding(const SongId& songId, const std::string& controlType,

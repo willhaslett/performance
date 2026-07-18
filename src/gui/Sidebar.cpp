@@ -50,6 +50,7 @@ void Sidebar::rebuild() {
         {"chat",     "Chat",     cmd + "I"},
         {"mixer",    "Mixer",    cmd + "O"},
         {"looper",   "Looper",   cmd + "P"},
+        {"assets",   "Assets",   cmd + "B"},
     }) {
         auto& [id, label, shortcut] = v;
         items.push_back({ Item::ViewToggle, label, id, {}, shortcut });

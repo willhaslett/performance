@@ -171,6 +171,18 @@ void PersistenceLayer::createSchema() {
             muted INTEGER DEFAULT 0
         );
 
+        CREATE TABLE IF NOT EXISTS audio_assets (
+            id TEXT PRIMARY KEY,
+            song_id TEXT NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+            file_path TEXT DEFAULT '',
+            name TEXT DEFAULT '',
+            origin TEXT DEFAULT 'imported',
+            sample_rate INTEGER DEFAULT 48000,
+            channel_count INTEGER DEFAULT 2,
+            record_tempo REAL DEFAULT 120.0,
+            length_beats REAL DEFAULT 0.0
+        );
+
         CREATE TABLE IF NOT EXISTS bindings (
             id TEXT PRIMARY KEY,
             song_id TEXT REFERENCES songs(id) ON DELETE CASCADE,
@@ -223,6 +235,7 @@ void PersistenceLayer::createSchema() {
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN record_tempo REAL DEFAULT 120.0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN sample_rate INTEGER DEFAULT 48000", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN channel_count INTEGER DEFAULT 2", nullptr, nullptr, nullptr);
+    sqlite3_exec(db, "ALTER TABLE takes ADD COLUMN origin TEXT DEFAULT 'unknown'", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE sends ADD COLUMN pre_fader INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE sends ADD COLUMN muted INTEGER DEFAULT 0", nullptr, nullptr, nullptr);
     sqlite3_exec(db, "ALTER TABLE regions ADD COLUMN loop_end_beat REAL DEFAULT 0.0", nullptr, nullptr, nullptr);
@@ -273,7 +286,8 @@ void PersistenceLayer::createSchema() {
             file_path TEXT DEFAULT '',
             record_tempo REAL DEFAULT 120.0,
             sample_rate INTEGER DEFAULT 48000,
-            channel_count INTEGER DEFAULT 2
+            channel_count INTEGER DEFAULT 2,
+            origin TEXT DEFAULT 'unknown'
         );
 
         CREATE TABLE IF NOT EXISTS take_events (
@@ -571,7 +585,7 @@ void PersistenceLayer::readSongs(AppState& out) {
                 std::string pool = col_str(rs, 10);
 
                 // Takes for this region
-                auto* tks = prepare("SELECT id, name, file_path, record_tempo, sample_rate, channel_count FROM takes WHERE region_id = ?");
+                auto* tks = prepare("SELECT id, name, file_path, record_tempo, sample_rate, channel_count, origin FROM takes WHERE region_id = ?");
                 sqlite3_bind_text(tks, 1, r.id.c_str(), -1, SQLITE_TRANSIENT);
                 while (sqlite3_step(tks) == SQLITE_ROW) {
                     TakeState take;
@@ -581,6 +595,7 @@ void PersistenceLayer::readSongs(AppState& out) {
                     take.recordTempo = sqlite3_column_double(tks, 3);
                     take.sampleRate = sqlite3_column_int(tks, 4);
                     take.channelCount = sqlite3_column_int(tks, 5);
+                    take.origin = col_str(tks, 6);
 
                     // Events for this take
                     auto* es = prepare("SELECT beat_offset, status, channel, data1, data2 FROM take_events WHERE take_id = ? ORDER BY beat_offset");
@@ -649,6 +664,23 @@ void PersistenceLayer::readSongs(AppState& out) {
             });
         }
         sqlite3_finalize(mfx);
+
+        // Loose audio assets (peaks are recomputed on load, not persisted)
+        auto* aas = prepare("SELECT id, file_path, name, origin, sample_rate, channel_count, record_tempo, length_beats FROM audio_assets WHERE song_id = ?");
+        sqlite3_bind_text(aas, 1, song.id.c_str(), -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(aas) == SQLITE_ROW) {
+            AudioAssetState a;
+            a.id = AssetId{col_str(aas, 0)};
+            a.filePath = col_str(aas, 1);
+            a.name = col_str(aas, 2);
+            a.origin = col_str(aas, 3);
+            a.sampleRate = sqlite3_column_int(aas, 4);
+            a.channelCount = sqlite3_column_int(aas, 5);
+            a.recordTempo = sqlite3_column_double(aas, 6);
+            a.lengthBeats = sqlite3_column_double(aas, 7);
+            song.audioAssets.push_back(std::move(a));
+        }
+        sqlite3_finalize(aas);
 
         // Song-device associations
         auto* sd = prepare("SELECT device_id FROM song_devices WHERE song_id = ?");
@@ -812,6 +844,7 @@ void PersistenceLayer::clearAllData() {
     exec("DELETE FROM regions");
     exec("DELETE FROM effects");
     exec("DELETE FROM sends");
+    exec("DELETE FROM audio_assets");
     exec("DELETE FROM action_events");
     exec("DELETE FROM song_devices");
     exec("DELETE FROM bindings");           // both global + song-scoped
@@ -936,6 +969,22 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
             sqlite3_bind_double(es, 3, e.beat);
             sqlite3_bind_text(es, 4, e.key.c_str(), -1, SQLITE_TRANSIENT);
             stepWrite(es, "save");
+        }
+
+        // Loose audio assets (files not placed on any track)
+        for (auto& a : song.audioAssets) {
+            auto* as = prepare("INSERT INTO audio_assets (id, song_id, file_path, name, origin, sample_rate, channel_count, record_tempo, length_beats) "
+                               "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            sqlite3_bind_text(as, 1, a.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(as, 2, song.id.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(as, 3, a.filePath.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(as, 4, a.name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(as, 5, a.origin.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(as, 6, a.sampleRate);
+            sqlite3_bind_int(as, 7, a.channelCount);
+            sqlite3_bind_double(as, 8, a.recordTempo);
+            sqlite3_bind_double(as, 9, a.lengthBeats);
+            stepWrite(as, "save");
         }
 
         // Busses (before tracks, since sends reference busses)
@@ -1066,8 +1115,8 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
 
                 for (auto& take : r.takes) {
                     auto* ts2 = prepare(
-                        "INSERT INTO takes (id, region_id, name, file_path, record_tempo, sample_rate, channel_count) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)");
+                        "INSERT INTO takes (id, region_id, name, file_path, record_tempo, sample_rate, channel_count, origin) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                     sqlite3_bind_text(ts2, 1, take.id.c_str(), -1, SQLITE_TRANSIENT);
                     sqlite3_bind_text(ts2, 2, r.id.c_str(), -1, SQLITE_TRANSIENT);
                     sqlite3_bind_text(ts2, 3, take.name.c_str(), -1, SQLITE_TRANSIENT);
@@ -1077,6 +1126,7 @@ void PersistenceLayer::saveSongs(const StateAPI& state) {
                     sqlite3_bind_double(ts2, 5, take.recordTempo);
                     sqlite3_bind_int(ts2, 6, take.sampleRate);
                     sqlite3_bind_int(ts2, 7, take.channelCount);
+                    sqlite3_bind_text(ts2, 8, take.origin.c_str(), -1, SQLITE_TRANSIENT);
                     stepWrite(ts2, "save");
 
                     for (auto& e : take.events) {

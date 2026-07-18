@@ -10,7 +10,8 @@ class StateAPI;
 
 // DAW-style arrange view: transport bar, track headers, timeline grid with regions.
 
-class ProducePane : public juce::Component, public juce::DragAndDropContainer, private juce::Timer {
+class ProducePane : public juce::Component, public juce::DragAndDropContainer,
+                    public juce::DragAndDropTarget, private juce::Timer {
 public:
     ProducePane();
     ~ProducePane() override;
@@ -22,6 +23,19 @@ public:
     std::function<void()> onStopRecordMode;
     std::function<bool()> onIsRecordMode;
     std::function<void()> onRegionsChanged;  // reload audio files after move/duplicate/delete
+    // Drop an Assets-pane audio row onto the timeline → place it as an audio
+    // region on `trackId` at `startBeat`. Wired by MainLayout to importAudioFile.
+    std::function<void(const juce::File&, TrackId, double, const std::string&)> onPlaceAudioAsset;
+    // Bounce the current cycle interval of the given (selected) audio region to
+    // a new asset. Wired by MainLayout to exportRegionCycleChunk. Only fired
+    // from the cycle-mode-only Bounce button.
+    std::function<void(RegionId)> onBounceCycle;
+
+    // --- Drag target (Assets pane audio row → timeline) ---
+    bool isInterestedInDragSource(const SourceDetails& details) override;
+    void itemDragMove(const SourceDetails& details) override;
+    void itemDragExit(const SourceDetails& details) override;
+    void itemDropped(const SourceDetails& details) override;
 
     // Track preset callbacks — set by main.mm to share with the Mixer's
     // identical right-click menu. See gui/TrackUi.h showTrackContextMenu.
@@ -66,6 +80,16 @@ private:
     int beatToX(double beat) const;
     double xToBeat(int x) const;
     double snapBeatToGrid(double beat) const;  // snap to nearest division
+
+    // Asset drop-in-flight state (for the drop-target highlight).
+    int assetDropTrackIdx = -1;
+    double assetDropBeat = 0.0;
+    // Screen-Y range of a track row by index (mirrors getTrackIndexAtY).
+    bool trackRowYRange(int index, int& topOut, int& heightOut) const;
+
+    // True when Bounce Cycle is valid: cycle on, exactly one selected region,
+    // it's audio, and the cycle overlaps it. Sets *outRegion to that region.
+    bool canBounceCycle(RegionId* outRegion = nullptr) const;
     void saveZoomState();
     void ensurePlayheadVisible();              // scroll so playhead is on-screen
 
@@ -125,12 +149,13 @@ private:
     juce::Rectangle<int> playButtonBounds;
     juce::Rectangle<int> recordButtonBounds;
     juce::Rectangle<int> cycleButtonBounds;
+    juce::Rectangle<int> bounceCycleButtonBounds;      // shown only in cycle mode; empty otherwise
     juce::Rectangle<int> showActionTrackButtonBounds;  // view group, sits between transport + LCD
     juce::Rectangle<int> snapToggleButtonBounds;       // view group, right of EventsToggle
 
     // Transport button hover tracking
-    enum class TransportGlyph { Rewind, Stop, Play, Record, Cycle, EventsToggle, SnapToggle };
-    enum class HoveredTransport { None, Rewind, Stop, Play, Record, Cycle, EventsToggle, SnapToggle };
+    enum class TransportGlyph { Rewind, Stop, Play, Record, Cycle, BounceCycle, EventsToggle, SnapToggle };
+    enum class HoveredTransport { None, Rewind, Stop, Play, Record, Cycle, BounceCycle, EventsToggle, SnapToggle };
     HoveredTransport hoveredTransport = HoveredTransport::None;
 
     // Draws container (rest / hover / active) + glyph. activeCol is the fill
@@ -138,7 +163,7 @@ private:
     // bgControlHover. Glyph uses textSecondary / textPrimary / textOnColor.
     void paintTransportButton(juce::Graphics& g, juce::Rectangle<int> bounds,
                               TransportGlyph glyph, bool active, bool hovered,
-                              juce::Colour activeCol);
+                              juce::Colour activeCol, bool enabled = true);
 
     // BPM and time sig click areas (in transport LCD)
     juce::Rectangle<int> bpmClickBounds;

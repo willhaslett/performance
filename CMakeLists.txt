@@ -84,6 +84,7 @@ target_sources(Performance PRIVATE
     src/gui/PluginSlot.cpp
     src/gui/FaderMeter.cpp
     src/gui/SendsPanel.cpp
+    src/gui/AssetsPane.cpp
     src/gui/RegistryTree.cpp
     src/gui/Sidebar.cpp
     src/gui/DebugPane.cpp

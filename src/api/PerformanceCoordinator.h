@@ -186,7 +186,34 @@ public:
     // Target resolution: if `targetTrackId` is empty, the region goes on
     // the focused track when that track is an AudioInput; otherwise a new
     // AudioInput track is created. Returns true on success.
-    bool importAudioFile(const juce::File& source, TrackId targetTrackId = {});
+    // `startBeat` < 0 places at the current playhead (the menu-import
+    // behavior); pass a specific beat for a drag-drop onto the timeline.
+    // `origin` tags the take for the Assets browser.
+    bool importAudioFile(const juce::File& source, TrackId targetTrackId = {},
+                         double startBeat = -1.0, const std::string& origin = "imported");
+    // Place an existing audio file into the target track's loop (looper pool),
+    // replacing its single take. When no master cycle exists yet, the file
+    // defines the cycle — the same terminal state a first loop recording
+    // produces. `trackId` must be an AudioInput track. `origin` tags the copied
+    // take for the Assets browser (defaults to "imported"). Returns true on ok.
+    bool placeAudioFileInLoop(const juce::File& source, TrackId trackId,
+                              const std::string& origin = "imported");
+
+    // Export the slice of a selected audio region's underlying file that falls
+    // within the current cycle window as a new canonical WAV in the audio dir.
+    // Returns the written file + a lineage-derived name + metadata; does NOT yet
+    // register it as an asset (that step is decided separately). Requires an
+    // active cycle that overlaps the region. `ok` is false on any guard failure.
+    struct ChunkExportResult {
+        bool ok = false;
+        juce::String filePath;
+        juce::String name;         // lineage-derived (owner track + beat range)
+        juce::String assetId;      // id of the registered loose asset
+        int sampleRate = 0;
+        int channelCount = 0;
+        double lengthBeats = 0.0;
+    };
+    ChunkExportResult exportRegionCycleChunk(const RegionId& regionId);
     // True if any recording flow is active — arrangement recording, an
     // in-flight looper bootstrap, or any focused-track loopAction other
     // than None. Used by the transport record button to drive its

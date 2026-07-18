@@ -42,6 +42,10 @@ public:
     // First loop region for the track, or nullptr if none. Looper-mode
     // playback uses this; the loop pool only ever has one region today.
     RegionState* loopForTrack(const TrackId& trackId) const;
+    // Return the track's single loop region, creating an empty one (startBeat=0,
+    // one take) if absent. Unlike startLoopRecording this has no capture
+    // semantics — used to place a pre-existing audio file into a loop.
+    RegionState* getOrCreateLoopRegion(const TrackId& trackId);
     RegionState* findRegion(const RegionId& regionId) const;
 
     // --- Playback scanning (reads from active take) ---
