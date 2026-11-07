@@ -1,6 +1,6 @@
 # Performance
 
-A live music performance environment for macOS. MIDI controllers, live audio, Audio Unit plugins, and an embedded Claude instance for environment authoring.
+A composition, production and live music performance environment for macOS. MIDI controllers. 
 
 ## Overview
 
