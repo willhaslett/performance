@@ -1043,9 +1043,16 @@ private:
         k.registerCommand("track.newInstrument", "Track", "New Instrument Track", noKey);
         k.registerCommand("track.newAudioInput", "Track", "New Audio Input Track", noKey);
         k.registerCommand("track.newBus", "Track", "New Effects Bus", noKey);
-        // Unbound by default — user binds them (natural choice j/k) via the editor.
-        k.registerCommand("track.selectDown", "Track", "Select Next Track Down", noKey);
-        k.registerCommand("track.selectUp", "Track", "Select Next Track Up", noKey);
+        k.registerCommand("track.selectDown", "Track", "Select Next Track Down",
+                          juce::KeyPress('j', 0, 'j'));
+        k.registerCommand("track.selectUp", "Track", "Select Next Track Up",
+                          juce::KeyPress('k', 0, 'k'));
+        // s / i act on the current track(s) — selection in Producer, focused in
+        // Looper. (m/r intentionally left to Metronome/Record.)
+        k.registerCommand("track.toggleSolo", "Track", "Solo Track(s)",
+                          juce::KeyPress('s', 0, 's'));
+        k.registerCommand("track.toggleInputMonitor", "Track", "Input Monitor Track(s)",
+                          juce::KeyPress('i', 0, 'i'));
 
         k.loadOverrides(coordinator->state());
     }

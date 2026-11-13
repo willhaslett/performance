@@ -1024,7 +1024,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
 
         armBounds[i] = {};
         if (!isActionTrack) {
-            drawPill(armBounds[i], "R", trackState->armed, Theme::Color::pillArm,
+            drawPill(armBounds[i], "R", state->effectiveArmed(*trackState), Theme::Color::pillArm,
                      isHoveredRow && hoveredPill == HoveredPill::Arm);
         }
 
@@ -1035,7 +1035,7 @@ void ProducePane::paintTrackHeaders(juce::Graphics& g, juce::Rectangle<int> area
             // "this plugin receives live MIDI." See docs/LIVE_INPUT_AND_FOCUS.md.
             // Auto-flipped on focus change for instruments; always user-explicit
             // for audio (feedback protection).
-            drawPill(inputMonitorBounds[i], "I", trackState->inputMonitoring, Theme::Color::pillInput,
+            drawPill(inputMonitorBounds[i], "I", state->effectiveInputMonitoring(*trackState), Theme::Color::pillInput,
                      isHoveredRow && hoveredPill == HoveredPill::Input);
         }
 

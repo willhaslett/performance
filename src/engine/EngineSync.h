@@ -28,6 +28,7 @@ private:
     void onSendCreated(const std::string& sendId);
     void onEntityUpdated(const std::string& entityType, const std::string& entityId);
     void onEntityDeleted(const std::string& entityType, const std::string& entityId);
+    void onFocusChanged();  // re-apply effective input monitoring across tracks
 
     // Restore plugin state from preset file after async load
     void restorePresetState(const std::string& parentId, const std::string& effectId,

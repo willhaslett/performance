@@ -135,8 +135,8 @@ void MixerView::timerCallback() {
                 effects.push_back({ juce::String(e.effectId.str()), juce::String(e.pluginName) });
             trackStrips[i]->setEffects(effects);
 
-            trackStrips[i]->setArmed(state.isTrackArmed(TrackId{TrackId{id.toStdString()}}));
-            trackStrips[i]->setInputMonitoring(state.isTrackInputMonitoring(TrackId{TrackId{id.toStdString()}}));
+            trackStrips[i]->setArmed(state.effectiveArmed(TrackId{id.toStdString()}));
+            trackStrips[i]->setInputMonitoring(state.effectiveInputMonitoring(TrackId{id.toStdString()}));
             trackStrips[i]->setMuted(state.isTrackMuted(TrackId{TrackId{id.toStdString()}}));
             trackStrips[i]->setSoloed(state.isTrackSoloed(TrackId{TrackId{id.toStdString()}}));
             trackStrips[i]->setGain(state.getTrackGain(TrackId{TrackId{id.toStdString()}}));

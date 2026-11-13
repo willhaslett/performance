@@ -168,3 +168,75 @@ After research, we sit down and brainstorm what we could try. No commitments bef
 - Pre-commitment to a particular technical direction
 
 We add those after step 2.
+
+## Second-pass landscape sweep (2026-09-19)
+
+Four months after the first sweep. Question asked: has anything changed the game for text → MIDI composition, such that the "frontier LLM emits house-style ABC" bet (see `memory/project_composition_bet.md`) looks better or worse? Four parallel surveys: frontier-LLM capability, specialist symbolic models, commercial products, callable infrastructure. Search budgets were exhausted in each; Reddit/Gearspace coverage is thin; ISMIR 2026 (Nov) proceedings and the NeurIPS 2026 list weren't yet indexed.
+
+### Verdict in one paragraph
+
+No game-changer. Frontier models got decisively better at music *reasoning* (theory recall saturated, ABC score-reading benchmarked for the first time) but no 2026 measurement shows improved *composition*, and the two that bear on it cut the other way. No shipped product produces MIDI that credible reviewers call genuinely good. The commercial "chat LLM over a symbolic model" slot is still empty. What did change: the technique consensus (plan-then-realize + critic loop + learned judge) now has an expert-listening result behind it, and the open, Apple-Silicon-runnable components to build that pipeline exist. The bet isn't refuted, but the "wait for the next model" version of it has been given four months and produced nothing measurable.
+
+### Frontier LLMs (May → Sept 2026)
+
+Releases: Opus 4.8 (May 28), Fable/Mythos 5 (June 9), Sonnet 5 (June 30), Opus 5 (July 24), Fable 5.1 (Sept 1); GPT-5.5 (Apr 23), GPT-5.6 (July 9); Gemini 3.6 Flash (July 21, 3.5 Pro still unreleased). **No vendor release note, system card, or HN thread mentions music, notation, or MIDI.** Investment went to audio (Lyria 3.5) and prose.
+
+Evidence:
+- [MuSP-Bench](https://arxiv.org/abs/2608.28212) (Aug 28) — 490 questions on scores + performances. GPT-5.6 Sol 51.1% score-only from ABC. No Claude/Gemini tested. Understanding only.
+- [MuNo-SP](https://arxiv.org/html/2609.10351) (Sept 9) — a new text representation lifts GPT-5.6 from 55.0% (best of ABC / MIDI-text / images) to 80.8% on MuSP-Bench. Representation choice swings frontier music-reading by 25 points; hints ABC may not be the LLM-optimal encoding. No generation results.
+- [Chord-spelling test](https://aug5th.substack.com/p/testing-llms-on-undergraduate-music) (July 30) — GPT-5.6 100%, Sonnet 5 91%, vs Sonnet 4 at 0% in 2025. Theory recall, not composition; author says the test is saturated.
+- [South Asian music, 33 LLMs](https://arxiv.org/abs/2606.05522) (June 3) — frontier models 85–90% on understanding, **stylistically faithful output only ~40%**. "Structural validity and stylistic faithfulness are distinct objectives." Cleanest 2026 statement that understanding → generation does not transfer.
+- [Text2Score](https://arxiv.org/abs/2605.13431) (May 13) re-ran the ComposerX multi-agent baseline on GPT-5.1: **2.92/5 expert musicality, valid output on only 50% of prompts** (mismatched bar durations, missing part declarations). Quantifies the pure-LLM ceiling at ~3/5.
+- [Libretto](https://arxiv.org/abs/2606.22708) (June 21, MIT, [repo](https://github.com/Xyc-arch/Libretto)) — Claude Opus 4.8 as agent, a custom onset-slot grammar *instead of ABC*, a 1,523-song / 8-genre corpus fingerprint over 39 deterministic axes, ≤3-round loop where gate failures become musician-language feedback. Full-piece pass 62% → 94%; retrieval alone 25% → 75%. **No human listening study; "pass" = statistical gates.** Opus beat Sonnet/Haiku on drills. Strongest 2026 evidence that scaffolding moves a frontier model out of the degenerate zone.
+- No Claude-vs-GPT-vs-Gemini ABC-output comparison with numbers exists. Two harnesses ([llmcomposer](https://github.com/alexnodeland/llmcomposer), [llm-music-expression](https://github.com/nateykang/llm-music-expression)) exist but publish no results.
+- ABC-Eval baseline (Sept 2025): GPT-5 >90% on syntax, <28% F1 on error detection. No 2026 update.
+
+### Specialist symbolic models
+
+- **[Agogic / PMT](https://arxiv.org/abs/2608.03999)** (Aug 4) — Qwen3.5 backbones 0.8B–35B with a 10ms performance-resolution token stream. Best FMD in the field (196 vs MIDI-LLM 314, ChatMusician 460). **But:** CC BY-NC-SA, checkpoints not locatable (GitHub 404, empty HF), pre-registered human study unfinished ("we assert no perceptual difference"), ~69% folk in the aligned set, key-adherence *worse* than MIDI-LLM (0.10 vs 0.32) without decode-time constraints. Watch for weights.
+- **[Text2Score](https://arxiv.org/abs/2605.13431)** ([code](https://github.com/keshavbhandari/text2score), Apache-2.0 weights, NC data) — GPT-5.1 writes a bar-wise plan (instrumentation per bar, form, density); a NotaGen-class ABC decoder executes. **24 expert musicians preferred it over ComposerX, MIDI-LLM, MidiLM on all five axes at p<0.001** (3.52 vs 2.92). The only expert-listening win of the window. CUDA only, classical/jazz/cinematic corpus, no drums, no pop.
+- **[MIDI-LLM](https://github.com/slSeanWU/MIDI-LLM)** — now an ISMIR 2026 paper. Same 1.5B Llama-3.2 + 55K AMT tokens. MPS confirmed working (issue #1), community GGUFs exist (Q8 1.8GB) but nobody has documented llama.cpp producing valid MIDI. Llama 3.2 license (commercial OK). Modes: from scratch / infill melody / infill chords. Still the most *runnable* open text→MIDI model on a Mac; ceiling is "beats text2midi."
+- **[MIDI-GPT](https://github.com/Metacreation-Lab/MIDI-GPT)** (Metacreation, MIT, pushed Aug 2026) — `pip install midigpt` with **prebuilt macOS arm64 wheels**, 82–350MB models, **bar-level multi-track infilling that preserves the existing arrangement**, per-bar density/polyphony control. No text conditioning. Best fit for "add a bass under bars 9–16."
+- **[EleutherAI Aria](https://github.com/EleutherAI/aria)** (Apache-2.0, May 2026) — official MLX implementation, real-time piano continuation. Piano only. Credible "continue what I just played" tool for a keys player.
+- **[midigenai](https://github.com/nicholasbien/midigenai)** (MIT, Sept 18) — one-person custom GPT, MLX ~800 tok/s, continuation + accompaniment. Quality unproven, no paper. Only thing found that plausibly hits sub-10s for 32 bars on a Mac.
+- **[SymphonyGen](https://arxiv.org/abs/2604.25498)** (ISMIR 2026, MIT) — harmony skeleton → orchestral arrangement, GRPO with CLaMP 3 reward. Niche: "here's my chords, orchestrate cinematic strings."
+- **[MusiChat](https://arxiv.org/abs/2607.24873)** (July 27) — chat LLM + hybrid symbolic engine with intent routing (precise edit vs creative), structure-then-surface. 95–100% intent accuracy, 2:1–3:1 like:dislike. No code.
+- Incumbents: no NotaGen 2 (repo last push Apr 2025, HF Space errored). No ChatMusician successor; m-a-p pivoted to audio (YuE2-3B writes ABC internally as a plan, returns it alongside audio, 24GB NVIDIA). AMT unchanged. Big audio models (StepAudio 3 Music, YuE2, Qwen-Music) now use ABC as an *internal* chain-of-thought plan but expose none of it as a composer.
+- Not symbolic, don't chase: Magenta RealTime 2 (June 4, CC-BY weights, **native MLX C++ engine + AUv3 plugin on Apple Silicon**, MIDI is an *input* control, audio out), Lyria 3.5, Suno v6.
+
+### Commercial products
+
+- **Nobody ships LLM-over-symbolic-model.** Suno Studio 2.0 (Aug 13) is the first mainstream LLM-orchestrates-specialists product, but the specialist is audio and the MIDI is transcription ("5–10 minutes of cleanup per stem" per the one detailed review). Mozart AI (LLM agents over ElevenLabs audio + own MIDI gen, $6M seed) is unassessed.
+- **Pure-LLM tools** (MIDI Agent, LIA, VIXSOUND, Yuma, Jamu, Producer Pal, ableton-mcp at 3k stars) all get the same review sentence: precise if you spec everything, I-V-vi-IV if you don't, always needs editing.
+- **Purpose-built symbolic models shipping:** Staccato Pro plugin (June 30, $299, proprietary "instrument-aware" model, **zero independent hands-on found**, own roadmap lists "improved MIDI quality" as planned); Roland Melody Flip (Sept 4, free in Roland Cloud, Sony CSL Flow Machines lineage, ~300 8-bar palettes + variation, no independent quality review); Hookpad Aria 2.38 (Apr 28, style sliders, still AMT, ToS forbids external integration); Logic Pro 12.3 (June 30, Chord ID inversions/7ths, Session Players remain musician-authored, no LLM).
+- **Udio exited** (export disabled post-UMG/WMG settlements). FL Studio 2026 Gopher went agentic but explicitly "cannot write melodies or chords." Ardour 9.5 shipped a built-in MCP server: "AI as control surface, not creative co-pilot."
+- **Sound on Sound Feb 2026 survey** (~1,200 pros): AI output "generic or bland"; >25% say tools aren't good enough for professional use.
+- DAWZY: dormant since NeurIPS.
+
+### Callable infrastructure
+
+- **Hosted text→MIDI APIs:** none from any major lab. Only [PozaLabs ARIA](https://www.pozalabsapi.com/) ($0.02–0.04/sample, Discord onboarding, no public docs, no quality evidence). Lyria 3.5 / ElevenLabs / Suno / Stability / Mubert are all audio-out. No Replicate/fal/HF endpoint hosts MIDI-LLM or NotaGen; you'd package it yourself (~1 day, stock LlamaForCausalLM).
+- **MCP servers:** no server wraps a specialist generation model. Theory/render servers where the LLM still writes every note: [mcp-music-studio](https://github.com/linxule/mcp-music-studio) (ABC render, MIT, Sept 14), [thiri-mcp](https://github.com/BluesPrince/thiri-mcp) (hosted deterministic reharmonization/voicing, PolyForm NC), [mcp42](https://github.com/jackjakarta/mcp42) (tonal-based theory + rule-based MIDI generators). DAW-control MCPs exploded (Ableton, three Logic Pro, three REAPER) but are competitors/patterns, not components.
+- **Judges for best-of-N:** [CLaMP 3](https://github.com/sanderwood/clamp3) (MIT) is still the only symbolic-native scorer (text↔ABC alignment, not absolute quality). Audio-domain: [TuneJury](https://arxiv.org/abs/2606.17006) (June, open, validated for best-of-N), CMI-RM (ICML 2026, 0.7B, beats Gemini 3 Pro as judge 78% vs 66%), [MuQ-Eval](https://github.com/dgtql/MuQ-Eval) (MIT, SRCC 0.838 with MOS), Audiobox Aesthetics (used as RL reward by SMART with documented over-optimization collapse). Genre bias warning: learned aesthetic scorers over-rate pop ([ISMIR 2026](https://arxiv.org/abs/2607.13903)). **Don't expect LLM-as-judge to rescue musicality** — measured weaker than a 0.7B trained reward model. Our `OfflineRenderer` makes render-then-score cheap.
+- **Theory/post-processing:** music21 10.5 (June), abcMIDI (May 31 build, C, vendorable), abcjs 6.7, muspy metrics, Libretto's 39-axis fingerprint as deterministic degeneracy gates. HumanMXA (Sept, JUCE AU/VST3 humanizer).
+
+### What we now believe (Sept 2026 update)
+
+1. **The "wait for the model" version of the bet has not paid out.** Four frontier releases, zero composition improvement measured. Music reasoning saturated; generation didn't move. Vendors are spending on audio.
+2. **The architecture that scores with human experts separates planning from realization.** Text2Score, MusiChat, SymphonyGen all do: frontier LLM (or explicit skeleton) plans bar-wise → constrained executor realizes → decode-time constraints → learned judge ranks. Our ABC + content-CRUD surface already approximates the first half.
+3. **Scaffolding is the credible near-term lever, not a new model.** Libretto's critic-loop + retrieval result (62% → 94%, Opus 4.8) and Text2Score's plan schema are both open and portable to our pipeline with no model training. Neither has been shown to produce music a musician would call *good* — only to eliminate the degenerate/repetitive failure mode.
+4. **The hybrid is buildable by one person now, but quality is unproven.** MIDI-LLM + MIDI-GPT + Aria as sidecar tools, CLaMP 3 + rendered-audio judge for best-of-N, ~2–4GB of weights, 15–40s per 32-bar generation on M-series. Roughly a week to first tool call. The honest ceiling of every open specialist model is "beats the other models," not "impressive."
+5. **Representation is a live variable again.** MuNo-SP's 25-point swing on score-reading and Libretto's explicit-onset grammar both suggest ABC may not be the LLM-optimal encoding, even if it's the best human/ecosystem one. Untested for generation.
+6. **The commercial slot is still empty.** Nobody ships chat-LLM-over-symbolic-model. Suno got closest with audio underneath. If it ever works, the architecture is ours to occupy; if it doesn't, nobody else has cracked it either.
+
+### Watch list
+
+- Agogic checkpoints appearing (and the human study landing).
+- Text2Score Mac/MPS port or a hosted endpoint.
+- ISMIR 2026 (Nov 8–12): "Does Notation Matter? MusicXML tokenisation," "Cyclic Attractors in Iterated LLM-Based Symbolic Music Style Transfer" (title alone is a warning about iterated LLM editing), model-intrinsic evaluation.
+- Gemini 3.5 Pro release; any first vendor mention of notation as a capability.
+- Independent reviews of Staccato Pro and Melody Flip (their absence four months in is itself a signal).
+
+### Cheapest falsification experiment (not committed)
+
+Before touching a specialist model: on the existing ABC surface, add (a) a bar-wise plan step in the prompt (Text2Score's schema), (b) N=4–8 candidates ranked by CLaMP 3 text↔ABC similarity plus a rendered-audio aesthetic score via `OfflineRenderer`, (c) Libretto-style deterministic gates as hard filters. Blind A/B against current single-shot output on ~10 briefs across genres. If output stays "childish," that's the capability-shaped signal from `memory/project_composition_bet.md` and the answer is a specialist executor (MIDI-LLM sidecar first, Agogic when weights land), not more surface polish.

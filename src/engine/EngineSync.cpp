@@ -57,11 +57,25 @@ void EngineSync::onStateEvent(const StateEvent& event) {
             else if (event.entity == StateEvent::Send) onSendCreated(event.entityId);
             break;
         case StateEvent::Updated:
-            onEntityUpdated(type, event.entityId);
+            if (event.entity == StateEvent::Focus) onFocusChanged();
+            else onEntityUpdated(type, event.entityId);
             break;
         case StateEvent::Deleted:
             onEntityDeleted(type, event.entityId);
             break;
+    }
+}
+
+void EngineSync::onFocusChanged() {
+    // Focus flips the effective input-monitoring of the old + new focused
+    // instrument tracks (audio is unaffected). Re-apply monitoring for every
+    // track from its effective value — cheap and always correct.
+    auto* song = stateAPI.findSong(SongId{activeSongId});
+    if (!song) return;
+    for (auto& t : song->tracks) {
+        if (t.sourceType == TrackSourceType::Action) continue;
+        engine.setTrackInputMonitoring(juce::String(t.id.str()),
+                                       stateAPI.effectiveInputMonitoring(t));
     }
 }
 
@@ -122,7 +136,7 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
         // on creation — otherwise a persisted `false` silently reverts to
         // true on reload, producing audible input even though the UI shows
         // monitoring off.
-        engine.setTrackInputMonitoring(juce::String(track->id.str()), track->inputMonitoring);
+        engine.setTrackInputMonitoring(juce::String(track->id.str()), stateAPI.effectiveInputMonitoring(*track));
         return;
     }
 
@@ -132,7 +146,7 @@ void EngineSync::onTrackCreated(const std::string& trackId) {
     // gates live-MIDI routing to the plugin (setTrackInputMonitoring
     // drives midiEnabled internally). Without this, persisted focus
     // would silently revert to broadcast on reload.
-    engine.setTrackInputMonitoring(juce::String(track->id.str()), track->inputMonitoring);
+    engine.setTrackInputMonitoring(juce::String(track->id.str()), stateAPI.effectiveInputMonitoring(*track));
 
     if (!track->pluginId.empty()) {
         auto* plugin = stateAPI.findPluginById(track->pluginId);
@@ -266,7 +280,7 @@ void EngineSync::onEntityUpdated(const std::string& entityType, const std::strin
         PERF_ASSERT(t, "onEntityUpdated: track not found");
         if (t->sourceType == TrackSourceType::Action) return;  // no engine representation
         engine.setTrackGain(id, t->outputGain);
-        engine.setTrackInputMonitoring(id, t->inputMonitoring);
+        engine.setTrackInputMonitoring(id, stateAPI.effectiveInputMonitoring(*t));
         engine.setTrackMuted(id, t->muted);
         engine.setTrackSoloed(id, t->soloed);
         engine.setTrackOutputTarget(id, juce::String(t->outputTarget));

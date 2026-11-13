@@ -158,6 +158,24 @@ public:
     void setTrackSoloed(const TrackId& id, bool soloed);
     bool isTrackSoloed(const TrackId& id) const;
     bool isAnySoloed() const;  // true if any track in current song is soloed
+
+    // Effective (as-heard/as-recorded) arm + input-monitoring: the persisted
+    // base value with a transient focus overlay. The focused track is always
+    // record-ready; a focused INSTRUMENT is also monitored (you hear it) —
+    // audio isn't (feedback: manual opt-in). Nothing to revert on defocus —
+    // this is a pure derivation, so the base is never mutated by focus.
+    bool effectiveArmed(const TrackState& t) const;
+    bool effectiveInputMonitoring(const TrackState& t) const;
+    bool effectiveArmed(const TrackId& id) const;             // convenience by id
+    bool effectiveInputMonitoring(const TrackId& id) const;
+
+    // Keyboard-shortcut toggles acting on the "current" track(s): the selection
+    // in Arrangement mode, the focused track in Looper mode. Group semantics —
+    // if any target is off, turn them all on (else all off). Input monitoring
+    // only affects audio-input targets. See currentTrackTargets().
+    std::vector<TrackId> currentTrackTargets() const;
+    void toggleSoloOnCurrent();
+    void toggleInputMonitorOnCurrent();
     void setTrackPlugin(const TrackId& id, const PluginId& pluginId,
                         const PresetId& presetId = {});
     void clearTrackPlugin(const TrackId& id);

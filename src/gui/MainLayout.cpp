@@ -752,6 +752,14 @@ bool MainLayout::handleGlobalKey(const juce::KeyPress& key) {
         state.selectAdjacentTrack(false);
         return true;
     }
+    if (matches("track.toggleSolo", key)) {
+        state.toggleSoloOnCurrent();
+        return true;
+    }
+    if (matches("track.toggleInputMonitor", key)) {
+        state.toggleInputMonitorOnCurrent();
+        return true;
+    }
 
     // --- Edit (check redo before undo — redo has shift) ---
     if (matches("edit.redo", key)) {

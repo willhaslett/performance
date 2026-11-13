@@ -957,6 +957,25 @@ void StateAPI::setTrackSoloed(const TrackId& id, bool soloed) {
     eventBus.emit({ StateEvent::Updated, StateEvent::Track, id.str(), "" });
 }
 
+bool StateAPI::effectiveArmed(const TrackState& t) const {
+    return t.armed || t.id == getFocusedTrackId();
+}
+
+bool StateAPI::effectiveInputMonitoring(const TrackState& t) const {
+    return t.inputMonitoring
+        || (t.id == getFocusedTrackId() && t.sourceType == TrackSourceType::Instrument);
+}
+
+bool StateAPI::effectiveArmed(const TrackId& id) const {
+    auto* t = findTrack(id);
+    return t && effectiveArmed(*t);
+}
+
+bool StateAPI::effectiveInputMonitoring(const TrackId& id) const {
+    auto* t = findTrack(id);
+    return t && effectiveInputMonitoring(*t);
+}
+
 bool StateAPI::isTrackSoloed(const TrackId& id) const {
     return track(id).soloed;
 }
@@ -1534,8 +1553,14 @@ void StateAPI::selectTrack(const TrackId& trackId, bool addToSelection) {
 void StateAPI::selectAdjacentTrack(bool down) {
     auto tracks = listTracks();          // display order
     if (tracks.empty()) return;
+    // Navigation lands on a single track: replace the selection AND move focus
+    // to it, exactly like a plain click. This keeps selection, focus, the row
+    // highlight, and effective arm/monitor all in sync — only Cmd/Shift
+    // multi-select is allowed to diverge them.
+    auto pick = [this](const TrackId& id) { selectTrack(id); setFocusedTrackId(id); };
+
     auto sel = selectedTrackIds();
-    if (sel.empty()) { selectTrack(tracks.front().id); return; }  // "or first track if none"
+    if (sel.empty()) { pick(tracks.front().id); return; }  // "or first track if none"
 
     // Reference = the selection's extreme edge in the direction of travel, so
     // moving off a multi-selection continues past its edge rather than into it.
@@ -1544,11 +1569,42 @@ void StateAPI::selectAdjacentTrack(bool down) {
         for (int i = 0; i < (int)tracks.size(); ++i)
             if (tracks[i].id == id)
                 ref = down ? std::max(ref, i) : std::min(ref, i);
-    if (ref < 0 || ref >= (int)tracks.size()) { selectTrack(tracks.front().id); return; }
+    if (ref < 0 || ref >= (int)tracks.size()) { pick(tracks.front().id); return; }
 
     int target = down ? std::min(ref + 1, (int)tracks.size() - 1)
                       : std::max(ref - 1, 0);
-    selectTrack(tracks[target].id);
+    pick(tracks[target].id);
+}
+
+std::vector<TrackId> StateAPI::currentTrackTargets() const {
+    // Looper acts on the single focused track; Arrangement on the selection.
+    if (getMode() == AppMode::Looper) {
+        auto f = getFocusedTrackId();
+        return f.str().empty() ? std::vector<TrackId>{} : std::vector<TrackId>{ f };
+    }
+    return selectedTrackIds();
+}
+
+void StateAPI::toggleSoloOnCurrent() {
+    auto targets = currentTrackTargets();
+    if (targets.empty()) return;
+    bool anyOff = false;
+    for (auto& id : targets)
+        if (auto* t = findTrack(id); t && !t->soloed) { anyOff = true; break; }
+    for (auto& id : targets) setTrackSoloed(id, anyOff);
+}
+
+void StateAPI::toggleInputMonitorOnCurrent() {
+    // Only audio-input tracks have input monitoring.
+    std::vector<TrackId> audio;
+    for (auto& id : currentTrackTargets())
+        if (auto* t = findTrack(id); t && t->sourceType == TrackSourceType::AudioInput)
+            audio.push_back(id);
+    if (audio.empty()) return;
+    bool anyOff = false;
+    for (auto& id : audio)
+        if (auto* t = findTrack(id); t && !t->inputMonitoring) { anyOff = true; break; }
+    for (auto& id : audio) setTrackInputMonitoring(id, anyOff);
 }
 
 void StateAPI::selectBus(const BusId& busId, bool addToSelection) {
@@ -1586,31 +1642,12 @@ void StateAPI::setFocusedTrackId(const TrackId& trackId) {
     pushUndo();
     s->focusedTrackId = trackId;
 
-    // Type-aware I snap (see docs/LIVE_INPUT_AND_FOCUS.md).
-    //
-    // Focusing an INSTRUMENT track flips its inputMonitoring on and
-    // every other instrument's off — only one plugin receives live
-    // MIDI in the default case. Feedback isn't a risk for MIDI routing,
-    // so auto-snap is safe here.
-    //
-    // Focusing an AUDIO track does NOT touch inputMonitoring on any
-    // track — audio passthrough can cause speaker feedback, and Logic's
-    // convention (and ours) requires explicit user opt-in. Users toggle
-    // the I pill manually on audio tracks once levels are verified.
-    //
-    // Focusing an ACTION track is a no-op for routing either way.
-    auto* focused = findTrack(trackId);
-    if (focused && focused->sourceType == TrackSourceType::Instrument) {
-        for (auto& t : s->tracks) {
-            if (t.sourceType != TrackSourceType::Instrument) continue;
-            bool shouldListen = (t.id == trackId);
-            if (t.inputMonitoring != shouldListen) {
-                t.inputMonitoring = shouldListen;
-                eventBus.emit({ StateEvent::Updated, StateEvent::Track,
-                                 t.id.str(), "" });
-            }
-        }
-    }
+    // Focus no longer mutates any track's persisted inputMonitoring/armed.
+    // The effective (as-heard/as-recorded) values are derived from the base +
+    // this focus via effectiveArmed()/effectiveInputMonitoring(); EngineSync
+    // re-applies monitoring for all tracks on this Focus event. This makes the
+    // "revert on defocus" free and keeps the user's base values untouched.
+    // (Focusing an instrument → it's monitored; audio → not; both → record-ready.)
 
     StateEvent ev;
     ev.action = StateEvent::Updated;

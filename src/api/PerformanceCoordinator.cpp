@@ -1002,7 +1002,7 @@ void PerformanceCoordinator::startRecording() {
     auto tracks = stateAPI->listTracks();
     for (auto& t : tracks) {
         auto* ts = stateAPI->findTrack(t.id);
-        if (!ts || !ts->armed) continue;
+        if (!ts || !stateAPI->effectiveArmed(*ts)) continue;  // focused track is armed too
         if (ts->sourceType == TrackSourceType::Instrument)
             recordingTrackIds.push_back(t.id);
     }
@@ -1011,7 +1011,7 @@ void PerformanceCoordinator::startRecording() {
     bool hasArmedAudio = false;
     for (auto& t : tracks) {
         auto* ts = stateAPI->findTrack(t.id);
-        if (ts && ts->armed && ts->sourceType == TrackSourceType::AudioInput)
+        if (ts && stateAPI->effectiveArmed(*ts) && ts->sourceType == TrackSourceType::AudioInput)
             hasArmedAudio = true;
     }
 
@@ -1032,7 +1032,7 @@ void PerformanceCoordinator::startRecording() {
         auto allTracks = stateAPI->listTracks();
         for (auto& t : allTracks) {
             auto* ts = stateAPI->findTrack(t.id);
-            if (!ts || !ts->armed || ts->sourceType != TrackSourceType::AudioInput) continue;
+            if (!ts || !stateAPI->effectiveArmed(*ts) || ts->sourceType != TrackSourceType::AudioInput) continue;
 
             auto* region = arrangementImpl.addMidiRegion(t.id, recordStartBeat, 0.0);
             if (!region) continue;

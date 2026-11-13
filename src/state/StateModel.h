@@ -254,8 +254,9 @@ struct TrackState {
     PresetId presetId;
     uint32_t color = 0;        // track color (0 = use default for source type)
     float outputGain = 1.0f;
-    bool armed = false;        // record-armed (records MIDI when playing)
-    bool inputMonitoring = true; // pass live audio input to output (audio input tracks)
+    bool armed = false;        // record-armed base (focus adds a transient overlay — see effectiveArmed)
+    bool inputMonitoring = false; // base monitoring; false = off. Focus monitors the focused
+                                  // instrument transiently (effectiveInputMonitoring); manual opt-in otherwise.
     bool muted = false;        // mute output (runtime, not persisted)
     bool soloed = false;       // solo this track (runtime, not persisted)
     int position = 0;

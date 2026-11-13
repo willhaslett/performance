@@ -523,6 +523,65 @@ public:
             s.clearSelection();
             s.selectAdjacentTrack(false);  // none → first (even going up)
             expectEquals(selected(), t1.str());
+
+            // Navigation moves focus in lockstep with selection (the invariant).
+            s.selectAdjacentTrack(true);   // → t2
+            expectEquals(selected(), t2.str());
+            expect(s.getFocusedTrackId() == t2);
+        }
+
+        beginTest("effectiveArmed: focused track is record-ready, additive with base");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("A");
+            auto t2 = s.createTrack("B");   // focus → B
+
+            // Focused track is armed even with base off; others follow base.
+            expect(!s.findTrack(t2)->armed);                 // base untouched
+            expect(s.effectiveArmed(*s.findTrack(t2)));      // focus overlay
+            expect(!s.effectiveArmed(*s.findTrack(t1)));
+
+            // Manual arm on t1 (base) is additive and survives defocus.
+            s.setTrackArmed(t1, true);
+            expect(s.effectiveArmed(*s.findTrack(t1)));      // base
+            expect(s.effectiveArmed(*s.findTrack(t2)));      // focus
+            s.setFocusedTrackId(t1);
+            expect(s.effectiveArmed(*s.findTrack(t1)));      // base + focus
+            expect(!s.effectiveArmed(*s.findTrack(t2)));     // reverted to base (off)
+        }
+
+        beginTest("toggleSolo / toggleInputMonitor on current track(s)");
+        {
+            StateAPI s;
+            s.setCurrentSong(s.createSong("S"));
+            auto t1 = s.createTrack("A");
+            auto t2 = s.createTrack("B");
+            auto a1 = s.createAudioInputTrack("Mic", 0, 1);
+
+            // Arrangement mode: group solo over the selection — any off → all on.
+            s.selectTrack(t1);
+            s.selectTrack(t2, true);
+            s.toggleSoloOnCurrent();
+            expect(s.isTrackSoloed(t1) && s.isTrackSoloed(t2));
+            s.toggleSoloOnCurrent();   // all on → all off
+            expect(!s.isTrackSoloed(t1) && !s.isTrackSoloed(t2));
+
+            // Input monitor affects only audio-input targets.
+            s.selectTrack(a1);
+            expect(!s.isTrackInputMonitoring(a1));
+            s.toggleInputMonitorOnCurrent();
+            expect(s.isTrackInputMonitoring(a1));
+            s.selectTrack(t1);         // instrument only → no-op
+            s.toggleInputMonitorOnCurrent();
+            expect(s.isTrackInputMonitoring(a1));  // unchanged
+
+            // Looper mode: acts on the focused track, ignoring selection.
+            s.setMode(AppMode::Looper);
+            s.clearSelection();
+            s.setFocusedTrackId(t2);
+            s.toggleSoloOnCurrent();
+            expect(s.isTrackSoloed(t2));
         }
 
         beginTest("Device registration and controls");
@@ -6166,79 +6225,71 @@ public:
             expect(s.getFocusedTrackId() == trackB);
         }
 
-        beginTest("focusing an instrument snaps I on focused + off on other instruments");
-        {
-            TestCoordinator tc;
-            auto& s = tc.state();
-            auto a = s.createTrack("A");   // focus → A, A.I = on
-            auto b = s.createTrack("B");   // focus → B, A.I = off, B.I = on
-            auto c = s.createTrack("C");   // focus → C, A.I = off, B.I = off, C.I = on
-
-            expect(s.findTrack(a)->inputMonitoring == false);
-            expect(s.findTrack(b)->inputMonitoring == false);
-            expect(s.findTrack(c)->inputMonitoring == true);
-
-            // Re-focusing an older instrument snaps again.
-            s.setFocusedTrackId(a);
-            expect(s.findTrack(a)->inputMonitoring == true);
-            expect(s.findTrack(b)->inputMonitoring == false);
-            expect(s.findTrack(c)->inputMonitoring == false);
-        }
-
-        beginTest("audio tracks default to I=off and focus doesn't snap them");
-        {
-            TestCoordinator tc;
-            auto& s = tc.state();
-            auto instr = s.createTrack("Instrument");
-            expect(s.findTrack(instr)->inputMonitoring == true);
-
-            // Create audio track — focus moves to it, I=false by default,
-            // no snap fires for audio tracks so the instrument's I stays on.
-            auto aud = s.createAudioInputTrack("Mic", -1, 0);
-            expect(s.getFocusedTrackId() == aud);
-            expect(s.findTrack(aud)->inputMonitoring == false);   // safe default
-            expect(s.findTrack(instr)->inputMonitoring == true);  // unchanged
-
-            // Re-focus the audio track: still no snap on anyone.
-            auto instr2 = s.createTrack("Instr2");
-            // After creating instr2, focus moved, instrument snap fired —
-            // instr.I went to false, instr2.I is true.
-            expect(s.findTrack(instr)->inputMonitoring == false);
-            expect(s.findTrack(instr2)->inputMonitoring == true);
-
-            s.setFocusedTrackId(aud);
-            // Audio focus: no instrument-I changes at all.
-            expect(s.findTrack(instr)->inputMonitoring == false);
-            expect(s.findTrack(instr2)->inputMonitoring == true);
-            expect(s.findTrack(aud)->inputMonitoring == false);
-        }
-
-        beginTest("I pill toggle persists until next focus change");
+        beginTest("focusing an instrument monitors it (effective); base + others untouched");
         {
             TestCoordinator tc;
             auto& s = tc.state();
             auto a = s.createTrack("A");
             auto b = s.createTrack("B");
-            // B has focus, I=true on B and false on A.
-            expect(s.findTrack(a)->inputMonitoring == false);
+            auto c = s.createTrack("C");   // created last → focus = C
 
-            // User toggles I on A for multi-listen.
-            s.setTrackInputMonitoring(a, true);
-            expect(s.findTrack(a)->inputMonitoring == true);
-            expect(s.findTrack(b)->inputMonitoring == true);
+            // Base inputMonitoring is never mutated by focus — all default off.
+            expect(!s.findTrack(a)->inputMonitoring);
+            expect(!s.findTrack(b)->inputMonitoring);
+            expect(!s.findTrack(c)->inputMonitoring);
 
-            // Focus stays on B (focus unchanged), multi-listen persists.
-            expect(s.getFocusedTrackId() == b);
+            // Effective: only the focused instrument is monitored.
+            expect(s.getFocusedTrackId() == c);
+            expect(!s.effectiveInputMonitoring(*s.findTrack(a)));
+            expect(!s.effectiveInputMonitoring(*s.findTrack(b)));
+            expect(s.effectiveInputMonitoring(*s.findTrack(c)));
 
-            // Clicking B again = focus stays B, snap doesn't re-fire (idempotent).
-            s.setFocusedTrackId(b);
-            expect(s.findTrack(a)->inputMonitoring == true);
-            expect(s.findTrack(b)->inputMonitoring == true);
-
-            // Clicking A = snap fires, A=on, B=off.
+            // Re-focus A: effective follows, no base mutation, no "others off" step.
             s.setFocusedTrackId(a);
-            expect(s.findTrack(a)->inputMonitoring == true);
-            expect(s.findTrack(b)->inputMonitoring == false);
+            expect(s.effectiveInputMonitoring(*s.findTrack(a)));
+            expect(!s.effectiveInputMonitoring(*s.findTrack(b)));
+            expect(!s.effectiveInputMonitoring(*s.findTrack(c)));
+            expect(!s.findTrack(a)->inputMonitoring);  // base still untouched
+        }
+
+        beginTest("audio tracks default I=off; focus never monitors audio");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto instr = s.createTrack("Instrument");
+            auto aud = s.createAudioInputTrack("Mic", -1, 0);   // focus → aud
+            expect(s.getFocusedTrackId() == aud);
+            expect(!s.findTrack(aud)->inputMonitoring);              // base off
+            expect(!s.effectiveInputMonitoring(*s.findTrack(aud)));  // audio: focus doesn't monitor
+            expect(!s.effectiveInputMonitoring(*s.findTrack(instr))); // instrument no longer focused
+
+            s.setFocusedTrackId(aud);
+            expect(!s.effectiveInputMonitoring(*s.findTrack(aud)));  // still off (feedback opt-in)
+        }
+
+        beginTest("manual I sets a persistent base; focus adds a transient overlay");
+        {
+            TestCoordinator tc;
+            auto& s = tc.state();
+            auto a = s.createTrack("A");
+            auto b = s.createTrack("B");   // focus → B
+
+            // User enables I on A (multi-listen). Base set; effective on both (A base, B focus).
+            s.setTrackInputMonitoring(a, true);
+            expect(s.findTrack(a)->inputMonitoring);
+            expect(s.effectiveInputMonitoring(*s.findTrack(a)));
+            expect(s.effectiveInputMonitoring(*s.findTrack(b)));
+
+            // Move focus to A: B loses its overlay and reverts to base (off) — for free.
+            s.setFocusedTrackId(a);
+            expect(s.effectiveInputMonitoring(*s.findTrack(a)));
+            expect(!s.effectiveInputMonitoring(*s.findTrack(b)));
+            expect(!s.findTrack(b)->inputMonitoring);   // base never touched by focus
+
+            // A's manual base survives defocus.
+            s.setFocusedTrackId(b);
+            expect(s.effectiveInputMonitoring(*s.findTrack(a)));
+            expect(s.findTrack(a)->inputMonitoring);
         }
 
         beginTest("focus persists per-song across coordinator restart");

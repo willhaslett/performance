@@ -394,7 +394,7 @@ void LooperPane::paintTrackHeader(juce::Graphics& g, const TrackState& t,
     drawPill(row.soloButton, "S", t.soloed, Theme::Color::pillSolo);
     if (t.sourceType == TrackSourceType::Instrument
         || t.sourceType == TrackSourceType::AudioInput)
-        drawPill(row.inputButton, "I", t.inputMonitoring, Theme::Color::pillInput);
+        drawPill(row.inputButton, "I", state.effectiveInputMonitoring(t), Theme::Color::pillInput);
 
     // (Gesture state — queued / capturing — is shown as a colored
     // tint on the lane's left-of-playhead area in paintPlayhead, not
